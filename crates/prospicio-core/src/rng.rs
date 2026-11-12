@@ -49,6 +49,31 @@ impl StreamRng {
         let k = self.next_u64() >> 11;
         (k as f64 + 0.5) * (1.0 / (1u64 << 53) as f64)
     }
+
+    /// Shuffles `x` in place by Fisher-Yates, from the last position down,
+    /// each swap's index `floor(u (i + 1))` from [`next_open01`] (capped at
+    /// `i`). The one shuffle of the workspace (#843): the copula reorders,
+    /// the rearrangement's random starts, segment dependence, resampling
+    /// permutations and the networks' batch orders draw the same sequence
+    /// with it as with the loops they wrote before.
+    ///
+    /// [`next_open01`]: Self::next_open01
+    ///
+    /// ```
+    /// use prospicio_core::StreamRng;
+    ///
+    /// let mut x: Vec<usize> = (0..6).collect();
+    /// StreamRng::new(7, 0).shuffle(&mut x);
+    /// let mut sorted = x.clone();
+    /// sorted.sort();
+    /// assert_eq!(sorted, (0..6).collect::<Vec<_>>());
+    /// ```
+    pub fn shuffle<T>(&mut self, x: &mut [T]) {
+        for i in (1..x.len()).rev() {
+            let j = ((self.next_open01() * (i + 1) as f64) as usize).min(i);
+            x.swap(i, j);
+        }
+    }
 }
 
 /// Expands a 64-bit seed to a 256-bit ChaCha key with SplitMix64, so that
@@ -70,6 +95,25 @@ fn expand_seed(seed: u64) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn shuffle_draws_as_the_loops_it_replaces() {
+        // The loop each crate wrote before (#843), on the same stream.
+        let mut want: Vec<usize> = (0..50).collect();
+        let mut rng = StreamRng::new(11, 3);
+        for i in (1..want.len()).rev() {
+            let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
+            want.swap(i, j);
+        }
+        let mut got: Vec<usize> = (0..50).collect();
+        StreamRng::new(11, 3).shuffle(&mut got);
+        assert_eq!(got, want);
+        let mut empty: [u8; 0] = [];
+        StreamRng::new(1, 0).shuffle(&mut empty);
+        let mut one = [5];
+        StreamRng::new(1, 0).shuffle(&mut one);
+        assert_eq!(one, [5]);
+    }
     use super::*;
     use rayon::prelude::*;
 
