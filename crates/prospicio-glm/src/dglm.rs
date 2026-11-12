@@ -46,7 +46,7 @@
 //! ```
 
 use prospicio_core::{Error, Result};
-use prospicio_math::linalg::{cholesky, cholesky_inverse, cholesky_solve};
+use prospicio_math::linalg::{cholesky, cholesky_inverse, cholesky_log_det, cholesky_solve};
 use prospicio_math::special::{digamma, ln_gamma, trigamma};
 use prospicio_models::{Design, Family, Link, Model};
 
@@ -389,7 +389,7 @@ impl Wls {
     /// `log det(Xᵀ W X)`.
     fn log_det(&self) -> f64 {
         let p = self.coefficients.len();
-        2.0 * (0..p).map(|j| self.factor[j * p + j].ln()).sum::<f64>()
+        cholesky_log_det(&self.factor, p)
     }
 
     /// The hat values `wᵢ xᵢᵀ (Xᵀ W X)⁻¹ xᵢ`.

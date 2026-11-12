@@ -8,6 +8,6 @@ Finished items are in [done/probability.md](done/probability.md), which agents r
 
 ## Next
 
-- [numeric-helpers-rest] #843: group 1's Fisher-Yates shuffle as a `StreamRng` method (a `prospicio-core` PR of its own) and the Spearman conversion and indexed reorder in reserving's dependence, then group 2 (`linalg` additions: `mat_mul`, the inverse by unit-vector solves, `cholesky_log_det`, a least-squares line) and group 3 (a fallible `try_bisect` and the 13 hand-written bisections, one site per PR, each keeping its tolerance; `tweedie` onto `golden_section`)
+- [numeric-helpers-rest] #843: the Spearman conversion and indexed reorder in reserving's dependence (group 1), group 2's least-squares line (slope, intercept, R²) for the six hand-written fits and the two `TrendFit` types, and group 3 (a fallible `try_bisect` and the 13 hand-written bisections, one site per PR, each keeping its tolerance; `tweedie` onto `golden_section`)
 - [bindings-core-838] #838 items 2, 4 and 5: `HierarchicalBfFit::to_long` and `totals` in the core, the `read_ylt` day and hour rule in `YearLossTable` (a non-numeric day an error naming the row, the user's decision of 2026-11-11), and `underwriting_paid` as monthly paid shares from `prospicio-reserving`
 - [option-names-step-2] #834 step 2: `NAMES` and `from_name` (with `name`) on each user-facing core enum, as `CountDistribution` has them, one family per PR: tail kind, grain, mixing, family and link, average kind, distortion family; the front ends' match blocks replaced by a call and their `unknown_name` message

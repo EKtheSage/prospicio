@@ -136,6 +136,76 @@ pub fn solve(mut a: Vec<f64>, mut b: Vec<f64>, n: usize) -> Option<Vec<f64>> {
     Some(x)
 }
 
+/// The product `a b` of two row-major `n × n` matrices.
+///
+/// Each row of the result is built as a sum over `k` of `a[i, k]` times
+/// row `k` of `b`, in increasing `k`, and a zero `a[i, k]` is skipped.
+/// For finite `b` the skip changes nothing, because adding `0 × b` to a
+/// partial sum that is never `-0` leaves it unchanged.
+///
+/// ```
+/// use prospicio_math::linalg::mat_mul;
+///
+/// let c = mat_mul(&[1.0, 2.0, 3.0, 4.0], &[5.0, 6.0, 7.0, 8.0], 2);
+/// assert_eq!(c, [19.0, 22.0, 43.0, 50.0]);
+/// ```
+pub fn mat_mul(a: &[f64], b: &[f64], n: usize) -> Vec<f64> {
+    let mut c = vec![0.0; n * n];
+    for i in 0..n {
+        for k in 0..n {
+            let aik = a[i * n + k];
+            if aik != 0.0 {
+                for j in 0..n {
+                    c[i * n + j] += aik * b[k * n + j];
+                }
+            }
+        }
+    }
+    c
+}
+
+/// The inverse of the row-major `n × n` matrix `a`, column by column from
+/// [`solve`] on each unit vector. `None` if a solve fails (`a` singular,
+/// a non-finite pivot or a wrong length).
+///
+/// A column can still hold non-finite values or come from an
+/// ill-conditioned `a`: the caller decides what to do with those, for
+/// example by testing a condition number.
+///
+/// ```
+/// use prospicio_math::linalg::inverse;
+///
+/// let inv = inverse(&[4.0, 7.0, 2.0, 6.0], 2).unwrap();
+/// let want = [0.6, -0.7, -0.2, 0.4];
+/// assert!(inv.iter().zip(want).all(|(x, y)| (x - y).abs() < 1e-15));
+/// assert!(inverse(&[1.0, 2.0, 2.0, 4.0], 2).is_none());
+/// ```
+pub fn inverse(a: &[f64], n: usize) -> Option<Vec<f64>> {
+    let mut inv = vec![0.0; n * n];
+    for j in 0..n {
+        let mut e = vec![0.0; n];
+        e[j] = 1.0;
+        let x = solve(a.to_vec(), e, n)?;
+        for i in 0..n {
+            inv[i * n + j] = x[i];
+        }
+    }
+    Some(inv)
+}
+
+/// The log determinant of `l lᵀ` from its Cholesky factor `l` (`n × n`,
+/// row-major): `2 Σ ln l[i, i]`.
+///
+/// ```
+/// use prospicio_math::linalg::{cholesky, cholesky_log_det};
+///
+/// let l = cholesky(&[4.0, 2.0, 2.0, 5.0], 2).unwrap();
+/// assert!((cholesky_log_det(&l, 2) - 16f64.ln()).abs() < 1e-15);
+/// ```
+pub fn cholesky_log_det(l: &[f64], n: usize) -> f64 {
+    2.0 * (0..n).map(|i| l[i * n + i].ln()).sum::<f64>()
+}
+
 /// The eigenvalues of the symmetric `n × n` matrix `a` (row-major; only
 /// its lower triangle is read), in increasing order, by cyclic Jacobi
 /// rotations. Accurate to a few ulps of the largest eigenvalue, which
@@ -200,6 +270,45 @@ pub fn symmetric_eigenvalues(a: &[f64], n: usize) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mat_mul_matches_the_plain_triple_loop() {
+        let a = [1.5, 0.0, -2.0, 0.25, 3.0, 0.0, 0.0, -1.0, 4.0];
+        let b = [2.0, -0.5, 1.0, 0.0, 7.0, 3.0, -1.25, 2.0, 0.5];
+        let mut want = vec![0.0; 9];
+        for i in 0..3 {
+            for k in 0..3 {
+                for j in 0..3 {
+                    want[i * 3 + j] += a[i * 3 + k] * b[k * 3 + j];
+                }
+            }
+        }
+        assert_eq!(mat_mul(&a, &b, 3), want);
+    }
+
+    #[test]
+    fn inverse_inverts_and_refuses_singular() {
+        let a = [2.0, 1.0, 0.5, 1.0, 3.0, -1.0, 0.0, 2.0, 4.0];
+        let inv = inverse(&a, 3).unwrap();
+        let id = mat_mul(&a, &inv, 3);
+        for i in 0..3 {
+            for j in 0..3 {
+                assert!((id[i * 3 + j] - if i == j { 1.0 } else { 0.0 }).abs() < 1e-14);
+            }
+        }
+        assert!(inverse(&[1.0, 2.0, 3.0, 2.0, 4.0, 6.0, 0.0, 1.0, 1.0], 3).is_none());
+        assert!(inverse(&[1.0, 2.0], 2).is_none());
+    }
+
+    #[test]
+    fn cholesky_log_det_is_twice_the_half() {
+        let a = [4.0, 2.0, 0.6, 2.0, 5.0, 1.0, 0.6, 1.0, 3.0];
+        let l = cholesky(&a, 3).unwrap();
+        let half: f64 = (0..3).map(|i| l[i * 3 + i].ln()).sum();
+        assert_eq!(cholesky_log_det(&l, 3), 2.0 * half);
+        let det = 4.0 * (5.0 * 3.0 - 1.0) - 2.0 * (2.0 * 3.0 - 0.6) + 0.6 * (2.0 - 5.0 * 0.6);
+        assert!((cholesky_log_det(&l, 3) - f64::ln(det)).abs() < 1e-14);
+    }
 
     #[test]
     fn cholesky_inverse_inverts() {

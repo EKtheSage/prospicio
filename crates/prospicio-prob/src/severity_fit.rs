@@ -18,7 +18,7 @@
 //! from a central-difference Hessian in the natural parameters.
 
 use prospicio_core::{Error, Result};
-use prospicio_math::linalg::solve;
+use prospicio_math::linalg::inverse;
 use prospicio_math::optimize::{NelderMead, nelder_mead};
 use prospicio_math::special::{gamma_inc, ln_gamma, mills_ratio, norm_cdf};
 
@@ -700,17 +700,15 @@ fn covariance(family: Family, p: &[f64], data: &LargeLosses, free: &[usize]) -> 
         }
     }
     let mut cov = vec![f64::NAN; full * full];
-    for c in 0..n {
-        let mut e = vec![0.0; n];
-        e[c] = 1.0;
-        match solve(info.clone(), e, n) {
-            Some(col) if col.iter().all(|v| v.is_finite()) => {
-                for r in 0..n {
-                    cov[free[r] * full + free[c]] = col[r];
+    match inverse(&info, n) {
+        Some(inv) if inv.iter().all(|v| v.is_finite()) => {
+            for r in 0..n {
+                for c in 0..n {
+                    cov[free[r] * full + free[c]] = inv[r * n + c];
                 }
             }
-            _ => return vec![f64::NAN; full * full],
         }
+        _ => {}
     }
     cov
 }

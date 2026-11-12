@@ -15,7 +15,7 @@
 //! fitted by Gauss–Newton IRLS in `γ`.
 
 use prospicio_core::{Error, Result};
-use prospicio_math::linalg::{cholesky, cholesky_inverse, symmetric_eigenvalues};
+use prospicio_math::linalg::{cholesky, cholesky_inverse, cholesky_log_det, symmetric_eigenvalues};
 use prospicio_math::optimize::{NelderMead, brent, minimize, nelder_mead};
 use prospicio_math::special::ln_gamma;
 use prospicio_math::spline::{
@@ -1225,7 +1225,7 @@ impl Model for Gam {
             let l = cholesky(&a, p).ok_or_else(|| {
                 Error::Data("the penalized observed information is not positive definite".into())
             })?;
-            let ln_det: f64 = (0..p).map(|i| 2.0 * l[i * p + i].ln()).sum();
+            let ln_det = cholesky_log_det(&l, p);
             let ln_s = ln_pseudo_det(lambdas);
             let v = |phi: f64| -> f64 {
                 let ls = saturated_log_likelihood(glm.family, y, w, phi).unwrap_or(f64::NAN);
