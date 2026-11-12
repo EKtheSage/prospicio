@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Excess-layer development from a ground-up triangle
 # (docs/design/reserving-excess.md, PR 3). The Rust core is checked against
@@ -8,25 +9,7 @@ suppressMessages(library(prospicio))
 # the same numbers as python/tests/test_reserving_excess.py, and check the
 # binding's arguments and errors.
 
-near <- function(a, b, tol = 1e-11) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), tol), call. = FALSE)
-  }
-}
-
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
+near <- near_abs(1e-11, same_length = TRUE, unname = TRUE)
 
 # The ultimate claims 450, 1,687.5, 1,125 and 2,250 times the scale, each
 # with probability 1/4, as a grid of step 112.5 times the scale.

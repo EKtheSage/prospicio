@@ -15,10 +15,8 @@ in validation/tests/reserving_bayes_bf_one_year.rs. ``Meyers.one_year`` and
 validation/tests/reserving_meyers_one_year.rs.
 """
 
-import csv
 import math
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -37,8 +35,8 @@ from prospicio.reserving import (
     OdpBootstrap,
     Triangle,
 )
+from helpers import dataset
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 
 N_SIMS = 2000
 
@@ -47,16 +45,6 @@ TINY = dict(
     development=[12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
 )
 PAID = [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0]
-
-
-def dataset(name):
-    with open(VALIDATION / "data" / f"{name}.csv", newline="") as f:
-        rows = list(csv.DictReader(line for line in f if not line.startswith("#")))
-    return Triangle.from_long(
-        origin=[int(r["origin"]) for r in rows],
-        development=[int(r["development"]) for r in rows],
-        values={"values": [float(r["value"]) for r in rows]},
-    )
 
 
 def tiny(keys=False):

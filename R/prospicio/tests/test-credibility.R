@@ -1,7 +1,7 @@
 library(prospicio)
 source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
-near <- function(a, b, tol) stopifnot(all(abs(a - b) <= tol * pmax(1, abs(b))))
+near <- near_rel(floor = 1)
 
 # Limited fluctuation: 1,082 claims at 90% within 5%.
 s <- credibility_standard(0.90, 0.05, cv = 2)

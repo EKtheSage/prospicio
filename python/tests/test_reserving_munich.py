@@ -5,9 +5,7 @@ against R ChainLadder and chainladder-python in
 arguments, results, frames and errors against the same references through
 Python."""
 
-import csv
 import math
-from pathlib import Path
 
 import pytest
 
@@ -18,13 +16,7 @@ from prospicio.reserving import (
     MunichFit,
     Triangle,
 )
-
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
-
-
-def read_csv(path):
-    with open(path, newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
+from helpers import VALIDATION, read_csv
 
 
 ROWS = read_csv(VALIDATION / "data" / "mcl.csv")

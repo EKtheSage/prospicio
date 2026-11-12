@@ -5,9 +5,7 @@ Rust core is checked against chainladder-python in
 arguments, properties, repr and errors, and the same RAA numbers through
 Python."""
 
-import csv
 import math
-from pathlib import Path
 
 import pytest
 
@@ -22,24 +20,14 @@ from prospicio.reserving import (
     OdpBootstrap,
     Triangle,
 )
+from helpers import VALIDATION, dataset, read_csv
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 REFERENCE = VALIDATION / "reference" / "reserving_averages_python.csv"
-
-
-def read_csv(path):
-    with open(path, newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
 
 
 @pytest.fixture(scope="module")
 def raa():
-    rows = read_csv(VALIDATION / "data" / "raa.csv")
-    return Triangle.from_long(
-        origin=[int(r["origin"]) for r in rows],
-        development=[int(r["development"]) for r in rows],
-        values={"values": [float(r["value"]) for r in rows]},
-    )
+    return dataset("raa")
 
 
 def settings(method):

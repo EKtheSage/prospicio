@@ -8,28 +8,8 @@ source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE)
 # the same R ChainLadder reference file, and against MunichChainLadder()
 # itself when ChainLadder is installed.
 
-near <- function(a, b, rel = 1e-12, abs = 1e-9) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= pmax(rel * abs(b), abs))) {
-    stop(sprintf("got %s, want %s", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " ")), call. = FALSE)
-  }
-}
+near <- near_rel(1e-12, abs = 1e-9, floor = 0, same_length = TRUE, unname = TRUE)
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
-
-# Tests run from the repository root (CI and `cargo xtask r`).
-validation <- function(...) file.path("validation", ...)
 long <- utils::read.csv(validation("data", "mcl.csv"), comment.char = "#")
 mcl <- triangle(long, "origin", "development", c("paid", "incurred"))
 lines <- grep("^#", readLines(validation("reference", "reserving_munich_r.csv")),

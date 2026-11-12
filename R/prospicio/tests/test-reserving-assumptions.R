@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Mack's calendar-year effect and development-factor correlation tests
 # (Mack 1994, appendices H and G; docs/design/reserving-v02.md, decision
@@ -7,28 +8,8 @@ suppressMessages(library(prospicio))
 # binding's arguments, results, print, summary and errors against the same
 # R ChainLadder reference file.
 
-near <- function(a, b, rel = 1e-12, abs = 1e-15) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= pmax(rel * abs(b), abs))) {
-    stop(sprintf("got %s, want %s", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " ")), call. = FALSE)
-  }
-}
+near <- near_rel(1e-12, abs = 1e-15, floor = 0, same_length = TRUE, unname = TRUE)
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
-
-# Tests run from the repository root (CI and `cargo xtask r`).
-validation <- function(...) file.path("validation", ...)
 load_triangle <- function(name) {
   long <- utils::read.csv(validation("data", paste0(name, ".csv")), comment.char = "#")
   triangle(long, "origin", "development", "value")

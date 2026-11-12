@@ -5,9 +5,7 @@
 bindings' arguments, results, repr and errors against the same R
 reference through Python."""
 
-import csv
 import math
-from pathlib import Path
 
 import pytest
 
@@ -19,13 +17,7 @@ from prospicio.reserving import (
     calendar_year_effect,
     development_correlation,
 )
-
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
-
-
-def read_csv(path):
-    with open(path, newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
+from helpers import VALIDATION, read_csv
 
 
 def load(name):

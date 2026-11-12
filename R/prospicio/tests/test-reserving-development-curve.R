@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Development curves over every age (`development_curve()`,
 # docs/design/reserving-v02.md, decision 31, issue #556). The Rust core is
@@ -6,28 +7,8 @@ suppressMessages(library(prospicio))
 # these tests check the binding's arguments, the same reference rows and
 # the fitted pattern in the chain ladder.
 
-near <- function(a, b, rel = 1e-12) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), rel), call. = FALSE)
-  }
-}
+near <- near_rel(1e-12, same_length = TRUE, unname = TRUE)
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
-
-# Tests run from the repository root (CI and `cargo xtask r`).
-validation <- function(...) file.path("validation", ...)
 read_long <- function(name) utils::read.csv(validation("data", paste0(name, ".csv")), comment.char = "#")
 load_triangle <- function(name) triangle(read_long(name), "origin", "development", "value")
 tris <- list(raa = load_triangle("raa"), genins = load_triangle("genins"))

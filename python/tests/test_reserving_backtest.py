@@ -6,9 +6,7 @@ the tables, the models it accepts, the diagnostics of the samplers, the
 reproducibility by seed and the errors.
 """
 
-import csv
 import math
-from pathlib import Path
 
 import pytest
 
@@ -21,8 +19,8 @@ from prospicio.reserving import (
     Triangle,
     diagonal_backtest,
 )
+from helpers import dataset, data_rows
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 
 METRICS = [
     "crps",
@@ -38,25 +36,15 @@ METRICS = [
 TINY = dict(chains=1, tune=40, draws=40)
 
 
-def rows_of(name):
-    with open(VALIDATION / "data" / f"{name}.csv", newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
-
-
 @pytest.fixture(scope="module")
 def raa():
-    rows = rows_of("raa")
-    return Triangle.from_long(
-        origin=[int(r["origin"]) for r in rows],
-        development=[int(r["development"]) for r in rows],
-        values={"values": [float(r["value"]) for r in rows]},
-    )
+    return dataset("raa")
 
 
 @pytest.fixture(scope="module")
 def comauto():
     """Group 353's upper triangle, as Meyers fits it, and its premium."""
-    rows = rows_of("clrd_comauto_353")
+    rows = data_rows("clrd_comauto_353")
     upper = [r for r in rows if int(r["origin"]) - 1988 + int(r["development"]) // 12 <= 10]
     tri = Triangle.from_long(
         origin=[int(r["origin"]) for r in upper],

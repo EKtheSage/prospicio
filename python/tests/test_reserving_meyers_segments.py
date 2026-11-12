@@ -11,15 +11,14 @@ replay by seed, the diagnostics warning and the errors, on the CLRD lines
 
 import csv
 import warnings
-from pathlib import Path
 
 import pytest
 
 from prospicio.distributions import PredictiveDistribution
 from prospicio.models import Elpd
 from prospicio.reserving import ChainLadderFit, Meyers, MeyersFits, Triangle
+from helpers import VALIDATION, spearman
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 
 N_SIMS = 4000
 
@@ -62,24 +61,6 @@ def line_totals(pd):
         for name, v in zip(comps, row):
             totals[name][row_i] += v
     return [totals[n] for n in names]
-
-
-def ranks(xs):
-    order = sorted(range(len(xs)), key=xs.__getitem__)
-    r = [0.0] * len(xs)
-    for k, i in enumerate(order):
-        r[i] = float(k)
-    return r
-
-
-def spearman(x, y):
-    rx, ry = ranks(x), ranks(y)
-    n = len(x)
-    mx, my = sum(rx) / n, sum(ry) / n
-    cov = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
-    vx = sum((a - mx) ** 2 for a in rx)
-    vy = sum((b - my) ** 2 for b in ry)
-    return cov / (vx * vy) ** 0.5
 
 
 @pytest.fixture(scope="module")

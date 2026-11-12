@@ -1,6 +1,7 @@
 library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
-near <- function(a, b, tol) stopifnot(all(abs(a - b) <= tol * pmax(1, abs(b))))
+near <- near_rel(floor = 1)
 
 # The half-month grid and trend lengths (Werner and Modlin, ch. 5 and 6).
 near(year_fraction(2013, 6, 30) - year_fraction(2011, 1, 1), 2.5, 1e-15)

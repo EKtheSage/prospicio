@@ -1,12 +1,8 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Reports the values on failure, so a CI log shows what diverged.
-near <- function(a, b, rel = 1e-12) {
-  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", format(a, digits = 17), format(b, digits = 17), rel),
-         call. = FALSE)
-  }
-}
+near <- near_rel(1e-12)
 
 # Collective model.
 sev <- pareto(1e6, 2)

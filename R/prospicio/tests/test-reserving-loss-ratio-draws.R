@@ -1,18 +1,13 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Ultimates and loss ratios per simulation (#602, reserving-v02.md decision
 # 26): element i is simulation i across origins, calls and fits with the
 # same seed, and a tower on the draws cedes what it cedes on the fit's own
 # distribution.
 
-near <- function(a, b, rel = 1e-12) {
-  if (!all(abs(a - b) <= rel * pmax(abs(b), 1))) {
-    stop(sprintf("got %s, want %s (rel %g)", format(a, digits = 17), format(b, digits = 17), rel),
-         call. = FALSE)
-  }
-}
+near <- near_rel(1e-12, floor = 1)
 
-validation <- function(...) file.path("validation", ...)
 raa_long <- utils::read.csv(validation("data", "raa.csv"), comment.char = "#")
 raa <- triangle(raa_long, "origin", "development", "value")
 

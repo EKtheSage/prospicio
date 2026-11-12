@@ -6,7 +6,6 @@ patterns."""
 
 import csv
 import math
-from pathlib import Path
 
 import pytest
 
@@ -22,29 +21,19 @@ from prospicio.reserving import (
     Triangle,
     UnderwritingBasis,
 )
+from helpers import VALIDATION, dataset, data_rows
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 N = 500
-
-
-def raa_rows():
-    with open(VALIDATION / "data" / "raa.csv", newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
 
 
 @pytest.fixture(scope="module")
 def raa():
-    rows = raa_rows()
-    return Triangle.from_long(
-        origin=[int(r["origin"]) for r in rows],
-        development=[int(r["development"]) for r in rows],
-        values={"paid": [float(r["value"]) for r in rows]},
-    )
+    return dataset("raa", key="paid")
 
 
 @pytest.fixture(scope="module")
 def two_lines():
-    rows = raa_rows()
+    rows = data_rows("raa")
     return Triangle.from_long(
         origin=[int(r["origin"]) for r in rows] * 2,
         development=[int(r["development"]) for r in rows] * 2,

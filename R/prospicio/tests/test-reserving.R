@@ -1,12 +1,8 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Reports the values on failure, so a CI log shows what diverged.
-near <- function(a, b, rel = 1e-12) {
-  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", format(a, digits = 17), format(b, digits = 17), rel),
-         call. = FALSE)
-  }
-}
+near <- near_rel(1e-12)
 
 # The error message of `expr`, which must fail.
 error_of <- function(expr) {
@@ -18,15 +14,6 @@ error_of <- function(expr) {
   msg
 }
 
-expect_error_like <- function(expr, pattern) {
-  msg <- error_of(expr)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
-
-# Tests run from the repository root (CI and `cargo xtask r`).
-validation <- function(...) file.path("validation", ...)
 read_long <- function(name) utils::read.csv(validation("data", paste0(name, ".csv")), comment.char = "#")
 load_triangle <- function(name) triangle(read_long(name), "origin", "development", "value")
 

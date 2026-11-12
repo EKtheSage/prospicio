@@ -3,36 +3,23 @@
 origins, calls and fits with the same seed, and a tower on the draws cedes
 what it cedes on the fit's own distribution."""
 
-import csv
-from pathlib import Path
 
 import pytest
 
 from prospicio.distributions import PredictiveDistribution
 from prospicio.reinsurance import Layer, Tower
 from prospicio.reserving import BayesOdp, MackBootstrap, OdpBootstrap, Triangle
-
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
-
-
-def raa_rows():
-    with open(VALIDATION / "data" / "raa.csv", newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
+from helpers import dataset, data_rows
 
 
 @pytest.fixture(scope="module")
 def raa():
-    rows = raa_rows()
-    return Triangle.from_long(
-        origin=[int(r["origin"]) for r in rows],
-        development=[int(r["development"]) for r in rows],
-        values={"paid": [float(r["value"]) for r in rows]},
-    )
+    return dataset("raa", key="paid")
 
 
 @pytest.fixture(scope="module")
 def two_lines():
-    rows = raa_rows()
+    rows = data_rows("raa")
     return Triangle.from_long(
         origin=[int(r["origin"]) for r in rows] * 2,
         development=[int(r["development"]) for r in rows] * 2,

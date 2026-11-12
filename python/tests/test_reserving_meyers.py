@@ -9,15 +9,14 @@ warning and the errors, on Meyers' group 353 Commercial Auto data.
 
 import csv
 import warnings
-from pathlib import Path
 
 import pytest
 
 from prospicio.distributions import PredictiveDistribution
 from prospicio.models import Elpd
 from prospicio.reserving import ChainLadderFit, Meyers, MeyersFit, Triangle
+from helpers import VALIDATION
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 
 # The default chains (4 x 2,000 draws) take under a second per fit in a
 # release build and pass every diagnostic on group 353.

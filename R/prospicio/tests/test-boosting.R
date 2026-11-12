@@ -1,12 +1,7 @@
 library(prospicio)
 source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
-near <- function(a, b, rel = 1e-10) {
-  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " ")), call. = FALSE)
-  }
-}
+near <- near_rel(1e-10)
 
 # simulate_from_means() needs no engine.
 pd <- simulate_from_means("gamma", c(100, 200), n_sims = 20000, seed = 2, dispersion = 0.25)

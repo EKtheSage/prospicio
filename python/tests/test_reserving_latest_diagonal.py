@@ -10,7 +10,6 @@ tests reproduce their numbers through the bindings."""
 import csv
 import math
 from datetime import date
-from pathlib import Path
 
 import pytest
 
@@ -28,8 +27,7 @@ from prospicio.reserving import (
     TailCurve,
     Triangle,
 )
-
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
+from helpers import VALIDATION
 
 
 def close(found, expected, rel=1e-12, abs_=0.0):

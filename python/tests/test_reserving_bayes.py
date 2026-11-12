@@ -5,31 +5,19 @@ these tests check the binding: settings, the fit's fields and frames,
 replay by seed, the diagnostics warning and the errors.
 """
 
-import csv
 import warnings
-from pathlib import Path
 
 import pytest
 
 from prospicio.distributions import PredictiveDistribution
 from prospicio.models import Elpd
 from prospicio.reserving import BayesOdp, BayesOdpFit, ChainLadderFit, OdpBootstrap, Triangle
+from helpers import dataset
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 
 # The default chains (4 x 1,000 draws) take well under a second on GenIns
 # in a release build and pass every diagnostic; shorter ones need not.
 QUICK = dict(n_sims=2000)
-
-
-def dataset(name):
-    with open(VALIDATION / "data" / f"{name}.csv", newline="") as f:
-        rows = list(csv.DictReader(line for line in f if not line.startswith("#")))
-    return Triangle.from_long(
-        origin=[int(r["origin"]) for r in rows],
-        development=[int(r["development"]) for r in rows],
-        values={"values": [float(r["value"]) for r in rows]},
-    )
 
 
 @pytest.fixture(scope="module")

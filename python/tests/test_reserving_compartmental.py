@@ -13,7 +13,6 @@ outstanding = incurred - paid, direct premium).
 import csv
 import math
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -27,8 +26,8 @@ from prospicio.reserving import (
     Triangle,
     diagonal_backtest,
 )
+from helpers import VALIDATION
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 GM = CompartmentalPriors.gesmann_morris()
 
 # The default chains (4 x 2,000 draws) take about 5 seconds in a release

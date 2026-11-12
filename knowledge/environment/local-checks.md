@@ -5,7 +5,7 @@ description: What runs locally before a push, what cannot, how to install R and 
 tags: [environment, ci, bindings, r, python]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-06T18:30:00Z }
-updated: { by: claude-code/cloud-session, at: 2026-11-11T00:00:00Z }
+updated: { by: claude-code/cloud-session, at: 2026-11-12T00:00:00Z }
 stale_after: 2027-01-05T00:00:00Z
 sources:
   - id: agents
@@ -32,6 +32,21 @@ sources:
   the parity blocks guarded by actuar, glmnet, statmod, ChainLadder,
   dglm, posterior or loo never ran in CI, which installed none of them;
   the nightly run now installs them.
+
+* Shared test helpers (#845): `R/prospicio/tests/helper.R`, sourced by
+  every R test file, holds `with_package()`, `expect_error_like()`,
+  `with_warnings()`, `validation()` and the two factories each file takes
+  its `near()` from: the 38 files had defined `near()` 19 ways (relative
+  or absolute, floors of 1e-300, 1 or 0 under |b|, an absolute floor,
+  exact equality allowed, lengths checked), and
+  `near_rel(rel, abs, floor, exact, same_length, unname)` and
+  `near_abs(tol, same_length, unname)` reproduce each one; a grid of
+  147,074 cases (zeros, NaN, Inf, near misses, recycled lengths, names)
+  gave the same pass or fail for every file's old and new `near()`.
+  `test-option-names.R` keeps its own `expect_error_like()`, which matches
+  a regular expression, not fixed text. `python/tests/helpers.py` holds
+  `VALIDATION`, `read_csv`, `data_rows`, `dataset`, `ranks`, `pearson` and
+  `spearman`; the four files' `close()` keep their own tolerance rules.
 
 # When the container has no R or uv
 

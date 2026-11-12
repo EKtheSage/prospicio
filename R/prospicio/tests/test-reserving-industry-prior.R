@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # industry_prior(), pattern_prior() and bayes_bf_industry(): the industry
 # prior for the Bayesian BF from other companies' triangles
@@ -8,23 +9,7 @@ suppressMessages(library(prospicio))
 # on four companies with exact cells, whose prior has a closed form, the same
 # numbers Python checks (python/tests/test_reserving_industry_prior.py).
 
-near <- function(a, b, tol) {
-  if (length(a) != length(b) || !all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", paste(format(a, digits = 17), collapse = ", "),
-                 paste(format(b, digits = 17), collapse = ", "), tol), call. = FALSE)
-  }
-}
-
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
+near <- near_abs(same_length = TRUE)
 
 check <- function(ok, what) if (!isTRUE(ok)) stop(what, call. = FALSE)
 

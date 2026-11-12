@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # compartmental_candidate() in diagonal_backtest(), and
 # compartmental_outstanding_backtest() (docs/design/reserving-compartmental.md,
@@ -9,23 +10,7 @@ suppressMessages(library(prospicio))
 # the two tables, replay by seed and the errors. Model 2 is left to the Rust
 # validation (its sampler is too slow for a test).
 
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
-
-near <- function(a, b, tol) {
-  if (!all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", format(a, digits = 17), format(b, digits = 17), tol),
-         call. = FALSE)
-  }
-}
+near <- near_abs()
 
 # Tests run from the repository root (CI and `cargo xtask r`). The papers'
 # training triangle (cells at calendar years up to 1996, and accident year

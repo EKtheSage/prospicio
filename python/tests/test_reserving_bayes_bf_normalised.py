@@ -12,7 +12,6 @@ with its prior ultimates as the exposure.
 import csv
 import math
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -27,8 +26,8 @@ from prospicio.reserving import (
     ChainLadderFit,
     Triangle,
 )
+from helpers import VALIDATION
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 
 QUICK = dict(n_sims=2000)
 

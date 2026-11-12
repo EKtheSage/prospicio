@@ -13,7 +13,6 @@ docs/design/reserving-bayes.md, #518).
 
 import csv
 import math
-from pathlib import Path
 
 import pytest
 
@@ -27,8 +26,8 @@ from prospicio.reserving import (
     Triangle,
     layer_share,
 )
+from helpers import VALIDATION
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 SHARE = 0.25
 
 

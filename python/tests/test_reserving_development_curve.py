@@ -5,9 +5,7 @@ is checked against R's ``lm`` and ``nls`` in
 arguments, the same reference rows and the fitted pattern in the chain
 ladder."""
 
-import csv
 import math
-from pathlib import Path
 
 import pytest
 
@@ -17,25 +15,10 @@ from prospicio.reserving import (
     DevelopmentCurveFit,
     Mack,
     TailCurve,
-    Triangle,
 )
+from helpers import VALIDATION, dataset, read_csv
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 SHAPES = ["exponential", "inverse_power", "hoerl", "sherman", "loglogistic", "weibull"]
-
-
-def read_csv(path):
-    with open(path, newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
-
-
-def dataset(name):
-    rows = read_csv(VALIDATION / "data" / f"{name}.csv")
-    return Triangle.from_long(
-        origin=[int(r["origin"]) for r in rows],
-        development=[int(r["development"]) for r in rows],
-        values={"values": [float(r["value"]) for r in rows]},
-    )
 
 
 @pytest.fixture(scope="module")

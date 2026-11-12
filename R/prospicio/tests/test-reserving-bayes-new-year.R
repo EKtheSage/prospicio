@@ -1,20 +1,10 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # bayes_new_year(), the posterior predictive of a new underwriting year
 # (docs/design/reserving-bayes.md, decision 28, issue #598). The exact
 # distributions are checked in validation/tests/reserving_bayes_new_year.rs;
 # these tests check the binding on Meyers' group 353 Commercial Auto triangle.
-
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop("expected an error", call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`).
 rows <- utils::read.csv(file.path("validation", "data", "clrd_comauto_353.csv"),

@@ -4,7 +4,6 @@ a subclass of ``ValueError``, raised where the setting is chosen when it can
 be, and a plain ``ValueError`` for a failure on the data."""
 
 import csv
-from pathlib import Path
 
 import pytest
 
@@ -20,19 +19,12 @@ from prospicio.reserving import (
     OdpBootstrap,
     Triangle,
 )
-
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
+from helpers import VALIDATION, dataset
 
 
 @pytest.fixture(scope="module")
 def raa():
-    with open(VALIDATION / "data" / "raa.csv", newline="") as f:
-        rows = list(csv.DictReader(line for line in f if not line.startswith("#")))
-    return Triangle.from_long(
-        origin=[int(r["origin"]) for r in rows],
-        development=[int(r["development"]) for r in rows],
-        values={"values": [float(r["value"]) for r in rows]},
-    )
+    return dataset("raa")
 
 
 @pytest.fixture(scope="module")

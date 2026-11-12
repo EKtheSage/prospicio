@@ -12,7 +12,6 @@ by seed and the errors.
 
 import csv
 import math
-from pathlib import Path
 
 import pytest
 
@@ -24,8 +23,7 @@ from prospicio.reserving import (
     NewYear,
     Triangle,
 )
-
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
+from helpers import VALIDATION
 
 
 def comauto():

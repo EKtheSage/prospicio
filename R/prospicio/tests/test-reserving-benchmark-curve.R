@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # A growth curve fitted to a benchmark pattern (`benchmark_curve()`,
 # docs/design/reserving-v02.md, decision 23). The Rust core is checked
@@ -6,25 +7,7 @@ suppressMessages(library(prospicio))
 # these tests check the binding's arguments, the same reference values and
 # the pattern in the chain ladder and the Bornhuetter-Ferguson method.
 
-near <- function(a, b, rel = 1e-12) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), rel), call. = FALSE)
-  }
-}
-
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
+near <- near_rel(1e-12, same_length = TRUE, unname = TRUE)
 
 ages <- seq(12, 120, by = 12)
 bench <- stats::setNames(c(0.18, 0.47, 0.66, 0.78, 0.855, 0.90, 0.93, 0.951, 0.965, 0.975), ages)

@@ -17,7 +17,6 @@ import csv
 import math
 import time
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -30,8 +29,8 @@ from prospicio.reserving import (
     Triangle,
     diagonal_backtest,
 )
+from helpers import VALIDATION
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 GM = CompartmentalPriors.gesmann_morris()
 
 N_SIMS = 400

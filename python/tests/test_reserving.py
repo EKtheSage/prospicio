@@ -1,8 +1,6 @@
-import csv
 import datetime
 import math
 import re
-from pathlib import Path
 
 import pytest
 
@@ -34,8 +32,8 @@ from prospicio.reserving import (
     TailLogLinear,
     Triangle,
 )
+from helpers import VALIDATION, dataset, pearson, read_csv, spearman
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 
 # Reference method -> (average, sigma_interpolation), as in
 # validation/tests/reserving.rs.
@@ -47,20 +45,6 @@ METHODS = {
     "mack_alpha2": ("regression", "log-linear"),
     "mack_sigma_mack": ("volume", "mack"),
 }
-
-
-def read_csv(path):
-    with open(path, newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
-
-
-def dataset(name):
-    rows = read_csv(VALIDATION / "data" / f"{name}.csv")
-    return Triangle.from_long(
-        origin=[int(r["origin"]) for r in rows],
-        development=[int(r["development"]) for r in rows],
-        values={"values": [float(r["value"]) for r in rows]},
-    )
 
 
 @pytest.fixture(scope="module")
@@ -2083,26 +2067,6 @@ def clrd_lines(pairs, shift=None):
 def line_totals(pd):
     by = pd.aggregate(["lob"]).draw_matrix()
     return [[row[j] for row in by] for j in range(len(by[0]))]
-
-
-def pearson(x, y):
-    n = len(x)
-    mx, my = sum(x) / n, sum(y) / n
-    sxy = sum((a - mx) * (b - my) for a, b in zip(x, y))
-    sxx = sum((a - mx) ** 2 for a in x)
-    syy = sum((b - my) ** 2 for b in y)
-    return sxy / math.sqrt(sxx * syy)
-
-
-def spearman(x, y):
-    def ranks(v):
-        order = sorted(range(len(v)), key=v.__getitem__)
-        r = [0.0] * len(v)
-        for k, i in enumerate(order):
-            r[i] = float(k)
-        return r
-
-    return pearson(ranks(x), ranks(y))
 
 
 def test_synchronized_identical_lines_move_together():

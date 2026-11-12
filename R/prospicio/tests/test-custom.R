@@ -1,11 +1,7 @@
 library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
-near <- function(a, b, rel) {
-  if (!all(abs(a - b) <= rel * abs(b))) {
-    stop(sprintf("got %s, want %s", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " ")), call. = FALSE)
-  }
-}
+near <- near_rel(floor = 0)
 
 ln <- lognormal_from_mean_cv(1000, 1)
 for (q in list(NULL, function(p) quantile(ln, p))) {

@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # The latest diagonal on its own (a latest valuation) projected with a
 # pattern from elsewhere (docs/design/reserving-v02.md, decisions 16 to 19,
@@ -9,25 +10,7 @@ suppressMessages(library(prospicio))
 # reserving_diagonal_segments.rs; these tests reproduce their numbers
 # through the binding, as the Python tests do.
 
-near <- function(a, b, rel = 1e-12) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(a == b | abs(a - b) <= rel * abs(b))) {
-    stop(sprintf("got %s, want %s (rel %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), rel), call. = FALSE)
-  }
-}
-
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
+near <- near_rel(1e-12, floor = 0, exact = TRUE, same_length = TRUE, unname = TRUE)
 
 root <- if (dir.exists("validation")) "validation" else file.path("..", "..", "..", "validation")
 read_rows <- function(...) {

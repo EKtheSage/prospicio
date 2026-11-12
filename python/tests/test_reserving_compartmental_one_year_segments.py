@@ -14,7 +14,6 @@ warnings and the errors.
 import csv
 import math
 import warnings
-from pathlib import Path
 
 import pytest
 
@@ -25,8 +24,8 @@ from prospicio.reserving import (
     CompartmentalPriors,
     Triangle,
 )
+from helpers import VALIDATION, spearman
 
-VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 GM = CompartmentalPriors.gesmann_morris()
 GM2 = CompartmentalPriors.gesmann_morris_2()
 
@@ -71,23 +70,6 @@ def totals_by_segment(pd):
         for name, v in zip(comps, row):
             totals[name][row_i] += v
     return [totals[n] for n in names]
-
-
-def spearman(x, y):
-    def ranks(xs):
-        order = sorted(range(len(xs)), key=xs.__getitem__)
-        r = [0.0] * len(xs)
-        for k, i in enumerate(order):
-            r[i] = float(k)
-        return r
-
-    rx, ry = ranks(x), ranks(y)
-    n = len(x)
-    mx, my = sum(rx) / n, sum(ry) / n
-    cov = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
-    vx = sum((a - mx) ** 2 for a in rx)
-    vy = sum((b - my) ** 2 for b in ry)
-    return cov / (vx * vy) ** 0.5
 
 
 def view(tri, **settings):

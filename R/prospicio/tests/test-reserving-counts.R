@@ -1,4 +1,5 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Methods on claim counts (docs/design/reserving-v02.md, decisions 35 and 36):
 # frequency-severity, disposal rates, case outstanding development and the
@@ -8,25 +9,7 @@ suppressMessages(library(prospicio))
 # the same numbers as python/tests/test_reserving_counts.py, and check the
 # binding's arguments and errors.
 
-near <- function(a, b, tol = 1e-9) {
-  a <- unname(a)
-  b <- unname(b)
-  if (length(a) != length(b) || !all(abs(a - b) <= tol)) {
-    stop(sprintf("got %s, want %s (tol %g)", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " "), tol), call. = FALSE)
-  }
-}
-
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = conditionMessage)
-  if (is.null(msg)) stop(sprintf("expected an error mentioning %s", shQuote(pattern)), call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
+near <- near_abs(1e-9, same_length = TRUE, unname = TRUE)
 
 find_data <- function() {
   dir <- getwd()

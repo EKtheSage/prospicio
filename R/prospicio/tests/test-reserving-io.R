@@ -1,23 +1,11 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Triangles read from files (docs/design/triangle.md, decision 6): CSV and
 # Excel through the Rust readers, and Schedule P from a file in the CAS loss
 # reserve database layout. The Rust core is checked in
 # crates/prospicio-reserving/src/io.rs and validation/tests/reserving_io.rs;
 # python/tests/test_reserving_io.py checks the same files.
-
-validation <- function(...) file.path("validation", ...)
-
-expect_error_like <- function(expr, pattern) {
-  msg <- tryCatch({
-    expr
-    NULL
-  }, error = function(e) conditionMessage(e))
-  if (is.null(msg)) stop("expected an error matching ", pattern, call. = FALSE)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not contain %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 same_cells <- function(a, b) {
   stopifnot(identical(a@origins, b@origins), identical(a@development, b@development),

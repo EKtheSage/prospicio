@@ -1,11 +1,7 @@
 library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
-near <- function(a, b, tol = 1e-12) {
-  if (!all(abs(a - b) <= tol * pmax(abs(b), 1))) {
-    stop(sprintf("got %s, want %s", paste(format(a, digits = 17), collapse = " "),
-                 paste(format(b, digits = 17), collapse = " ")), call. = FALSE)
-  }
-}
+near <- near_rel(1e-12, floor = 1)
 fails <- function(expr) inherits(try(expr, silent = TRUE), "try-error")
 
 # Clark's workers compensation example: 750,000 xs 250,000 on four ELF
