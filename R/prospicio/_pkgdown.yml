@@ -68,6 +68,7 @@ reference:
       - pareto_fit
       - severity_fit
       - fit_curves
+      - ks_bootstrap
       - grouped_fit
       - product_limit
       - local_pareto_to_piecewise
