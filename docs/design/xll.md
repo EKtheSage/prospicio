@@ -1749,6 +1749,20 @@ real Excel.
       Copulas sheet holds a nested Gumbel of two property and two
       casualty lines, its cdf at two points and 1,000 draws.
 
+65. **Excel is only a front end to Rust** (user, 2026-11-12: "we never
+    build excel-only stuff. excel is only a frontend to rust"). A
+    worksheet function reads its arguments, calls a function of another
+    lane's crate and lays out the result; it computes nothing those crates
+    do not. When an Excel function would need a calculation the crates
+    lack, that calculation goes to the owning lane first, in Rust and so
+    in Python and R too, and the Excel function waits for it. Argument
+    parsing, defaults, validation messages and the layout of the result
+    stay in this crate. The expected multi-year commission on the annual
+    loss grid is parked on this rule, to be discussed: it needs either a
+    new calculation in `prospicio-aggregate` (the carried deficit's
+    distribution year by year on the grid) or a simulation of years from
+    the grid, and neither exists in the crates today.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -1827,9 +1841,11 @@ an XLL function (decision 4: no state) does not hold.
 ## Open (for the user)
 
 - **Next functions:** #742's batches (parity plan, group 10); further
-  functions as the user asks (vines, and the expected multi-year
-  commission on the grid, are the nearest left out; nested Archimedean
-  copulas are decision 64).
+  functions as the user asks. Vines are left out: their inputs are a
+  structure matrix and a family, rotation and parameters per edge, which a
+  sheet holds poorly, and their use is fitting, which belongs in Python and
+  R. The expected multi-year commission on the grid is parked, to be
+  discussed (decision 65). Nested Archimedean copulas are decision 64.
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and
