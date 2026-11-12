@@ -49,7 +49,13 @@ pub enum CorrelationKind {
 
 impl CorrelationKind {
     /// The normal-score correlation for this kind of matrix: the matrix
-    /// itself, or `2 sin(π ρ / 6)` entry by entry (1 stays 1).
+    /// itself, or `2 sin(π ρ / 6)` entry by entry, with a unit diagonal
+    /// kept at exactly 1.
+    ///
+    /// An off-diagonal Spearman of 1 becomes `2 sin(π / 6)`, one ulp below
+    /// 1 in floating point, so two groups asked to be perfectly
+    /// rank-correlated still give a positive definite matrix (the user's
+    /// decision of 2026-11-12, #843).
     ///
     /// ```
     /// use prospicio_prob::portfolio::CorrelationKind;
@@ -57,20 +63,31 @@ impl CorrelationKind {
     /// let r = CorrelationKind::Spearman.normal_scores(&[1.0, 0.5, 0.5, 1.0]);
     /// assert!((r[1] - 2.0 * (std::f64::consts::PI / 12.0).sin()).abs() < 1e-15);
     /// assert_eq!(r[0], 1.0);
+    /// // Perfect rank correlation off the diagonal stays positive definite.
+    /// let r = CorrelationKind::Spearman.normal_scores(&[1.0, 1.0, 1.0, 1.0]);
+    /// assert_eq!(r[0], 1.0);
+    /// assert!(r[1] < 1.0 && 1.0 - r[1] < 1e-15);
     /// ```
     pub fn normal_scores(self, correlation: &[f64]) -> Vec<f64> {
         match self {
             Self::Pearson => correlation.to_vec(),
-            Self::Spearman => correlation
-                .iter()
-                .map(|&rho| {
-                    if rho == 1.0 {
-                        1.0
-                    } else {
-                        2.0 * (std::f64::consts::PI * rho / 6.0).sin()
-                    }
-                })
-                .collect(),
+            Self::Spearman => {
+                // The diagonal of a square matrix; a vector of another
+                // length has none and is converted entry by entry.
+                let n = correlation.len().isqrt();
+                let square = n * n == correlation.len();
+                correlation
+                    .iter()
+                    .enumerate()
+                    .map(|(k, &rho)| {
+                        if square && k % (n + 1) == 0 && rho == 1.0 {
+                            1.0
+                        } else {
+                            2.0 * (std::f64::consts::PI * rho / 6.0).sin()
+                        }
+                    })
+                    .collect()
+            }
         }
     }
 }
@@ -744,6 +761,19 @@ mod tests {
         let want = 6.0 / std::f64::consts::PI * (0.4f64).asin();
         assert!((rho - want).abs() < 0.03, "{rho} vs {want}");
         assert!(r.reorder_groups("nope", &[1.0], 1).is_err());
+    }
+
+    #[test]
+    fn a_spearman_of_one_between_groups_is_accepted() {
+        let n = 2_000;
+        let pd = part("class", &[1, 2], n, 1, |i, j| {
+            ((i * [1, 7919][j]) % n) as f64
+        });
+        let s = pd
+            .reorder_groups_with("class", &[1.0, 1.0, 1.0, 1.0], CorrelationKind::Spearman, 3)
+            .unwrap();
+        let (_, got) = s.group_spearman("class").unwrap();
+        assert!(got[1] > 0.999, "{}", got[1]);
     }
 
     #[test]
