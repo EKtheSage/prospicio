@@ -1,4 +1,5 @@
 library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # -1/+1 on two levels under a gamma Theta: pi_0 = (a / (a + lambda))^a and
 # r_0 = a / (a + lambda), a = 1 / cv^2.

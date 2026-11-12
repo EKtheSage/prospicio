@@ -1,12 +1,7 @@
 suppressMessages(library(prospicio))
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 # Reports the values on failure, so a CI log shows what diverged.
-near <- function(a, b, rel = 1e-12) {
-  if (!all(abs(a - b) <= rel * pmax(abs(b), 1e-300))) {
-    stop(sprintf("got %s, want %s (rel %g)", format(a, digits = 17), format(b, digits = 17), rel),
-         call. = FALSE)
-  }
-}
 
 # The error message of `expr`, which must fail.
 error_of <- function(expr) {
@@ -18,15 +13,8 @@ error_of <- function(expr) {
   msg
 }
 
-expect_error_like <- function(expr, pattern) {
-  msg <- error_of(expr)
-  if (!grepl(pattern, msg, fixed = TRUE)) {
-    stop(sprintf("error %s does not mention %s", shQuote(msg), shQuote(pattern)), call. = FALSE)
-  }
-}
 
 # Tests run from the repository root (CI and `cargo xtask r`).
-validation <- function(...) file.path("validation", ...)
 read_long <- function(name) utils::read.csv(validation("data", paste0(name, ".csv")), comment.char = "#")
 load_triangle <- function(name) triangle(read_long(name), "origin", "development", "value")
 
@@ -48,11 +36,11 @@ stopifnot(
   identical(dim(raa@values), c(1L, 1L, 10L, 10L)),
   is.na(raa@values[1, 1, "1990", "24"])
 )
-near(raa@values[1, "value", "1981", "12"], 5012)
-near(sum(latest_diagonal(raa)), 160987)
-near(sum(latest_diagonal(tris$genins)), 34358090)
-near(sum(latest_diagonal(tris$abc)), 10221194)
-near(link_ratios(raa)@values[1, 1, "1981", "12"], 8269 / 5012)
+near(raa@values[1, "value", "1981", "12"], 5012, 1e-12)
+near(sum(latest_diagonal(raa)), 160987, 1e-12)
+near(sum(latest_diagonal(tris$genins)), 34358090, 1e-12)
+near(sum(latest_diagonal(tris$abc)), 10221194, 1e-12)
+near(link_ratios(raa)@values[1, 1, "1981", "12"], 8269 / 5012, 1e-12)
 stopifnot(!link_ratios(raa)@is_cumulative, link_ratios(raa)@shape[["development"]] == 9L)
 
 # Chain ladder and Mack against R ChainLadder: every reference row, with
@@ -109,12 +97,12 @@ for (name in names(tris)) {
   cl <- chain_ladder(tris[[name]])
   m <- mack(tris[[name]])
   stopifnot(identical(cl@ultimate, m@ultimate), identical(cl@ldf, m@chain_ladder@ldf))
-  near(m@total_cv, m@total_standard_error / m@total_reserve)
+  near(m@total_cv, m@total_standard_error / m@total_reserve, 1e-12)
   near(sum(cl@reserve), cl@total_reserve, 1e-12)
 }
 cl <- chain_ladder(raa, "value", tail = 1.05)
-near(cl@cdf[["120-Ult"]], 1.05)
-near(cl@ultimate[["1981"]], 18834 * 1.05)
+near(cl@cdf[["120-Ult"]], 1.05, 1e-12)
+near(cl@ultimate[["1981"]], 18834 * 1.05, 1e-12)
 stopifnot(identical(names(cl@ldf)[1], "12-24"), cl@alpha == 1, cl@tail == 1.05)
 df <- as.data.frame(mack(raa))
 stopifnot(identical(names(df), c("origin", "latest", "ultimate", "reserve", "process_risk",
@@ -266,7 +254,7 @@ stopifnot(identical(subset(raa)@values, raa@values), identical(aggregate(raa)@va
 # Incremental and cumulative.
 inc <- to_incremental(raa)
 stopifnot(!inc@is_cumulative)
-near(inc@values[1, 1, "1981", "24"], 8269 - 5012)
+near(inc@values[1, 1, "1981", "24"], 8269 - 5012, 1e-12)
 stopifnot(identical(to_cumulative(inc)@values, raa@values))
 inc_long <- as.data.frame(inc)
 from_inc <- triangle(inc_long, "origin", "development", "value", cumulative = FALSE)
@@ -295,7 +283,7 @@ stopifnot(
   identical(dimnames(multi@values)$index, c("auto / CA", "home / NY"))
 )
 home <- subset(multi, lob = "home", state = "NY", columns = "incurred")
-near(home@values[!is.na(home@values)], 3 * raa@values[!is.na(raa@values)])
+near(home@values[!is.na(home@values)], 3 * raa@values[!is.na(raa@values)], 1e-12)
 both <- subset(multi, state = c("NY", "CA"))
 stopifnot(identical(both@index$lob, c("auto", "home")), identical(both@keys, c("lob", "state")))
 multi_long <- as.data.frame(multi)
@@ -356,8 +344,8 @@ summed <- triangle(lob_coverage[lob_coverage$lob == "Auto", ], "year", "age", me
 for (m in measures) {
   grouped <- chain_ladder(subset(by_lob, lob = "Auto"), m)
   direct <- chain_ladder(summed, m)
-  near(grouped@ultimate, direct@ultimate)
-  near(grouped@ldf, direct@ldf)
+  near(grouped@ultimate, direct@ultimate, 1e-12)
+  near(grouped@ldf, direct@ldf, 1e-12)
 }
 # Incremental triangles are summed as cumulative values.
 stopifnot(identical(aggregate(to_incremental(lc), keep = "lob")@values, to_incremental(by_lob)@values))
@@ -384,7 +372,7 @@ for (k in seq_len(nrow(lc@index))) {
 auto_bi <- as.matrix(lc, lob = "Auto", coverage = "BI", column = "paid")
 long_lc <- as.data.frame(lc)
 row <- long_lc[long_lc$lob == "Auto" & long_lc$coverage == "BI", ][5, ]
-near(auto_bi[format(row$origin, "%Y"), as.character(row$development)], row$paid)
+near(auto_bi[format(row$origin, "%Y"), as.character(row$development)], row$paid, 1e-12)
 stopifnot(identical(unname(as.matrix(raa)), unname(raa@values[1, 1, , ])),
           identical(as.matrix(raa), as.matrix(raa, column = "value")))
 expect_error_like(as.matrix(lc, lob = "Auto", column = "paid"), "2 segments match")
@@ -407,7 +395,7 @@ stopifnot(
   all(s$cumulative)
 )
 # The latest totals are the latest diagonal's sums.
-near(s$latest, as.vector(t(apply(latest_diagonal(lc), c(1, 2), sum, na.rm = TRUE))))
+near(s$latest, as.vector(t(apply(latest_diagonal(lc), c(1, 2), sum, na.rm = TRUE))), 1e-12)
 near(summary(to_incremental(lc))$latest, s$latest, 1e-9)
 stopifnot(!any(summary(to_incremental(lc))$cumulative))
 
@@ -468,7 +456,7 @@ for (k in seq_len(nrow(lc@index))) {
             identical(seg@total_standard_error, one_m@total_standard_error),
             identical(seg@reserve, one_m@reserve))
 }
-near(cl@total_reserve, sum(cl@reserve))
+near(cl@total_reserve, sum(cl@reserve), 1e-12)
 # Long results.
 df <- as.data.frame(m)
 stopifnot(identical(names(df), c("lob", "coverage", "origin", "latest", "ultimate", "reserve",
@@ -503,7 +491,7 @@ stopifnot(identical(home_bi@reserves@dims, r@dims), nrow(home_bi@reserves@keys) 
           identical(draw_matrix(home_bi@reserves), draw_matrix(again@reserves)))
 by_lob_reserves <- aggregate(r, keep = "lob")
 stopifnot(identical(by_lob_reserves@keys$lob, c("Auto", "Home")))
-near(mean(by_lob_reserves), mean(r))
+near(mean(by_lob_reserves), mean(r), 1e-12)
 boot_totals <- totals_frame(boot_lc)
 stopifnot(identical(names(boot_totals), c("lob", "coverage", "latest", "ultimate", "reserve",
                                           "scale", "mean", "std_dev")))
@@ -527,8 +515,8 @@ stopifnot(identical(qt@origins, c("2020Q1", "2020Q2", "2020Q3", "2020Q4")),
           identical(qt@development, c(3L, 6L, 9L, 12L)))
 yt <- grain(qt, "Y", "Q")
 stopifnot(identical(yt@origins, "2020"), yt@origin_grain == "Y", yt@development_grain == "Q")
-near(yt@values[1, 1, "2020", ], c(10, 20, 30, 40))
-near(grain(qt, "Y", "Y")@values[1, 1, "2020", "12"], 40)
+near(yt@values[1, 1, "2020", ], c(10, 20, 30, 40), 1e-12)
+near(grain(qt, "Y", "Y")@values[1, 1, "2020", "12"], 40, 1e-12)
 # development_grain defaults to origin_grain.
 ya <- grain(qt, "Y")
 stopifnot(ya@development_grain == "Y", identical(ya@values, grain(qt, "Y", "Y")@values),
@@ -618,7 +606,7 @@ stopifnot(identical(dim(boot@residuals), c(10L, 10L)),
           identical(dimnames(boot@fitted)$origin, raa@origins),
           is.na(boot@residuals["1990", "24"]), is.na(boot@fitted["1990", "24"]))
 near(rowSums(boot@fitted, na.rm = TRUE), unname(boot@chain_ladder@latest), 1e-12)
-near(boot@chain_ladder@total_reserve, chain_ladder(raa)@total_reserve)
+near(boot@chain_ladder@total_reserve, chain_ladder(raa)@total_reserve, 1e-12)
 for (quantity in c("mean_total", "sd_total")) {
   row <- boot_ref[boot_ref$method == "odp_bootstrap_gamma" & boot_ref$quantity == quantity, ]
   got <- if (quantity == "mean_total") mean(boot@reserves) else sqrt(variance(boot@reserves))
@@ -830,7 +818,7 @@ stopifnot(identical(clark@n_observations, 55L), clark@origin_width == 12)
 # Every origin starts at age 0, so U = latest / G(latest age); the 1990
 # origin is at 12 months, 6 from the average date of loss.
 near(clark@expected_ultimate[["1990"]], clark@latest[["1990"]] / growth(clark, 12), 1e-12)
-near(growth(clark, c(12, 24)), c(growth(clark, 12), growth(clark, 24)))
+near(growth(clark, c(12, 24)), c(growth(clark, 12), growth(clark, 24)), 1e-12)
 near(clark@reserve, clark@ultimate - clark@latest, 1e-9)
 near(clark@total_reserve, sum(clark@reserve), 1e-12)
 near(clark@standard_error, sqrt(clark@process_risk^2 + clark@parameter_risk^2), 1e-12)
@@ -843,7 +831,7 @@ stopifnot(cc@method == "cape_cod", cc@curve == "weibull", cc@exposure[[1]] == 1e
           identical(names(cc@exposure), cc@origins),
           identical(dimnames(cc@covariance)[[1]], c("elr", "omega", "theta")),
           cc@elr > 0)
-near(cc@expected_ultimate, cc@elr * cc@exposure)
+near(cc@expected_ultimate, cc@elr * cc@exposure, 1e-12)
 stopifnot(identical(names(as.data.frame(cc))[5:6], c("exposure", "expected_ultimate")),
           all(c("elr", "ulr") %in% names(totals_frame(cc))),
           identical(as.data.frame(cc)$ulr, unname(cc@ultimate / cc@exposure)))
@@ -949,16 +937,16 @@ stopifnot(S7::S7_inherits(el, expected_loss_fit), S7::S7_inherits(bf, expected_l
           identical(bf@keys, character()), identical(dim(bf@index), c(1L, 0L)),
           identical(unname(bf@reserve), unname(bf@ultimate - bf@latest)))
 near(unname(el@ultimate), 0.7 * unname(el@exposure), 1e-15)
-near(benktander(wk, "paid", "premium", apriori = 0.7, n_iters = 10000)@ultimate, wk_cl@ultimate)
-near(bf@total_reserve, sum(bf@reserve))
+near(benktander(wk, "paid", "premium", apriori = 0.7, n_iters = 10000)@ultimate, wk_cl@ultimate, 1e-12)
+near(bf@total_reserve, sum(bf@reserve), 1e-12)
 # Cape Cod without decay keeps each origin's own loss ratio: the chain ladder.
 cc <- cape_cod(wk, "paid", "premium", trend = 0.05, decay = 0)
 stopifnot(S7::S7_inherits(cc, cape_cod_fit), S7::S7_inherits(cc@expected_loss, expected_loss_fit),
           identical(cc@expected_loss@apriori, cc@apriori),
           identical(cc@trended_apriori[["1997"]], cc@apriori[["1997"]]),
           identical(cc@chain_ladder@ultimate, wk_cl@ultimate))
-near(cc@ultimate, wk_cl@ultimate)
-near(cc@trended_apriori[["1988"]] / cc@apriori[["1988"]], 1.05^9)
+near(cc@ultimate, wk_cl@ultimate, 1e-12)
+near(cc@trended_apriori[["1988"]] / cc@apriori[["1988"]], 1.05^9, 1e-12)
 # Settings reach Rust: the development pattern and Cape Cod's decay.
 simple <- bornhuetter_ferguson(wk, "paid", "premium", apriori = 0.7, average = "simple", tail = 1.01)
 stopifnot(identical(simple@ldf, chain_ladder(wk, "paid", average = "simple")@ldf),

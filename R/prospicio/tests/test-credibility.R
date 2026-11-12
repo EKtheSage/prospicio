@@ -1,18 +1,17 @@
 library(prospicio)
 source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
-near <- function(a, b, tol) stopifnot(all(abs(a - b) <= tol * pmax(1, abs(b))))
 
 # Limited fluctuation: 1,082 claims at 90% within 5%.
 s <- credibility_standard(0.90, 0.05, cv = 2)
-near(s[["frequency"]], (qnorm(0.95) / 0.05)^2, 1e-13)
-near(s[["pure_premium"]], 5 * s[["frequency"]], 1e-13)
-near(limited_fluctuation_credibility(s[["frequency"]] / 4, s[["frequency"]]), 0.5, 1e-15)
+near_unit(s[["frequency"]], (qnorm(0.95) / 0.05)^2, 1e-13)
+near_unit(s[["pure_premium"]], 5 * s[["frequency"]], 1e-13)
+near_unit(limited_fluctuation_credibility(s[["frequency"]] / 4, s[["frequency"]]), 0.5, 1e-15)
 
 # Bühlmann on a hand case: s2 = 4, a = 8 - 4/3.
 fit <- buhlmann_straub(rbind(c(1, 2, 3), c(4, 5, 9)))
-near(fit$within_variance, 4, 1e-14)
-near(fit$between_variance, 8 - 4 / 3, 1e-14)
+near_unit(fit$within_variance, 4, 1e-14)
+near_unit(fit$between_variance, 8 - 4 / 3, 1e-14)
 
 # Bühlmann–Straub with weights and a missing cell, both estimators.
 x <- rbind(c(1, 2, NA), c(4, 5, 9), c(2, 2.5, 3))
@@ -29,7 +28,7 @@ if (with_package("actuar")) {
   r <- as.matrix(hachemeister[, 2:13]); ww <- as.matrix(hachemeister[, 14:25])
   ref <- actuar::cm(~state, hachemeister, ratios = ratio.1:ratio.12, weights = weight.1:weight.12)
   ours <- buhlmann_straub(r, ww)
-  near(ours$premiums, as.numeric(predict(ref)), 1e-12)
+  near_unit(ours$premiums, as.numeric(predict(ref)), 1e-12)
 }
 
 # Hachemeister's regression model on a hand case and against actuar's
@@ -40,13 +39,13 @@ stopifnot(identical(names(hf@collective), c("(Intercept)", "time")))
 stopifnot(identical(dim(hf@credibility), c(2L, 2L, 3L)), hf@credibility[1, 2, 1] == 0)
 hp <- predict(hf, data.frame(time = 6:7))
 stopifnot(identical(dim(hp), c(2L, 3L)), hp[1, 2] < hp[1, 1], hp[1, 1] < hp[1, 3])
-near(hp[1, ], as.numeric(hf@coefficients %*% c(1, 6)), 1e-13)
+near_unit(hp[1, ], as.numeric(hf@coefficients %*% c(1, 6)), 1e-13)
 # The core's rules (#838): a NaN n gives 0, as in Python, and the
 # Hachemeister prediction is the core's.
 stopifnot(identical(limited_fluctuation_credibility(c(NaN, -1, 1e9), 1082.4), c(0, 0, 1)))
-near(hp, cbind(1, 6:7) %*% t(hf@coefficients), 1e-13)
+near_unit(hp, cbind(1, 6:7) %*% t(hf@coefficients), 1e-13)
 h1 <- hachemeister(hx, formula = ~1, adjust_intercept = TRUE)
-near(h1@coefficients[, 1], buhlmann_straub(hx)$premiums, 1e-10)
+near_unit(h1@coefficients[, 1], buhlmann_straub(hx)$premiums, 1e-10)
 stopifnot(inherits(try(hachemeister(hx, formula = ~ I(time * 0 + 2) + time, adjust_intercept = TRUE),
                        silent = TRUE), "try-error"))
 if (with_package("actuar")) {

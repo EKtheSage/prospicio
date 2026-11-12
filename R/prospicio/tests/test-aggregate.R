@@ -1,4 +1,5 @@
 library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
 
 close <- function(got, want, rel) {
   stopifnot(all(abs(got - want) <= rel * abs(want)))

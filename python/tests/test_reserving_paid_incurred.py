@@ -12,12 +12,9 @@ import pytest
 
 from prospicio.reserving import PaidIncurredChain, PaidIncurredFit, Triangle
 
+from helpers import read_csv
+
 VALIDATION = Path(__file__).resolve().parents[2] / "validation"
-
-
-def read_csv(path):
-    with open(path, newline="") as f:
-        return list(csv.DictReader(line for line in f if not line.startswith("#")))
 
 
 def load(name):
