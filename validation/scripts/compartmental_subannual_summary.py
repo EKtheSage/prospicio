@@ -1,3 +1,9 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# [tool.uv]
+# exclude-newer = "2026-11-07T00:00:00Z"
+# ///
 """Summarises the arms of the sub-annual study.
 
 Reads the CSVs that validation/tests/reserving_compartmental_subannual.rs

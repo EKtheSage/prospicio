@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "aggregate==2.1.0",
+#     "numpy",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-10T00:00:00Z"
+# ///
 """Reference values for variable terms in the P&L ledger and for
 `pnl_program`'s premium ladder, from `aggregate` 2.1.0
 (docs/design/pnl.md, PR 6a).

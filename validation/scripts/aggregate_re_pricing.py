@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "aggregate==2.1.0",
+#     "numpy",
+#     "scipy",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-10T00:00:00Z"
+# ///
 """Reinsurance pricing reference numbers from Mildenhall's `aggregate`.
 
 Writes validation/reference/re_pricing_aggregate.csv (long format:

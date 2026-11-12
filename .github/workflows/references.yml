@@ -1,0 +1,36 @@
+# Rerun the cheap pure-Python reference generators and compare their output
+# with the committed files within each row's tolerance (#844). Weekly and on
+# demand, never on pull requests, and not a required check: a new release of
+# a reference package is the signal this job exists to give, not a fault of
+# a pull request. `pinned` runs each generator in the environment its inline
+# script metadata pins (a failure there means a committed reference no longer
+# matches its generator); `latest` runs it on the newest release of each
+# package it names (a failure there means an upstream package moved). See
+# validation/scripts/rerun_references.py for the generators and the rules.
+name: references
+
+on:
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rerun:
+    name: rerun (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [pinned, latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Rerun the weekly generators
+        run: >-
+          python3 validation/scripts/rerun_references.py
+          ${{ matrix.mode == 'latest' && '--latest' || '' }}
+          --report "$GITHUB_STEP_SUMMARY"

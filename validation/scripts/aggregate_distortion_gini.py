@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "aggregate==2.1.0",
+#     "numpy",
+#     "pandas",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-11T00:00:00Z"
+# ///
 """Regenerate validation/reference/distortion_gini_aggregate.csv.
 
     uv run --python 3.13 --with aggregate==2.1.0 \

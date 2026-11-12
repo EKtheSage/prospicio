@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy==2.4.6",
+#     "scipy==1.17.1",
+#     "statsmodels",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-23T00:00:00Z"
+# ///
 """Regenerate validation/data/stacking_lpd.csv and
 validation/reference/stacking_weights.csv.
 

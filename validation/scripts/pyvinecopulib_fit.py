@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy",
+#     "pyvinecopulib==1.0.1",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-30T00:00:00Z"
+# ///
 """Reference values for the Student t pair and for fitting pair copulas,
 from pyvinecopulib 1.0.1 (docs/design/risk.md, vine copulas; #568).
 
