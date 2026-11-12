@@ -5,4 +5,4 @@
   Archimedean copulas (Clayton or Gumbel) on a sheet, the tree as a table
   of nodes (name, parent, theta) and the node each dimension joins; the
   simulation runs asynchronously and draws what Python's
-  `NestedArchimedeanCopula.sample` draws at the same seed.
+  `NestedArchimedeanCopula.sample` draws at the same seed (#885).
