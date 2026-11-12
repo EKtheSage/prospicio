@@ -26,7 +26,7 @@ use crate::call;
 use crate::sheet::Grid;
 
 /// The exported symbols of the functions Excel calls asynchronously:
-/// every function with a `sims` argument and every MCMC fit.
+/// every function with a `sims` or `replicates` argument and every MCMC fit.
 pub const ASYNC: &[&str] = &[
     "pro_res_odp",
     "pro_res_odp_sims",
@@ -37,6 +37,7 @@ pub const ASYNC: &[&str] = &[
     "pro_res_bayes_odp",
     "pro_res_bayes_bf",
     "pro_cap_copula_sim",
+    "pro_sev_fit_ks",
 ];
 
 /// How many results are kept, and how many cells they may hold together
