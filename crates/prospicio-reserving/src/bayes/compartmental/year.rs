@@ -189,8 +189,13 @@ impl<'a> CompartmentalYear<'a> {
         }
         let n_paid = cells.len();
         let second_origins = if full.response.second { n } else { 0 };
-        for i in 0..second_origins {
-            for k in ages(i, data.latest_outstanding[i]) {
+        for (i, &latest) in data
+            .latest_outstanding
+            .iter()
+            .enumerate()
+            .take(second_origins)
+        {
+            for k in ages(i, latest) {
                 cells.push(YearCell {
                     obs: template(i, k, false),
                     before: Before::Nothing,

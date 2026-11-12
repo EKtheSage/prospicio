@@ -617,8 +617,8 @@ impl Model {
         names.extend(self.sigma_names("sigma"));
         for p in [RLR, RRF, KER, KP] {
             if lay.nat_origin[p].is_some() {
-                for j in 0..self.n_levels() {
-                    names.push(format!("{}[{}]", NATURAL[p], self.labels[j]));
+                for label in self.labels.iter().take(self.n_levels()) {
+                    names.push(format!("{}[{}]", NATURAL[p], label));
                 }
             }
         }

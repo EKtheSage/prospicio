@@ -893,11 +893,11 @@ fn zero_cells() {
                 let mut rng = StreamRng::new(BOOK_SEED, 90_000 + b);
                 let book = simulate(World::parse("m2y"), b);
                 let mut any = false;
-                for i in 0..10 {
-                    let ultimate = book.paid_mean[i][LAST - 1];
+                for (i, paid_mean) in book.paid_mean.iter().enumerate().take(10) {
+                    let ultimate = paid_mean[LAST - 1];
                     let mut before = 0.0;
                     for m in (months..=LAST - 12 * i).step_by(months) {
-                        let mean = book.paid_mean[i][m - 1];
+                        let mean = paid_mean[m - 1];
                         let lambda = payments * (mean - before) / ultimate;
                         before = mean;
                         cells += 1;

@@ -630,8 +630,7 @@ fn odp_glm_residuals_match_taylor_mcguire_chapter_6() {
         .filter(|&i| r.standardized_deviance[i].is_nan())
         .collect();
     assert_eq!(exact, [9, 54]);
-    for i in 0..55 {
-        let h = r.leverage[i];
+    for &h in r.leverage.iter().take(55) {
         assert!((0.0..=1.0 + 1e-9).contains(&h));
     }
     // The leverages add up to the 19 parameters.
