@@ -12,7 +12,9 @@
 //! reported. A loss truncated from above at `u` is conditioned on
 //! `r < X ≤ u` instead: `ln S(r)` becomes `ln(S(r) − S(u))`, and a censored
 //! loss's `ln S(y)` becomes `ln(S(y) − S(u))`. The log-likelihood is maximized by Nelder–Mead over the
-//! logarithms of the positive parameters, and the standard errors come
+//! logarithms of the positive parameters, in rounds that stop when one no
+//! longer improves it (so a fit that runs to a boundary of its family
+//! stops there), and the standard errors come
 //! from a central-difference Hessian in the natural parameters.
 
 use prospicio_core::{Error, Result};
@@ -463,6 +465,18 @@ pub fn fit_severity_with_threshold(
         }
         (false, None) => {}
     }
+    fit_body(family, data, None, true)
+}
+
+/// A body family's fit: from the family's own starts, or from `warm` alone
+/// (a bootstrap replicate's refit from the data's estimate), with the
+/// covariance of the parameters or, without `standard_errors`, NaN.
+fn fit_body(
+    family: Family,
+    data: &LargeLosses,
+    warm: Option<&[f64]>,
+    standard_errors: bool,
+) -> Result<SeverityFit> {
     let uncensored: Vec<(f64, f64)> = data
         .rows()
         .filter(|r| !r.2)
@@ -491,48 +505,47 @@ pub fn fit_severity_with_threshold(
         let k = (std::f64::consts::PI / (sd * 6f64.sqrt())).clamp(0.05, 20.0);
         vec![k, (lm + 0.577_215_664_901_532_9 / k).exp()]
     };
-    let starts: Vec<Vec<f64>> = match family {
-        Family::Lognormal => vec![vec![lm, sd]],
-        // The logistic on the logs: sd = π / (k √3), median e^mean.
-        Family::Loglogistic => {
-            let k = (std::f64::consts::PI / (sd * 3f64.sqrt())).clamp(0.05, 50.0);
-            vec![
-                vec![k, lm.exp()],
-                vec![2.0 * k, lm.exp()],
-                vec![0.5 * k, lm.exp()],
-            ]
-        }
-        Family::Exponential => vec![vec![exponential_mean(data, w_unc).unwrap_or(m)]],
-        Family::Pareto | Family::GenPareto => unreachable!("fitted from a threshold"),
-        Family::Gamma => vec![vec![(m * m / v).clamp(1e-3, 1e3), v / m]],
-        Family::Weibull => vec![weibull_start],
-        Family::Burr => {
-            let wb = fit_severity(Family::Weibull, data)
-                .map(|f| f.parameters)
-                .unwrap_or(weibull_start);
-            let median = lm.exp();
-            vec![
-                vec![5.0, wb[0], wb[1] * 5f64.powf(1.0 / wb[0])],
-                vec![1.0, wb[0], median],
-                vec![2.0, 1.0, median],
-            ]
-        }
-        // The scale that puts the median of the uncensored losses at
-        // their own, for a light, a middling and a heavy tail.
-        Family::Lomax => [1.2, 2.5, 8.0]
-            .iter()
-            .map(|&a| vec![a, lm.exp() / (2f64.powf(1.0 / a) - 1.0)])
-            .collect(),
+    let starts: Vec<Vec<f64>> = match (warm, family) {
+        (Some(p), _) => vec![p.to_vec()],
+        (None, family) => match family {
+            Family::Lognormal => vec![vec![lm, sd]],
+            // The logistic on the logs: sd = π / (k √3), median e^mean.
+            Family::Loglogistic => {
+                let k = (std::f64::consts::PI / (sd * 3f64.sqrt())).clamp(0.05, 50.0);
+                vec![
+                    vec![k, lm.exp()],
+                    vec![2.0 * k, lm.exp()],
+                    vec![0.5 * k, lm.exp()],
+                ]
+            }
+            Family::Exponential => vec![vec![exponential_mean(data, w_unc).unwrap_or(m)]],
+            Family::Pareto | Family::GenPareto => unreachable!("fitted from a threshold"),
+            Family::Gamma => vec![vec![(m * m / v).clamp(1e-3, 1e3), v / m]],
+            Family::Weibull => vec![weibull_start],
+            Family::Burr => {
+                let wb = fit_severity(Family::Weibull, data)
+                    .map(|f| f.parameters)
+                    .unwrap_or(weibull_start);
+                let median = lm.exp();
+                vec![
+                    vec![5.0, wb[0], wb[1] * 5f64.powf(1.0 / wb[0])],
+                    vec![1.0, wb[0], median],
+                    vec![2.0, 1.0, median],
+                ]
+            }
+            // The scale that puts the median of the uncensored losses at
+            // their own, for a light, a middling and a heavy tail.
+            Family::Lomax => [1.2, 2.5, 8.0]
+                .iter()
+                .map(|&a| vec![a, lm.exp() / (2f64.powf(1.0 / a) - 1.0)])
+                .collect(),
+        },
     };
     // Without bounds from above the exponential's maximum is in closed form.
     if let (Family::Exponential, false) = (family, data.is_truncated_above()) {
-        let parameters = starts[0].clone();
+        let parameters = vec![exponential_mean(data, w_unc).unwrap_or(m)];
         return finish(family, parameters, data, weight, true, &[0]);
     }
-    let options = NelderMead {
-        max_iterations: 40_000,
-        ..NelderMead::default()
-    };
     let objective = |u: &[f64]| {
         if u.iter().any(|v| v.abs() > 700.0) {
             return f64::NAN;
@@ -541,7 +554,7 @@ pub fn fit_severity_with_threshold(
     };
     let best = starts
         .iter()
-        .map(|s| nelder_mead(objective, &family.unconstrained(s), &options))
+        .map(|s| minimize_in_rounds(objective, &family.unconstrained(s)))
         .min_by(|a, b| a.value.total_cmp(&b.value))
         .expect("at least one start");
     if !best.value.is_finite() {
@@ -551,9 +564,52 @@ pub fn fit_severity_with_threshold(
         )));
     }
     let parameters = family.natural(&best.x);
-    let free: Vec<usize> = (0..parameters.len()).collect();
+    let free: Vec<usize> = if standard_errors {
+        (0..parameters.len()).collect()
+    } else {
+        Vec::new()
+    };
     finish(family, parameters, data, weight, best.converged, &free)
 }
+
+/// The simplex in rounds of [`ROUND`] moves, each restarted from the best
+/// point so far, up to [`MOST_MOVES`] in all. A round that meets the
+/// tolerance ends the search, as before; so does one that no longer lowers
+/// the value (by `1e-10` relative), which is how a fit that runs along a
+/// ridge to a boundary of its family stops: the gamma's shape toward 0 on
+/// losses reported above a high threshold, where the truncated gamma has a
+/// proper limit and the likelihood its supremum. A single simplex there
+/// never shrinks to the tolerance and spent all 40,000 moves, five seconds
+/// a fit.
+fn minimize_in_rounds(
+    mut objective: impl FnMut(&[f64]) -> f64,
+    start: &[f64],
+) -> prospicio_math::optimize::Minimum {
+    let round = NelderMead {
+        max_iterations: ROUND,
+        ..NelderMead::default()
+    };
+    let mut best = nelder_mead(&mut objective, start, &round);
+    let mut moves = best.iterations;
+    while !best.converged && moves < MOST_MOVES {
+        let next = nelder_mead(&mut objective, &best.x, &round);
+        moves += next.iterations;
+        let stalled = next.value >= best.value - 1e-9 * best.value.abs().max(1.0);
+        if next.value <= best.value {
+            best = next;
+        }
+        if stalled {
+            break;
+        }
+    }
+    best
+}
+
+/// The simplex moves of one round of [`minimize_in_rounds`].
+const ROUND: usize = 250;
+
+/// The most simplex moves [`minimize_in_rounds`] makes in all.
+const MOST_MOVES: usize = 40_000;
 
 /// The exponential's maximum likelihood mean with reporting thresholds and
 /// censoring, `Σ w (y − r) / Σ_uncensored w` (memorylessness), or `None`
@@ -1226,7 +1282,14 @@ pub fn ks_bootstrap(
     let replicate = |b: usize| -> Option<f64> {
         let mut rng = prospicio_core::StreamRng::new(seed, b as u64);
         let sample = replicate_losses(fit.dist(), data, &limits, &mut rng).ok()?;
-        let refit = fit_severity_with_threshold(fit.family(), &sample, fit.threshold()).ok()?;
+        // A body family refits from the data's estimate, without standard
+        // errors: a replicate's maximum is near the data's.
+        let refit = if fit.family().needs_threshold() {
+            fit_severity_with_threshold(fit.family(), &sample, fit.threshold())
+        } else {
+            fit_body(fit.family(), &sample, Some(fit.parameters()), false)
+        }
+        .ok()?;
         goodness_of_fit(refit.dist(), &sample)
             .ok()
             .map(|g| g.max_distance)

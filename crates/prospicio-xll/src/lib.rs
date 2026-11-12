@@ -2906,6 +2906,51 @@ pub static FUNCTIONS: &[Function] = &[
         run: fitting::severity_fit,
     },
     Function {
+        symbol: "pro_sev_fit_ks",
+        name: "PRO.SEV.FIT.KS",
+        help: "Each fitted family's KS distance with its classical p-value and the p-value by the parametric bootstrap, which accounts for the fit, the thresholds and censoring.",
+        args: &[
+            Arg {
+                name: "losses",
+                help: "The losses: a range; blank cells are skipped",
+            },
+            Arg {
+                name: "family",
+                help: "A family name, a range of names, or blank for every body family (with t, the Pareto families too, ranked by AIC as in \"compare\")",
+            },
+            Arg {
+                name: "t",
+                help: "The threshold of pareto and gen_pareto; adds them to a blank family",
+            },
+            Arg {
+                name: "thresholds",
+                help: "Reporting thresholds: one value or one per loss (0 if omitted)",
+            },
+            Arg {
+                name: "censored",
+                help: "TRUE where a policy limit capped the loss: one value or one per loss (FALSE if omitted)",
+            },
+            Arg {
+                name: "weights",
+                help: "Whole numbers of losses: one value or one per loss (1 if omitted)",
+            },
+            Arg {
+                name: "upper",
+                help: "Body families: truncation from above; one value or one per loss (none if omitted)",
+            },
+            Arg {
+                name: "limits",
+                help: "Policy limits a replicate loss is censored at: one value or one per loss; blank: a censored loss's own value, none for the others",
+            },
+            Arg {
+                name: "replicates",
+                help: "Bootstrap samples per family, 999 if omitted (at most 100000); the p-value's error is about sqrt(p(1-p)/replicates)",
+            },
+            SEED,
+        ],
+        run: fitting::ks,
+    },
+    Function {
         symbol: "pro_sev_fit_grouped",
         name: "PRO.SEV.FIT.GROUPED",
         help: "A body family fitted to counts of losses in size bands, by maximum likelihood or minimum chi-square: parameters, SEs, chi-square and p-value, or each band's expected count.",
