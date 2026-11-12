@@ -471,6 +471,7 @@ labelled in `companies`, with their premiums; chain its summary into
 | `PRO.SEV.STATS(family, p1, p2, [p3])` | Mean, SD and CV |
 | `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights], [upper], [points])` | Maximum likelihood fit to large losses, with goodness of fit |
 | `PRO.SEV.FIT.GROUPED(bounds, counts, family, [method], [output])` | A fit to counts in size bands |
+| `PRO.SEV.FIT.KS(losses, [family], [t], [thresholds], [censored], [weights], [upper], [limits], [replicates], [seed])` | Each fitted family's KS distance with its classical p-value and the p-value by the parametric bootstrap |
 | `PRO.SEV.FIT.LEV(sizes, lev, family, [weights], [output])` | A fit by minimum distance to empirical limited expected values |
 | `PRO.EVT.THRESHOLDS(data, [thresholds])` | Mean excess and GPD shape and scale at each threshold, with SEs |
 | `PRO.EVT.FIT(data, threshold, [probabilities])` | GPD fitted above a threshold, and the tail's VaR and TVaR |
@@ -510,6 +511,15 @@ labelled in `companies`, with their premiums; chain its summary into
   fitted severity above the lowest reporting threshold; a moment that
   diverges is the text `inf`.
   Check the upper Q-Q pairs before trusting a body family in the tail.
+- `PRO.SEV.FIT.KS`: the classical KS p-value assumes a distribution fixed
+  in advance, so for a fitted family it is too large. This function draws
+  `replicates` samples (999 by default) from each fit under the same
+  thresholds, censoring and `limits` (each loss's policy limit), refits
+  them and reports the share whose distance is at least the data's. Same
+  `family` and `t` as `"compare"`, rows in its order. It takes seconds per
+  family: lower `replicates` while exploring (the p-value's error is
+  about `sqrt(p (1 - p) / replicates)`), and give the same `seed` for the
+  same answer.
 - `PRO.SEV.FIT.GROUPED`: `bounds` has one more cell than `counts`. A
   blank last bound opens the top band.
 - EVT: pick the lowest threshold above which the shape and modified scale
