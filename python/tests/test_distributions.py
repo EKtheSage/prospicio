@@ -6,6 +6,8 @@ from scipy import stats
 
 import prospicio as ar
 
+from helpers import reference
+
 
 def test_matches_scipy():
     d = ar.distributions.Lognormal(7.0, 0.5)
@@ -52,8 +54,12 @@ def test_lognormal_severity_methods():
         assert d.lev(limit) + d.stop_loss(limit) == pytest.approx(d.mean(), rel=1e-12)
     assert d.layer(1000.0, 500.0) == pytest.approx(d.lev(1500.0) - d.lev(500.0), rel=1e-12)
     # validation/reference/layer_moments_mpmath.csv (mpmath quadrature at 30 digits).
-    assert d.layer_second_moment(4000.0, 1000.0) == pytest.approx(440441.74596208578, rel=1e-10)
-    assert d.layer_second_moment(math.inf, 3000.0) == pytest.approx(21219.202048965620, rel=1e-10)
+    def second(limit, attachment):
+        return reference("layer_moments_mpmath.csv", distribution="lognormal", params="meanlog=7.0;sdlog=0.5",
+                         quantity="layer_second_moment", arg=limit, arg2=attachment)
+
+    assert d.layer_second_moment(4000.0, 1000.0) == pytest.approx(second(4000, 1000), rel=1e-10)
+    assert d.layer_second_moment(math.inf, 3000.0) == pytest.approx(second("inf", 3000), rel=1e-10)
     # E[min(X, u)^2] in closed form.
     u = 2000.0
     z = (math.log(u) - 7.0) / 0.5
@@ -275,7 +281,9 @@ def test_more_claim_counts():
     assert zm.pmf(0) == pytest.approx(0.3)
     # aggregate 2.1.0's Poisson-inverse Gaussian, mean 10, cv 0.5.
     pig = Count.mixed_poisson(10.0, 0.5, mixing="inverse_gaussian")
-    assert pig.pmf(0) == pytest.approx(0.0030337404, abs=1e-10)
+    assert pig.pmf(0) == pytest.approx(reference(
+        "counts_aggregate.csv", distribution="mixed", params="lambda=10.0;mixing=ig;cv=0.5;shift=0.0", quantity="pmf", arg=0),
+        abs=1e-10)
     assert pig.panjer_ab() is None
     ney = Count.compound_poisson(2.0, Poisson(3.0))
     assert ney.mean() == pytest.approx(6.0)
@@ -295,13 +303,17 @@ def test_more_claim_counts():
     # The beta and Sichel mixings (validation/scripts/aggregate_mixing.py):
     # the beta by quadrature, the Sichel against aggregate 2.1.0.
     beta = Count.mixed_poisson(10.0, 0.3, mixing="beta", max=30.0)
-    assert beta.pmf(0) == pytest.approx(0.0011358609508610308, abs=1e-14)
+    assert beta.pmf(0) == pytest.approx(reference(
+        "mixing_aggregate.csv", distribution="beta", params="lambda=10.0;cv=0.3;max=30.0", quantity="pmf", arg=0), abs=1e-14)
     assert beta.gig() is None
     sichel = Count.mixed_poisson(10.0, 0.4, mixing="sichel", shape=1.5)
-    assert sichel.pmf(0) == pytest.approx(0.0016178402835267376, abs=1e-9)
+    assert sichel.pmf(0) == pytest.approx(reference(
+        "mixing_aggregate.csv", distribution="sichel", params="lambda=10.0;cv=0.4;shape=1.5", quantity="pmf", arg=0),
+        abs=1e-9)
     assert sichel.variance() == pytest.approx(10.0 + 100.0 * 0.16)
     ig = Count.mixed_poisson(10.0, 0.5, mixing="sichel_ig", f=0.3).gig()
-    assert ig["shape"] == pytest.approx(-4.5422134725837395, rel=1e-8)
+    assert ig["shape"] == pytest.approx(reference(
+        "mixing_aggregate.csv", distribution="sichel_ig", params="lambda=10.0;cv=0.5;f=0.3", quantity="shape"), rel=1e-8)
     same = Count.mixed_poisson(10.0, 0.5, mixing="sichel", skewness=3 * 0.5 / 0.7).gig()
     assert same["shape"] == pytest.approx(ig["shape"], rel=1e-12)
     with pytest.raises(ValueError, match="one of shape or skewness"):
@@ -393,10 +405,10 @@ def test_discrete():
     m = Discrete([7, 6, 5, 4, 3, 1], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
     assert m.values == [1.0, 3.0, 4.0, 5.0, 6.0, 7.0]
     assert m.mean() == pytest.approx(5.2, abs=1e-12)
-    assert m.std_dev() == pytest.approx(1.6062378404209, abs=1e-12)
-    assert m.skewness() == pytest.approx(-0.7181304929229927, abs=1e-10)
+    assert m.std_dev() == pytest.approx(reference("discrete_aggregate.csv", case="ex1", quantity="sd", arg="0.0"), abs=1e-12)
+    assert m.skewness() == pytest.approx(reference("discrete_aggregate.csv", case="ex1", quantity="skew", arg="0.0"), abs=1e-10)
     assert [m.quantile(p) for p in (0.01, 0.05, 0.5, 0.99)] == [1.0, 3.0, 6.0, 7.0]
-    assert m.tvar(0.01) == pytest.approx(5.242424242424243, abs=1e-12)
+    assert m.tvar(0.01) == pytest.approx(reference("discrete_aggregate.csv", case="ex1", quantity="tvar", arg=0.01), abs=1e-12)
     assert m.quantile_upper(1.0) is None
     assert m.cdf(4.0) == pytest.approx(0.36, abs=1e-15)
     assert m.pmf(6.0) == pytest.approx(0.3, abs=1e-15)

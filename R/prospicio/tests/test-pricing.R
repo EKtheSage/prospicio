@@ -159,10 +159,13 @@ insco <- capital_portfolio(cbind(
 ))
 stopifnot(identical(insco@totals, c(22, 28, 36, 40, 55, 65, 100)))
 np <- natural_price(insco, distortion("ccoc", 0.15))
-stopifnot(abs(np$premium[4] - 53.565217391304344) < 1e-12, max(abs(np$assets[1:3] - c(16, 20, 64))) < 1e-12)
+stopifnot(abs(np$premium[4] - reference("distortion_aggregate.csv", distribution = "insco_price",
+                                        params = "param=0.15", quantity = "ccoc")) < 1e-12, max(abs(np$assets[1:3] - c(16, 20, 64))) < 1e-12)
 ph <- calibrate_portfolio(insco, "proportional_hazard", return_on_capital = 0.15)
 lifted <- natural_price(insco, ph, p = 0.85, allocation = "lifted")
-stopifnot(max(abs(lifted$capital[1:3] - c(1.947189207380, -0.070344428313, 16.219694433834))) < 1e-6)
+lifted_q <- vapply(1:3, function(i) reference("natural_aggregate.csv", distribution = "price",
+  params = "case=insco;family=ph;param=0.7204792831878889;assets=65;allocation=lifted", quantity = sprintf("X%d.Q", i)), 0)
+stopifnot(max(abs(lifted$capital[1:3] - lifted_q)) < 1e-6)
 stopifnot(abs(sum(lifted$premium[1:3]) - lifted$premium[4]) < 1e-10)
 stopifnot(abs(sum(bodoff_allocation(insco, assets = 100)) - 100) < 1e-10)
 # The book's conventions: Pricing Insurance Risk's Example 235 with the outcome
@@ -221,10 +224,12 @@ stopifnot(inherits(try(priority_kappa(disc, "X3", assets = 90), silent = TRUE), 
 # Pricing bounds and classical principles on InsCo, against aggregate 2.1.0.
 pb <- premium_bounds(insco, 53.565217391304344, assets = 100)
 stopifnot(max(abs(pb$lower - c(13.09782608695652, 17.465726050623715, 19.25473801560758))) < 1e-9)
-stopifnot(max(abs(pb$upper - c(15.032744226390545, 20.411684782608695, 22.098038028339595))) < 1e-9)
+stopifnot(max(abs(pb$upper - c(15.032744226390545, 20.411684782608695, reference("natural_aggregate.csv",
+  distribution = "bounds", params = "case=insco;assets=100;premium=53.565217391304344", quantity = "X3.upper")))) < 1e-9)
 stopifnot(S7::S7_inherits(pb$lower_distortion[[1]], distortion))
 xs <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
-stopifnot(abs(calibrate_classical(xs, "esscher", 53.565217391304344) - 0.012851355964986997) < 1e-9)
+stopifnot(abs(calibrate_classical(xs, "esscher", 53.565217391304344) - reference("natural_aggregate.csv", distribution = "classical",
+  params = "case=insco;assets=100;premium=53.565217391304344", quantity = "Esscher")) < 1e-9)
 stopifnot(abs(classical_premium(sampled(c(0, 10)), "standard_deviation", 0.2) - 6) < 1e-15)
 # Pricing bounds for another risk, against aggregate 2.1.0's PricingBounds.
 xb <- sampled(c(22, 28, 36, 40, 40, 40, 40, 55, 65, 100))
@@ -235,18 +240,22 @@ stopifnot(S7::S7_inherits(pr$lower_distortion[[1]], distortion))
 # At P = max X (capped at 65) TVaR_1 gives max Y; aggregate 1.0.1 said 52, 2.1.0 says 64.
 stopifnot(abs(pricing_bounds(xb, list(X3 = yb), 65, assets = 65)$upper - 64) < 1e-12)
 env <- distortion_envelope(xb, 53.565217391304344, c(0.1, 0.5))
-stopifnot(max(abs(env$lower - c(0.1372282608695652, 0.5652173913043478))) < 1e-12)
+stopifnot(max(abs(env$lower - vapply(c("0.1", "0.5"), function(s) reference("bounds_aggregate.csv",
+  distribution = "envelope", params = "premium=53.565217391304344", quantity = "lower", arg = s), 0))) < 1e-12)
 stopifnot(inherits(try(pricing_bounds(xb, list(yb), 50), silent = TRUE), "try-error"))
 
 # tvar_threshold on PIR's Discrete case, aggregate 2.1.0.
-stopifnot(abs(tvar_threshold(disc, 0.9) - 0.859375) < 1e-11)
+stopifnot(abs(tvar_threshold(disc, 0.9) - reference("natural_aggregate.csv", distribution = "tvar_threshold",
+                                                    params = "case=discrete", quantity = "t", arg = "0.9")) < 1e-11)
 # Stand-alone prices and the comonotonic allocation, aggregate 2.1.0.
 sa <- price_stand_alone(disc, distortion("proportional_hazard", 0.7), p = 0.9)
 stopifnot(identical(sa$unit, c("X1", "X2", "total", "sum")),
-          all(abs(sa$premium[c(1, 3, 4)] - c(5.682435936634864, 39.27576430346102,
-                                              40.02270174816368)) < 1e-10))
+          all(abs(sa$premium[c(1, 3, 4)] - vapply(c("X1.P", "total.P", "sum.P"), function(q)
+            reference("natural_aggregate.csv", distribution = "stand_alone",
+                      params = "case=discrete;distortion=ph;shape=0.7;p=0.9", quantity = q), 0)) < 1e-10))
 co <- comonotonic_allocation(disc)
-stopifnot(abs(co$X1[co$total == 8] - 6.607142857142858) < 1e-10,
+stopifnot(abs(co$X1[co$total == 8] -
+  reference("natural_aggregate.csv", distribution = "comonotonic", params = "case=discrete", quantity = "X1", arg = "8.0")) < 1e-10,
           max(abs(co$X1 + co$X2 - co$total)) < 1e-12)
 
 # A loss distribution on a grid prices as its equally likely draws (#204).
