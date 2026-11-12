@@ -19,7 +19,8 @@ tree is the same afterwards:
 
 Some generators also rewrite an input under `validation/data/` (the
 stacking scripts write the log densities they then weight); every file
-there must come back with the same bytes, and is put back too.
+there must come back the same (a CSV's numbers within 1e-9 relative, as
+another CSV above), and is put back too.
 
     python3 validation/scripts/rerun_references.py               # the weekly set, pinned
     python3 validation/scripts/rerun_references.py --latest      # the weekly set, newest releases
@@ -193,6 +194,20 @@ def compare_plain_rows(old: list[list[str]], new: list[list[str]]) -> list[str]:
     return diffs
 
 
+def compare_input(path: Path, old: bytes, new: bytes) -> list[str]:
+    """An input under validation/data/ that a generator rewrote: a CSV's
+    numbers within 1e-9 relative, any other file byte for byte."""
+    old, new = old.replace(b"\r\n", b"\n"), new.replace(b"\r\n", b"\n")
+    if old == new:
+        return []
+    if path.suffix != ".csv":
+        return ["an input it rewrote differs"]
+    (h0, r0), (h1, r1) = rows(old.decode()), rows(new.decode())
+    if h0 != h1:
+        return [f"header {h0} -> {h1}"]
+    return compare_plain_rows(r0, r1)
+
+
 def compare(path: str, old: bytes, new: bytes) -> tuple[list[str], list[str]]:
     old, new = old.replace(b"\r\n", b"\n"), new.replace(b"\r\n", b"\n")
     if old == new:
@@ -231,8 +246,9 @@ def run(script_name: str, files: list[str], latest: bool) -> dict:
                 moved.update(m)
             result["moved"] = sorted(moved)
             for p, data in inputs.items():
-                if p.read_bytes().replace(b"\r\n", b"\n") != data.replace(b"\r\n", b"\n"):
-                    result["files"][p.relative_to(ROOT).as_posix()] = ["an input it rewrote differs"]
+                diffs = compare_input(p, data, p.read_bytes())
+                if diffs:
+                    result["files"][p.relative_to(ROOT).as_posix()] = diffs
     except subprocess.TimeoutExpired:
         result["error"] = [f"timed out after {TIMEOUT} s"]
     finally:

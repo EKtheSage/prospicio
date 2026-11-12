@@ -1,8 +1,8 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#     "numpy==2.4.6",
-#     "scipy==1.17.1",
+#     "numpy",
+#     "scipy",
 #     "statsmodels",
 # ]
 # [tool.uv]
@@ -136,7 +136,7 @@ def main():
             w.writerow([repr(float(v)) for v in row])
     rows = []
     for method, weights, tol in [("stacking", stacking(lpd), 1e-10),
-                                 ("pseudo_bma", pseudo_bma(lpd), 1e-12)]:
+                                 ("pseudo_bma", pseudo_bma(lpd), 1e-11)]:
         for name, v in zip(MODELS, weights):
             rows.append([method, name, repr(float(v)), tol, 0.0, "scipy SLSQP / NumPy"])
     with open(OUT, "w", newline="") as f:

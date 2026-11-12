@@ -1,7 +1,7 @@
 ---
 type: Environment Fact
 title: Rebuilding the parity references with uv
-description: Every Python generator under validation/scripts carries PEP 723 metadata (the package versions its output records, the rest resolved by exclude-newer at the day after the file was committed), so uv run rebuilds its file; on 2026-11-12, 61 of the 61 weekly generators reproduced their committed files within each row's tolerance once three gaps were fixed (eltq missing from the ELT generator, SciPy missing from a script that loads another by importlib, the stacking weights needing NumPy 2.4.6), and under NumPy 2.5 the stacking weights move by 2e-12 against a tolerance of 1e-12.
+description: Every Python generator under validation/scripts carries PEP 723 metadata (the package versions its output records, the rest resolved by exclude-newer at the day after the file was committed), so uv run rebuilds its file; on 2026-11-12, 61 of the 61 weekly generators reproduced their committed files within each row's tolerance once two dependency gaps were fixed (eltq missing from the ELT generator, SciPy missing from a script that loads another by importlib), and the pseudo-BMA stacking weights, which move by up to 2.9e-12 between NumPy 2.4 and 2.5, now carry a tolerance of 1e-11 (the user's decision of 2026-11-12).
 tags: [environment, validation, reference, uv, reproducibility]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-11-12T00:00:00Z }
@@ -37,14 +37,17 @@ sources:
   CSVs to 1e-9, other files byte for byte, and every file under
   `validation/data/` unchanged; it puts every file back.[^runner]
   `--latest` drops the pins and the date.
-* On 2026-11-12 all 61 reproduced under the pins after three fixes:
+* On 2026-11-12 all 61 reproduced under the pins after two fixes:
   `aggregate_elt_units.py` needs `eltq==2.15.0` (named only in its
-  docstring's `uv run --with`), `scipy_fit_curves.py` needs SciPy through
-  the `scipy_severity_fits.py` it loads by `importlib`, and
-  `stacking_weights.py` reproduces its weights only under NumPy 2.4.6
-  (with 2.5.4 two pseudo-BMA weights move by 2.1e-12 and 2.9e-12 against
-  an `abs_tol` of 1e-12, and the log densities it writes to
-  `validation/data/stacking_lpd.csv` move too).[^runner]
+  docstring's `uv run --with`), and `scipy_fit_curves.py` needs SciPy
+  through the `scipy_severity_fits.py` it loads by `importlib`.[^runner]
+* `stacking_weights.py`'s pseudo-BMA weights move by 2.1e-12 and 2.9e-12
+  between NumPy 2.4.6 and 2.5.4 (an exponential of total log densities
+  near 1e3, so the last digits of the sums move), as do the log densities
+  it writes to `validation/data/stacking_lpd.csv`; by the user's decision
+  of 2026-11-12 the four pseudo-BMA rows carry `abs_tol` 1e-11 instead of
+  1e-12 and NumPy stays unpinned, and the runner reads a rewritten input
+  CSV within 1e-9 relative.[^runner]
 * `scipy_special.py` records SciPy 1.17.1 and gives the same values under
   1.18.1 (the `source` column moves; the runner lists that and does not
   count it as a difference).
