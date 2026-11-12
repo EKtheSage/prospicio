@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "numpy",
+#     "scipy",
+#     "statsmodels==0.15.0",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-23T00:00:00Z"
+# ///
 """Regenerate validation/reference/tweedie_profile_statsmodels.csv.
 
     python validation/scripts/statsmodels_tweedie_profile.py

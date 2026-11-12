@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "chainladder==0.10.1",
+#     "numpy",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-05T00:00:00Z"
+# ///
 """Regenerate validation/reference/reserving_berquist_sherman_python.csv and the
 data files validation/data/berqsherm_{auto,medmal}.csv.
 

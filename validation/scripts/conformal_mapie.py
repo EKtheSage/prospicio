@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "mapie==0.9.1",
+#     "numpy",
+#     "scikit-learn==1.5.2",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-30T00:00:00Z"
+# ///
 """Reference intervals for conformal prediction, from MAPIE 0.9.1 with
 scikit-learn 1.5.2 (docs/design/models.md, conformal prediction; #546).
 

@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "chainladder==0.10.1",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-10-29T00:00:00Z"
+# ///
 """Regenerate validation/reference/reserving_assumptions_python.csv.
 
 Mack's calendar-year effect and development-factor correlation tests

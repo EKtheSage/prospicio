@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "chainladder==0.10.1",
+# ]
+# [tool.uv]
+# exclude-newer = "2026-11-05T00:00:00Z"
+# ///
 """Regenerate validation/reference/reserving_munich_python.csv.
 
 The Munich chain ladder against chainladder-python's MunichAdjustment on
