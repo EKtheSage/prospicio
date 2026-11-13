@@ -631,13 +631,37 @@ edge, truncation, outside bound, moment, quantile and 2,837 masses of 11
 grids match `aggregate` 2.1.0 (`validation/reference/chf_aggregate.csv`,
 `validation/scripts/aggregate_chf.py`), the masses to `1e-13`.
 
+**Built (second PR, tilting).** `Stable` holds an alpha-stable law in
+Nolan's S1 form (its location read in S1 or S0), with its characteristic
+function continued onto the upper half plane for `β = 1`, its tail
+constants `A = (1 + β) C_α γ^α` and `B = (1 - β) C_α γ^α`, its density
+bound `Γ(1 + 1/α) / (πγ)` and the tail series of Nolan's Thm. 3.10.
+`ChfOptions::tilt` (`Tilt::Auto`, `Off` or `Fixed(τ)`) inverts a law
+with one power tail along `Im s = θ`, `τ = θW` e-folds across the window:
+the left edge is the support bound or the `1e-40` Chernoff edge, the
+right edge `δ₁ + (A/ε)^(1/α)`, the bucket capped at `min(γ/10,
+πγ/(52 ln 2)^(1/α))`, and the automatic `τ* = ½ ln(ρ / (ε κ))` balances
+the damped wrap `ρ e^(-τ)` (`ρ` from the Hurwitz zeta) against the
+amplified round-off `ε κ e^τ`. The mass beyond the window is left out and
+reported, and `β = -1` is the reflection, its mass below the window added
+to the first bucket. `ChfReport` gains the tilt on each side and the
+modelled edge error. Python `Stable` and `invert_chf(tilt=)`, R
+`stable_distribution()` and `invert_chf(tilt =)`. Eleven stable grids
+(`α` 0.7, 1, 1.1, 1.5 and 1.8, both skews, S0, a fixed tilt, no tilt, a
+given bucket and `|β| < 1` untilted) match `aggregate` 2.1.0
+(`validation/reference/chf_tilt_aggregate.csv`,
+`validation/scripts/aggregate_chf_tilt.py`, 2,991 values), every mass to
+`1e-11` (round-off amplified by up to `e^14.6` at the heavy end) and the
+tilts and edge errors to `1e-9`.
+
 **Proposed for the user's acceptance:**
 
 - (a) *The engine lives in `prospicio-prob`*, not `prospicio-aggregate`,
   so that the laws of #780 can be `Distribution`s through it
   (`prospicio-prob` cannot depend on the aggregate crate); `rustfft` joins
   its dependencies (pure Rust, so the WASM build keeps it).
-- (b) *Tilting comes in a second PR with the totally skewed stable law*.
+- (b) *Tilting comes with the totally skewed stable law* (built in the
+  second PR).
   `aggregate` tilts only a law with a power tail (its `tilt` is a
   `ValueError` on any other), and none of the first PR's laws has one; a
   light law barely wraps, and a tilt only amplifies its truncation ringing
@@ -661,6 +685,19 @@ grids match `aggregate` 2.1.0 (`validation/reference/chf_aggregate.csv`,
   `recommended_grid` and the pricing methods on the object (the masses go
   to the pricing functions through `to_grid`), and an Excel function (the
   Excel lane's, if wanted).
+- (g) *`|β| < 1` under the automatic tilt is an error*, pointing to
+  `Tilt::Off` and #780: `aggregate` splits such a law into its two
+  totally skewed halves, tilts each and convolves them, which is #780's;
+  a fixed tilt on a law with no power tail is an error, as in `aggregate`.
+- (h) *`Stable` is not yet a `Distribution`*: it holds the parameters and
+  the closed forms the engine needs, and its distribution is `invert`'s
+  grid; #780 makes it one, with the stable algebra (sums, scaling).
+- (i) *A stable law takes its own scale and location*:
+  `ChfLaw::affine` refuses a stable base, since the S1 location of `cX +
+  b` is not `c δ₁ + b` at `α = 1`.
+- (j) *Python's `tilt=1` is one e-fold and `tilt=True` the automatic
+  tilt* (a `bool` is read before a number), as in `aggregate`; R takes
+  `TRUE`, `FALSE` or a number.
 
 ## Validation
 

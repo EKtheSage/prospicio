@@ -1,7 +1,7 @@
 ---
 type: Finding
-title: aggregate 2.1.0's characteristic-function engine, reproduced untilted
-description: prospicio_prob::chf reproduces AggregateCHF's untilted grids on eleven laws to round-off (every step and left edge exactly, the masses to 1e-13); its masses are the rounding discretization's bucket probabilities, rule A's bucket walks down the ladder when the dropped frequencies exceed 1e-6 (a Tweedie 1.5 100 2 at log2 12 lands on 0.125), it tilts only laws with a power tail, and on a light law a tilt amplifies the truncation ringing by e^(theta x) instead of removing anything.
+title: aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt
+description: prospicio_prob::chf reproduces AggregateCHF's untilted grids on eleven laws and its tilted stable grids on eleven more to round-off (every step and left edge exactly, the masses to 1e-13); its masses are the rounding discretization's bucket probabilities, rule A's bucket walks down the ladder when the dropped frequencies exceed 1e-6 (a Tweedie 1.5 100 2 at log2 12 lands on 0.125), it tilts only laws with a power tail, and on a light law a tilt amplifies the truncation ringing by e^(theta x) instead of removing anything; under the automatic tilt on a stable law (tau* of 9 to 15 e-folds) the round-off at the heavy end is amplified by up to 2.3e6, so sums of the masses agree to 1e-10, not 1e-13.
 tags: [aggregate, characteristic-function, fft, tilting, parity]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-11-13T12:00:00Z }
@@ -13,6 +13,9 @@ sources:
   - id: test
     resource: ../validation/tests/probability_chf.rs
     title: validation/tests/probability_chf.rs, chf_inversion_matches_aggregate
+  - id: tilt-test
+    resource: ../validation/tests/probability_chf_tilt.rs
+    title: validation/tests/probability_chf_tilt.rs, chf_tilted_stable_matches_aggregate, against validation/scripts/aggregate_chf_tilt.py
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, characteristic_function.py (AggregateCHF, invert_characteristic_function, window_edges) and utilities.py (round_bucket)
@@ -50,3 +53,18 @@ sources:
   the truncation to 1e-9 relative and the Chernoff outside masses to 1e-6
   relative (scipy's bounded Brent stops at an absolute 1e-5 in `s`, on a
   flat minimum).[^script]
+* Under the automatic tilt `AggregateCHF` picks, for a stable law with
+  `beta = 1` (or `-1` by reflection), `tau* = 1/2 ln(rho / (eps kappa))`
+  with `rho = q^(alpha+1) zeta(alpha+1, 1+q)` and `eps = 2^-52 +
+  |phi(pi/h)|`: 10.9 at `alpha = 1.5`, 14.6 at 0.7 and 12.6 at 1 on log2
+  12. The bucket is capped at `min(gamma/10, pi gamma/(52 ln 2)^(1/alpha))`
+  rounded down the ladder (1/16 at unit scale), the window runs from the
+  support bound or the 1e-40 Chernoff edge, and the mass beyond it is left
+  out: 1.0e-4 at `alpha = 1.5`, 0.042 at 0.7.[^tilt-test]
+* The tilt multiplies the inverse transform's round-off by `e^(theta x)`,
+  up to `e^tau` at the heavy end, so prospicio's and aggregate's masses
+  (rustfft against pocketfft) agree to 1e-11 there and their sums over
+  4,096 buckets to 8e-11 at `alpha = 0.7`; the tilts and edge errors
+  agree to 1e-9 relative. Untilted, the same law's modelled edge error is
+  11.9 (a relative error of order one near the right edge), tilted
+  1.1e-5.

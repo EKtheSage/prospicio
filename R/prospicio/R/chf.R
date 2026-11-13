@@ -15,6 +15,14 @@ NULL
 #' down that ladder while that helps. A Tweedie's mass at 0 is inverted
 #' apart, so it does not ring.
 #'
+#' A stable law with one power tail is inverted along the line
+#' `Im s = theta`, where the integrand decays like `exp(-theta x) f(x)`:
+#' what wraps is the damped tail, and the mass beyond the window is left
+#' out and reported in `report$outside_above` (or, for a left tail, added
+#' to the first bucket and reported in `report$outside_below`). The
+#' automatic tilt balances the damped wrap against the round-off the tilt
+#' amplifies, and caps the step.
+#'
 #' The masses are as inverted, not renormalized. Supports [mean()],
 #' [variance()], [cdf()] (the masses at grid points at or below `q`),
 #' `quantile()` and [VaR()] (the first grid point whose cumulative mass
@@ -22,7 +30,8 @@ NULL
 #'
 #' @param law A [normal_distribution()], [gamma_distribution()],
 #'   [exponential_distribution()], [inverse_gaussian_distribution()],
-#'   [tweedie()] or an [affine_distribution()] of one of them,
+#'   [tweedie()], an [affine_distribution()] of one of them, a
+#'   [stable_distribution()],
 #'   or your own characteristic function: an R function of a numeric vector
 #'   of frequencies `t` returning `E exp(i t X)` at each, as a complex
 #'   vector. Your own function needs `step` and `x_min`.
@@ -32,13 +41,22 @@ NULL
 #'   when `NULL`.
 #' @param bucket_sizing_p The mass the window covers when it is sized from
 #'   the tails.
+#' @param tilt `TRUE`: a law with one power tail (a [stable_distribution()]
+#'   with `beta` 1 or -1) at the automatic tilt, every other law untilted.
+#'   `FALSE`: never tilt (a heavy tail wraps onto the window). A number
+#'   `tau >= 0`: exactly `tau` e-folds of damping across the window, for a
+#'   law with one power tail only.
 #' @param ptr Internal.
 #' @returns A `chf_distribution`, which inherits from [distribution], with
 #'   properties `xs`, `masses`, `step`, `x_min` and `report` (a list:
 #'   `log2`, `step_given`, `truncation_error` (`|phi(pi / step)|` of the
 #'   continuous part), `is_truncated` (above 1e-6), `outside_below` and
 #'   `outside_above` (the Chernoff bounds on the mass outside the window,
-#'   which wraps in), `total_mass`, `law_mean` and `law_variance`).
+#'   which wraps in, or under a tilt the tail mass beyond the window),
+#'   `tilt_left` and `tilt_right` (the e-folds of damping on each side),
+#'   `edge_error` (the modelled worst relative error at the heavy end of a
+#'   law with one power tail, `NaN` otherwise), `total_mass`, `law_mean`
+#'   and `law_variance`).
 #' @export
 #' @examples
 #' d <- invert_chf(gamma_distribution(4, 25), log2 = 12)
@@ -47,7 +65,19 @@ NULL
 #' own <- invert_chf(function(t) (1 - 25i * t)^-4, log2 = 12, step = 0.25, x_min = 0)
 #' max(abs(own@masses - d@masses))
 invert_chf <- function(law, log2 = 16, step = NULL, x_min = NULL,
-                       bucket_sizing_p = 0.99999) {
+                       bucket_sizing_p = 0.99999, tilt = TRUE) {
+  if (isTRUE(tilt)) {
+    mode <- "auto"
+    tau <- 0
+  } else if (isFALSE(tilt)) {
+    mode <- "off"
+    tau <- 0
+  } else if (is.numeric(tilt) && length(tilt) == 1) {
+    mode <- "fixed"
+    tau <- as.double(tilt)
+  } else {
+    stop("tilt must be TRUE, FALSE or a number", call. = FALSE)
+  }
   target <- if (is.function(law)) {
     f <- law
     # An error comes back as its message, which Rust raises.
@@ -62,7 +92,7 @@ invert_chf <- function(law, log2 = 16, step = NULL, x_min = NULL,
   }
   na <- function(x) if (is.null(x)) NaN else as.double(x)
   ptr <- rust_result(ChfDist$new(target, as.double(log2), na(step), na(x_min),
-                                 as.double(bucket_sizing_p)))
+                                 as.double(bucket_sizing_p), mode, tau))
   chf_distribution(ptr = ptr)
 }
 
@@ -112,5 +142,58 @@ S7::method(VaR, chf_distribution) <- function(dist, p, ...) {
 S7::method(print, chf_distribution) <- function(x, ...) {
   cat(sprintf("<chf_distribution> x_min = %s, step = %s, %d buckets\n",
               format(x@x_min, digits = 15), format(x@step, digits = 15), length(x@masses)))
+  invisible(x)
+}
+
+#' An alpha-stable law
+#'
+#' The parameters of `S(alpha, beta, scale, loc)` for [invert_chf()]: with
+#' `beta` 1 or -1 its one power tail is inverted along a tilted line, with
+#' `abs(beta) < 1` with `tilt = FALSE` only. At `alpha = 2` it is the normal
+#' with variance `2 scale^2`. For `alpha < 2`,
+#' `P(X > x) ~ tail_constant * x^-alpha` and
+#' `P(X < -x) ~ left_tail_constant * x^-alpha`.
+#'
+#' @param alpha The index of stability, in `(0, 2]`.
+#' @param beta The skewness, in `[-1, 1]`.
+#' @param scale Positive.
+#' @param loc The location, read in `parameterization`.
+#' @param parameterization `"S1"` (Nolan's S1, scipy's default) or `"S0"`.
+#' @returns A `stable_distribution` with properties `alpha`, `beta`,
+#'   `scale`, `loc` (S1), `loc0` (S0), `tail_constant`,
+#'   `left_tail_constant` and `mean`.
+#' @export
+#' @examples
+#' s <- stable_distribution(1.5, 1, 2)
+#' s@tail_constant
+#' d <- invert_chf(s, log2 = 12)
+#' d@report$tilt_right
+stable_distribution <- S7::new_class(
+  "stable_distribution",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("StableLaw"),
+    alpha = S7::new_property(S7::class_double, getter = function(self) self@ptr$alpha()),
+    beta = S7::new_property(S7::class_double, getter = function(self) self@ptr$beta()),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale()),
+    loc = S7::new_property(S7::class_double, getter = function(self) self@ptr$loc()),
+    loc0 = S7::new_property(S7::class_double, getter = function(self) self@ptr$loc0()),
+    tail_constant = S7::new_property(S7::class_double,
+                                     getter = function(self) self@ptr$tail_constant()),
+    left_tail_constant = S7::new_property(S7::class_double,
+                                          getter = function(self) self@ptr$left_tail_constant()),
+    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean())
+  ),
+  constructor = function(alpha, beta, scale = 1, loc = 0, parameterization = "S1") {
+    ptr <- rust_result(StableLaw$new(as.double(alpha), as.double(beta), as.double(scale),
+                                     as.double(loc), as.character(parameterization)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(print, stable_distribution) <- function(x, ...) {
+  cat(sprintf("<stable_distribution> alpha = %s, beta = %s, scale = %s, loc = %s (S1)\n",
+              format(x@alpha, digits = 15), format(x@beta, digits = 15),
+              format(x@scale, digits = 15), format(x@loc, digits = 15)))
   invisible(x)
 }

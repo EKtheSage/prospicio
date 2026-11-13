@@ -41,6 +41,7 @@ reference:
       - normal_distribution
       - ogive
       - invert_chf
+      - stable_distribution
       - chf_to_grid
       - sampled
       - gamma_distribution
