@@ -257,11 +257,7 @@ where
         Some(e) => {
             e.check()?;
             let mut all: Vec<usize> = (0..n).collect();
-            let mut rng = StreamRng::new(t.seed, u64::MAX);
-            for i in (1..n).rev() {
-                let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
-                all.swap(i, j);
-            }
+            StreamRng::new(t.seed, u64::MAX).shuffle(&mut all);
             let k = ((e.validation_share * n as f64).round() as usize).clamp(1, n - 1);
             let mut holdout = all.split_off(n - k);
             holdout.sort_unstable();
@@ -276,11 +272,7 @@ where
     let mut history = Vec::new();
     for epoch in 0..t.epochs {
         // Fisher–Yates on stream `epoch` of the seed.
-        let mut rng = StreamRng::new(t.seed, epoch as u64);
-        for i in (1..order.len()).rev() {
-            let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
-            order.swap(i, j);
-        }
+        StreamRng::new(t.seed, epoch as u64).shuffle(&mut order);
         for batch in order.chunks(t.batch_size) {
             let m = batch.len();
             let pick = |v: &[f64]| batch.iter().map(|&i| v[i]).collect::<Vec<f64>>();

@@ -618,11 +618,7 @@ fn train_heads(
         Some(e) => {
             e.check()?;
             let mut all: Vec<usize> = (0..n).collect();
-            let mut rng = StreamRng::new(spec.seed, u64::MAX);
-            for i in (1..n).rev() {
-                let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
-                all.swap(i, j);
-            }
+            StreamRng::new(spec.seed, u64::MAX).shuffle(&mut all);
             let k = ((e.validation_share * n as f64).round() as usize).clamp(1, n - 1);
             let mut holdout = all.split_off(n - k);
             holdout.sort_unstable();
@@ -639,11 +635,7 @@ fn train_heads(
     let mut best: Option<(usize, f64, TabNet<Cpu>)> = None;
     let mut history = Vec::new();
     for epoch in 0..spec.epochs {
-        let mut rng = StreamRng::new(spec.seed, epoch as u64);
-        for i in (1..order.len()).rev() {
-            let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
-            order.swap(i, j);
-        }
+        StreamRng::new(spec.seed, epoch as u64).shuffle(&mut order);
         for batch in order.chunks(spec.batch_size) {
             let m = batch.len();
             let (x, levels) = inputs.batch::<Train>(batch, &device);

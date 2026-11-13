@@ -461,11 +461,7 @@ fn check_k(n: usize, k: usize) -> Result<()> {
 /// ```
 pub fn permutation(n: usize, seed: u64, stream: u64) -> Vec<usize> {
     let mut order: Vec<usize> = (0..n).collect();
-    let mut rng = StreamRng::new(seed, stream);
-    for i in (1..n).rev() {
-        let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
-        order.swap(i, j);
-    }
+    StreamRng::new(seed, stream).shuffle(&mut order);
     order
 }
 
