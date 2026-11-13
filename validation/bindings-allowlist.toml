@@ -80,6 +80,7 @@
 "linalg::mat_mul" = "numerical building block shared by the crates (#843); the bindings do not depend on prospicio-math"
 "linalg::solve" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "linalg::symmetric_eigenvalues" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
+"linalg::symmetric_eigen" = "numerical building block; the bindings do not depend on prospicio-math (#837: ALEPlot's level order)"
 "mvn::mvn_cdf" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "optimize::Minimum" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "optimize::NelderMead" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
@@ -116,6 +117,8 @@
 "spline::pspline_knots" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 
 [python.prospicio_models]
+"explain::AleEffects" = "the effects and counts the ale kernels return; the bindings return them as a tuple or list (#837)"
+"explain::shapley_weights" = "used inside explain::shap_exact, which the bindings call (#837)"
 "artifact::array" = "unbound on 2026-10-28 (seed); review"
 "artifact::bad" = "unbound on 2026-10-28 (seed); review"
 "artifact::family_from" = "unbound on 2026-10-28 (seed); review"
@@ -351,6 +354,7 @@
 "linalg::mat_mul" = "numerical building block shared by the crates (#843); the bindings do not depend on prospicio-math"
 "linalg::solve" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "linalg::symmetric_eigenvalues" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
+"linalg::symmetric_eigen" = "numerical building block; the bindings do not depend on prospicio-math (#837: ALEPlot's level order)"
 "mvn::MvnEstimate" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "mvn::mvn_cdf" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "optimize::Minimum" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
@@ -388,6 +392,8 @@
 "spline::pspline_knots" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 
 [r.prospicio_models]
+"explain::AleEffects" = "the effects and counts the ale kernels return; the bindings return them as a tuple or list (#837)"
+"explain::shapley_weights" = "used inside explain::shap_exact, which the bindings call (#837)"
 "Coding" = "unbound on 2026-10-28 (seed); review"
 "Frame" = "unbound on 2026-10-28 (seed); review"
 "Term" = "unbound on 2026-10-28 (seed); review"

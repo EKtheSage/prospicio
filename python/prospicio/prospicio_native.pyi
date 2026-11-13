@@ -36040,6 +36040,56 @@ class ZeroInflated:
         TwoPartFit
         """
 
+def _ale_categorical_distance(codes: Sequence[int], level: Sequence[int], k: int) -> list[float]:
+    """
+    ALEPlot's ``k × k`` distances between levels from one categorical
+    column, its categories coded from 0 (#837). Used by ``ale``.
+    """
+
+def _ale_grid(x: Sequence[float], bins: int) -> list[float]:
+    """
+    The grid of a numeric feature's accumulated local effects (#837): its
+    minimum and its type 1 quantiles at ``1/bins, ..., 1``, duplicates
+    merged. Used by ``ale``.
+    """
+
+def _ale_intervals(x: Sequence[float], z: Sequence[float]) -> list[int]:
+    """
+    Each value's interval ``1..=K`` on the grid ``z`` (#837). Used by ``ale``.
+    """
+
+def _ale_levels(at: Sequence[int], k: int, base: Sequence[float], up: Sequence[float], down: Sequence[float]) -> tuple[list[float], list[int]]:
+    """
+    A categorical feature's centred effects and level counts from each row's
+    level and its predictions there, at the next level and at the previous
+    (#837). Used by ``ale``.
+    """
+
+def _ale_numeric(interval: Sequence[int], lower: Sequence[float], upper: Sequence[float], k: int) -> tuple[list[float], list[int]]:
+    """
+    A numeric feature's centred effects and interval counts from each row's
+    interval and its predictions at the interval's ends (#837). Used by
+    ``ale``.
+    """
+
+def _ale_numeric_distance(values: Sequence[float], level: Sequence[int], k: int) -> list[float]:
+    """
+    ALEPlot's ``k × k`` distances between levels from one numeric column
+    (#837). Used by ``ale``.
+    """
+
+def _ale_order(distance: Sequence[float], k: int) -> list[int]:
+    """
+    ALEPlot's order of ``k`` levels from their summed distances, by classical
+    scaling (#837). Used by ``ale``.
+    """
+
+def _shap_exact(values: Sequence[float], n: int, m: int) -> list[float]:
+    """
+    Exact SHAP values, ``n × m`` row-major, from the game's value at each of
+    the ``2^m`` coalitions (#837). Used by ``shap_values``.
+    """
+
 def actual_vs_expected(periods: Sequence[int |str], family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, dispersion: float = 1.0, theta: float |None = None, power: float |None = None) -> dict:
     """
     Actual against expected by period for a stored model's predictions on

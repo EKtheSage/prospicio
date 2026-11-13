@@ -8,6 +8,14 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from .prospicio_native import (
+    _ale_categorical_distance,
+    _ale_grid,
+    _ale_intervals,
+    _ale_levels,
+    _ale_numeric,
+    _ale_numeric_distance,
+    _ale_order,
+    _shap_exact,
     actual_vs_expected,
     BayesGlm,
     BayesGlmFit,
@@ -1403,93 +1411,34 @@ def ice(model, frame, build, feature, values):
     return IceCurves(feature, values, [[col[i] for col in columns] for i in range(n)])
 
 
-def _quantile_type1(sorted_values, p):
-    """R's ``quantile(type = 1)``: the inverse of the empirical cdf, with R's
-    fuzz of four machine epsilons."""
-    n = len(sorted_values)
-    fuzz = 4 * 2.220446049250313e-16
-    nppm = n * p
-    j = math.floor(nppm + fuzz)
-    k = j + 1 if nppm > j + fuzz else j
-    return sorted_values[min(max(k, 1), n) - 1]
-
-
-def _quantile_type7(sorted_values, p):
-    n = len(sorted_values)
-    h = (n - 1) * p
-    lo = math.floor(h + 4 * 2.220446049250313e-16)
-    hi = min(lo + 1, n - 1)
-    return sorted_values[lo] + (h - lo) * (sorted_values[hi] - sorted_values[lo])
-
-
 def _is_numeric(column):
     return all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in column) or (
         type(column).__module__ == "numpy" and column.dtype.kind in "iuf"
     )
 
 
-def _ale_order(frame, feature, levels):
+def _ale_level_order(frame, feature, levels):
     """ALEPlot's order of a factor's levels: the first coordinate of classical
     scaling of the summed distances between the levels' distributions of
     every other column (Kolmogorov-Smirnov on 100 quantiles for a numeric
     column, half the L1 distance of the conditional frequencies for a
-    categorical one)."""
-    x = list(frame[feature])
+    categorical one), read from the end whose level sorts first. The
+    arithmetic is the Rust core's (#837); ``levels`` come sorted."""
     k = len(levels)
-    rows = {lev: [i for i, v in enumerate(x) if v == lev] for lev in levels}
-    dist = [[0.0] * k for _ in range(k)]
+    pos = {lev: j for j, lev in enumerate(levels)}
+    level = [pos[v] for v in frame[feature]]
+    dist = [0.0] * (k * k)
     for name, col in frame.items():
         if name == feature:
             continue
         col = list(col)
         if _is_numeric(col):
-            s = sorted(col)
-            grid = [_quantile_type7(s, q / 99) for q in range(100)]
-            ecdf = {}
-            for lev in levels:
-                vals = sorted(col[i] for i in rows[lev])
-                m = len(vals)
-                out, j = [], 0
-                for g in grid:
-                    while j < m and vals[j] <= g:
-                        j += 1
-                    out.append(j / m)
-                ecdf[lev] = out
-            for a in range(k):
-                for b in range(a + 1, k):
-                    d = max(abs(u - v) for u, v in zip(ecdf[levels[a]], ecdf[levels[b]]))
-                    dist[a][b] += d
-                    dist[b][a] += d
+            d = _ale_numeric_distance([float(v) for v in col], level, k)
         else:
-            cats = sorted(set(col), key=str)
-            freq = {
-                lev: [sum(1 for i in rows[lev] if col[i] == c) / len(rows[lev]) for c in cats]
-                for lev in levels
-            }
-            for a in range(k):
-                for b in range(a + 1, k):
-                    d = sum(abs(u - v) for u, v in zip(freq[levels[a]], freq[levels[b]])) / 2
-                    dist[a][b] += d
-                    dist[b][a] += d
-    # Classical scaling to one dimension: the leading eigenvector of
-    # -J D^2 J / 2 by power iteration.
-    d2 = [[v * v for v in r] for r in dist]
-    rmean = [sum(r) / k for r in d2]
-    tmean = sum(rmean) / k
-    b = [[-(d2[i][j] - rmean[i] - rmean[j] + tmean) / 2 for j in range(k)] for i in range(k)]
-    v = [1.0 + 0.1 * i for i in range(k)]
-    for _ in range(1000):
-        w = [sum(b[i][j] * v[j] for j in range(k)) for i in range(k)]
-        norm = math.sqrt(sum(t * t for t in w)) or 1.0
-        w = [t / norm for t in w]
-        if max(abs(p - q) for p, q in zip(w, v)) < 1e-14:
-            v = w
-            break
-        v = w
-    order = [levels[i] for i in sorted(range(k), key=lambda i: v[i])]
-    # Scaling fixes the order up to its direction: start from the end whose
-    # level sorts first, so Python and R agree.
-    return order if str(order[0]) <= str(order[-1]) else order[::-1]
+            code = {c: i for i, c in enumerate(sorted(set(col), key=str))}
+            d = _ale_categorical_distance([code[v] for v in col], level, k)
+        dist = [a + b for a, b in zip(dist, d)]
+    return [levels[i] for i in _ale_order(dist, k)]
 
 
 @dataclass
@@ -1564,7 +1513,7 @@ def ale(model, frame, build, feature, bins=40, levels=None):
     """
     if feature not in frame:
         raise ValueError(f"no column {feature!r} in the frame")
-    n = _frame_rows(frame)
+    _frame_rows(frame)
     x = list(frame[feature])
 
     def predict(col):
@@ -1573,36 +1522,20 @@ def ale(model, frame, build, feature, bins=40, levels=None):
     if levels is None and _is_numeric(x):
         if bins < 1:
             raise ValueError("bins must be at least 1")
-        s = sorted(x)
-        # The probabilities as R's seq(1/K, 1, length.out = K) computes them,
-        # whose rounding moves some type 1 quantiles to the next value.
-        by = (1 - 1 / bins) / (bins - 1) if bins > 1 else 0.0
-        probs = [1 / bins + k * by for k in range(bins)]
-        z = [s[0]] + [_quantile_type1(s, p) for p in probs]
-        z = sorted(set(z))
-        if len(z) < 2:
+        if len(set(x)) < 2:
             raise ValueError(f"{feature!r} takes one value: it has no local effect")
-        k = len(z) - 1
-        # cut(include.lowest = TRUE): interval k is (z[k-1], z[k]], the first
-        # also closed below.
-        import bisect
-
-        idx = [max(1, bisect.bisect_left(z, v)) for v in x]
+        xf = [float(v) for v in x]
+        # The grid, the intervals, accumulation and centring are the Rust
+        # core's (#837); only the predictions are made here.
+        z = _ale_grid(xf, bins)
+        idx = _ale_intervals(xf, z)
         lo = predict([z[i - 1] for i in idx])
         hi = predict([z[i] for i in idx])
-        total = [0.0] * (k + 1)
-        count = [0] * (k + 1)
-        for i in range(n):
-            total[idx[i]] += hi[i] - lo[i]
-            count[idx[i]] += 1
-        f = [0.0]
-        for b in range(1, k + 1):
-            f.append(f[-1] + total[b] / count[b])
-        centre = sum((f[b - 1] + f[b]) / 2 * count[b] for b in range(1, k + 1)) / n
-        return AccumulatedLocalEffects(feature, z, [v - centre for v in f], count[1:])
+        effects, counts = _ale_numeric(idx, lo, hi, len(z) - 1)
+        return AccumulatedLocalEffects(feature, z, effects, counts)
     present = list(dict.fromkeys(x))
     if levels is None:
-        order = _ale_order(frame, feature, sorted(present, key=str))
+        order = _ale_level_order(frame, feature, sorted(present, key=str))
     else:
         order = list(levels)
         missing = [v for v in present if v not in order]
@@ -1617,22 +1550,8 @@ def ale(model, frame, build, feature, bins=40, levels=None):
     base = predict(x)
     up = predict([order[min(a + 1, k - 1)] for a in at])
     down = predict([order[max(a - 1, 0)] for a in at])
-    total = [0.0] * (k - 1)
-    count = [0] * (k - 1)
-    for i in range(n):
-        a = at[i]
-        if a < k - 1:
-            total[a] += up[i] - base[i]
-            count[a] += 1
-        if a > 0:
-            total[a - 1] += base[i] - down[i]
-            count[a - 1] += 1
-    f = [0.0]
-    for j in range(k - 1):
-        f.append(f[-1] + total[j] / count[j])
-    freq = [sum(1 for a in at if a == j) for j in range(k)]
-    centre = sum(fj * c for fj, c in zip(f, freq)) / n
-    return AccumulatedLocalEffects(feature, order, [v - centre for v in f], freq)
+    effects, freq = _ale_levels(at, k, base, up, down)
+    return AccumulatedLocalEffects(feature, order, effects, freq)
 
 
 @dataclass
@@ -1750,19 +1669,18 @@ def shap_values(model, frame, build, background, features=None, output=None,
             raise ValueError(
                 f"{m} features need 2^{m} coalitions; give n_permutations or raise max_exact"
             )
-        cache = {0: [baseline] * n, full: outputs}
-        for mask in range(1, full):
-            cache[mask] = value(mask)
-        weight = [math.factorial(s) * math.factorial(m - s - 1) / math.factorial(m) for s in range(m)]
+        # The game's value at every coalition, in mask order; the Shapley
+        # weights and sums are the Rust core's (#837).
+        values = []
         for mask in range(full + 1):
-            size = bin(mask).count("1")
-            for g in range(m):
-                if mask >> g & 1:
-                    continue
-                w = weight[size]
-                with_g, without = cache[mask | 1 << g], cache[mask]
-                for i in range(n):
-                    phi[i][g] += w * (with_g[i] - without[i])
+            if mask == 0:
+                values.extend([baseline] * n)
+            elif mask == full:
+                values.extend(outputs)
+            else:
+                values.extend(value(mask))
+        flat = _shap_exact(values, n, m)
+        phi = [flat[i * m:(i + 1) * m] for i in range(n)]
         method = "exact"
     else:
         if n_permutations < 1:

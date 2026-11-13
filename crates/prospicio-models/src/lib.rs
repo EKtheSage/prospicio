@@ -25,6 +25,7 @@ pub mod compare;
 pub mod conformal;
 pub mod design;
 pub mod encode;
+pub mod explain;
 pub mod family;
 pub mod link;
 pub mod metrics;

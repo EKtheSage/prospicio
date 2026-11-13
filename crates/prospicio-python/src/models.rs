@@ -2822,6 +2822,85 @@ pub(crate) fn k_fold(n: usize, k: usize, seed: u64) -> PyResult<Vec<(Vec<usize>,
     resample::k_fold(n, k, seed).map(splits).map_err(to_py)
 }
 
+/// The grid of a numeric feature's accumulated local effects (#837): its
+/// minimum and its type 1 quantiles at ``1/bins, ..., 1``, duplicates
+/// merged. Used by ``ale``.
+#[pyfunction]
+#[pyo3(name = "_ale_grid")]
+pub(crate) fn ale_grid(x: Vec<f64>, bins: usize) -> PyResult<Vec<f64>> {
+    prospicio_models::explain::ale_grid(&x, bins).map_err(to_py)
+}
+
+/// Each value's interval ``1..=K`` on the grid ``z`` (#837). Used by ``ale``.
+#[pyfunction]
+#[pyo3(name = "_ale_intervals")]
+pub(crate) fn ale_intervals(x: Vec<f64>, z: Vec<f64>) -> Vec<usize> {
+    prospicio_models::explain::ale_intervals(&x, &z)
+}
+
+/// A numeric feature's centred effects and interval counts from each row's
+/// interval and its predictions at the interval's ends (#837). Used by
+/// ``ale``.
+#[pyfunction]
+#[pyo3(name = "_ale_numeric")]
+pub(crate) fn ale_numeric(
+    interval: Vec<usize>,
+    lower: Vec<f64>,
+    upper: Vec<f64>,
+    k: usize,
+) -> (Vec<f64>, Vec<usize>) {
+    let e = prospicio_models::explain::ale_numeric(&interval, &lower, &upper, k);
+    (e.effects, e.counts)
+}
+
+/// A categorical feature's centred effects and level counts from each row's
+/// level and its predictions there, at the next level and at the previous
+/// (#837). Used by ``ale``.
+#[pyfunction]
+#[pyo3(name = "_ale_levels")]
+pub(crate) fn ale_levels(
+    at: Vec<usize>,
+    k: usize,
+    base: Vec<f64>,
+    up: Vec<f64>,
+    down: Vec<f64>,
+) -> (Vec<f64>, Vec<usize>) {
+    let e = prospicio_models::explain::ale_levels(&at, k, &base, &up, &down);
+    (e.effects, e.counts)
+}
+
+/// ALEPlot's ``k × k`` distances between levels from one numeric column
+/// (#837). Used by ``ale``.
+#[pyfunction]
+#[pyo3(name = "_ale_numeric_distance")]
+pub(crate) fn ale_numeric_distance(values: Vec<f64>, level: Vec<usize>, k: usize) -> Vec<f64> {
+    prospicio_models::explain::ale_numeric_distance(&values, &level, k)
+}
+
+/// ALEPlot's ``k × k`` distances between levels from one categorical
+/// column, its categories coded from 0 (#837). Used by ``ale``.
+#[pyfunction]
+#[pyo3(name = "_ale_categorical_distance")]
+pub(crate) fn ale_categorical_distance(codes: Vec<usize>, level: Vec<usize>, k: usize) -> Vec<f64> {
+    prospicio_models::explain::ale_categorical_distance(&codes, &level, k)
+}
+
+/// ALEPlot's order of ``k`` levels from their summed distances, by classical
+/// scaling (#837). Used by ``ale``.
+#[pyfunction]
+#[pyo3(name = "_ale_order")]
+pub(crate) fn ale_order(distance: Vec<f64>, k: usize) -> Vec<usize> {
+    prospicio_models::explain::ale_order(&distance, k)
+}
+
+/// Exact SHAP values, ``n × m`` row-major, from the game's value at each of
+/// the ``2^m`` coalitions (#837). Used by ``shap_values``.
+#[pyfunction]
+#[pyo3(name = "_shap_exact")]
+pub(crate) fn shap_exact(values: Vec<f64>, n: usize, m: usize) -> PyResult<Vec<f64>> {
+    prospicio_models::explain::shap_exact(&values, n, m).map_err(to_py)
+}
+
 /// ``0..n`` shuffled with ``seed`` on stream ``stream``: the permutation
 /// that ``permutation_importance`` and ``interaction_screen`` apply, the same
 /// in Python and R.
