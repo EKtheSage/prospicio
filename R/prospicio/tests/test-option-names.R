@@ -44,6 +44,17 @@ for (g in c("y", " Y ", "year", "Year")) {
   stopifnot(identical(chain_ladder(tri(g), "paid")@ultimate, want))
 }
 
+# A distortion by aggregate's short name (DistortionKind::NAMES, #834).
+for (p in list(c("ph", "proportional_hazard", 0.7), c("dual", "dual_power", 2),
+               c("exp", "exponential", 0.5))) {
+  stopifnot(identical(distortion_g(distortion(p[1], as.double(p[3])), c(0.1, 0.4, 0.9)),
+                      distortion_g(distortion(p[2], as.double(p[3])), c(0.1, 0.4, 0.9))))
+}
+stopifnot(identical(distortion_g(distortion("ly", 0.2, r0 = 0.05), 0.3),
+                    distortion_g(distortion("linear_yield", 0.2, r0 = 0.05), 0.3)))
+expect_error_like(prospicio:::rust_result(prospicio:::RiskDistortion$new("roe", 0.1, numeric(), 0)),
+                  'kind must be "ccoc", "ph", "proportional_hazard", "wang"')
+
 # The mixing alias "ig".
 stopifnot(identical(pmf(mixed_poisson_count(10, 0.5, mixing = "ig"), 0:5),
                     pmf(mixed_poisson_count(10, 0.5, mixing = "inverse_gaussian"), 0:5)))

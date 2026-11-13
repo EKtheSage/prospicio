@@ -76,7 +76,7 @@ pub use counting::{Binomial, Counting, NegativeBinomial, PanjerClass, Poisson};
 pub use custom::Custom;
 pub use discrete::{Discrete, TailRow};
 pub use dist::{Dist, SeverityDist};
-pub use distortion::{Distortion, Family};
+pub use distortion::{Distortion, DistortionKind, Family};
 pub use distribution::Distribution;
 pub use exponential::Exponential;
 pub use gamma::Gamma;

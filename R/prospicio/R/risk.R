@@ -32,7 +32,9 @@ NULL
 #' See also [distortion_mixture()], [distortion_minimum()],
 #' [distortion_convex()] and [calibrate_distortion()].
 #'
-#' @param kind The kind of distortion; see the table.
+#' @param kind The kind of distortion; see the table. `aggregate`'s short names
+#'   `"ph"`, `"dual"`, `"exp"`, `"clin"`, `"cll"`, `"ly"` and `"wtdtvar"` are taken
+#'   too, as in Python and Excel.
 #' @param param The distortion's parameter or parameters.
 #' @param weights For `"weighted_tvar"`, the weights of the levels in
 #'   `param`: non-negative, summing to 1.
@@ -86,7 +88,11 @@ distortion <- S7::new_class(
                          ),
                          param, weights = NULL, r0 = 0, ptr = NULL) {
     if (is.null(ptr)) {
-      kind <- match.arg(kind)
+      kind <- match.arg(option_alias(kind, distortion_kind_aliases), c(
+        "tvar", "wang", "proportional_hazard", "dual_power", "exponential",
+        "ccoc", "tsallis", "bitvar", "weighted_tvar", "capped_linear",
+        "capped_log_linear", "lep", "linear_yield", "beta"
+      ))
       ptr <- rust_result(RiskDistortion$new(
         kind, as.double(param), as.double(if (is.null(weights)) numeric() else weights),
         as.double(r0)
