@@ -86,7 +86,10 @@ reference:
       - distributions.Normal
       - distributions.Ogive
       - distributions.invert_chf
+      - distributions.NormalInverseGaussian
       - distributions.Stable
+      - distributions.TemperedStable
+      - distributions.VarianceGamma
       - distributions.ChfDistribution
       - distributions.Sampled
   - title: Large-loss severities

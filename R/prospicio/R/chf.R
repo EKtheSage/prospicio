@@ -31,7 +31,8 @@ NULL
 #' @param law A [normal_distribution()], [gamma_distribution()],
 #'   [exponential_distribution()], [inverse_gaussian_distribution()],
 #'   [tweedie()], an [affine_distribution()] of one of them, a
-#'   [stable_distribution()],
+#'   [stable_distribution()], [normal_inverse_gaussian_distribution()],
+#'   [variance_gamma_distribution()], [tempered_stable_distribution()],
 #'   or your own characteristic function: an R function of a numeric vector
 #'   of frequencies `t` returning `E exp(i t X)` at each, as a complex
 #'   vector. Your own function needs `step` and `x_min`.
@@ -197,3 +198,99 @@ S7::method(print, stable_distribution) <- function(x, ...) {
               format(x@scale, digits = 15), format(x@loc, digits = 15)))
   invisible(x)
 }
+
+# The three laws of Levy processes below share their two properties.
+levy_properties <- function(class, names) {
+  props <- lapply(seq_along(names), function(k) {
+    S7::new_property(S7::class_double, getter = function(self) self@ptr$parameters()[[k]])
+  })
+  names(props) <- names
+  c(list(ptr = S7::new_S3_class(class)), props, list(
+    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$moments()[[1]]),
+    variance = S7::new_property(S7::class_double, getter = function(self) self@ptr$moments()[[2]]),
+    skewness = S7::new_property(S7::class_double, getter = function(self) self@ptr$moments()[[3]])
+  ))
+}
+
+#' The normal inverse Gaussian law
+#'
+#' `NIG(alpha, beta, delta, mu)` (Barndorff-Nielsen, 1997) for
+#' [invert_chf()]: with `abs(beta) < alpha` and
+#' `gamma = sqrt(alpha^2 - beta^2)`, its cumulant generating function is
+#' `mu s + delta (gamma - sqrt(alpha^2 - (beta + s)^2))`.
+#'
+#' @param alpha Tail heaviness, positive.
+#' @param beta Skewness, `abs(beta) < alpha`.
+#' @param delta Scale, positive.
+#' @param mu Location.
+#' @returns A `normal_inverse_gaussian_distribution` with properties
+#'   `alpha`, `beta`, `delta`, `mu`, `mean`, `variance` and `skewness`.
+#' @export
+#' @examples
+#' d <- invert_chf(normal_inverse_gaussian_distribution(2, 0.5, 1.5, 0.3), log2 = 12)
+#' mean(d)
+normal_inverse_gaussian_distribution <- S7::new_class(
+  "normal_inverse_gaussian_distribution",
+  package = "prospicio",
+  properties = levy_properties("NigLaw", c("alpha", "beta", "delta", "mu")),
+  constructor = function(alpha, beta, delta, mu = 0) {
+    ptr <- rust_result(NigLaw$new(as.double(alpha), as.double(beta), as.double(delta),
+                                  as.double(mu)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' The variance gamma law
+#'
+#' `VG(sigma, nu, theta)` with a location `mu` (Madan, Carr and Chang,
+#' 1998) for [invert_chf()]: its characteristic function is
+#' `exp(i mu s) (1 - i theta nu s + sigma^2 nu s^2 / 2)^(-1 / nu)`. At
+#' `theta = 0`, `nu = 1` it is the Laplace law with scale `sigma / sqrt(2)`.
+#'
+#' @param sigma Volatility, positive.
+#' @param nu Variance rate, positive.
+#' @param theta Drift.
+#' @param mu Location.
+#' @returns A `variance_gamma_distribution` with properties `sigma`, `nu`,
+#'   `theta`, `mu`, `mean`, `variance` and `skewness`.
+#' @export
+#' @examples
+#' variance_gamma_distribution(0.2, 0.5, -0.1)@variance
+variance_gamma_distribution <- S7::new_class(
+  "variance_gamma_distribution",
+  package = "prospicio",
+  properties = levy_properties("VarianceGammaLaw", c("sigma", "nu", "theta", "mu")),
+  constructor = function(sigma, nu, theta = 0, mu = 0) {
+    ptr <- rust_result(VarianceGammaLaw$new(as.double(sigma), as.double(nu), as.double(theta),
+                                            as.double(mu)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' The CGMY tempered stable law
+#'
+#' Carr, Geman, Madan and Yor's law (2002) with a location `mu` for
+#' [invert_chf()]: its cumulant generating function is
+#' `mu s + C gamma(-Y) ((M - s)^Y - M^Y + (G + s)^Y - G^Y)` for
+#' `-G < s < M`.
+#'
+#' @param C Activity, positive.
+#' @param G Left tempering, positive.
+#' @param M Right tempering, positive.
+#' @param Y Index, below 2 and not 0 or 1.
+#' @param mu Location.
+#' @returns A `tempered_stable_distribution` with properties `C`, `G`, `M`,
+#'   `Y`, `mu`, `mean`, `variance` and `skewness`.
+#' @export
+#' @examples
+#' tempered_stable_distribution(1, 5, 10, 0.5)@mean
+tempered_stable_distribution <- S7::new_class(
+  "tempered_stable_distribution",
+  package = "prospicio",
+  properties = levy_properties("TemperedStableLaw", c("C", "G", "M", "Y", "mu")),
+  constructor = function(C, G, M, Y, mu = 0) {
+    ptr <- rust_result(TemperedStableLaw$new(as.double(C), as.double(G), as.double(M),
+                                             as.double(Y), as.double(mu)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)

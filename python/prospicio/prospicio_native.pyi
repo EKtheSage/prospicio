@@ -25285,6 +25285,79 @@ class Normal:
         """
 
 @final
+class NormalInverseGaussian:
+    """
+    The normal inverse Gaussian law ``NIG(alpha, beta, delta, mu)`` for
+    ``invert_chf`` (Barndorff-Nielsen, 1997).
+    
+    With ``|beta| < alpha`` and ``gamma = sqrt(alpha**2 - beta**2)``, its
+    cumulant generating function is
+    ``mu s + delta (gamma - sqrt(alpha**2 - (beta + s)**2))``. SciPy's
+    ``norminvgauss(a, b, loc, scale)`` is ``alpha = a / scale``,
+    ``beta = b / scale``, ``delta = scale``, ``mu = loc``.
+    
+    Parameters
+    ----------
+    alpha : float
+        Tail heaviness, positive.
+    beta : float
+        Skewness, ``|beta| < alpha``.
+    delta : float
+        Scale, positive.
+    mu : float, default 0
+        Location.
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is out of range.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import NormalInverseGaussian, invert_chf
+    >>> d = invert_chf(NormalInverseGaussian(2.0, 0.5, 1.5, 0.3), log2=12)
+    >>> round(d.mean(), 6)
+    0.687298
+    """
+    def __new__(cls, /, alpha: float, beta: float, delta: float, mu: float = 0.0) -> NormalInverseGaussian: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha(self, /) -> float:
+        """
+        ``alpha``.
+        """
+    @property
+    def beta(self, /) -> float:
+        """
+        ``beta``.
+        """
+    @property
+    def delta(self, /) -> float:
+        """
+        ``delta``.
+        """
+    @property
+    def mean(self, /) -> float:
+        """
+        The mean.
+        """
+    @property
+    def mu(self, /) -> float:
+        """
+        ``mu``.
+        """
+    @property
+    def skewness(self, /) -> float:
+        """
+        The skewness.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        The variance.
+        """
+
+@final
 class OccurrencePml:
     """
     One point of the occurrence PML curve, from ``occurrence_pml``.
@@ -32431,6 +32504,83 @@ class TargetEncoding:
         """
 
 @final
+class TemperedStable:
+    """
+    The CGMY tempered stable law with a location ``mu`` for ``invert_chf``
+    (Carr, Geman, Madan and Yor, 2002).
+    
+    Its cumulant generating function is
+    ``mu s + C Gamma(-Y) ((M - s)**Y - M**Y + (G + s)**Y - G**Y)`` for
+    ``-G < s < M``.
+    
+    Parameters
+    ----------
+    C : float
+        Activity, positive.
+    G : float
+        Left tempering, positive.
+    M : float
+        Right tempering, positive.
+    Y : float
+        Index, below 2 and not 0 or 1.
+    mu : float, default 0
+        Location.
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is out of range.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import TemperedStable
+    >>> round(TemperedStable(1.0, 5.0, 10.0, 0.5).mean, 6)
+    -0.232166
+    """
+    @property
+    def C(self, /) -> float:
+        """
+        ``C``.
+        """
+    @property
+    def G(self, /) -> float:
+        """
+        ``G``.
+        """
+    @property
+    def M(self, /) -> float:
+        """
+        ``M``.
+        """
+    @property
+    def Y(self, /) -> float:
+        """
+        ``Y``.
+        """
+    def __new__(cls, /, C: float, G: float, M: float, Y: float, mu: float = 0.0) -> TemperedStable: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def mean(self, /) -> float:
+        """
+        The mean.
+        """
+    @property
+    def mu(self, /) -> float:
+        """
+        ``mu``.
+        """
+    @property
+    def skewness(self, /) -> float:
+        """
+        The skewness.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        The variance.
+        """
+
+@final
 class Terms:
     """
     The terms of a model: an intercept, numeric columns, factors,
@@ -35793,6 +35943,78 @@ class Valuation:
         """
 
 @final
+class VarianceGamma:
+    """
+    The variance gamma law ``VG(sigma, nu, theta)`` with a location ``mu``
+    for ``invert_chf`` (Madan, Carr and Chang, 1998).
+    
+    Its characteristic function is
+    ``exp(i mu s) (1 - i theta nu s + sigma**2 nu s**2 / 2) ** (-1 / nu)``;
+    at ``theta = 0``, ``nu = 1`` it is the Laplace law with scale
+    ``sigma / sqrt(2)``. A large ``nu`` decays slowly in frequency and needs
+    a small step.
+    
+    Parameters
+    ----------
+    sigma : float
+        Volatility, positive.
+    nu : float
+        Variance rate, positive.
+    theta : float, default 0
+        Drift.
+    mu : float, default 0
+        Location.
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is out of range.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import VarianceGamma
+    >>> VarianceGamma(0.2, 0.5, -0.1).variance
+    0.045
+    """
+    def __new__(cls, /, sigma: float, nu: float, theta: float = 0.0, mu: float = 0.0) -> VarianceGamma: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def mean(self, /) -> float:
+        """
+        The mean.
+        """
+    @property
+    def mu(self, /) -> float:
+        """
+        ``mu``.
+        """
+    @property
+    def nu(self, /) -> float:
+        """
+        ``nu``.
+        """
+    @property
+    def sigma(self, /) -> float:
+        """
+        ``sigma``.
+        """
+    @property
+    def skewness(self, /) -> float:
+        """
+        The skewness.
+        """
+    @property
+    def theta(self, /) -> float:
+        """
+        ``theta``.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        The variance.
+        """
+
+@final
 class ViewPrice:
     """
     One view's price under a distortion, from ``TowerGrids.price``: the
@@ -38803,7 +39025,7 @@ def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: flo
     
     Parameters
     ----------
-    law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, Stable or callable
+    law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, Stable, NormalInverseGaussian, VarianceGamma, TemperedStable or callable
         A law with a closed-form characteristic function (an ``Affine`` of
         one of them), or your own characteristic function: a callable of a
         list of real frequencies ``t`` returning ``E exp(i t X)`` at each,

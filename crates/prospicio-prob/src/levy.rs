@@ -288,7 +288,7 @@ impl TemperedStable {
         positive("G", g)?;
         positive("M", m)?;
         finite("mu", mu)?;
-        if !(y < 2.0) || y == 0.0 || y == 1.0 || !y.is_finite() {
+        if !y.is_finite() || y >= 2.0 || y == 0.0 || y == 1.0 {
             return Err(Error::InvalidParameter {
                 name: "Y",
                 value: y,
@@ -327,7 +327,8 @@ impl TemperedStable {
         let (c, g, m, y) = (self.c, self.g, self.m, self.y);
         let m_c = Complex64::new(m, 0.0);
         let g_c = Complex64::new(g, 0.0);
-        self.mu * s + c * gamma_fn(-y) * ((m_c - s).powf(y) - m.powf(y) + (g_c + s).powf(y) - g.powf(y))
+        self.mu * s
+            + c * gamma_fn(-y) * ((m_c - s).powf(y) - m.powf(y) + (g_c + s).powf(y) - g.powf(y))
     }
 
     /// `φ(s) = exp K(is)` on the principal powers.
@@ -381,7 +382,10 @@ mod tests {
         let h = 1e-4;
         let k1 = (cgf(h) - cgf(-h)) / (2.0 * h);
         let k2 = (cgf(h) - 2.0 * cgf(0.0) + cgf(-h)) / (h * h);
-        assert!((k1 - mean).abs() < 1e-6 * mean.abs().max(1.0), "{k1} {mean}");
+        assert!(
+            (k1 - mean).abs() < 1e-6 * mean.abs().max(1.0),
+            "{k1} {mean}"
+        );
         assert!((k2 / variance - 1.0).abs() < 1e-4, "{k2} {variance}");
     }
 

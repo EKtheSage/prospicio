@@ -94,7 +94,10 @@ mod prospicio_native {
         PyCasualtyProfile, PyCasualtyRating, PyElfTable, PyIlfTable, PyParetoAnchor, poisson_tail,
     };
     #[pymodule_export]
-    use super::chf::{PyChfDistribution, PyStable, invert_chf};
+    use super::chf::{
+        PyChfDistribution, PyNormalInverseGaussian, PyStable, PyTemperedStable, PyVarianceGamma,
+        invert_chf,
+    };
     #[pymodule_export]
     use super::counts::PyCount;
     #[pymodule_export]
