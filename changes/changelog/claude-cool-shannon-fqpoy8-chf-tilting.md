@@ -7,4 +7,4 @@
   damps its power tail, the bucket capped and the mass beyond the window
   reported, at parity with `aggregate` 2.1.0 (Python `Stable` and
   `invert_chf(tilt=)`, R `stable_distribution()` and `invert_chf(tilt =)`;
-  #779).
+  #779, #916).
