@@ -80,11 +80,7 @@ pub fn rearrange(columns: &[Vec<f64>], start: Start, tolerance: f64) -> Result<R
             }
             Start::Shuffled(seed) => {
                 let mut c = c.clone();
-                let mut rng = StreamRng::new(seed, j as u64);
-                for i in (1..n).rev() {
-                    let k = (rng.next_open01() * (i + 1) as f64) as usize;
-                    c.swap(i, k.min(i));
-                }
+                StreamRng::new(seed, j as u64).shuffle(&mut c);
                 c
             }
         })

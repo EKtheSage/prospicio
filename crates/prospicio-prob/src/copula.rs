@@ -741,7 +741,7 @@ pub(crate) fn target_ranks_with(
         .map(|j| {
             let mut c = scores.clone();
             if j > 0 {
-                shuffle(&mut c, &mut StreamRng::new(seed, j as u64));
+                StreamRng::new(seed, j as u64).shuffle(&mut c);
             }
             c
         })
@@ -924,7 +924,7 @@ pub fn iman_conover_with(
     let ranks = target_ranks_with(n, m, correlation, seed, &options.scores)?;
     let mut rows: Vec<usize> = (0..n).collect();
     if options.shuffle_rows {
-        shuffle(&mut rows, &mut StreamRng::new(seed, m as u64));
+        StreamRng::new(seed, m as u64).shuffle(&mut rows);
     }
 
     // Each component takes its sorted draws in the target ranks.
@@ -1052,14 +1052,6 @@ fn sibuya(rng: &mut StreamRng, alpha: f64) -> f64 {
         }
     }
     hi
-}
-
-/// Fisher–Yates shuffle with uniform indices from `rng`.
-fn shuffle<T>(x: &mut [T], rng: &mut StreamRng) {
-    for i in (1..x.len()).rev() {
-        let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
-        x.swap(i, j);
-    }
 }
 
 /// Checks a correlation matrix and returns its Cholesky factor.
