@@ -25,7 +25,9 @@
 //! distribution class. ASTIN Bulletin 27(1), 99–111.
 
 use prospicio_core::{Error, Result};
+use prospicio_math::roots::{Stop, try_bisect};
 use prospicio_prob::Severity;
+use std::convert::Infallible;
 
 /// An exposure curve: `G(x)` on `[0, 1]`, the expected loss below a
 /// fraction `x` of the MPL over the expected loss.
@@ -186,7 +188,7 @@ impl Mbbefd {
     /// `f` monotone in `c`.
     fn fit_swiss_re(what: &str, target: f64, f: impl Fn(&Self) -> f64) -> Result<(Self, f64)> {
         let at = |c: f64| -> f64 { f(&Self::swiss_re(c).expect("c in [0, 10]")) - target };
-        let (mut lo, mut hi) = (0.0, 10.0);
+        let (lo, hi) = (0.0, 10.0);
         let (flo, fhi) = (at(lo), at(hi));
         if !(target.is_finite() && flo.is_finite() && fhi.is_finite()) || flo * fhi > 0.0 {
             return Err(Error::Data(format!(
@@ -199,17 +201,9 @@ impl Mbbefd {
         if flo == 0.0 {
             return Ok((Self::swiss_re(0.0)?, 0.0));
         }
-        for _ in 0..200 {
-            let mid = 0.5 * (lo + hi);
-            if at(mid) * flo > 0.0 {
-                lo = mid;
-            } else {
-                hi = mid;
-            }
-            if hi - lo < 1e-13 {
-                break;
-            }
-        }
+        let Ok((lo, hi)) = try_bisect(lo, hi, Stop::absolute(1e-13).with_steps(200), |mid| {
+            Ok::<_, Infallible>(at(mid) * flo > 0.0)
+        });
         let c = 0.5 * (lo + hi);
         Ok((Self::swiss_re(c)?, c))
     }
@@ -568,15 +562,9 @@ impl TabulatedCurve {
         let n = points - half;
         for k in 1..n {
             let target = k as f64 / n as f64;
-            let (mut lo, mut hi) = (0.0, 1.0);
-            for _ in 0..100 {
-                let mid = 0.5 * (lo + hi);
-                if curve.g(mid) < target {
-                    lo = mid;
-                } else {
-                    hi = mid;
-                }
-            }
+            let Ok((lo, hi)) = try_bisect(0.0, 1.0, Stop::steps(100), |mid| {
+                Ok::<_, Infallible>(curve.g(mid) < target)
+            });
             xs.push(0.5 * (lo + hi));
         }
         xs.push(0.0);

@@ -10,9 +10,11 @@
 //! variable in the vine's order.
 
 use prospicio_core::{Error, Result, StreamRng};
+use prospicio_math::roots::{Stop, try_bisect};
 use prospicio_math::special::{
     bivariate_norm_cdf, ln_gamma, norm_cdf, norm_quantile, student_t_cdf, student_t_quantile,
 };
+use std::convert::Infallible;
 
 use crate::copula::Copula;
 
@@ -431,18 +433,10 @@ impl PairCopula {
             }
             PairFamily::Gumbel | PairFamily::Joe => {
                 // h is increasing in u; bisect on (0, 1) to a relative 1e-15.
-                let (mut lo, mut hi) = (0.0f64, 1.0f64);
-                for _ in 0..200 {
-                    let mid = 0.5 * (lo + hi);
-                    if self.base_h(mid, v) < p {
-                        lo = mid;
-                    } else {
-                        hi = mid;
-                    }
-                    if hi - lo <= 1e-15 * hi.max(1e-300) {
-                        break;
-                    }
-                }
+                let Ok((lo, hi)) =
+                    try_bisect(0.0, 1.0, Stop::relative(1e-15).with_steps(200), |u| {
+                        Ok::<_, Infallible>(self.base_h(u, v) < p)
+                    });
                 0.5 * (lo + hi)
             }
         }

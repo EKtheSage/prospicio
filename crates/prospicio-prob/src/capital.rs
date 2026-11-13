@@ -8,6 +8,7 @@
 //! `docs/design/risk.md`.
 
 use prospicio_core::{Error, Result};
+use prospicio_math::roots::{Stop, try_bisect};
 
 use crate::distortion::Distortion;
 use crate::predictive::PredictiveDistribution;
@@ -391,7 +392,7 @@ impl PredictiveDistribution {
         };
         // The sum rises with the level for VaR and TVaR, and falls with the
         // EPD ratio, which is searched on a log scale.
-        let (mut lo, mut hi, rising) = match measure {
+        let (lo, hi, rising) = match measure {
             LevelMeasure::Var | LevelMeasure::Tvar => (0.0, 1.0, true),
             LevelMeasure::Epd => ((1e-30f64).ln(), (1e6f64).ln(), false),
         };
@@ -405,15 +406,9 @@ impl PredictiveDistribution {
                 "is outside the range the stand-alone measures can add up to",
             ));
         }
-        for _ in 0..200 {
-            let mid = 0.5 * (lo + hi);
-            let below = sum_at(level_of(mid))? < total;
-            if below == rising {
-                lo = mid;
-            } else {
-                hi = mid;
-            }
-        }
+        let (lo, hi) = try_bisect(lo, hi, Stop::steps(200), |mid| {
+            Ok((sum_at(level_of(mid))? < total) == rising)
+        })?;
         // Rising: the lowest level whose sum reaches the total; falling:
         // the highest EPD ratio whose assets reach it.
         let level = level_of(if rising { hi } else { lo });

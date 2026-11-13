@@ -32,8 +32,10 @@
 use prospicio_aggregate::EventSet;
 use prospicio_core::{Error, Result, StreamRng};
 use prospicio_math::integrate::gauss_legendre;
+use prospicio_math::roots::{Stop, try_bisect};
 use prospicio_prob::provenance::current_samplers;
 use prospicio_prob::{Counting, Poisson};
+use std::convert::Infallible;
 
 use crate::exposure::{ExposureCurve, Mbbefd, TabulatedCurve};
 
@@ -471,15 +473,9 @@ fn tilt_mean(t: f64) -> f64 {
 fn solve_tilt(p: f64) -> f64 {
     // tilt_mean(t) ≈ 1 − 1/t for large t, so ±2/min(p, 1 − p) brackets it.
     let reach = 2.0 / p.min(1.0 - p);
-    let (mut lo, mut hi) = (-reach, reach);
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if tilt_mean(mid) < p {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
+    let Ok((lo, hi)) = try_bisect(-reach, reach, Stop::steps(200), |mid| {
+        Ok::<_, Infallible>(tilt_mean(mid) < p)
+    });
     0.5 * (lo + hi)
 }
 

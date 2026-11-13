@@ -9,6 +9,7 @@ use prospicio_core::StreamRng;
 use prospicio_models::Family;
 use prospicio_prob::{InputHasher, PredictiveDistribution, Provenance};
 use rayon::prelude::*;
+use std::convert::Infallible;
 
 use super::bf::{PlugIn, input_hasher, push_posterior_ultimate};
 use super::laplace::{Posterior, Whitened, mode};
@@ -26,6 +27,7 @@ use crate::pattern_draws::{DevelopmentPatterns, predictive_with_patterns, push_c
 use crate::segments::{FitTable, ReserveFit, SegmentFits};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
+use prospicio_math::roots::{Stop, try_bisect};
 
 /// The Bayesian Bornhuetter–Ferguson whose prior sits on the ultimate: the
 /// over-dispersed Poisson model of the incremental values `X_wd` with means
@@ -1218,18 +1220,13 @@ fn strong_prior_shares(column_sum: &[f64], column_prior: &[f64]) -> Vec<f64> {
             - 1.0
     };
     let floor = column_prior.iter().cloned().fold(f64::INFINITY, f64::min);
-    let (mut lo, mut hi) = (-floor * (1.0 - 1e-12), floor);
+    let (lo, mut hi) = (-floor * (1.0 - 1e-12), floor);
     while excess(hi) > 0.0 {
         hi *= 2.0;
     }
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if excess(mid) > 0.0 {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
+    let Ok((lo, hi)) = try_bisect(lo, hi, Stop::steps(200), |mid| {
+        Ok::<_, Infallible>(excess(mid) > 0.0)
+    });
     let lambda = 0.5 * (lo + hi);
     column_sum
         .iter()
