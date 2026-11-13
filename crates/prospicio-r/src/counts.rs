@@ -7,7 +7,8 @@ use extendr_api::{Error, Result};
 use prospicio_core::StreamRng;
 use prospicio_prob::Counting;
 use prospicio_prob::count_families::{
-    CompoundPoisson, CountDist, EmpiricalCount, Logarithmic, MixedPoisson, Mixing, ZeroModified,
+    CompoundPoisson, CountDist, EmpiricalCount, Logarithmic, MixedPoisson, Mixing, MixingFamily,
+    ZeroModified,
 };
 
 use crate::distributions::{NegativeBinomial, Poisson};
@@ -56,18 +57,19 @@ impl ClaimCount {
     /// "sichel_skewness", "sichel_gamma" or "sichel_ig"; `param` is the
     /// beta's `max`, the Sichel shape or skewness, or the matched `f`.
     fn mixed_poisson(mean: f64, cv: f64, mixing: &str, shift: f64, param: f64) -> Result<Self> {
-        let mixing = match mixing {
-            "gamma" => Mixing::Gamma { cv },
-            "inverse_gaussian" | "ig" => Mixing::InverseGaussian { cv },
-            "beta" => Mixing::Beta { cv, max: param },
-            "sichel" => Mixing::Sichel { cv, shape: param },
-            "sichel_skewness" => Mixing::SichelSkewness {
+        let family = MixingFamily::from_name(mixing)
+            .ok_or_else(|| crate::unknown_name("mixing", mixing, MixingFamily::NAMES))?;
+        let mixing = match family {
+            MixingFamily::Gamma => Mixing::Gamma { cv },
+            MixingFamily::InverseGaussian => Mixing::InverseGaussian { cv },
+            MixingFamily::Beta => Mixing::Beta { cv, max: param },
+            MixingFamily::Sichel => Mixing::Sichel { cv, shape: param },
+            MixingFamily::SichelSkewness => Mixing::SichelSkewness {
                 cv,
                 skewness: param,
             },
-            "sichel_gamma" => Mixing::sichel_gamma(cv, param),
-            "sichel_ig" => Mixing::sichel_ig(cv, param),
-            other => return Err(Error::Other(format!("unknown mixing {other:?}"))),
+            MixingFamily::SichelGamma => Mixing::sichel_gamma(cv, param),
+            MixingFamily::SichelIg => Mixing::sichel_ig(cv, param),
         };
         Ok(Self {
             inner: CountDist::MixedPoisson(MixedPoisson::new(mean, mixing, shift).map_err(to_r)?),

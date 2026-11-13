@@ -5,7 +5,8 @@
 use prospicio_core::StreamRng;
 use prospicio_prob::Counting;
 use prospicio_prob::count_families::{
-    CompoundPoisson, CountDist, EmpiricalCount, Logarithmic, MixedPoisson, Mixing, ZeroModified,
+    CompoundPoisson, CountDist, EmpiricalCount, Logarithmic, MixedPoisson, Mixing, MixingFamily,
+    ZeroModified,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -119,7 +120,7 @@ impl PyCount {
     /// mean : float
     /// cv : float
     ///     Coefficient of variation of ``theta``, fixed part included.
-    /// mixing : {"gamma", "inverse_gaussian", "beta", "sichel", "sichel_gamma", "sichel_ig"}, default "gamma"
+    /// mixing : {"gamma", "inverse_gaussian", "beta", "sichel", "sichel_skewness", "sichel_gamma", "sichel_ig"}, default "gamma"
     ///     The distribution of ``G``. Gamma gives the negative binomial
     ///     (``shift = 0``) or the Delaporte; inverse Gaussian the
     ///     Poisson-inverse Gaussian or its shifted version. The others take
@@ -128,7 +129,8 @@ impl PyCount {
     ///     ``"sichel"``, the generalized inverse Gaussian with the given
     ///     ``shape`` (``mixed sichel cv shape``; ``-0.5`` is the inverse
     ///     Gaussian) or, with ``skewness`` instead, the shape that gives that
-    ///     skewness; ``"sichel_gamma"`` and ``"sichel_ig"``, the generalized
+    ///     skewness (also named ``"sichel_skewness"``); ``"ig"`` is
+    ///     ``"inverse_gaussian"``; ``"sichel_gamma"`` and ``"sichel_ig"``, the generalized
     ///     inverse Gaussian with the skewness of the Delaporte's or the
     ///     shifted inverse Gaussian's mixing with fixed part ``f``
     ///     (``mixed sichel.gamma cv f``, ``mixed sichel.ig cv f``).
@@ -162,14 +164,16 @@ impl PyCount {
         let need = |v: Option<f64>, name: &str| {
             v.ok_or_else(|| PyValueError::new_err(format!("mixing {mixing:?} needs {name}")))
         };
-        let mixing = match mixing {
-            "gamma" => Mixing::Gamma { cv },
-            "inverse_gaussian" | "ig" => Mixing::InverseGaussian { cv },
-            "beta" => Mixing::Beta {
+        let family = MixingFamily::from_name(mixing)
+            .ok_or_else(|| crate::unknown_name("mixing", mixing, MixingFamily::NAMES))?;
+        let mixing = match family {
+            MixingFamily::Gamma => Mixing::Gamma { cv },
+            MixingFamily::InverseGaussian => Mixing::InverseGaussian { cv },
+            MixingFamily::Beta => Mixing::Beta {
                 cv,
                 max: need(max, "max")?,
             },
-            "sichel" => match (shape, skewness) {
+            MixingFamily::Sichel => match (shape, skewness) {
                 (Some(shape), None) => Mixing::Sichel { cv, shape },
                 (None, Some(skewness)) => Mixing::SichelSkewness { cv, skewness },
                 _ => {
@@ -178,14 +182,12 @@ impl PyCount {
                     ));
                 }
             },
-            "sichel_gamma" => Mixing::sichel_gamma(cv, need(f, "f")?),
-            "sichel_ig" => Mixing::sichel_ig(cv, need(f, "f")?),
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "mixing must be \"gamma\", \"inverse_gaussian\", \"beta\", \"sichel\", \
-                     \"sichel_gamma\" or \"sichel_ig\", not {other:?}"
-                )));
-            }
+            MixingFamily::SichelSkewness => Mixing::SichelSkewness {
+                cv,
+                skewness: need(skewness, "skewness")?,
+            },
+            MixingFamily::SichelGamma => Mixing::sichel_gamma(cv, need(f, "f")?),
+            MixingFamily::SichelIg => Mixing::sichel_ig(cv, need(f, "f")?),
         };
         Ok(Self {
             inner: CountDist::MixedPoisson(MixedPoisson::new(mean, mixing, shift).map_err(to_py)?),
