@@ -20,6 +20,7 @@
 //! See `docs/design/pareto.md`.
 
 use prospicio_core::{Error, Result};
+use prospicio_math::roots::{Stop, try_bisect};
 use prospicio_prob::{
     ComponentKey, Distortion, Distribution, Empirical, Grid, PredictiveDistribution, Sampled,
 };
@@ -231,15 +232,10 @@ pub fn price_with_reinstatements(
     let mut iterations = 0;
     if hi > 0.0 && mean_g > 0.0 {
         let tol = 1e-12 * hi;
-        while hi - lo > tol && iterations < 200 {
-            let mid = 0.5 * (lo + hi);
-            if net(mid)?.premium > mid {
-                lo = mid;
-            } else {
-                hi = mid;
-            }
+        (lo, hi) = try_bisect(lo, hi, Stop::absolute(tol).with_steps(200), |mid| {
             iterations += 1;
-        }
+            net(mid).map(|at| at.premium > mid)
+        })?;
     }
     let upfront = if mean_g > 0.0 { 0.5 * (lo + hi) } else { hi };
     let mut at = net(upfront)?;
