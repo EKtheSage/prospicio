@@ -165,6 +165,15 @@ milestone 0.1.0.
 | Probability | #769 (Tsallis distortion), #770 (Gini index of a distortion, `from_gini`) | #774 (refuse invalid discrete inputs, breaking), #775 (Tweedie parameter conversions) |
 | Aggregate | #772 (disappearing deductible), #773 (OEP of a program, net or ceded), #777 (event loss tables across units), #778 (a validation verdict), #776 (lattice bucket rule and warning) | #771 (the extended distortion calibration set) |
 
+Status on 2026-11-13: the release PR sets 0.1.0, and every 0.1.0 item is
+done. The `aggregate` 2.1.0 parity issues closed with #811 to #820, #762
+with #821 and #782 with #814. The codebase audit of 2026-11-09 (#822) was
+added to the release and finished with it: its 30 sub-issues closed, the
+last with #909 to #912 (#834 and #843). The severity fits (#800, #802, #804,
+#805), the trend schedule (#801, #803, #806; the AP demo's cumulative loss
+ratios wait for its inputs) and the Excel functions merged since 0.0.9 are
+in it too.
+
 **0.2.0** (planned): the characteristic-function engine, #779, the laws that
 need it, #780, and an event loss table as a compound severity, #781.
 Milestone 0.2.0.

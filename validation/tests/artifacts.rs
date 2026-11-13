@@ -428,12 +428,24 @@ fn fits() -> Vec<Fit> {
     ]
 }
 
-/// Today's writer gives the frozen document back, value for value.
+/// Today's writer gives the frozen document back, value for value, except
+/// the version of the writing crate in a model's provenance: a writer
+/// stamps its own (`prospicio_models::artifact::provenance`), so it moves
+/// with every release while the crate names and everything else stay.
 fn same_document(file: &str, frozen: &str, rewritten: &str) {
-    let (a, b): (Value, Value) = (
+    let (mut a, mut b): (Value, Value) = (
         serde_json::from_str(frozen).unwrap(),
         serde_json::from_str(rewritten).unwrap(),
     );
+    for doc in [&mut a, &mut b] {
+        if let Some(Value::Array(versions)) = doc.pointer_mut("/provenance/versions") {
+            for pair in versions.iter_mut() {
+                if let Some(version) = pair.get_mut(1) {
+                    *version = Value::Null;
+                }
+            }
+        }
+    }
     assert_eq!(
         a, b,
         "{file}: today's reader and writer do not give the frozen document back"
