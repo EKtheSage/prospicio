@@ -84,10 +84,43 @@ def test_grain_spellings(grain):
     assert ChainLadder().fit(triangle(grain), "paid").ultimate == want
 
 
+def test_family_and_link_names():
+    # The GLM family and link names come from one table (#834, step 2).
+    from prospicio.models import Glm
+
+    with pytest.raises(ValueError, match='family must be "gaussian", "normal", "poisson", .* or "tweedie", got "weibull"'):
+        Glm("weibull")
+    with pytest.raises(ValueError, match='link must be "identity", "log", .* or "power", got "sqrt"'):
+        Glm("poisson", link="sqrt")
+    x = [float(i % 5) for i in range(30)]
+    design = Design([[1.0] * 30, x], ["(Intercept)", "x"])
+    y = [1.0 + 0.3 * v + (i % 3) * 0.1 for i, v in enumerate(x)]
+    a = Glm("gaussian").fit(design, y).coefficients
+    assert Glm("normal").fit(design, y).coefficients == a
+
+
 def test_mixing_ig():
     a = Count.mixed_poisson(10.0, 0.5, mixing="inverse_gaussian")
     b = Count.mixed_poisson(10.0, 0.5, mixing="ig")
     assert a.pmf(3) == b.pmf(3)
+
+
+def test_mixing_names():
+    # The mixing's names come from one table (#834, step 2).
+    with pytest.raises(ValueError, match='mixing must be "gamma", "inverse_gaussian", "ig", "beta", '
+                       '"sichel", "sichel_skewness", "sichel_gamma" or "sichel_ig", got "lognormal"'):
+        Count.mixed_poisson(10.0, 0.5, mixing="lognormal")
+    a = Count.mixed_poisson(10.0, 0.5, mixing="sichel", skewness=1.5)
+    b = Count.mixed_poisson(10.0, 0.5, mixing="sichel_skewness", skewness=1.5)
+    assert a.pmf(3) == b.pmf(3)
+
+
+def test_bonus_malus_mixing_ig():
+    from prospicio.pricing import BonusMalus
+
+    scale = BonusMalus.rule(6, 5, down=1, up_per_claim=2)
+    a = scale.optimal_relativities(0.1, cv=0.8, mixing="inverse_gaussian")
+    assert scale.optimal_relativities(0.1, cv=0.8, mixing="ig") == a
 
 
 @pytest.mark.parametrize(

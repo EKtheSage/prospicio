@@ -312,6 +312,23 @@ fn errors() {
         )
         .contains("family must be")
     );
+    // The family and link names come from the shared tables (#834).
+    let family_error = run(
+        "pro_prc_glm",
+        vec![data.clone(), t("claims"), terms(), t("weibull")],
+    );
+    assert!(
+        family_error.contains("\"quasipoisson\"") && family_error.contains("\"negbin\" or \"tweedie\""),
+        "{family_error}"
+    );
+    let link = |name: &str| {
+        run(
+            "pro_prc_glm",
+            vec![data.clone(), t("claims"), terms(), none(), t(name)],
+        )
+    };
+    assert!(link("power").contains("the power link is not in PRO.GLM"));
+    assert!(link("sqrt").contains("link must be \"identity\", \"log\""));
     assert!(
         run(
             "pro_prc_glm",

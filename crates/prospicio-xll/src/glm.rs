@@ -11,7 +11,9 @@
 
 use prospicio_glm::{Dispersion, Glm, GlmFit};
 use prospicio_math::special::norm_quantile;
-use prospicio_models::{Coding, Column, Design, Family, Fitted, Frame, Link, Model, Terms};
+use prospicio_models::{
+    Coding, Column, Design, Family, FamilyKind, Fitted, Frame, Link, LinkKind, Model, Terms,
+};
 
 use crate::reserving::{number_or, text_option};
 use crate::sheet::{Grid, Value, position};
@@ -250,23 +252,31 @@ fn family(grid: &Grid, p: &Grid) -> Result<(Family, bool)> {
         return Err("p is the tweedie power or the negative_binomial theta; leave it empty for other families".into());
     }
     let quasi = matches!(name.as_deref(), Some("quasipoisson" | "quasi_poisson"));
-    let family = match name.as_deref() {
-        None | Some("poisson" | "quasipoisson" | "quasi_poisson") => Family::Poisson,
-        Some("gamma") => Family::Gamma,
-        Some("gaussian" | "normal") => Family::Gaussian,
-        Some("inverse_gaussian") => Family::InverseGaussian,
-        Some("binomial") => Family::Binomial,
-        Some("tweedie") => Family::Tweedie {
+    let kind = match name.as_deref() {
+        None => FamilyKind::Poisson,
+        Some(_) if quasi => FamilyKind::Poisson,
+        Some(other) => FamilyKind::from_name(other).ok_or_else(|| {
+            // Excel's quasi-Poisson leads the list, then the shared table (#834).
+            let mut names: Vec<(&str, FamilyKind)> = vec![
+                ("quasipoisson", FamilyKind::Poisson),
+                ("quasi_poisson", FamilyKind::Poisson),
+            ];
+            names.extend_from_slice(FamilyKind::NAMES);
+            crate::unknown_name("family", other, &names)
+        })?,
+    };
+    let family = match kind {
+        FamilyKind::Poisson => Family::Poisson,
+        FamilyKind::Gamma => Family::Gamma,
+        FamilyKind::Gaussian => Family::Gaussian,
+        FamilyKind::InverseGaussian => Family::InverseGaussian,
+        FamilyKind::Binomial => Family::Binomial,
+        FamilyKind::Tweedie => Family::Tweedie {
             power: needs("the power, such as 1.5")?,
         },
-        Some("negative_binomial" | "negbin") => Family::NegativeBinomial {
+        FamilyKind::NegativeBinomial => Family::NegativeBinomial {
             theta: needs("theta, such as 2")?,
         },
-        Some(other) => {
-            return Err(format!(
-                "family must be \"poisson\", \"quasipoisson\", \"gamma\", \"tweedie\", \"gaussian\", \"inverse_gaussian\", \"binomial\" or \"negative_binomial\", got {other:?}"
-            ));
-        }
     };
     Ok((family, quasi))
 }
@@ -277,16 +287,14 @@ fn family(grid: &Grid, p: &Grid) -> Result<(Family, bool)> {
 fn link(grid: &Grid, family: Family) -> Result<Link> {
     match text_option(grid, "link")?.as_deref() {
         None => Ok(family.default_link()),
-        Some("log") => Ok(Link::Log),
-        Some("identity") => Ok(Link::Identity),
-        Some("logit") => Ok(Link::Logit),
-        Some("probit") => Ok(Link::Probit),
-        Some("cloglog") => Ok(Link::Cloglog),
-        Some("inverse") => Ok(Link::Inverse),
-        Some("inverse_squared") => Ok(Link::InverseSquared),
-        Some(other) => Err(format!(
-            "link must be \"log\", \"identity\", \"logit\", \"probit\", \"cloglog\", \"inverse\" or \"inverse_squared\", got {other:?}"
-        )),
+        Some(name) => match LinkKind::from_name(name) {
+            // The power link needs an exponent, which PRO.GLM has no argument for.
+            Some(LinkKind::Power) => Err(
+                "the power link is not in PRO.GLM: it needs an exponent; use \"log\", \"identity\", \"inverse\" or \"inverse_squared\"".into(),
+            ),
+            Some(kind) => Ok(kind.link(f64::NAN)),
+            None => Err(crate::unknown_name("link", name, LinkKind::NAMES)),
+        },
     }
 }
 

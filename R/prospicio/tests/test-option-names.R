@@ -55,9 +55,26 @@ stopifnot(identical(distortion_g(distortion("ly", 0.2, r0 = 0.05), 0.3),
 expect_error_like(prospicio:::rust_result(prospicio:::RiskDistortion$new("roe", 0.1, numeric(), 0)),
                   'kind must be "ccoc", "ph", "proportional_hazard", "wang"')
 
+# The GLM family and link names from one table (#834, step 2).
+gd <- data.frame(x = rep(0:4, 6), y = 1 + 0.3 * rep(0:4, 6) + rep(c(0, 0.1, 0.2), each = 10))
+stopifnot(identical(coef(glm_fit(y ~ x, gd, family = "normal")),
+                    coef(glm_fit(y ~ x, gd, family = "gaussian"))))
+expect_error_like(glm_fit(y ~ x, gd, family = "weibull"),
+                  'family must be "gaussian", "normal", "poisson", "gamma", "inverse_gaussian", "binomial", "negative_binomial", "negbin" or "tweedie", got "weibull"')
+expect_error_like(glm_fit(y ~ x, gd, family = "poisson", link = "sqrt"),
+                  'link must be "identity", "log", "logit", "probit", "cloglog", "inverse", "inverse_squared" or "power", got "sqrt"')
+
 # The mixing alias "ig".
 stopifnot(identical(pmf(mixed_poisson_count(10, 0.5, mixing = "ig"), 0:5),
                     pmf(mixed_poisson_count(10, 0.5, mixing = "inverse_gaussian"), 0:5)))
+
+# The mixing's names from one table (#834, step 2): the same message as
+# Python for an unknown name, and "ig" for a bonus-malus portfolio.
+expect_error_like(prospicio:::rust_result(prospicio:::ClaimCount$mixed_poisson(10, 0.5, "lognormal", 0, 0)),
+                  'mixing must be "gamma", "inverse_gaussian", "ig", "beta", "sichel", "sichel_skewness", "sichel_gamma" or "sichel_ig", got "lognormal"')
+scale6 <- bonus_malus(6, start = 5, down = 1, up_per_claim = 2)
+stopifnot(identical(bonus_malus_portfolio(scale6, 0.1, cv = 0.8, mixing = "ig")$relativity,
+                    bonus_malus_portfolio(scale6, 0.1, cv = 0.8, mixing = "inverse_gaussian")$relativity))
 
 # A selected pattern's kind in Excel's spellings.
 pattern <- list(
