@@ -86,6 +86,7 @@ reference:
       - distributions.Normal
       - distributions.Ogive
       - distributions.invert_chf
+      - distributions.Stable
       - distributions.ChfDistribution
       - distributions.Sampled
   - title: Large-loss severities

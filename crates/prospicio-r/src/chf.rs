@@ -6,7 +6,10 @@ use std::sync::Arc;
 use extendr_api::Result;
 use extendr_api::prelude::*;
 use prospicio_prob::Distribution;
-use prospicio_prob::chf::{ChfDistribution, ChfFn, ChfLaw, ChfOptions, Complex64, UserChf, invert};
+use prospicio_prob::chf::{
+    ChfDistribution, ChfFn, ChfLaw, ChfOptions, Complex64, Tilt, UserChf, invert,
+};
+use prospicio_prob::{Stable, StableParameterization};
 
 use crate::distributions::{Grid, dist_from_robj};
 use crate::normal::NormalDist;
@@ -52,6 +55,63 @@ fn r_chf(f: Function) -> Arc<ChfFn> {
     })
 }
 
+/// An alpha-stable law's parameters.
+#[extendr]
+pub(crate) struct StableLaw {
+    inner: Stable,
+}
+
+#[extendr]
+impl StableLaw {
+    /// `parameterization` is "S1" or "S0".
+    fn new(alpha: f64, beta: f64, scale: f64, loc: f64, parameterization: &str) -> Result<Self> {
+        let p = match parameterization.to_ascii_uppercase().as_str() {
+            "S1" => StableParameterization::S1,
+            "S0" => StableParameterization::S0,
+            other => {
+                return Err(Error::Other(format!(
+                    "parameterization must be \"S1\" or \"S0\", got \"{other}\""
+                )));
+            }
+        };
+        Ok(Self {
+            inner: Stable::new(alpha, beta, scale, loc, p).map_err(to_r)?,
+        })
+    }
+
+    fn alpha(&self) -> f64 {
+        self.inner.alpha()
+    }
+
+    fn beta(&self) -> f64 {
+        self.inner.beta()
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    fn loc(&self) -> f64 {
+        self.inner.loc()
+    }
+
+    fn loc0(&self) -> f64 {
+        self.inner.loc0()
+    }
+
+    fn tail_constant(&self) -> f64 {
+        self.inner.tail_constant()
+    }
+
+    fn left_tail_constant(&self) -> f64 {
+        self.inner.left_tail_constant()
+    }
+
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+}
+
 /// A law's bucket masses from its characteristic function.
 #[extendr]
 pub(crate) struct ChfDist {
@@ -62,9 +122,25 @@ pub(crate) struct ChfDist {
 impl ChfDist {
     /// `law` is a distribution's pointer or an R function returning
     /// `c(Re, Im)`; `step` and `x_min` are `NaN` when not given.
-    fn new(law: Robj, log2: f64, step: f64, x_min: f64, bucket_sizing_p: f64) -> Result<Self> {
+    /// `tilt` is "auto", "off" or "fixed" with `tau`.
+    fn new(
+        law: Robj,
+        log2: f64,
+        step: f64,
+        x_min: f64,
+        bucket_sizing_p: f64,
+        tilt: &str,
+        tau: f64,
+    ) -> Result<Self> {
+        let tilt = match tilt {
+            "auto" => Tilt::Auto,
+            "off" => Tilt::Off,
+            _ => Tilt::Fixed(tau),
+        };
         let law = if let Ok(n) = <&NormalDist>::try_from(&law) {
             ChfLaw::Normal(n.inner)
+        } else if let Ok(st) = <&StableLaw>::try_from(&law) {
+            ChfLaw::Stable(st.inner)
         } else if let Ok(f) = Function::try_from(law.clone()) {
             ChfLaw::User(UserChf::new(r_chf(f), "chf", false))
         } else {
@@ -75,6 +151,7 @@ impl ChfDist {
             step: (!step.is_nan()).then_some(step),
             x_min: (!x_min.is_nan()).then_some(x_min),
             bucket_sizing_p,
+            tilt,
         };
         Ok(Self {
             inner: invert(&law, &options).map_err(to_r)?,
@@ -108,6 +185,9 @@ impl ChfDist {
             is_truncated = r.is_truncated(),
             outside_below = r.outside_below,
             outside_above = r.outside_above,
+            tilt_left = r.tilt.0,
+            tilt_right = r.tilt.1,
+            edge_error = r.edge_error,
             total_mass = r.total_mass,
             law_mean = r.law_mean,
             law_variance = r.law_variance
@@ -140,4 +220,5 @@ impl ChfDist {
 extendr_module! {
     mod chf;
     impl ChfDist;
+    impl StableLaw;
 }

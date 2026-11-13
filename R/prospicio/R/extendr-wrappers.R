@@ -1437,7 +1437,7 @@ ChfDist$masses <- function() .Call(wrap__ChfDist__masses, self)
 
 ChfDist$mean <- function() .Call(wrap__ChfDist__mean, self)
 
-ChfDist$new <- function(law, log2, step, x_min, bucket_sizing_p) .Call(wrap__ChfDist__new, law, log2, step, x_min, bucket_sizing_p)
+ChfDist$new <- function(law, log2, step, x_min, bucket_sizing_p, tilt, tau) .Call(wrap__ChfDist__new, law, log2, step, x_min, bucket_sizing_p, tilt, tau)
 
 ChfDist$quantile <- function(p) .Call(wrap__ChfDist__quantile, self, p)
 
@@ -4104,6 +4104,32 @@ SizeOfLossDist$variance <- function() .Call(wrap__SizeOfLossDist__variance, self
 
 #' @export
 `[[.SizeOfLossDist` <- `$.SizeOfLossDist`
+
+StableLaw <- new.env(parent = emptyenv())
+
+StableLaw$alpha <- function() .Call(wrap__StableLaw__alpha, self)
+
+StableLaw$beta <- function() .Call(wrap__StableLaw__beta, self)
+
+StableLaw$left_tail_constant <- function() .Call(wrap__StableLaw__left_tail_constant, self)
+
+StableLaw$loc <- function() .Call(wrap__StableLaw__loc, self)
+
+StableLaw$loc0 <- function() .Call(wrap__StableLaw__loc0, self)
+
+StableLaw$mean <- function() .Call(wrap__StableLaw__mean, self)
+
+StableLaw$new <- function(alpha, beta, scale, loc, parameterization) .Call(wrap__StableLaw__new, alpha, beta, scale, loc, parameterization)
+
+StableLaw$scale <- function() .Call(wrap__StableLaw__scale, self)
+
+StableLaw$tail_constant <- function() .Call(wrap__StableLaw__tail_constant, self)
+
+#' @export
+`$.StableLaw` <- function (self, name) { func <- StableLaw[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.StableLaw` <- `$.StableLaw`
 
 StackingModel <- new.env(parent = emptyenv())
 

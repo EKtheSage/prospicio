@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use prospicio_prob::Distribution;
 use prospicio_prob::chf::{
-    BUCKET_SIZING_P, ChfDistribution, ChfFn, ChfLaw, ChfOptions, Complex64, UserChf, invert,
+    BUCKET_SIZING_P, ChfDistribution, ChfFn, ChfLaw, ChfOptions, Complex64, Tilt, UserChf, invert,
 };
+use prospicio_prob::{Stable, StableParameterization};
 use pyo3::prelude::*;
 
 use crate::distributions::{PyGrid, extract_dist};
@@ -89,6 +90,21 @@ impl PyChfDistribution {
     #[getter]
     fn outside_above(&self) -> f64 {
         self.inner.report().outside_above
+    }
+
+    /// ``(left, right)``: the e-folds of damping across the window on each
+    /// side, ``(0, tau)`` for a right power tail tilted, ``(tau, 0)`` for a
+    /// left one, ``(0, 0)`` untilted.
+    #[getter]
+    fn tilt(&self) -> (f64, f64) {
+        self.inner.report().tilt
+    }
+
+    /// The modelled worst relative error of a bucket at the heavy end of a
+    /// law with one power tail; ``nan`` for any other law.
+    #[getter]
+    fn edge_error(&self) -> f64 {
+        self.inner.report().edge_error
     }
 
     /// The sum of the masses.
@@ -182,6 +198,119 @@ impl PyChfDistribution {
     }
 }
 
+/// An alpha-stable law ``S(alpha, beta, scale, loc)`` for ``invert_chf``.
+///
+/// With ``beta`` 1 or -1 its one power tail is inverted along a tilted
+/// line; with ``|beta| < 1`` it is inverted with ``tilt=False`` only. At
+/// ``alpha = 2`` it is the normal with variance ``2 scale ** 2``.
+///
+/// Parameters
+/// ----------
+/// alpha : float
+///     The index of stability, in ``(0, 2]``.
+/// beta : float
+///     The skewness, in ``[-1, 1]``.
+/// scale : float, default 1
+///     Positive.
+/// loc : float, default 0
+///     The location, read in ``parameterization``.
+/// parameterization : {"S1", "S0"}, default "S1"
+///     Nolan's S1 (scipy's default) or S0.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is out of range.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Stable
+/// >>> s = Stable(1.5, 1.0, 2.0)
+/// >>> round(s.tail_constant, 6), round(s.loc0, 12)
+/// (1.128379, -2.0)
+#[pyclass(name = "Stable", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyStable {
+    inner: Stable,
+}
+
+#[pymethods]
+impl PyStable {
+    #[new]
+    #[pyo3(signature = (alpha, beta, scale = 1.0, loc = 0.0, parameterization = "S1"))]
+    fn new(alpha: f64, beta: f64, scale: f64, loc: f64, parameterization: &str) -> PyResult<Self> {
+        let p = match parameterization.to_ascii_uppercase().as_str() {
+            "S1" => StableParameterization::S1,
+            "S0" => StableParameterization::S0,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "parameterization must be \"S1\" or \"S0\", got {parameterization:?}"
+                )));
+            }
+        };
+        Ok(Self {
+            inner: Stable::new(alpha, beta, scale, loc, p).map_err(to_py)?,
+        })
+    }
+
+    /// The index of stability.
+    #[getter]
+    fn alpha(&self) -> f64 {
+        self.inner.alpha()
+    }
+
+    /// The skewness.
+    #[getter]
+    fn beta(&self) -> f64 {
+        self.inner.beta()
+    }
+
+    /// The scale.
+    #[getter]
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    /// The S1 location.
+    #[getter]
+    fn loc(&self) -> f64 {
+        self.inner.loc()
+    }
+
+    /// The S0 location.
+    #[getter]
+    fn loc0(&self) -> f64 {
+        self.inner.loc0()
+    }
+
+    /// ``A`` in ``P(X > x) ~ A x ** -alpha``.
+    #[getter]
+    fn tail_constant(&self) -> f64 {
+        self.inner.tail_constant()
+    }
+
+    /// ``B`` in ``P(X < -x) ~ B x ** -alpha``.
+    #[getter]
+    fn left_tail_constant(&self) -> f64 {
+        self.inner.left_tail_constant()
+    }
+
+    /// The mean: ``loc`` for ``alpha > 1``, else infinite or ``nan``.
+    #[getter]
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Stable(alpha={:?}, beta={:?}, scale={:?}, loc={:?})",
+            self.inner.alpha(),
+            self.inner.beta(),
+            self.inner.scale(),
+            self.inner.loc()
+        )
+    }
+}
+
 /// A Python callable of a list of frequencies returning their complex
 /// values. A Python exception becomes the error message.
 fn py_chf(f: Py<PyAny>) -> Arc<ChfFn> {
@@ -223,9 +352,17 @@ fn py_chf(f: Py<PyAny>) -> Arc<ChfFn> {
 /// the step moves down that ladder while that helps. A Tweedie's mass at 0
 /// is inverted apart, so it does not ring.
 ///
+/// A stable law with one power tail (``beta`` 1 or -1) is inverted along
+/// the line ``Im s = theta`` (``tilt``), where the integrand decays like
+/// ``exp(-theta x) f(x)``: what wraps is the damped tail, and the mass
+/// beyond the window is left out and reported in ``outside_above`` (or
+/// added to the first bucket and reported in ``outside_below`` for a left
+/// tail). The automatic tilt balances the damped wrap against the
+/// round-off the tilt amplifies, and caps the step.
+///
 /// Parameters
 /// ----------
-/// law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine or callable
+/// law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, Stable or callable
 ///     A law with a closed-form characteristic function (an ``Affine`` of
 ///     one of them), or your own characteristic function: a callable of a
 ///     list of real frequencies ``t`` returning ``E exp(i t X)`` at each,
@@ -240,6 +377,11 @@ fn py_chf(f: Py<PyAny>) -> Arc<ChfFn> {
 ///     left out.
 /// bucket_sizing_p : float, default 0.99999
 ///     The mass the window covers when it is sized from the tails.
+/// tilt : bool or float, default True
+///     ``True``: a law with one power tail at the automatic tilt, every
+///     other law untilted. ``False``: never tilt (a heavy tail wraps). A
+///     number ``tau >= 0``: exactly ``tau`` e-folds of damping across the
+///     window, for a law with one power tail only.
 ///
 /// Returns
 /// -------
@@ -250,7 +392,8 @@ fn py_chf(f: Py<PyAny>) -> Arc<ChfFn> {
 /// ValueError
 ///     If an option is out of range, ``x_min`` is given without ``step``,
 ///     your own function is given without both, or it returns a value that
-///     is not finite.
+///     is not finite; a number ``tilt`` on a law with no power tail; the
+///     automatic tilt on a stable law with ``|beta| < 1``.
 ///
 /// Examples
 /// --------
@@ -259,7 +402,7 @@ fn py_chf(f: Py<PyAny>) -> Arc<ChfFn> {
 /// >>> d.step, d.x_min, round(d.mean(), 6)
 /// (0.25, 0.0, 100.0)
 #[pyfunction]
-#[pyo3(signature = (law, *, log2 = 16, step = None, x_min = None, bucket_sizing_p = BUCKET_SIZING_P))]
+#[pyo3(signature = (law, *, log2 = 16, step = None, x_min = None, bucket_sizing_p = BUCKET_SIZING_P, tilt = None))]
 pub(crate) fn invert_chf(
     py: Python<'_>,
     law: &Bound<'_, PyAny>,
@@ -267,17 +410,34 @@ pub(crate) fn invert_chf(
     step: Option<f64>,
     x_min: Option<f64>,
     bucket_sizing_p: f64,
+    tilt: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyChfDistribution> {
+    // bool before float, so tilt=1 is one e-fold and tilt=True automatic.
+    let tilt = match tilt {
+        None => Tilt::Auto,
+        Some(t) if t.is_instance_of::<pyo3::types::PyBool>() => {
+            if t.extract::<bool>()? {
+                Tilt::Auto
+            } else {
+                Tilt::Off
+            }
+        }
+        Some(t) => Tilt::Fixed(t.extract::<f64>().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err("tilt must be True, False or a number")
+        })?),
+    };
     let law = if let Ok(n) = law.extract::<PyRef<'_, PyNormal>>() {
         ChfLaw::Normal(n.inner)
+    } else if let Ok(st) = law.extract::<PyRef<'_, PyStable>>() {
+        ChfLaw::Stable(st.inner)
     } else if let Ok(d) = extract_dist(law) {
         ChfLaw::from_dist(&d).map_err(to_py)?
     } else if law.is_callable() {
         ChfLaw::User(UserChf::new(py_chf(law.clone().unbind()), "chf", false))
     } else {
         return Err(pyo3::exceptions::PyTypeError::new_err(
-            "law must be a Normal, Gamma, Exponential, InverseGaussian, Tweedie or Affine, \
-             or a callable characteristic function",
+            "law must be a Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine \
+             or Stable, or a callable characteristic function",
         ));
     };
     let options = ChfOptions {
@@ -285,6 +445,7 @@ pub(crate) fn invert_chf(
         step,
         x_min,
         bucket_sizing_p,
+        tilt,
     };
     let inner = py.detach(|| invert(&law, &options)).map_err(to_py)?;
     Ok(PyChfDistribution { inner })

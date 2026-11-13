@@ -70,6 +70,7 @@ use crate::gamma::Gamma;
 use crate::grid::Grid;
 use crate::inverse_gaussian::InverseGaussian;
 use crate::normal::Normal;
+use crate::stable::{Stable, hurwitz_zeta};
 use crate::tweedie::Tweedie;
 
 /// The mass rule A leaves beyond the window, `1 − p`: `aggregate`'s
@@ -139,6 +140,10 @@ pub enum ChfLaw {
     /// The Tweedie with `1 < p < 2`, compound Poisson with gamma
     /// severities: `K(s) = λ((1 − θs)^(−α) − 1)`, an atom `e^(−λ)` at 0.
     Tweedie(Tweedie),
+    /// An alpha-stable law. With `β = ±1` its power tail is inverted along
+    /// a tilted line ([`Tilt`]); with `|β| < 1` it is inverted untilted
+    /// only.
+    Stable(Stable),
     /// `Y = scale · X + shift` with `scale > 0`:
     /// `φ_Y(s) = e^{i shift s} φ_X(scale s)`.
     Affine {
@@ -153,6 +158,11 @@ pub enum ChfLaw {
 impl ChfLaw {
     /// `scale · X + shift`, `scale` finite and positive, `shift` finite.
     pub fn affine(base: ChfLaw, scale: f64, shift: f64) -> Result<Self> {
+        if matches!(base, Self::Stable(_)) {
+            return Err(Error::Data(
+                "a stable law takes its own scale and location: build it with them".into(),
+            ));
+        }
         if !scale.is_finite() || scale <= 0.0 {
             return Err(Error::InvalidParameter {
                 name: "scale",
@@ -226,6 +236,7 @@ impl ChfLaw {
                     .map(|&s| (lam * ((-a * (one - i * th * s).ln()).exp() - one)).exp())
                     .collect()
             }
+            Self::Stable(st) => s.iter().map(|&s| st.chf(s)).collect::<Result<Vec<_>>>()?,
             Self::Affine { base, scale, shift } => {
                 let inner: Vec<Complex64> = s.iter().map(|&s| s * *scale).collect();
                 base.chf(&inner)?
@@ -279,6 +290,7 @@ impl ChfLaw {
                 let g = t.severity();
                 t.lambda() * ((1.0 - g.scale() * s).powf(-g.shape()) - 1.0)
             }
+            Self::Stable(st) => st.cgf(s),
             Self::Affine { base, scale, shift } => base.cgf(scale * s) + shift * s,
             Self::User(_) => 0.0,
         }
@@ -295,6 +307,7 @@ impl ChfLaw {
                 d.shape() / (2.0 * d.mean_param().powi(2)),
             ),
             Self::Tweedie(t) => (f64::NEG_INFINITY, 1.0 / t.severity().scale()),
+            Self::Stable(st) => st.cgf_domain(),
             Self::Affine { base, scale, .. } => {
                 let (lo, hi) = base.cgf_domain();
                 (lo / scale, hi / scale)
@@ -308,6 +321,7 @@ impl ChfLaw {
         match self {
             Self::Normal(_) | Self::User(_) => (f64::NEG_INFINITY, f64::INFINITY),
             Self::Gamma(_) | Self::InverseGaussian(_) | Self::Tweedie(_) => (0.0, f64::INFINITY),
+            Self::Stable(st) => st.support(),
             Self::Affine { base, scale, shift } => {
                 let (lo, hi) = base.support();
                 (scale * lo + shift, scale * hi + shift)
@@ -331,6 +345,7 @@ impl ChfLaw {
             Self::Gamma(d) => d.mean(),
             Self::InverseGaussian(d) => d.mean(),
             Self::Tweedie(t) => t.mean(),
+            Self::Stable(st) => st.mean(),
             Self::Affine { base, scale, shift } => scale * base.mean() + shift,
             Self::User(_) => f64::NAN,
         }
@@ -343,6 +358,7 @@ impl ChfLaw {
             Self::Gamma(d) => d.variance(),
             Self::InverseGaussian(d) => d.variance(),
             Self::Tweedie(t) => t.variance(),
+            Self::Stable(st) => st.variance(),
             Self::Affine { base, scale, .. } => scale * scale * base.variance(),
             Self::User(_) => f64::NAN,
         }
@@ -351,6 +367,9 @@ impl ChfLaw {
     /// The body scale: the standard deviation, NaN when it is not finite
     /// and positive.
     pub fn scale(&self) -> f64 {
+        if let Self::Stable(st) = self {
+            return st.body_scale();
+        }
         let v = self.variance();
         if v.is_finite() && v > 0.0 {
             v.sqrt()
@@ -371,6 +390,41 @@ impl ChfLaw {
         Ok(c.norm())
     }
 
+    /// `(A, B, α)` of a power tail `P(X > x) ~ A x^(−α)`,
+    /// `P(X < −x) ~ B x^(−α)`: a stable law below `α = 2`.
+    pub fn power_tails(&self) -> Option<(f64, f64, f64)> {
+        match self {
+            Self::Stable(st) if st.alpha() < 2.0 => {
+                Some((st.tail_constant(), st.left_tail_constant(), st.alpha()))
+            }
+            _ => None,
+        }
+    }
+
+    /// The side of a power tail, `None` without one.
+    pub fn tilt_side(&self) -> Option<TiltSide> {
+        match self {
+            Self::Stable(st) if st.alpha() < 2.0 => Some(if st.beta() == 1.0 {
+                TiltSide::Right
+            } else if st.beta() == -1.0 {
+                TiltSide::Left
+            } else {
+                TiltSide::Both
+            }),
+            _ => None,
+        }
+    }
+
+    /// The law that tilting inverts: this one for a right power tail, its
+    /// reflection for a left one, `None` otherwise.
+    fn tilt_family(&self) -> Option<Stable> {
+        match (self, self.tilt_side()) {
+            (Self::Stable(st), Some(TiltSide::Right)) => Some(*st),
+            (Self::Stable(st), Some(TiltSide::Left)) => Some(st.reflected()),
+            _ => None,
+        }
+    }
+
     fn is_parallel_safe(&self) -> bool {
         match self {
             Self::User(u) => u.parallel_safe,
@@ -378,6 +432,33 @@ impl ChfLaw {
             _ => true,
         }
     }
+}
+
+/// Which side of a law has a power tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TiltSide {
+    /// `β = 1`: the right tail.
+    Right,
+    /// `β = −1`: the left tail, inverted by reflection.
+    Left,
+    /// `|β| < 1`: both.
+    Both,
+}
+
+/// Whether to invert along the line `Im s = θ`, with `τ = θ W` e-folds of
+/// damping across the window of width `W` (`aggregate`'s `tilt`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Tilt {
+    /// A law with one power tail (a stable law with `β = ±1`) at the `τ`
+    /// that balances the damped wrap `ρ e^(−τ)` against the amplified
+    /// round-off `ε κ e^τ`, its bucket capped; every other law untilted.
+    #[default]
+    Auto,
+    /// Never tilt and never cap: a heavy tail wraps onto the window.
+    Off,
+    /// Exactly `τ ≥ 0` e-folds, the cap applied; only for a law with one
+    /// power tail.
+    Fixed(f64),
 }
 
 /// How the grid is chosen.
@@ -392,6 +473,8 @@ pub struct ChfOptions {
     pub x_min: Option<f64>,
     /// The mass rule A's window covers, in `(0, 1)`.
     pub bucket_sizing_p: f64,
+    /// The tilt.
+    pub tilt: Tilt,
 }
 
 impl Default for ChfOptions {
@@ -401,6 +484,7 @@ impl Default for ChfOptions {
             step: None,
             x_min: None,
             bucket_sizing_p: BUCKET_SIZING_P,
+            tilt: Tilt::Auto,
         }
     }
 }
@@ -429,12 +513,23 @@ pub struct ChfReport {
     /// `|φ(π/h)|` of the continuous part: the size of the frequencies the
     /// inversion drops. Above [`TRUNCATION_FLAG`] the masses ring.
     pub truncation_error: f64,
-    /// The Chernoff bound on the law's mass below the window, which wraps
-    /// onto its top end; 0 on a grid whose left edge was given.
+    /// The law's mass below the window: a Chernoff bound, which wraps onto
+    /// the window's top end, or under a tilt the tail mass beyond a left
+    /// power tail's window, which is added to the first bucket; 0 on a
+    /// grid whose left edge was given.
     pub outside_below: f64,
-    /// The Chernoff bound on the law's mass above the window, which wraps
-    /// onto its bottom end; 0 on a grid whose left edge was given.
+    /// The law's mass above the window: a Chernoff bound, which wraps onto
+    /// the window's bottom end, or the tail mass beyond a right power
+    /// tail's window, which a tilted grid leaves out.
     pub outside_above: f64,
+    /// `(left, right)`: the e-folds of damping across the window on each
+    /// side, `(0, τ)` for a right power tail tilted, `(τ, 0)` for a left
+    /// one, `(0, 0)` untilted.
+    pub tilt: (f64, f64),
+    /// The modelled worst relative error of a bucket at the heavy end of a
+    /// law with one power tail, `ρ e^(−τ) + ε κ e^τ`; NaN for any other
+    /// law.
+    pub edge_error: f64,
     /// The law's mean (NaN for a user's function).
     pub law_mean: f64,
     /// The law's variance (NaN for a user's function).
@@ -627,16 +722,74 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
         )));
     }
     let n = 1usize << options.log2;
-    let (h, x0) = match (options.step, options.x_min) {
-        (Some(h), Some(x)) => (h, x),
-        _ => plain_window(law, n, p, options.step)?,
-    };
-    let masses = invert_on(law, x0, h, n, 0.0, law.atom())?;
-    let (below, above) = if options.x_min.is_some() {
-        (0.0, 0.0)
-    } else {
-        light_outside(law, h, x0, n)
-    };
+    let fixed_grid = options.x_min.is_some();
+    if let Tilt::Fixed(tau) = options.tilt {
+        if !(tau.is_finite() && tau >= 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "tilt",
+                value: tau,
+                reason: "must be finite and at least 0",
+            });
+        }
+        if law.power_tails().is_none() {
+            return Err(Error::Data(
+                "a tilt damps a power tail, which this law does not have: a light tail \
+                 barely wraps, and a tilt only amplifies the truncation ringing; use the \
+                 automatic tilt or none"
+                    .into(),
+            ));
+        }
+    }
+    let tilting = options.tilt != Tilt::Off && !fixed_grid;
+    if tilting && law.tilt_side() == Some(TiltSide::Both) {
+        return Err(Error::Data(
+            "a stable law with |beta| < 1 has two power tails, which no tilted line serves: \
+             it is split into its two totally skewed halves, which is not built yet (#780); \
+             invert it untilted"
+                .into(),
+        ));
+    }
+    let tilt_family = if tilting { law.tilt_family() } else { None };
+    let (h, x0, tilt, edge_error, mut masses, below, above);
+    match tilt_family {
+        None => {
+            (h, x0) = match (options.step, options.x_min) {
+                (Some(h), Some(x)) => (h, x),
+                _ => plain_window(law, n, p, options.step)?,
+            };
+            masses = invert_on(law, x0, h, n, 0.0, law.atom())?;
+            (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
+            edge_error = match law.tilt_family() {
+                Some(fam) if law.tilt_side() != Some(TiltSide::Both) => {
+                    let y0 = if law.tilt_side() == Some(TiltSide::Right) {
+                        x0
+                    } else {
+                        -(x0 + (n - 1) as f64 * h)
+                    };
+                    let (rho, eps, kappa) = edge_terms(&fam, y0, h, n);
+                    edge_error_at(0.0, rho, eps, kappa)
+                }
+                _ => f64::NAN,
+            };
+            tilt = (0.0, 0.0);
+        }
+        Some(fam) => {
+            let (hh, y0, tau) = one_sided_window(&fam, n, p, options.step, options.tilt);
+            h = hh;
+            let left = law.tilt_side() == Some(TiltSide::Left);
+            x0 = if left { -(y0 + (n - 1) as f64 * h) } else { y0 };
+            let w = n as f64 * h;
+            masses = invert_on(&ChfLaw::Stable(fam), y0, h, n, tau / w, None)?;
+            let (rho, eps, kappa) = edge_terms(&fam, y0, h, n);
+            edge_error = edge_error_at(tau, rho, eps, kappa);
+            if left {
+                masses.reverse();
+            }
+            (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
+            masses[0] += below;
+            tilt = if left { (tau, 0.0) } else { (0.0, tau) };
+        }
+    }
     let total_mass: f64 = masses.iter().sum();
     let mut cumulative = Vec::with_capacity(n);
     let mut acc = 0.0;
@@ -652,6 +805,8 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
         truncation_error: law.truncation_at(h)?,
         outside_below: below,
         outside_above: above,
+        tilt,
+        edge_error,
         law_mean: law.mean(),
         law_variance: law.variance(),
         total_mass,
@@ -851,12 +1006,21 @@ fn window_edges(law: &ChfLaw, eps_side: f64) -> (f64, f64) {
     let log_eps = eps_side.ln();
     let scale = law.scale();
     let (s_minus, s_plus) = law.cgf_domain();
-    let mut x_r = if s_plus > 0.0 {
+    let (a, b, alpha) = law.power_tails().unwrap_or((0.0, 0.0, 1.0));
+    let location = match law {
+        ChfLaw::Stable(st) => st.loc(),
+        _ => 0.0,
+    };
+    let mut x_r = if a > 0.0 {
+        location + (a / eps_side).powf(1.0 / alpha)
+    } else if s_plus > 0.0 {
         chernoff_edge(|s| law.cgf(s), s_plus, log_eps, scale)
     } else {
         f64::INFINITY
     };
-    let mut x_l = if s_minus < 0.0 {
+    let mut x_l = if b > 0.0 {
+        location - (b / eps_side).powf(1.0 / alpha)
+    } else if s_minus < 0.0 {
         -chernoff_edge(|u| law.cgf(-u), -s_minus, log_eps, scale)
     } else {
         f64::NEG_INFINITY
@@ -957,6 +1121,118 @@ fn plain_window(law: &ChfLaw, n: usize, p: f64, step: Option<f64>) -> Result<(f6
         }
     }
     Ok((best_h, best_x0))
+}
+
+/// The mass allowed below a tilted window: the tilt amplifies what wraps
+/// from below by `e^τ`, and the light side's super-exponential tail makes
+/// this edge cost a few scales.
+const TILT_LEFT_EPS: f64 = 1e-40;
+
+/// Buckets per scale a tilted grid keeps in the body.
+const TILT_BODY_BUCKETS: f64 = 10.0;
+
+/// The largest bucket a tilted grid may use, a rung of the ladder:
+/// `min(γ/10, πγ/(52 ln 2)^(1/α))`, so the truncation `|φ(π/h)|`, which the
+/// tilt amplifies by `e^τ`, sits at round-off.
+fn bucket_cap(fam: &Stable) -> f64 {
+    let gamma = fam.body_scale();
+    let h_trunc = std::f64::consts::PI * gamma / (52.0 * 2f64.ln()).powf(1.0 / fam.alpha());
+    round_bucket_down((gamma / TILT_BODY_BUCKETS).min(h_trunc))
+}
+
+/// `(ρ, ε, κ)` of the one-sided tilt model on `[x0, x0 + n h]`: the wrap
+/// the tilt damps, `ρ e^(−τ)`, with `ρ = q^(α+1) ζ(α+1, 1+q)`,
+/// `q = (x_R − δ₁)/W`; the amplified error `ε κ e^τ`, `ε = 2^(−52) +
+/// |φ(π/h)|`, `κ = sup f (x_R − δ₁)^(α+1) / (A α)`, both relative to the
+/// bucket mass at the right edge.
+fn edge_terms(fam: &Stable, x0: f64, h: f64, n: usize) -> (f64, f64, f64) {
+    let (a, alpha) = (fam.tail_constant(), fam.alpha());
+    let w = n as f64 * h;
+    let x_r = x0 + w;
+    let q = ((x_r - fam.loc()) / w).max(1e-12);
+    let rho = q.powf(alpha + 1.0) * hurwitz_zeta(alpha + 1.0, 1.0 + q);
+    let eps = 2f64.powi(-52) + fam.chf_real(std::f64::consts::PI / h).norm();
+    let kappa = fam.density_bound() * (x_r - fam.loc()).powf(alpha + 1.0) / (a * alpha);
+    (rho, eps, kappa)
+}
+
+/// `τ* = max(0, ½ ln(ρ / (ε κ)))`.
+fn tau_star(rho: f64, eps: f64, kappa: f64) -> f64 {
+    (0.5 * (rho / (eps * kappa)).ln()).max(0.0)
+}
+
+/// `ρ e^(−τ) + ε κ e^τ`.
+fn edge_error_at(tau: f64, rho: f64, eps: f64, kappa: f64) -> f64 {
+    rho * (-tau).exp() + eps * kappa * tau.exp()
+}
+
+/// Rule A (or C) for a law with a right power tail, to be tilted:
+/// `(h, x0, τ)`. The left edge is the support bound or the `1e-40`
+/// Chernoff edge, the right edge `δ₁ + (A/ε)^(1/α)`, the bucket rounded up
+/// and capped.
+fn one_sided_window(
+    fam: &Stable,
+    n: usize,
+    p: f64,
+    step: Option<f64>,
+    tilt: Tilt,
+) -> (f64, f64, f64) {
+    let eps = 1.0 - p;
+    let (lo, _) = fam.support();
+    let x_l = if lo.is_finite() {
+        lo
+    } else {
+        let (s_minus, _) = fam.cgf_domain();
+        -chernoff_edge(
+            |u| fam.cgf(-u),
+            -s_minus,
+            TILT_LEFT_EPS.ln(),
+            fam.body_scale(),
+        )
+    };
+    let x_r = fam.loc() + (fam.tail_constant() / eps).powf(1.0 / fam.alpha());
+    let h = match step {
+        Some(h) => h,
+        None => round_bucket((x_r - x_l) / n as f64).min(bucket_cap(fam)),
+    };
+    let x0 = h * (x_l / h + 1e-12).floor();
+    let tau = match tilt {
+        Tilt::Fixed(tau) => tau,
+        _ => {
+            let (rho, e, kappa) = edge_terms(fam, x0, h, n);
+            tau_star(rho, e, kappa)
+        }
+    };
+    (h, x0, tau)
+}
+
+/// `(below, above)`: the law's mass outside `[x0, x0 + n h)`. A law with
+/// one power tail gives the tail mass beyond its window (on the heavy
+/// side); two power tails an estimate from the leading terms on a window
+/// placed to balance them; any other law the Chernoff bounds, 0 on a grid
+/// whose left edge was given.
+fn outside_at(law: &ChfLaw, h: f64, x0: f64, n: usize, fixed_grid: bool) -> Result<(f64, f64)> {
+    match law.tilt_side() {
+        Some(TiltSide::Both) => {
+            let (a, b, alpha) = law
+                .power_tails()
+                .expect("a stable law with two power tails");
+            let w = n as f64 * h;
+            let d_plus = w / (1.0 + (b / a).powf(1.0 / alpha));
+            let d_minus = w - d_plus;
+            Ok((b * d_minus.powf(-alpha), a * d_plus.powf(-alpha)))
+        }
+        Some(TiltSide::Right) => {
+            let fam = law.tilt_family().expect("a right power tail");
+            Ok((0.0, fam.tail_mass_above(x0 + (n - 1) as f64 * h + h / 2.0)?))
+        }
+        Some(TiltSide::Left) => {
+            let fam = law.tilt_family().expect("a left power tail");
+            Ok((fam.tail_mass_above(-(x0 - h / 2.0))?, 0.0))
+        }
+        None if fixed_grid => Ok((0.0, 0.0)),
+        None => Ok(light_outside(law, h, x0, n)),
+    }
 }
 
 #[cfg(test)]
@@ -1130,5 +1406,69 @@ mod tests {
         let g = d.to_grid().unwrap();
         let exact = Gamma::new(4.0, 25.0).unwrap();
         assert!((g.lev(150.0) / exact.lev(150.0) - 1.0).abs() < 1e-4);
+    }
+
+    fn stable(alpha: f64, beta: f64, scale: f64, loc: f64) -> ChfLaw {
+        ChfLaw::Stable(
+            Stable::new(alpha, beta, scale, loc, crate::StableParameterization::S1).unwrap(),
+        )
+    }
+
+    #[test]
+    fn a_left_tail_is_the_reflection_of_a_right_one() {
+        let right = invert(&stable(1.5, 1.0, 2.0, 3.0), &ChfOptions::with_log2(12)).unwrap();
+        let left = invert(&stable(1.5, -1.0, 2.0, -3.0), &ChfOptions::with_log2(12)).unwrap();
+        let (r, l) = (right.report(), left.report());
+        assert_eq!((r.tilt.0, l.tilt.1), (0.0, 0.0));
+        assert!(r.tilt.1 > 0.0 && (r.tilt.1 - l.tilt.0).abs() < 1e-12);
+        assert!((left.x_min() + right.x(right.masses().len() - 1)).abs() < 1e-9);
+        // The left grid's first bucket also holds the mass below the window.
+        let n = right.masses().len();
+        assert!((left.masses()[0] - right.masses()[n - 1] - l.outside_below).abs() < 1e-12);
+        for k in 1..n {
+            assert!((left.masses()[k] - right.masses()[n - 1 - k]).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn the_automatic_tilt_shrinks_the_edge_error() {
+        let law = stable(1.5, 1.0, 1.0, 0.0);
+        let auto = invert(&law, &ChfOptions::with_log2(12)).unwrap();
+        let off = invert(
+            &law,
+            &ChfOptions {
+                log2: 12,
+                tilt: Tilt::Off,
+                ..ChfOptions::default()
+            },
+        )
+        .unwrap();
+        assert!(auto.report().edge_error < 1e-4 && off.report().edge_error > 1.0);
+        // Under a tilt the mass above the window is left out and reported.
+        let r = auto.report();
+        assert!((r.total_mass + r.outside_above - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn tilts_are_refused_where_they_do_not_apply() {
+        let fixed = ChfOptions {
+            tilt: Tilt::Fixed(4.0),
+            ..ChfOptions::with_log2(10)
+        };
+        assert!(invert(&gamma(), &fixed).is_err());
+        assert!(invert(&gamma(), &ChfOptions::with_log2(10)).is_ok());
+        let two_sided = stable(1.5, 0.5, 1.0, 0.0);
+        assert!(invert(&two_sided, &ChfOptions::with_log2(10)).is_err());
+        let off = ChfOptions {
+            tilt: Tilt::Off,
+            ..ChfOptions::with_log2(10)
+        };
+        assert!(invert(&two_sided, &off).is_ok());
+        assert!(ChfLaw::affine(two_sided, 2.0, 1.0).is_err());
+        let bad = ChfOptions {
+            tilt: Tilt::Fixed(-1.0),
+            ..ChfOptions::with_log2(10)
+        };
+        assert!(invert(&stable(1.5, 1.0, 1.0, 0.0), &bad).is_err());
     }
 }

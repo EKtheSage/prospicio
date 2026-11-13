@@ -6946,6 +6946,12 @@ class ChfDistribution:
         float
         """
     @property
+    def edge_error(self, /) -> float:
+        """
+        The modelled worst relative error of a bucket at the heavy end of a
+        law with one power tail; ``nan`` for any other law.
+        """
+    @property
     def is_truncated(self, /) -> bool:
         """
         Whether ``truncation_error`` is above 1e-6.
@@ -7012,6 +7018,13 @@ class ChfDistribution:
     def step_given(self, /) -> bool:
         """
         Whether the bucket was given rather than sized from the law's tails.
+        """
+    @property
+    def tilt(self, /) -> tuple[float, float]:
+        """
+        ``(left, right)``: the e-folds of damping across the window on each
+        side, ``(0, tau)`` for a right power tail tilted, ``(tau, 0)`` for a
+        left one, ``(0, 0)`` untilted.
         """
     def to_grid(self, /) -> Grid:
         """
@@ -31618,6 +31631,83 @@ class SizeOfLoss:
         """
 
 @final
+class Stable:
+    """
+    An alpha-stable law ``S(alpha, beta, scale, loc)`` for ``invert_chf``.
+    
+    With ``beta`` 1 or -1 its one power tail is inverted along a tilted
+    line; with ``|beta| < 1`` it is inverted with ``tilt=False`` only. At
+    ``alpha = 2`` it is the normal with variance ``2 scale ** 2``.
+    
+    Parameters
+    ----------
+    alpha : float
+        The index of stability, in ``(0, 2]``.
+    beta : float
+        The skewness, in ``[-1, 1]``.
+    scale : float, default 1
+        Positive.
+    loc : float, default 0
+        The location, read in ``parameterization``.
+    parameterization : {"S1", "S0"}, default "S1"
+        Nolan's S1 (scipy's default) or S0.
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is out of range.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Stable
+    >>> s = Stable(1.5, 1.0, 2.0)
+    >>> round(s.tail_constant, 6), round(s.loc0, 12)
+    (1.128379, -2.0)
+    """
+    def __new__(cls, /, alpha: float, beta: float, scale: float = 1.0, loc: float = 0.0, parameterization: str = "S1") -> Stable: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha(self, /) -> float:
+        """
+        The index of stability.
+        """
+    @property
+    def beta(self, /) -> float:
+        """
+        The skewness.
+        """
+    @property
+    def left_tail_constant(self, /) -> float:
+        """
+        ``B`` in ``P(X < -x) ~ B x ** -alpha``.
+        """
+    @property
+    def loc(self, /) -> float:
+        """
+        The S1 location.
+        """
+    @property
+    def loc0(self, /) -> float:
+        """
+        The S0 location.
+        """
+    @property
+    def mean(self, /) -> float:
+        """
+        The mean: ``loc`` for ``alpha > 1``, else infinite or ``nan``.
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The scale.
+        """
+    @property
+    def tail_constant(self, /) -> float:
+        """
+        ``A`` in ``P(X > x) ~ A x ** -alpha``.
+        """
+
+@final
 class StackingFit:
     """
     Posterior stacking weights, from ``BayesStacking.fit`` or
@@ -38688,7 +38778,7 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     True
     """
 
-def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: float |None = None, bucket_sizing_p: float = ...) -> ChfDistribution:
+def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: float |None = None, bucket_sizing_p: float = ..., tilt: Any |None = None) -> ChfDistribution:
     """
     A law's distribution on a grid, by inverting its characteristic
     function: ``aggregate``'s ``AggregateCHF`` (``chfagg``).
@@ -38703,9 +38793,17 @@ def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: flo
     the step moves down that ladder while that helps. A Tweedie's mass at 0
     is inverted apart, so it does not ring.
     
+    A stable law with one power tail (``beta`` 1 or -1) is inverted along
+    the line ``Im s = theta`` (``tilt``), where the integrand decays like
+    ``exp(-theta x) f(x)``: what wraps is the damped tail, and the mass
+    beyond the window is left out and reported in ``outside_above`` (or
+    added to the first bucket and reported in ``outside_below`` for a left
+    tail). The automatic tilt balances the damped wrap against the
+    round-off the tilt amplifies, and caps the step.
+    
     Parameters
     ----------
-    law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine or callable
+    law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, Stable or callable
         A law with a closed-form characteristic function (an ``Affine`` of
         one of them), or your own characteristic function: a callable of a
         list of real frequencies ``t`` returning ``E exp(i t X)`` at each,
@@ -38720,6 +38818,11 @@ def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: flo
         left out.
     bucket_sizing_p : float, default 0.99999
         The mass the window covers when it is sized from the tails.
+    tilt : bool or float, default True
+        ``True``: a law with one power tail at the automatic tilt, every
+        other law untilted. ``False``: never tilt (a heavy tail wraps). A
+        number ``tau >= 0``: exactly ``tau`` e-folds of damping across the
+        window, for a law with one power tail only.
     
     Returns
     -------
@@ -38730,7 +38833,8 @@ def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: flo
     ValueError
         If an option is out of range, ``x_min`` is given without ``step``,
         your own function is given without both, or it returns a value that
-        is not finite.
+        is not finite; a number ``tilt`` on a law with no power tail; the
+        automatic tilt on a stable law with ``|beta| < 1``.
     
     Examples
     --------

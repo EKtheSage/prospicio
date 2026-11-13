@@ -10,7 +10,8 @@ invert_chf(
   log2 = 16,
   step = NULL,
   x_min = NULL,
-  bucket_sizing_p = 0.99999
+  bucket_sizing_p = 0.99999,
+  tilt = TRUE
 )
 
 chf_distribution(ptr)
@@ -18,7 +19,8 @@ chf_distribution(ptr)
 \arguments{
 \item{law}{A \code{\link[=normal_distribution]{normal_distribution()}}, \code{\link[=gamma_distribution]{gamma_distribution()}},
 \code{\link[=exponential_distribution]{exponential_distribution()}}, \code{\link[=inverse_gaussian_distribution]{inverse_gaussian_distribution()}},
-\code{\link[=tweedie]{tweedie()}} or an \code{\link[=affine_distribution]{affine_distribution()}} of one of them,
+\code{\link[=tweedie]{tweedie()}}, an \code{\link[=affine_distribution]{affine_distribution()}} of one of them, a
+\code{\link[=stable_distribution]{stable_distribution()}},
 or your own characteristic function: an R function of a numeric vector
 of frequencies \code{t} returning \verb{E exp(i t X)} at each, as a complex
 vector. Your own function needs \code{step} and \code{x_min}.}
@@ -33,6 +35,12 @@ when \code{NULL}.}
 \item{bucket_sizing_p}{The mass the window covers when it is sized from
 the tails.}
 
+\item{tilt}{\code{TRUE}: a law with one power tail (a \code{\link[=stable_distribution]{stable_distribution()}}
+with \code{beta} 1 or -1) at the automatic tilt, every other law untilted.
+\code{FALSE}: never tilt (a heavy tail wraps onto the window). A number
+\code{tau >= 0}: exactly \code{tau} e-folds of damping across the window, for a
+law with one power tail only.}
+
 \item{ptr}{Internal.}
 }
 \value{
@@ -41,7 +49,11 @@ properties \code{xs}, \code{masses}, \code{step}, \code{x_min} and \code{report}
 \code{log2}, \code{step_given}, \code{truncation_error} (\verb{|phi(pi / step)|} of the
 continuous part), \code{is_truncated} (above 1e-6), \code{outside_below} and
 \code{outside_above} (the Chernoff bounds on the mass outside the window,
-which wraps in), \code{total_mass}, \code{law_mean} and \code{law_variance}).
+which wraps in, or under a tilt the tail mass beyond the window),
+\code{tilt_left} and \code{tilt_right} (the e-folds of damping on each side),
+\code{edge_error} (the modelled worst relative error at the heavy end of a
+law with one power tail, \code{NaN} otherwise), \code{total_mass}, \code{law_mean}
+and \code{law_variance}).
 }
 \description{
 A law's bucket masses on a grid, by inverting its characteristic
@@ -57,6 +69,14 @@ down that ladder while that helps. A Tweedie's mass at 0 is inverted
 apart, so it does not ring.
 }
 \details{
+A stable law with one power tail is inverted along the line
+\verb{Im s = theta}, where the integrand decays like \verb{exp(-theta x) f(x)}:
+what wraps is the damped tail, and the mass beyond the window is left
+out and reported in \code{report$outside_above} (or, for a left tail, added
+to the first bucket and reported in \code{report$outside_below}). The
+automatic tilt balances the damped wrap against the round-off the tilt
+amplifies, and caps the step.
+
 The masses are as inverted, not renormalized. Supports \code{\link[=mean]{mean()}},
 \code{\link[=variance]{variance()}}, \code{\link[=cdf]{cdf()}} (the masses at grid points at or below \code{q}),
 \code{quantile()} and \code{\link[=VaR]{VaR()}} (the first grid point whose cumulative mass
