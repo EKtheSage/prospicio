@@ -155,6 +155,53 @@ pub enum CurveShape {
     Growth(GrowthCurve),
 }
 
+impl CurveShape {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// shape, the canonical name of each first (#834). Excel lower-cases
+    /// its argument and turns spaces and hyphens into underscores first.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("exponential", Self::Exponential),
+        ("inverse_power", Self::InversePower),
+        ("hoerl", Self::Hoerl),
+        ("sherman", Self::Sherman),
+        ("loglogistic", Self::Growth(GrowthCurve::LogLogistic)),
+        ("log_logistic", Self::Growth(GrowthCurve::LogLogistic)),
+        ("weibull", Self::Growth(GrowthCurve::Weibull)),
+    ];
+
+    /// The shape named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_reserving::{CurveShape, GrowthCurve};
+    ///
+    /// assert_eq!(CurveShape::from_name("inverse_power"), Some(CurveShape::InversePower));
+    /// assert_eq!(
+    ///     CurveShape::from_name("log_logistic"),
+    ///     Some(CurveShape::Growth(GrowthCurve::LogLogistic))
+    /// );
+    /// assert_eq!(CurveShape::from_name("gompertz"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, s)| s)
+    }
+
+    /// The canonical name: `"exponential"`, `"inverse_power"`, `"hoerl"`,
+    /// `"sherman"`, `"loglogistic"` or `"weibull"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Exponential => "exponential",
+            Self::InversePower => "inverse_power",
+            Self::Hoerl => "hoerl",
+            Self::Sherman => "sherman",
+            Self::Growth(GrowthCurve::LogLogistic) => "loglogistic",
+            Self::Growth(GrowthCurve::Weibull) => "weibull",
+        }
+    }
+}
+
 /// A curve fitted to the estimated factors and extrapolated, as
 /// chainladder-python's `TailCurve`.
 ///

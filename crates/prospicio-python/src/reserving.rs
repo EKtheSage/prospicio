@@ -2054,14 +2054,7 @@ impl PyTailLogLinear {
 }
 
 fn curve_name(c: CurveShape) -> &'static str {
-    match c {
-        CurveShape::Exponential => "exponential",
-        CurveShape::InversePower => "inverse_power",
-        CurveShape::Hoerl => "hoerl",
-        CurveShape::Sherman => "sherman",
-        CurveShape::Growth(GrowthCurve::LogLogistic) => "loglogistic",
-        CurveShape::Growth(GrowthCurve::Weibull) => "weibull",
-    }
+    c.name()
 }
 
 /// A constant tail with the default decay and attachment, shown as its
@@ -7429,20 +7422,7 @@ const ALL_CURVE_SHAPES: [CurveShape; 6] = [
 
 /// A curve shape by its name in the bindings.
 fn curve_shape(name: &str, what: &str) -> PyResult<CurveShape> {
-    Ok(match name {
-        "exponential" => CurveShape::Exponential,
-        "inverse_power" => CurveShape::InversePower,
-        "hoerl" => CurveShape::Hoerl,
-        "sherman" => CurveShape::Sherman,
-        "loglogistic" => CurveShape::Growth(GrowthCurve::LogLogistic),
-        "weibull" => CurveShape::Growth(GrowthCurve::Weibull),
-        _ => {
-            return Err(PyValueError::new_err(format!(
-                "{what} must be \"exponential\", \"inverse_power\", \"hoerl\", \"sherman\", \
-                 \"loglogistic\" or \"weibull\", got {name:?}"
-            )));
-        }
-    })
+    CurveShape::from_name(name).ok_or_else(|| crate::unknown_name(what, name, CurveShape::NAMES))
 }
 
 /// Clark's Cape Cod method (Clark 2003), as R ChainLadder's

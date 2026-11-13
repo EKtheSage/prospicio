@@ -7,7 +7,7 @@
 //! functions as their `selected` factors and `tail`.
 
 use prospicio_core::Lag;
-use prospicio_reserving::{CurveShape, DevelopmentCurve, DevelopmentCurveFit, GrowthCurve};
+use prospicio_reserving::{CurveShape, DevelopmentCurve, DevelopmentCurveFit};
 
 use crate::diagonal::months;
 use crate::reserving::{COLUMN, average, link_labels, text_option, triangle};
@@ -30,23 +30,8 @@ const SHAPES: [&str; 6] = [
 const TAIL_PERIODS: usize = 100;
 
 fn shape_named(name: &str) -> Result<CurveShape> {
-    match name
-        .trim()
-        .to_ascii_lowercase()
-        .replace([' ', '-'], "_")
-        .as_str()
-    {
-        "exponential" => Ok(CurveShape::Exponential),
-        "inverse_power" => Ok(CurveShape::InversePower),
-        "hoerl" => Ok(CurveShape::Hoerl),
-        "sherman" => Ok(CurveShape::Sherman),
-        "loglogistic" | "log_logistic" => Ok(CurveShape::Growth(GrowthCurve::LogLogistic)),
-        "weibull" => Ok(CurveShape::Growth(GrowthCurve::Weibull)),
-        other => Err(format!(
-            "shape must be \"exponential\", \"inverse_power\", \"hoerl\", \"sherman\", \
-             \"loglogistic\" or \"weibull\", got {other:?}"
-        )),
-    }
+    let key = name.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+    CurveShape::from_name(&key).ok_or_else(|| crate::unknown_name("shape", &key, CurveShape::NAMES))
 }
 
 /// The `fit_period` argument: blank for every age, or one or two cells,

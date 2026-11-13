@@ -10,4 +10,4 @@ Finished items are in [done/probability.md](done/probability.md), which agents r
 
 - [numeric-helpers-rest] #843 group 3's last item: `glm/src/tweedie.rs`'s hand-written golden-section search onto `math::golden_section`
 - [bindings-core-838] #838 items 2, 4 and 5: `HierarchicalBfFit::to_long` and `totals` in the core, the `read_ylt` day and hour rule in `YearLossTable` (a non-numeric day an error naming the row, the user's decision of 2026-11-11), and `underwriting_paid` as monthly paid shares from `prospicio-reserving`
-- [option-names-step-2] #834 step 2: `NAMES` and `from_name` (with `name`) on each user-facing core enum, as `CountDistribution` has them, one family per PR: tail kind, mixing, family and link, average kind, distortion family; the front ends' match blocks replaced by a call and their `unknown_name` message
+- [option-names-step-2] #834 step 2: `NAMES` and `from_name` (with `name`) on each user-facing core enum, as `CountDistribution` has them, one family per PR: mixing, family and link, average kind, distortion family; the front ends' match blocks replaced by a call and their `unknown_name` message
