@@ -41,6 +41,7 @@
 //! [`Quote::return_on_capital`] is after tax. See `docs/design/pareto.md`.
 
 use prospicio_core::{Error, Result};
+use prospicio_math::roots::{Stop, try_bisect};
 
 use prospicio_aggregate::{Commission, Layer, Tower, TowerGrids};
 use prospicio_prob::{Distortion, Grid};
@@ -461,17 +462,10 @@ impl Quote {
                 }
                 lo = d;
             }
-            for _ in 0..200 {
-                if hi - lo <= 1e-12 * hi {
-                    break;
-                }
-                let mid = 0.5 * (lo + hi);
-                if gap(mid)? >= 0.0 {
-                    hi = mid;
-                } else {
-                    lo = mid;
-                }
-            }
+            // A gap that is not >= 0 (NaN too) moves the deposit up, as before.
+            let (lo, hi) = try_bisect(lo, hi, Stop::relative(1e-12).with_steps(200), |mid| {
+                gap(mid).map(|g| g < 0.0 || g.is_nan())
+            })?;
             0.5 * (lo + hi)
         };
         base.at_with_commission(deposit, commission(deposit)?)
