@@ -9,7 +9,8 @@ use prospicio_glm::net::{CvPath, ElasticNet, ElasticNetFit, RelaxedCv};
 use prospicio_glm::{Dispersion, Glm, GlmFit, Robust};
 use prospicio_models::resample::{self, Split};
 use prospicio_models::{
-    Coding, Column, Design, Family, Fitted, Frame, Link, Model, Terms, metrics,
+    Coding, Column, Design, Family, FamilyKind, Fitted, Frame, Link, LinkKind, Model, Terms,
+    metrics,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -19,24 +20,20 @@ use crate::to_py;
 
 /// A family from its name and parameter.
 pub(crate) fn family(name: &str, theta: Option<f64>, power: Option<f64>) -> PyResult<Family> {
-    let f = match name {
-        "gaussian" => Family::Gaussian,
-        "poisson" => Family::Poisson,
-        "gamma" => Family::Gamma,
-        "inverse_gaussian" => Family::InverseGaussian,
-        "binomial" => Family::Binomial,
-        "negative_binomial" => Family::NegativeBinomial {
+    let kind = FamilyKind::from_name(name)
+        .ok_or_else(|| crate::unknown_name("family", name, FamilyKind::NAMES))?;
+    let f = match kind {
+        FamilyKind::Gaussian => Family::Gaussian,
+        FamilyKind::Poisson => Family::Poisson,
+        FamilyKind::Gamma => Family::Gamma,
+        FamilyKind::InverseGaussian => Family::InverseGaussian,
+        FamilyKind::Binomial => Family::Binomial,
+        FamilyKind::NegativeBinomial => Family::NegativeBinomial {
             theta: theta.ok_or_else(|| PyValueError::new_err("negative_binomial needs theta"))?,
         },
-        "tweedie" => Family::Tweedie {
+        FamilyKind::Tweedie => Family::Tweedie {
             power: power.ok_or_else(|| PyValueError::new_err("tweedie needs power"))?,
         },
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "family must be gaussian, poisson, gamma, inverse_gaussian, binomial, \
-                 negative_binomial or tweedie, got {other:?}"
-            )));
-        }
     };
     f.validate().map_err(to_py)?;
     Ok(f)
@@ -46,24 +43,16 @@ pub(crate) fn family(name: &str, theta: Option<f64>, power: Option<f64>) -> PyRe
 /// `Family::default_link`: log for the gamma, inverse Gaussian and
 /// Tweedie, the canonical link otherwise; #835).
 pub(crate) fn link(name: Option<&str>, family: Family, power: Option<f64>) -> PyResult<Link> {
-    Ok(match name {
-        None => family.default_link(),
-        Some("identity") => Link::Identity,
-        Some("log") => Link::Log,
-        Some("logit") => Link::Logit,
-        Some("probit") => Link::Probit,
-        Some("cloglog") => Link::Cloglog,
-        Some("inverse") => Link::Inverse,
-        Some("inverse_squared") => Link::InverseSquared,
-        Some("power") => Link::Power(
+    let Some(name) = name else {
+        return Ok(family.default_link());
+    };
+    let kind = LinkKind::from_name(name)
+        .ok_or_else(|| crate::unknown_name("link", name, LinkKind::NAMES))?;
+    Ok(match kind {
+        LinkKind::Power => Link::Power(
             power.ok_or_else(|| PyValueError::new_err("the power link needs link_power"))?,
         ),
-        Some(other) => {
-            return Err(PyValueError::new_err(format!(
-                "link must be identity, log, logit, probit, cloglog, inverse, \
-                 inverse_squared or power, got {other:?}"
-            )));
-        }
+        other => other.link(f64::NAN),
     })
 }
 
@@ -4736,14 +4725,14 @@ fn groupings(
 
 /// A GLMM's family by name.
 fn glmm_family(family: &str, power: Option<f64>) -> PyResult<Family> {
-    match family {
-        "poisson" => Ok(Family::Poisson),
-        "gamma" => Ok(Family::Gamma),
-        "tweedie" => Ok(Family::Tweedie {
+    match FamilyKind::from_name(family) {
+        Some(FamilyKind::Poisson) => Ok(Family::Poisson),
+        Some(FamilyKind::Gamma) => Ok(Family::Gamma),
+        Some(FamilyKind::Tweedie) => Ok(Family::Tweedie {
             power: power.ok_or_else(|| PyValueError::new_err("tweedie needs power"))?,
         }),
-        other => Err(PyValueError::new_err(format!(
-            "a GLMM's family must be poisson, gamma or tweedie, got {other:?}"
+        _ => Err(PyValueError::new_err(format!(
+            "a GLMM's family must be poisson, gamma or tweedie, got {family:?}"
         ))),
     }
 }
@@ -6125,12 +6114,10 @@ fn count_distribution(name: &str) -> PyResult<prospicio_glm::zero::CountDistribu
 }
 
 fn zero_link(name: &str) -> PyResult<Link> {
-    match name {
-        "logit" => Ok(Link::Logit),
-        "probit" => Ok(Link::Probit),
-        "cloglog" => Ok(Link::Cloglog),
-        other => Err(PyValueError::new_err(format!(
-            "zero_link must be logit, probit or cloglog, got {other:?}"
+    match LinkKind::from_name(name) {
+        Some(k @ (LinkKind::Logit | LinkKind::Probit | LinkKind::Cloglog)) => Ok(k.link(f64::NAN)),
+        _ => Err(PyValueError::new_err(format!(
+            "zero_link must be logit, probit or cloglog, got {name:?}"
         ))),
     }
 }

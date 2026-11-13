@@ -84,6 +84,21 @@ def test_grain_spellings(grain):
     assert ChainLadder().fit(triangle(grain), "paid").ultimate == want
 
 
+def test_family_and_link_names():
+    # The GLM family and link names come from one table (#834, step 2).
+    from prospicio.models import Glm
+
+    with pytest.raises(ValueError, match='family must be "gaussian", "normal", "poisson", .* or "tweedie", got "weibull"'):
+        Glm("weibull")
+    with pytest.raises(ValueError, match='link must be "identity", "log", .* or "power", got "sqrt"'):
+        Glm("poisson", link="sqrt")
+    x = [float(i % 5) for i in range(30)]
+    design = Design([[1.0] * 30, x], ["(Intercept)", "x"])
+    y = [1.0 + 0.3 * v + (i % 3) * 0.1 for i, v in enumerate(x)]
+    a = Glm("gaussian").fit(design, y).coefficients
+    assert Glm("normal").fit(design, y).coefficients == a
+
+
 def test_mixing_ig():
     a = Count.mixed_poisson(10.0, 0.5, mixing="inverse_gaussian")
     b = Count.mixed_poisson(10.0, 0.5, mixing="ig")

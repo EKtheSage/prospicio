@@ -536,6 +536,78 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
     }
 }
 
+/// The kind of a [`Family`], without its parameter: what the Python, R and
+/// Excel front ends read from a family's name before they read the theta
+/// or power it needs (#834).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FamilyKind {
+    Gaussian,
+    Poisson,
+    Gamma,
+    InverseGaussian,
+    Binomial,
+    NegativeBinomial,
+    Tweedie,
+}
+
+impl FamilyKind {
+    /// Every name the Python, R and Excel front ends accept, with its kind,
+    /// the canonical name of each first (#834: one vocabulary, one edit for
+    /// a new variant). Excel's quasi-Poisson is a Poisson with an estimated
+    /// dispersion, read by Excel before this table.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("gaussian", Self::Gaussian),
+        ("normal", Self::Gaussian),
+        ("poisson", Self::Poisson),
+        ("gamma", Self::Gamma),
+        ("inverse_gaussian", Self::InverseGaussian),
+        ("binomial", Self::Binomial),
+        ("negative_binomial", Self::NegativeBinomial),
+        ("negbin", Self::NegativeBinomial),
+        ("tweedie", Self::Tweedie),
+    ];
+
+    /// The kind named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_models::family::FamilyKind;
+    ///
+    /// assert_eq!(FamilyKind::from_name("negbin"), Some(FamilyKind::NegativeBinomial));
+    /// assert_eq!(FamilyKind::from_name("lognormal"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, k)| k)
+    }
+
+    /// The canonical name, the first [`NAMES`](Self::NAMES) entry of the
+    /// kind, the same as [`Family::name`].
+    pub fn name(self) -> &'static str {
+        Self::NAMES
+            .iter()
+            .find(|&&(_, k)| k == self)
+            .map(|&(n, _)| n)
+            .expect("every kind is named")
+    }
+}
+
+impl Family {
+    /// The family's kind, without its parameter.
+    pub fn kind(&self) -> FamilyKind {
+        match self {
+            Self::Gaussian => FamilyKind::Gaussian,
+            Self::Poisson => FamilyKind::Poisson,
+            Self::Gamma => FamilyKind::Gamma,
+            Self::InverseGaussian => FamilyKind::InverseGaussian,
+            Self::Binomial => FamilyKind::Binomial,
+            Self::NegativeBinomial { .. } => FamilyKind::NegativeBinomial,
+            Self::Tweedie { .. } => FamilyKind::Tweedie,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -690,5 +762,29 @@ mod tests {
         // Large λ/μ: no overflow.
         let c = inverse_gaussian_cdf(1.0, 1.0, 1e4);
         assert!((0.0..=1.0).contains(&c) && (c - 0.5).abs() < 0.01, "{c}");
+    }
+}
+
+#[cfg(test)]
+mod names {
+    use super::*;
+
+    #[test]
+    fn every_name_round_trips() {
+        for &(name, kind) in FamilyKind::NAMES {
+            assert_eq!(FamilyKind::from_name(name), Some(kind));
+            assert_eq!(FamilyKind::from_name(kind.name()), Some(kind), "{name}");
+        }
+        for f in [
+            Family::Gaussian,
+            Family::Poisson,
+            Family::Gamma,
+            Family::InverseGaussian,
+            Family::Binomial,
+            Family::NegativeBinomial { theta: 2.0 },
+            Family::Tweedie { power: 1.5 },
+        ] {
+            assert_eq!(f.kind().name(), f.name());
+        }
     }
 }
