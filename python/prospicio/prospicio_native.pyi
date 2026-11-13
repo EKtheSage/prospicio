@@ -9754,7 +9754,7 @@ class Count:
         mean : float
         cv : float
             Coefficient of variation of ``theta``, fixed part included.
-        mixing : {"gamma", "inverse_gaussian", "beta", "sichel", "sichel_gamma", "sichel_ig"}, default "gamma"
+        mixing : {"gamma", "inverse_gaussian", "beta", "sichel", "sichel_skewness", "sichel_gamma", "sichel_ig"}, default "gamma"
             The distribution of ``G``. Gamma gives the negative binomial
             (``shift = 0``) or the Delaporte; inverse Gaussian the
             Poisson-inverse Gaussian or its shifted version. The others take
@@ -9763,7 +9763,8 @@ class Count:
             ``"sichel"``, the generalized inverse Gaussian with the given
             ``shape`` (``mixed sichel cv shape``; ``-0.5`` is the inverse
             Gaussian) or, with ``skewness`` instead, the shape that gives that
-            skewness; ``"sichel_gamma"`` and ``"sichel_ig"``, the generalized
+            skewness (also named ``"sichel_skewness"``); ``"ig"`` is
+            ``"inverse_gaussian"``; ``"sichel_gamma"`` and ``"sichel_ig"``, the generalized
             inverse Gaussian with the skewness of the Delaporte's or the
             shifted inverse Gaussian's mixing with fixed part ``f``
             (``mixed sichel.gamma cv f``, ``mixed sichel.ig cv f``).

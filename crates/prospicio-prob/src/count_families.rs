@@ -249,6 +249,69 @@ impl Counting for Logarithmic {
     }
 }
 
+/// The family of a [`Mixing`], without its parameters: what the Python, R
+/// and Excel front ends read from a mixing's name before they read the
+/// parameters it needs (#834).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixingFamily {
+    /// [`Mixing::Gamma`].
+    Gamma,
+    /// [`Mixing::InverseGaussian`].
+    InverseGaussian,
+    /// [`Mixing::Beta`].
+    Beta,
+    /// [`Mixing::Sichel`] with a shape, or [`Mixing::SichelSkewness`] where
+    /// a front end takes a skewness in place of the shape.
+    Sichel,
+    /// [`Mixing::SichelSkewness`].
+    SichelSkewness,
+    /// [`Mixing::sichel_gamma`].
+    SichelGamma,
+    /// [`Mixing::sichel_ig`].
+    SichelIg,
+}
+
+impl MixingFamily {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// family, the canonical name of each first (#834: one vocabulary, one
+    /// edit for a new variant).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("gamma", Self::Gamma),
+        ("inverse_gaussian", Self::InverseGaussian),
+        ("ig", Self::InverseGaussian),
+        ("beta", Self::Beta),
+        ("sichel", Self::Sichel),
+        ("sichel_skewness", Self::SichelSkewness),
+        ("sichel_gamma", Self::SichelGamma),
+        ("sichel_ig", Self::SichelIg),
+    ];
+
+    /// The family named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_prob::count_families::MixingFamily;
+    ///
+    /// assert_eq!(MixingFamily::from_name("ig"), Some(MixingFamily::InverseGaussian));
+    /// assert_eq!(MixingFamily::from_name("lognormal"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, f)| f)
+    }
+
+    /// The canonical name, the first [`NAMES`](Self::NAMES) entry of the
+    /// family.
+    pub fn name(self) -> &'static str {
+        Self::NAMES
+            .iter()
+            .find(|&&(_, f)| f == self)
+            .map(|&(n, _)| n)
+            .expect("every family is named")
+    }
+}
+
 /// The mixing distribution of a [`MixedPoisson`] count. `cv` is the
 /// coefficient of variation of the whole mixing variable `Θ` (mean 1),
 /// fixed part included, as in `aggregate`.
@@ -1109,5 +1172,24 @@ mod tests {
         assert!(MixedPoisson::new(10.0, skew(2.0), 0.0).is_err());
         assert!(ZeroModified::new(Poisson::new(1.0).unwrap(), 1.0).is_err());
         assert!(EmpiricalCount::new(vec![0.5, 0.4]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod mixing_family_names {
+    use super::MixingFamily;
+
+    #[test]
+    fn every_name_round_trips() {
+        for &(name, family) in MixingFamily::NAMES {
+            assert_eq!(MixingFamily::from_name(name), Some(family));
+            assert_eq!(
+                MixingFamily::from_name(family.name()),
+                Some(family),
+                "{name}"
+            );
+        }
+        assert_eq!(MixingFamily::InverseGaussian.name(), "inverse_gaussian");
+        assert_eq!(MixingFamily::from_name("Gamma"), None);
     }
 }

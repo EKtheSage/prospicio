@@ -57,6 +57,14 @@ expect_error_like(glm_fit(y ~ x, gd, family = "poisson", link = "sqrt"),
 stopifnot(identical(pmf(mixed_poisson_count(10, 0.5, mixing = "ig"), 0:5),
                     pmf(mixed_poisson_count(10, 0.5, mixing = "inverse_gaussian"), 0:5)))
 
+# The mixing's names from one table (#834, step 2): the same message as
+# Python for an unknown name, and "ig" for a bonus-malus portfolio.
+expect_error_like(prospicio:::rust_result(prospicio:::ClaimCount$mixed_poisson(10, 0.5, "lognormal", 0, 0)),
+                  'mixing must be "gamma", "inverse_gaussian", "ig", "beta", "sichel", "sichel_skewness", "sichel_gamma" or "sichel_ig", got "lognormal"')
+scale6 <- bonus_malus(6, start = 5, down = 1, up_per_claim = 2)
+stopifnot(identical(bonus_malus_portfolio(scale6, 0.1, cv = 0.8, mixing = "ig")$relativity,
+                    bonus_malus_portfolio(scale6, 0.1, cv = 0.8, mixing = "inverse_gaussian")$relativity))
+
 # A selected pattern's kind in Excel's spellings.
 pattern <- list(
   ldf = c(`12` = 2.5, `24` = 1.3, `36` = 1.1, `48` = 1.05, `60` = 1.02),

@@ -4,7 +4,7 @@
 use extendr_api::Result;
 use extendr_api::prelude::*;
 use prospicio_pricing::bonus_malus::{BonusMalus, BonusRule, Portfolio};
-use prospicio_prob::count_families::Mixing;
+use prospicio_prob::count_families::{Mixing, MixingFamily};
 
 use crate::{to_r, whole};
 
@@ -109,12 +109,12 @@ impl BonusMalusR {
     /// The stationary distribution and optimal relativities over the
     /// portfolio.
     fn portfolio(&self, lambdas: &[f64], weights: &[f64], cv: f64, mixing: &str) -> Result<List> {
-        let mixing = match mixing {
-            "gamma" => Mixing::Gamma { cv },
-            "inverse_gaussian" => Mixing::InverseGaussian { cv },
-            other => {
+        let mixing = match MixingFamily::from_name(mixing) {
+            Some(MixingFamily::Gamma) => Mixing::Gamma { cv },
+            Some(MixingFamily::InverseGaussian) => Mixing::InverseGaussian { cv },
+            _ => {
                 return Err(Error::Other(format!(
-                    "mixing must be \"gamma\" or \"inverse_gaussian\", not {other:?}"
+                    "mixing must be \"gamma\" or \"inverse_gaussian\" (or \"ig\"), got {mixing:?}"
                 )));
             }
         };

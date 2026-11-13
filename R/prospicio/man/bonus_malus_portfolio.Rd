@@ -13,7 +13,7 @@ bonus_malus_portfolio(scale, lambdas, cv, mixing = "gamma", weights = NULL)
 
 \item{cv}{The coefficient of variation of \code{Theta}.}
 
-\item{mixing}{\code{"gamma"} or \code{"inverse_gaussian"}.}
+\item{mixing}{\code{"gamma"} or \code{"inverse_gaussian"} (also \code{"ig"}).}
 
 \item{weights}{The classes' weights; equal by default.}
 }
