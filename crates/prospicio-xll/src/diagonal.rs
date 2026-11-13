@@ -51,13 +51,9 @@ fn vector<'a>(grid: &'a Grid, name: &str) -> Result<Option<&'a [Value]>> {
 fn grain_option(grid: &Grid, name: &str) -> Result<Option<Grain>> {
     match text_option(grid, name)?.as_deref() {
         None => Ok(None),
-        Some("year" | "y") => Ok(Some(Grain::Year)),
-        Some("semiannual" | "semi-annual" | "s") => Ok(Some(Grain::Semester)),
-        Some("quarter" | "q") => Ok(Some(Grain::Quarter)),
-        Some("month" | "m") => Ok(Some(Grain::Month)),
-        Some(other) => Err(format!(
-            "{name} must be \"year\", \"semiannual\", \"quarter\" or \"month\", got {other:?}"
-        )),
+        Some(other) => Grain::from_name(other)
+            .map(Some)
+            .ok_or_else(|| crate::unknown_name(name, other, Grain::NAMES)),
     }
 }
 
