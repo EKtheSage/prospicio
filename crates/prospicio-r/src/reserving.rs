@@ -2677,33 +2677,13 @@ pub(crate) fn tail_arg(tail: &Robj) -> Result<Tail> {
         .map_err(|_| Error::Other("tail must be a tail estimator".into()))
 }
 
-fn curve_name(curve: CurveShape) -> &'static str {
-    match curve {
-        CurveShape::Exponential => "exponential",
-        CurveShape::InversePower => "inverse_power",
-        CurveShape::Hoerl => "hoerl",
-        CurveShape::Sherman => "sherman",
-        CurveShape::Growth(GrowthCurve::LogLogistic) => "loglogistic",
-        CurveShape::Growth(GrowthCurve::Weibull) => "weibull",
-    }
+fn curve_name(c: CurveShape) -> &'static str {
+    c.name()
 }
 
 /// A curve shape by its name in the bindings.
 fn curve_shape(name: &str, what: &str) -> Result<CurveShape> {
-    Ok(match name {
-        "exponential" => CurveShape::Exponential,
-        "inverse_power" => CurveShape::InversePower,
-        "hoerl" => CurveShape::Hoerl,
-        "sherman" => CurveShape::Sherman,
-        "loglogistic" => CurveShape::Growth(GrowthCurve::LogLogistic),
-        "weibull" => CurveShape::Growth(GrowthCurve::Weibull),
-        _ => {
-            return Err(Error::Other(format!(
-                "{what} must be \"exponential\", \"inverse_power\", \"hoerl\", \"sherman\", \
-                 \"loglogistic\" or \"weibull\", got \"{name}\""
-            )));
-        }
-    })
+    CurveShape::from_name(name).ok_or_else(|| crate::unknown_name(what, name, CurveShape::NAMES))
 }
 
 #[extendr]
