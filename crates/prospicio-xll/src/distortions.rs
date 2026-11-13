@@ -5,7 +5,7 @@
 //! calibration to a price.
 
 use prospicio_prob::Distortion;
-use prospicio_prob::distortion::{Family, calibrate};
+use prospicio_prob::distortion::{DistortionKind, Family, calibrate};
 
 use crate::pricing::{map1, numbers, scalar};
 use crate::sheet::{Grid, Value};
@@ -28,22 +28,19 @@ fn family(name: &str, r0_arg: &Grid) -> Result<Family> {
             ))
         }
     };
-    let key = name.trim().to_ascii_lowercase().replace([' ', '-'], "_");
-    if matches!(
-        key.as_str(),
-        "bitvar" | "beta" | "wtdtvar" | "weighted_tvar"
-    ) {
-        return Err(format!(
-            "{name:?} has several parameters and is not calibrated; calibrate a one-parameter family"
-        ));
-    }
-    // One vocabulary with Python and R (#834): Family::from_name.
-    let f = Family::from_name(name, f64::NAN)
-        .map_err(|_| format!("family must be {NAMES}, got {key:?}"))?;
-    if f.needs_r0() {
-        Family::from_name(name, r0()?).map_err(|e| e.to_string())
+    // One vocabulary with Python and R (#834): DistortionKind::NAMES.
+    let kind = DistortionKind::from_name(name)
+        .ok_or_else(|| crate::unknown_name("family", name, DistortionKind::NAMES))?;
+    if kind.needs_r0() {
+        let r0 = r0()?;
+        Ok(kind.family(r0).expect("a capped kind is a family"))
     } else {
-        none(f)
+        match kind.family(f64::NAN) {
+            Some(f) => none(f),
+            None => Err(format!(
+                "{name:?} has several parameters and is not calibrated; calibrate a one-parameter family"
+            )),
+        }
     }
 }
 
@@ -114,7 +111,8 @@ fn levels_and_weights(parameter: &Grid) -> Result<(Vec<f64>, Vec<f64>)> {
 /// together in one range.
 pub(crate) fn parse(name: &Grid, parameter: &Grid, r0: &Grid) -> Result<Distortion> {
     let name = text(name, "family")?;
-    let key = name.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+    let kind = DistortionKind::from_name(&name)
+        .ok_or_else(|| crate::unknown_name("family", &name, DistortionKind::NAMES))?;
     let only = |family: &str| {
         if r0.is_blank() {
             Ok(())
@@ -124,25 +122,23 @@ pub(crate) fn parse(name: &Grid, parameter: &Grid, r0: &Grid) -> Result<Distorti
             ))
         }
     };
-    let d = match key.as_str() {
-        "bitvar" => {
+    let d = match kind {
+        DistortionKind::Bitvar => {
             only(&name)?;
             let x = several(parameter, "bitvar", 3, "p0, p1, w")?;
             Distortion::bitvar(x[0], x[1], x[2])
         }
-        "beta" => {
+        DistortionKind::Beta => {
             only(&name)?;
             let x = several(parameter, "beta", 2, "a, b")?;
             Distortion::beta(x[0], x[1])
         }
-        "wtdtvar" | "weighted_tvar" => {
+        DistortionKind::WeightedTvar => {
             only(&name)?;
             let (ps, wts) = levels_and_weights(parameter)?;
             Distortion::weighted_tvar(ps, wts)
         }
-        "clin" | "capped_linear" | "cll" | "capped_log_linear" | "lep" | "ly" | "linear_yield"
-            if r0.is_blank() && parameter.as_scalar().is_none() =>
-        {
+        _ if kind.needs_r0() && r0.is_blank() && parameter.as_scalar().is_none() => {
             let x = several(parameter, &name, 2, "r0 and the parameter")?;
             family(&name, &Grid::scalar(Value::Number(x[0])))?.with(x[1])
         }

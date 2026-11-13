@@ -8,4 +8,3 @@ Finished items are in [done/probability.md](done/probability.md), which agents r
 
 ## Next
 
-- [option-names-step-2] #834 step 2: `NAMES` and `from_name` (with `name`) on each user-facing core enum, as `CountDistribution` has them, one family per PR: mixing, family and link, distortion family; the front ends' match blocks replaced by a call and their `unknown_name` message

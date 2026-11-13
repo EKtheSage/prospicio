@@ -314,5 +314,11 @@ fn calibration_takes_the_shared_family_names() {
         "pro_cap_distortion_calibrate",
         vec![Grid::column(&X), Grid::column(&P), n(premium), t("nope")],
     );
-    assert!(text(&e).contains("family must be"), "{}", text(&e));
+    // The names of DistortionKind::NAMES, shared with Python and R (#834).
+    assert!(
+        text(&e).contains("family must be \"ccoc\", \"ph\", \"proportional_hazard\"")
+            && text(&e).contains("\"weighted_tvar\", got \"nope\""),
+        "{}",
+        text(&e)
+    );
 }

@@ -34,6 +34,13 @@ option_alias <- function(x, aliases) {
 # Log-linear in its three spellings (#834).
 log_linear_aliases <- c("loglinear" = "log-linear", "log_linear" = "log-linear")
 
+# A distortion's kind by `aggregate`'s short name, as Python's calibration and
+# Excel take it (DistortionKind::NAMES, #834).
+distortion_kind_aliases <- c("ph" = "proportional_hazard", "dual" = "dual_power",
+                             "exp" = "exponential", "clin" = "capped_linear",
+                             "cll" = "capped_log_linear", "ly" = "linear_yield",
+                             "wtdtvar" = "weighted_tvar")
+
 # A selected pattern's kind in Excel's spellings (#834).
 pattern_kind_aliases <- c("percent" = "percent_developed",
                           "percent developed" = "percent_developed",

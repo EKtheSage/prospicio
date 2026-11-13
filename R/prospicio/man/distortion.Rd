@@ -15,7 +15,9 @@ distortion(
 )
 }
 \arguments{
-\item{kind}{The kind of distortion; see the table.}
+\item{kind}{The kind of distortion; see the table. \code{aggregate}'s short names
+\code{"ph"}, \code{"dual"}, \code{"exp"}, \code{"clin"}, \code{"cll"}, \code{"ly"} and \code{"wtdtvar"} are taken
+too, as in Python and Excel.}
 
 \item{param}{The distortion's parameter or parameters.}
 

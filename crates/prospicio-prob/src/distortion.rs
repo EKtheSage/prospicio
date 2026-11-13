@@ -857,6 +857,112 @@ impl Distortion {
     }
 }
 
+/// A distortion's kind by name, without its parameters: the one vocabulary
+/// of the Python, R and Excel front ends for building a distortion (#834).
+/// The one-parameter kinds are the [`Family`]s; bitvar, beta and weighted
+/// TVaR take several parameters and are not calibrated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DistortionKind {
+    Ccoc,
+    ProportionalHazard,
+    Wang,
+    Tsallis,
+    DualPower,
+    Tvar,
+    Exponential,
+    CappedLinear,
+    CappedLogLinear,
+    Lep,
+    LinearYield,
+    Bitvar,
+    Beta,
+    WeightedTvar,
+}
+
+impl DistortionKind {
+    /// Every name the front ends accept, with its kind: `aggregate`'s short
+    /// name first, then the long one where there is one. [`from_name`]
+    /// ignores case, surrounding spaces, and spaces or hyphens inside.
+    ///
+    /// [`from_name`]: Self::from_name
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("ccoc", Self::Ccoc),
+        ("ph", Self::ProportionalHazard),
+        ("proportional_hazard", Self::ProportionalHazard),
+        ("wang", Self::Wang),
+        ("tsallis", Self::Tsallis),
+        ("dual", Self::DualPower),
+        ("dual_power", Self::DualPower),
+        ("tvar", Self::Tvar),
+        ("exp", Self::Exponential),
+        ("exponential", Self::Exponential),
+        ("clin", Self::CappedLinear),
+        ("capped_linear", Self::CappedLinear),
+        ("cll", Self::CappedLogLinear),
+        ("capped_log_linear", Self::CappedLogLinear),
+        ("lep", Self::Lep),
+        ("ly", Self::LinearYield),
+        ("linear_yield", Self::LinearYield),
+        ("bitvar", Self::Bitvar),
+        ("beta", Self::Beta),
+        ("wtdtvar", Self::WeightedTvar),
+        ("weighted_tvar", Self::WeightedTvar),
+    ];
+
+    /// The kind named `name` ([`NAMES`](Self::NAMES)), with case,
+    /// surrounding spaces, and spaces or hyphens inside ignored, or `None`.
+    ///
+    /// ```
+    /// use prospicio_prob::distortion::DistortionKind;
+    ///
+    /// assert_eq!(DistortionKind::from_name("Dual Power"), Some(DistortionKind::DualPower));
+    /// assert_eq!(DistortionKind::from_name("wtdtvar"), Some(DistortionKind::WeightedTvar));
+    /// assert_eq!(DistortionKind::from_name("roe"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        let key = name.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+        Self::NAMES.iter().find(|(n, _)| *n == key).map(|&(_, k)| k)
+    }
+
+    /// `aggregate`'s short name, the first [`NAMES`](Self::NAMES) entry of
+    /// the kind.
+    pub fn name(self) -> &'static str {
+        Self::NAMES
+            .iter()
+            .find(|&&(_, k)| k == self)
+            .map(|&(n, _)| n)
+            .expect("every kind is named")
+    }
+
+    /// Whether the kind carries a fixed `r0` (`clin`, `cll`, `lep`, `ly`).
+    pub fn needs_r0(self) -> bool {
+        matches!(
+            self,
+            Self::CappedLinear | Self::CappedLogLinear | Self::Lep | Self::LinearYield
+        )
+    }
+
+    /// The one-parameter [`Family`] of this kind, with `r0` for the capped
+    /// families (not read for the others), or `None` for bitvar, beta and
+    /// weighted TVaR.
+    pub fn family(self, r0: f64) -> Option<Family> {
+        Some(match self {
+            Self::Ccoc => Family::Ccoc,
+            Self::ProportionalHazard => Family::ProportionalHazard,
+            Self::Wang => Family::Wang,
+            Self::Tsallis => Family::Tsallis,
+            Self::DualPower => Family::DualPower,
+            Self::Tvar => Family::Tvar,
+            Self::Exponential => Family::Exponential,
+            Self::CappedLinear => Family::CappedLinear { r0 },
+            Self::CappedLogLinear => Family::CappedLogLinear { r0 },
+            Self::Lep => Family::Lep { r0 },
+            Self::LinearYield => Family::LinearYield { r0 },
+            Self::Bitvar | Self::Beta | Self::WeightedTvar => return None,
+        })
+    }
+}
+
 /// A one-parameter family of distortions, for [`calibrate`]. The standard
 /// set of Mildenhall and Major is [`Family::STANDARD`]: CCoC, PH, Wang,
 /// dual and TVaR, from the most tail-heavy to the most body-heavy.
@@ -942,26 +1048,31 @@ impl Family {
     /// assert!(Family::from_name("bitvar", 0.0).is_err());
     /// ```
     pub fn from_name(name: &str, r0: f64) -> Result<Self> {
-        let key = name.trim().to_ascii_lowercase().replace([' ', '-'], "_");
-        Ok(match key.as_str() {
-            "ccoc" => Self::Ccoc,
-            "ph" | "proportional_hazard" => Self::ProportionalHazard,
-            "wang" => Self::Wang,
-            "tsallis" => Self::Tsallis,
-            "dual" | "dual_power" => Self::DualPower,
-            "tvar" => Self::Tvar,
-            "exp" | "exponential" => Self::Exponential,
-            "clin" | "capped_linear" => Self::CappedLinear { r0 },
-            "cll" | "capped_log_linear" => Self::CappedLogLinear { r0 },
-            "lep" => Self::Lep { r0 },
-            "ly" | "linear_yield" => Self::LinearYield { r0 },
-            _ => {
-                return Err(Error::Data(format!(
+        DistortionKind::from_name(name)
+            .and_then(|k| k.family(r0))
+            .ok_or_else(|| {
+                Error::Data(format!(
                     "unknown distortion family {name:?}: one of ccoc, ph, wang, tsallis, dual, \
                      tvar, exp, clin, cll, lep and ly"
-                )));
-            }
-        })
+                ))
+            })
+    }
+
+    /// The family's kind, without its `r0`.
+    pub fn kind(self) -> DistortionKind {
+        match self {
+            Self::Ccoc => DistortionKind::Ccoc,
+            Self::ProportionalHazard => DistortionKind::ProportionalHazard,
+            Self::Wang => DistortionKind::Wang,
+            Self::DualPower => DistortionKind::DualPower,
+            Self::Tvar => DistortionKind::Tvar,
+            Self::Exponential => DistortionKind::Exponential,
+            Self::Tsallis => DistortionKind::Tsallis,
+            Self::CappedLinear { .. } => DistortionKind::CappedLinear,
+            Self::CappedLogLinear { .. } => DistortionKind::CappedLogLinear,
+            Self::Lep { .. } => DistortionKind::Lep,
+            Self::LinearYield { .. } => DistortionKind::LinearYield,
+        }
     }
 
     /// Whether the family carries a fixed `r0` (`clin`, `cll`, `lep`, `ly`).
@@ -1756,5 +1867,30 @@ mod tests {
         assert!(Distortion::proportional_hazard(0.0).is_err());
         assert!(Distortion::proportional_hazard(1.5).is_err());
         assert!(Distortion::dual_power(0.5).is_err());
+    }
+}
+
+#[cfg(test)]
+mod kind_names {
+    use super::{DistortionKind, Family};
+
+    #[test]
+    fn every_name_round_trips() {
+        for &(name, kind) in DistortionKind::NAMES {
+            assert_eq!(DistortionKind::from_name(name), Some(kind));
+            assert_eq!(DistortionKind::from_name(kind.name()), Some(kind), "{name}");
+            if let Some(f) = kind.family(0.1) {
+                assert_eq!(f.kind(), kind);
+                assert_eq!(f.name(), kind.name());
+                assert_eq!(f.needs_r0(), kind.needs_r0());
+                assert_eq!(Family::from_name(name, 0.1).unwrap(), f);
+            } else {
+                assert!(Family::from_name(name, 0.1).is_err(), "{name}");
+            }
+        }
+        assert_eq!(
+            DistortionKind::from_name(" Linear-Yield "),
+            Some(DistortionKind::LinearYield)
+        );
     }
 }

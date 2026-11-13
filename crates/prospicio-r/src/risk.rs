@@ -10,8 +10,8 @@ use prospicio_prob::mvn::{MvnSettings, mvn_probability};
 use prospicio_prob::qmc::{Scramble, Sobol};
 use prospicio_prob::statistics::{QuantileMethod, StatisticsGrid, TvarMethod};
 use prospicio_prob::{
-    Archimedean, ArchimedeanCopula, Distortion, Empirical, Family, GaussianCopula, Provenance,
-    StudentTCopula,
+    Archimedean, ArchimedeanCopula, Distortion, DistortionKind, Empirical, Family, GaussianCopula,
+    Provenance, StudentTCopula,
 };
 
 use crate::distributions::{
@@ -27,11 +27,12 @@ pub(crate) struct RiskDistortion {
 
 #[extendr]
 impl RiskDistortion {
-    /// `kind` is "tvar", "wang", "proportional_hazard", "dual_power",
-    /// "exponential", "ccoc", "tsallis", "bitvar" (`params` p0, p1, w),
-    /// "weighted_tvar" (`params` the levels, `weights` their weights),
-    /// "capped_linear", "capped_log_linear", "lep", "linear_yield" (with
-    /// `r0`) or "beta" (`params` a, b).
+    /// `kind` is any name of `DistortionKind::NAMES` (#834): "tvar",
+    /// "wang", "proportional_hazard", "dual_power", "exponential", "ccoc",
+    /// "tsallis", "bitvar" (`params` p0, p1, w), "weighted_tvar" (`params`
+    /// the levels, `weights` their weights), "capped_linear",
+    /// "capped_log_linear", "lep", "linear_yield" (with `r0`) or "beta"
+    /// (`params` a, b), or `aggregate`'s short name of one.
     fn new(kind: &str, params: &[f64], weights: &[f64], r0: f64) -> Result<Self> {
         let one = || -> Result<f64> {
             match params {
@@ -41,19 +42,10 @@ impl RiskDistortion {
                 ))),
             }
         };
-        let inner = match kind {
-            "tvar" => Distortion::tvar(one()?),
-            "wang" => Distortion::wang(one()?),
-            "proportional_hazard" => Distortion::proportional_hazard(one()?),
-            "dual_power" => Distortion::dual_power(one()?),
-            "exponential" => Distortion::exponential(one()?),
-            "ccoc" => Distortion::ccoc(one()?),
-            "tsallis" => Distortion::tsallis(one()?),
-            "capped_linear" => Distortion::capped_linear(r0, one()?),
-            "capped_log_linear" => Distortion::capped_log_linear(r0, one()?),
-            "lep" => Distortion::lep(r0, one()?),
-            "linear_yield" => Distortion::linear_yield(r0, one()?),
-            "bitvar" => match params {
+        let k = DistortionKind::from_name(kind)
+            .ok_or_else(|| crate::unknown_name("kind", kind, DistortionKind::NAMES))?;
+        let inner = match k {
+            DistortionKind::Bitvar => match params {
                 [p0, p1, w] => Distortion::bitvar(*p0, *p1, *w),
                 _ => {
                     return Err(Error::Other(
@@ -61,12 +53,19 @@ impl RiskDistortion {
                     ));
                 }
             },
-            "beta" => match params {
+            DistortionKind::Beta => match params {
                 [a, b] => Distortion::beta(*a, *b),
                 _ => return Err(Error::Other("a beta distortion takes c(a, b)".into())),
             },
-            "weighted_tvar" => Distortion::weighted_tvar(params.to_vec(), weights.to_vec()),
-            other => return Err(Error::Other(format!("unknown distortion {other:?}"))),
+            DistortionKind::WeightedTvar => {
+                Distortion::weighted_tvar(params.to_vec(), weights.to_vec())
+            }
+            one_parameter => {
+                let family = one_parameter
+                    .family(r0)
+                    .expect("every kind but bitvar, beta and weighted TVaR is a family");
+                family.with(one()?)
+            }
         }
         .map_err(to_r)?;
         Ok(Self { inner })
