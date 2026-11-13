@@ -9,6 +9,8 @@
 //! `1/n` on each draw, so ties and atoms are handled exactly.
 
 use prospicio_core::{Error, Result};
+use prospicio_math::roots::{Stop, try_bisect};
+use std::convert::Infallible;
 
 use crate::distribution::check_probability;
 
@@ -428,21 +430,12 @@ pub fn tvar_threshold(values: &[f64], probs: &[f64], p: f64) -> Result<f64> {
     if target >= values[values.len() - 1] {
         return Ok(1.0);
     }
-    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
-    if tvar_unchecked(values, probs, lo) >= target {
+    if tvar_unchecked(values, probs, 0.0) >= target {
         return Ok(0.0);
     }
-    while hi - lo > f64::EPSILON * hi {
-        let mid = 0.5 * (lo + hi);
-        if mid <= lo || mid >= hi {
-            break;
-        }
-        if tvar_unchecked(values, probs, mid) < target {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
+    let Ok((lo, hi)) = try_bisect(0.0, 1.0, Stop::relative(f64::EPSILON), |mid| {
+        Ok::<_, Infallible>(tvar_unchecked(values, probs, mid) < target)
+    });
     Ok(0.5 * (lo + hi))
 }
 
