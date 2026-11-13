@@ -273,6 +273,49 @@ pub fn line_fit(points: &[(f64, f64)]) -> Option<LineFit> {
 /// assert!((e[0] - 1.0).abs() < 1e-15 && (e[1] - 3.0).abs() < 1e-15);
 /// ```
 pub fn symmetric_eigenvalues(a: &[f64], n: usize) -> Vec<f64> {
+    let (m, _) = jacobi(a, n, false);
+    let mut e: Vec<f64> = (0..n).map(|i| m[i * n + i]).collect();
+    e.sort_by(f64::total_cmp);
+    e
+}
+
+/// The eigenvalues of the symmetric `n × n` matrix `a` (row-major; only
+/// its lower triangle is read) in increasing order, and their unit
+/// eigenvectors as the columns of a row-major `n × n` matrix, column `j`
+/// for value `j`, by the cyclic Jacobi rotations of
+/// [`symmetric_eigenvalues`] (the same values). Each vector's sign is set
+/// so its largest entry in size is positive.
+///
+/// ```
+/// use prospicio_math::linalg::symmetric_eigen;
+///
+/// let (e, v) = symmetric_eigen(&[2.0, 1.0, 1.0, 2.0], 2);
+/// assert!((e[1] - 3.0).abs() < 1e-15);
+/// let h = 0.5f64.sqrt();
+/// assert!((v[1] - h).abs() < 1e-15 && (v[3] - h).abs() < 1e-15);
+/// ```
+pub fn symmetric_eigen(a: &[f64], n: usize) -> (Vec<f64>, Vec<f64>) {
+    let (m, v) = jacobi(a, n, true);
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&i, &j| m[i * n + i].total_cmp(&m[j * n + j]));
+    let values = order.iter().map(|&i| m[i * n + i]).collect();
+    let mut vectors = vec![0.0; n * n];
+    for (col, &i) in order.iter().enumerate() {
+        let big = (0..n)
+            .map(|k| v[k * n + i])
+            .fold(0.0_f64, |b, x| if x.abs() > b.abs() { x } else { b });
+        let sign = if big < 0.0 { -1.0 } else { 1.0 };
+        for k in 0..n {
+            vectors[k * n + col] = sign * v[k * n + i];
+        }
+    }
+    (values, vectors)
+}
+
+/// Cyclic Jacobi rotations of the symmetric matrix `a` to diagonal form,
+/// and, with `vectors`, the product of the rotations (the eigenvectors as
+/// columns; the identity otherwise, untouched).
+fn jacobi(a: &[f64], n: usize, vectors: bool) -> (Vec<f64>, Vec<f64>) {
     assert_eq!(a.len(), n * n, "a must be n × n");
     let mut m = vec![0.0; n * n];
     for i in 0..n {
@@ -280,6 +323,10 @@ pub fn symmetric_eigenvalues(a: &[f64], n: usize) -> Vec<f64> {
             m[i * n + j] = a[i * n + j];
             m[j * n + i] = a[i * n + j];
         }
+    }
+    let mut v = vec![0.0; n * n];
+    for i in 0..n {
+        v[i * n + i] = 1.0;
     }
     let scale: f64 = m.iter().map(|v| v * v).sum::<f64>().sqrt();
     for _sweep in 0..100 {
@@ -313,17 +360,37 @@ pub fn symmetric_eigenvalues(a: &[f64], n: usize) -> Vec<f64> {
                     m[p * n + k] = c * mpk - s * mqk;
                     m[q * n + k] = s * mpk + c * mqk;
                 }
+                if vectors {
+                    for k in 0..n {
+                        let (vkp, vkq) = (v[k * n + p], v[k * n + q]);
+                        v[k * n + p] = c * vkp - s * vkq;
+                        v[k * n + q] = s * vkp + c * vkq;
+                    }
+                }
             }
         }
     }
-    let mut e: Vec<f64> = (0..n).map(|i| m[i * n + i]).collect();
-    e.sort_by(f64::total_cmp);
-    e
+    (m, v)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn symmetric_eigen_reconstructs_the_matrix() {
+        let a = [4.0, 1.0, 0.5, 1.0, 3.0, -0.2, 0.5, -0.2, 1.0];
+        let (e, v) = symmetric_eigen(&a, 3);
+        assert_eq!(e, symmetric_eigenvalues(&a, 3));
+        for i in 0..3 {
+            for j in 0..3 {
+                let back: f64 = (0..3).map(|k| v[i * 3 + k] * e[k] * v[j * 3 + k]).sum();
+                assert!((back - a[i * 3 + j]).abs() < 1e-13, "{i} {j}");
+                let dot: f64 = (0..3).map(|k| v[k * 3 + i] * v[k * 3 + j]).sum();
+                assert!((dot - if i == j { 1.0 } else { 0.0 }).abs() < 1e-13);
+            }
+        }
+    }
 
     #[test]
     fn line_fit_on_noisy_points() {

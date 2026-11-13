@@ -1864,28 +1864,21 @@ ice <- function(model, data, feature, values, center = FALSE) {
 
 # ALEPlot's order of a factor's levels (its classical scaling of summed
 # distances over the other columns), read from the end that sorts first.
+# The arithmetic is the Rust core's (#837); `levs` come sorted.
 ale_order <- function(data, feature, levs) {
-  x <- as.character(data[[feature]])
   k <- length(levs)
-  dist <- matrix(0, k, k)
+  level <- as.double(match(as.character(data[[feature]]), levs))
+  dist <- double(k * k)
   for (j in setdiff(names(data), feature)) {
     col <- data[[j]]
-    d <- matrix(0, k, k)
-    if (is.numeric(col)) {
-      q <- stats::quantile(col, probs = seq(0, 1, length.out = 100), names = FALSE)
-      e <- lapply(levs, function(l) stats::ecdf(col[x == l])(q))
-      for (a in seq_len(k - 1)) for (b in (a + 1):k) d[a, b] <- d[b, a] <- max(abs(e[[a]] - e[[b]]))
+    dist <- dist + if (is.numeric(col)) {
+      ale_numeric_distance_rust(as.double(col), level, as.double(k))
     } else {
-      tab <- table(factor(x, levels = levs), as.character(col))
-      tab <- tab / rowSums(tab)
-      for (a in seq_len(k - 1)) for (b in (a + 1):k) {
-        d[a, b] <- d[b, a] <- sum(abs(tab[a, ] - tab[b, ])) / 2
-      }
+      col <- as.character(col)
+      ale_categorical_distance_rust(as.double(match(col, sort(unique(col)))), level, as.double(k))
     }
-    dist <- dist + d
   }
-  order <- levs[order(stats::cmdscale(dist, k = 1)[, 1])]
-  if (order[1] > order[k]) rev(order) else order
+  levs[ale_order_rust(dist, as.double(k))]
 }
 
 #' @rdname ice
@@ -1894,19 +1887,15 @@ ale <- function(model, data, feature, bins = 40, levels = NULL) {
   if (length(feature) != 1 || !feature %in% names(data)) stop("no column ", feature, " in the data")
   x <- data[[feature]]
   pred <- function(v) as.double(stats::predict(model, explain_set(data, feature, v)))
-  n <- nrow(data)
   if (is.null(levels) && is.numeric(x)) {
     if (bins < 1) stop("bins must be at least 1")
-    z <- unique(c(min(x), stats::quantile(x, seq(1 / bins, 1, length.out = bins), type = 1,
-                                          names = FALSE)))
-    if (length(z) < 2) stop(feature, " takes one value: it has no local effect")
-    k <- length(z) - 1
-    a <- as.integer(cut(x, breaks = z, include.lowest = TRUE))
-    delta <- pred(z[a + 1]) - pred(z[a])
-    count <- tabulate(a, k)
-    f <- c(0, cumsum(vapply(seq_len(k), function(b) sum(delta[a == b]) / count[b], double(1))))
-    centre <- sum((f[1:k] + f[2:(k + 1)]) / 2 * count) / n
-    return(data.frame(value = z, effect = f - centre, count = c(NA, count)))
+    if (length(unique(x)) < 2) stop(feature, " takes one value: it has no local effect")
+    # The grid, the intervals, accumulation and centring are the Rust
+    # core's (#837); only the predictions are made here.
+    z <- ale_grid_rust(as.double(x), as.double(bins))
+    a <- ale_intervals_rust(as.double(x), z)
+    e <- ale_numeric_rust(a, pred(z[a]), pred(z[a + 1]), as.double(length(z) - 1))
+    return(data.frame(value = z, effect = e$effects, count = c(NA, e$counts)))
   }
   present <- unique(as.character(x))
   order <- if (is.null(levels)) ale_order(data, feature, sort(present)) else {
@@ -1921,12 +1910,8 @@ ale <- function(model, data, feature, bins = 40, levels = NULL) {
   base <- pred(as.character(x))
   up <- pred(order[pmin(at + 1, k)])
   down <- pred(order[pmax(at - 1, 1)])
-  delta <- vapply(seq_len(k - 1), function(j) {
-    mean(c((up - base)[at == j], (base - down)[at == j + 1]))
-  }, double(1))
-  f <- c(0, cumsum(delta))
-  freq <- tabulate(at, k)
-  data.frame(value = order, effect = f - sum(f * freq) / n, count = freq)
+  e <- ale_levels_rust(as.double(at), as.double(k), base, up, down)
+  data.frame(value = order, effect = e$effects, count = e$counts)
 }
 
 #' @rdname ice
@@ -1954,21 +1939,14 @@ shap_values <- function(model, data, background, features = NULL, output = NULL,
     if (m > max_exact) {
       stop(m, " features need 2^", m, " coalitions; give n_permutations or raise max_exact")
     }
+    # The game's value at every coalition, in mask order (bit g for group
+    # g); the Shapley weights and sums are the Rust core's (#837).
     masks <- lapply(0:(2^m - 1), function(i) as.integer(intToBits(i))[seq_len(m)])
-    values <- lapply(masks, function(mask) {
+    values <- unlist(lapply(masks, function(mask) {
       if (!any(mask)) rep(baseline, n) else if (all(mask == 1)) outputs else value(mask)
-    })
-    key <- function(mask) sum(mask * 2^(seq_len(m) - 1)) + 1
-    for (i in seq_along(masks)) {
-      mask <- masks[[i]]
-      size <- sum(mask)
-      for (g in which(mask == 0)) {
-        w <- factorial(size) * factorial(m - size - 1) / factorial(m)
-        with_g <- mask
-        with_g[g] <- 1L
-        phi[, g] <- phi[, g] + w * (values[[key(with_g)]] - values[[i]])
-      }
-    }
+    }))
+    phi[] <- matrix(shap_exact_rust(as.double(values), as.double(n), as.double(m)), n, m,
+                    byrow = TRUE)
     method <- "exact"
   } else {
     if (n_permutations < 1) stop("n_permutations must be at least 1")

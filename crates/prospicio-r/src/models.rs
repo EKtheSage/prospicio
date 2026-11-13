@@ -1986,6 +1986,86 @@ fn k_fold_rust(n: f64, k: f64, seed: f64) -> Result<List> {
     .map_err(to_r)
 }
 
+/// The grid of a numeric feature's accumulated local effects (#837).
+/// @noRd
+#[extendr]
+fn ale_grid_rust(x: &[f64], bins: f64) -> Result<Vec<f64>> {
+    prospicio_models::explain::ale_grid(x, whole(bins, "bins")? as usize).map_err(to_r)
+}
+
+/// Each value's interval `1..=K` on the grid `z` (#837).
+/// @noRd
+#[extendr]
+fn ale_intervals_rust(x: &[f64], z: &[f64]) -> Vec<f64> {
+    prospicio_models::explain::ale_intervals(x, z)
+        .into_iter()
+        .map(|b| b as f64)
+        .collect()
+}
+
+/// A numeric feature's centred effects and interval counts (#837).
+/// @noRd
+#[extendr]
+fn ale_numeric_rust(interval: &[f64], lower: &[f64], upper: &[f64], k: f64) -> List {
+    let interval: Vec<usize> = interval.iter().map(|&b| b as usize).collect();
+    let e = prospicio_models::explain::ale_numeric(&interval, lower, upper, k as usize);
+    list!(
+        effects = e.effects,
+        counts = e.counts.iter().map(|&c| c as f64).collect::<Vec<_>>()
+    )
+}
+
+/// A categorical feature's centred effects and level counts, `at` 1-based
+/// (#837).
+/// @noRd
+#[extendr]
+fn ale_levels_rust(at: &[f64], k: f64, base: &[f64], up: &[f64], down: &[f64]) -> List {
+    let at: Vec<usize> = at.iter().map(|&a| a as usize - 1).collect();
+    let e = prospicio_models::explain::ale_levels(&at, k as usize, base, up, down);
+    list!(
+        effects = e.effects,
+        counts = e.counts.iter().map(|&c| c as f64).collect::<Vec<_>>()
+    )
+}
+
+/// ALEPlot's `k × k` distances between levels from one numeric column,
+/// `level` 1-based (#837).
+/// @noRd
+#[extendr]
+fn ale_numeric_distance_rust(values: &[f64], level: &[f64], k: f64) -> Vec<f64> {
+    let level: Vec<usize> = level.iter().map(|&a| a as usize - 1).collect();
+    prospicio_models::explain::ale_numeric_distance(values, &level, k as usize)
+}
+
+/// ALEPlot's `k × k` distances between levels from one categorical column,
+/// `codes` and `level` 1-based (#837).
+/// @noRd
+#[extendr]
+fn ale_categorical_distance_rust(codes: &[f64], level: &[f64], k: f64) -> Vec<f64> {
+    let codes: Vec<usize> = codes.iter().map(|&c| c as usize - 1).collect();
+    let level: Vec<usize> = level.iter().map(|&a| a as usize - 1).collect();
+    prospicio_models::explain::ale_categorical_distance(&codes, &level, k as usize)
+}
+
+/// ALEPlot's order of `k` levels, 1-based, from their summed distances
+/// (#837).
+/// @noRd
+#[extendr]
+fn ale_order_rust(distance: &[f64], k: f64) -> Vec<f64> {
+    prospicio_models::explain::ale_order(distance, k as usize)
+        .into_iter()
+        .map(|i| i as f64 + 1.0)
+        .collect()
+}
+
+/// Exact SHAP values, `n × m` row-major, from the game's value at each of
+/// the `2^m` coalitions (#837).
+/// @noRd
+#[extendr]
+fn shap_exact_rust(values: &[f64], n: f64, m: f64) -> Result<Vec<f64>> {
+    prospicio_models::explain::shap_exact(values, n as usize, m as usize).map_err(to_r)
+}
+
 #[extendr]
 fn permutation_rust(n: f64, seed: f64, stream: f64) -> Result<Vec<f64>> {
     Ok(resample::permutation(
@@ -3308,6 +3388,14 @@ extendr_module! {
     fn simulate_from_means_rust;
     fn k_fold_rust;
     fn permutation_rust;
+    fn ale_grid_rust;
+    fn ale_intervals_rust;
+    fn ale_numeric_rust;
+    fn ale_levels_rust;
+    fn ale_numeric_distance_rust;
+    fn ale_categorical_distance_rust;
+    fn ale_order_rust;
+    fn shap_exact_rust;
     fn bootstrap_rows_rust;
     fn target_encode_rust;
     fn mars_rust;

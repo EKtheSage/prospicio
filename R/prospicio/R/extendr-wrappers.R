@@ -19,6 +19,20 @@ aggregate_elt_values <- function(rate, mean, sd_independent, sd_correlated, expo
 
 aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .Call(wrap__aggregate_layer_statistics_rust, annual, share, limit, attachment)
 
+ale_categorical_distance_rust <- function(codes, level, k) .Call(wrap__ale_categorical_distance_rust, codes, level, k)
+
+ale_grid_rust <- function(x, bins) .Call(wrap__ale_grid_rust, x, bins)
+
+ale_intervals_rust <- function(x, z) .Call(wrap__ale_intervals_rust, x, z)
+
+ale_levels_rust <- function(at, k, base, up, down) .Call(wrap__ale_levels_rust, at, k, base, up, down)
+
+ale_numeric_distance_rust <- function(values, level, k) .Call(wrap__ale_numeric_distance_rust, values, level, k)
+
+ale_numeric_rust <- function(interval, lower, upper, k) .Call(wrap__ale_numeric_rust, interval, lower, upper, k)
+
+ale_order_rust <- function(distance, k) .Call(wrap__ale_order_rust, distance, k)
+
 approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap__approximation_eval_rust, moments, kind, values, quantile)
 
 approximation_parameters_rust <- function(moments, kind) .Call(wrap__approximation_parameters_rust, moments, kind)
@@ -470,6 +484,8 @@ schedule_trend_rust <- function(years, trend_years, trend_rates, inception, basi
 settlement_rate_rust <- function(triangle, paid, closed_counts, ultimate, disposal_rates, interpolation) .Call(wrap__settlement_rate_rust, triangle, paid, closed_counts, ultimate, disposal_rates, interpolation)
 
 severity_fit_rust <- function(family, losses, reporting, censored, weights, upper, t) .Call(wrap__severity_fit_rust, family, losses, reporting, censored, weights, upper, t)
+
+shap_exact_rust <- function(values, n, m) .Call(wrap__shap_exact_rust, values, n, m)
 
 shapley_rust <- function(pd, cost) .Call(wrap__shapley_rust, pd, cost)
 
