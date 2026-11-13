@@ -4,6 +4,8 @@
 //! extrapolates. Callers own the bracket, because only they know the
 //! domain (an alpha in `[1e-6, 1e6]`, a probability in `(0, 1)`).
 
+use std::convert::Infallible;
+
 /// The boundary in `(lo, hi)` of a predicate that holds below a point and
 /// fails above it, by bisection to full precision: the loop stops when
 /// the midpoint no longer lies strictly between the ends.
@@ -18,20 +20,116 @@
 /// assert!((r - 2f64.sqrt()).abs() < 1e-15);
 /// ```
 pub fn bisect(lo: f64, hi: f64, mut below: impl FnMut(f64) -> bool) -> f64 {
+    let Ok((lo, hi)) = try_bisect(lo, hi, Stop::FULL, |x| Ok::<_, Infallible>(below(x)));
+    0.5 * (lo + hi)
+}
+
+/// When [`try_bisect`] stops: after `max_steps` halvings, or as soon as
+/// the bracket is no wider than `absolute`, or than `relative` times the
+/// larger of its ends in size. Bisection always stops once the midpoint
+/// no longer lies strictly between the ends, whatever the rule.
+///
+/// Each constructor keeps one rule and sets the others so they never
+/// apply; chain [`with_steps`](Self::with_steps) to cap the halvings too.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Stop {
+    /// The most halvings.
+    pub max_steps: usize,
+    /// Stop when `hi - lo <= absolute`.
+    pub absolute: f64,
+    /// Stop when `hi - lo <= relative * max(|lo|, |hi|)`.
+    pub relative: f64,
+}
+
+impl Stop {
+    /// To full precision: until the midpoint is one of the ends (2100
+    /// halvings span the whole `f64` range, so the cap never binds).
+    pub const FULL: Self = Self {
+        max_steps: 2100,
+        absolute: 0.0,
+        relative: 0.0,
+    };
+
+    /// Exactly `n` halvings, unless full precision comes first.
+    pub const fn steps(n: usize) -> Self {
+        Self {
+            max_steps: n,
+            ..Self::FULL
+        }
+    }
+
+    /// Until the bracket is no wider than `tol`.
+    pub const fn absolute(tol: f64) -> Self {
+        Self {
+            absolute: tol,
+            ..Self::FULL
+        }
+    }
+
+    /// Until the bracket is no wider than `tol` times its larger end in
+    /// size.
+    pub const fn relative(tol: f64) -> Self {
+        Self {
+            relative: tol,
+            ..Self::FULL
+        }
+    }
+
+    /// This rule with at most `n` halvings.
+    pub const fn with_steps(self, n: usize) -> Self {
+        Self {
+            max_steps: n,
+            ..self
+        }
+    }
+
+    fn done(&self, lo: f64, hi: f64) -> bool {
+        let width = hi - lo;
+        width <= self.absolute || width <= self.relative * lo.abs().max(hi.abs())
+    }
+}
+
+/// [`bisect`] with a stop rule and a test that can fail: the final bracket
+/// `(lo, hi)` of the boundary in `(lo, hi)` of `below`, which should hold
+/// below a point and fail above it. The first error `below` returns stops
+/// the search and is returned.
+///
+/// The bracket, not one point, comes back, so a caller picks the end it
+/// needs: the lowest value known to fail is `hi`, the highest known to hold
+/// is `lo`. The ends are not checked: `below(lo)` and `below(hi)` are
+/// never evaluated.
+///
+/// ```
+/// use prospicio_math::roots::{Stop, try_bisect};
+///
+/// let (lo, hi) = try_bisect(0.0, 2.0, Stop::absolute(1e-9), |x| {
+///     if x.is_finite() { Ok(x * x < 2.0) } else { Err("not finite") }
+/// })
+/// .unwrap();
+/// assert!(hi - lo <= 1e-9 && lo <= 2f64.sqrt() && 2f64.sqrt() <= hi);
+/// ```
+pub fn try_bisect<E>(
+    lo: f64,
+    hi: f64,
+    stop: Stop,
+    mut below: impl FnMut(f64) -> Result<bool, E>,
+) -> Result<(f64, f64), E> {
     let (mut lo, mut hi) = (lo, hi);
-    // 2100 halvings span the whole f64 range; the exact stop comes first.
-    for _ in 0..2100 {
+    for _ in 0..stop.max_steps {
+        if stop.done(lo, hi) {
+            break;
+        }
         let mid = 0.5 * (lo + hi);
         if mid <= lo || mid >= hi {
             break;
         }
-        if below(mid) {
+        if below(mid)? {
             lo = mid;
         } else {
             hi = mid;
         }
     }
-    0.5 * (lo + hi)
+    Ok((lo, hi))
 }
 
 /// [`bisect`] on a log scale, for a bracket `0 < lo < hi` that spans orders
@@ -111,6 +209,36 @@ pub fn illinois(x0: f64, x1: f64, f0: f64, f1: f64, mut f: impl FnMut(f64) -> f6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn try_bisect_stops_by_its_rule() {
+        let sqrt2 = 2f64.sqrt();
+        let ok = |x: f64| Ok::<_, ()>(x * x < 2.0);
+        // Full precision: the same bracket bisect ends on.
+        let (lo, hi) = try_bisect(0.0, 2.0, Stop::FULL, ok).unwrap();
+        assert_eq!(0.5 * (lo + hi), bisect(0.0, 2.0, |x| x * x < 2.0));
+        // A fixed number of steps halves the width exactly that often.
+        let (lo, hi) = try_bisect(0.0, 2.0, Stop::steps(10), ok).unwrap();
+        assert_eq!(hi - lo, 2.0 / 1024.0);
+        assert!(lo <= sqrt2 && sqrt2 <= hi);
+        // An absolute and a relative width.
+        let (lo, hi) = try_bisect(0.0, 2.0, Stop::absolute(1e-6), ok).unwrap();
+        assert!(hi - lo <= 1e-6 && hi - lo > 0.5e-6);
+        let (lo, hi) =
+            try_bisect(1e3, 1e4, Stop::relative(1e-12), |x| Ok::<_, ()>(x < 5e3)).unwrap();
+        assert!(hi - lo <= 1e-12 * hi && hi - lo > 0.5e-12 * hi);
+        // The cap binds before the width.
+        let (lo, hi) = try_bisect(0.0, 1.0, Stop::absolute(1e-12).with_steps(3), ok).unwrap();
+        assert_eq!(hi - lo, 0.125);
+        // An error from the test stops the search.
+        let mut calls = 0;
+        let r = try_bisect(0.0, 2.0, Stop::FULL, |x| {
+            calls += 1;
+            if calls == 3 { Err(x) } else { Ok(x * x < 2.0) }
+        });
+        assert_eq!(r, Err(1.25));
+        assert_eq!(calls, 3);
+    }
 
     #[test]
     fn bisect_reaches_full_precision() {
