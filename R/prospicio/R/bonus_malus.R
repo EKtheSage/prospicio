@@ -153,7 +153,7 @@ bonus_malus_mean_relativity <- function(scale, lambda, relativities) {
 #' @param scale A [bonus_malus()] scale.
 #' @param lambdas The classes' expected claim frequencies.
 #' @param cv The coefficient of variation of `Theta`.
-#' @param mixing `"gamma"` or `"inverse_gaussian"`.
+#' @param mixing `"gamma"` or `"inverse_gaussian"` (also `"ig"`).
 #' @param weights The classes' weights; equal by default.
 #' @returns A data frame with `level` (from 0), `stationary` and
 #'   `relativity`.

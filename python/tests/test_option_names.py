@@ -90,6 +90,24 @@ def test_mixing_ig():
     assert a.pmf(3) == b.pmf(3)
 
 
+def test_mixing_names():
+    # The mixing's names come from one table (#834, step 2).
+    with pytest.raises(ValueError, match='mixing must be "gamma", "inverse_gaussian", "ig", "beta", '
+                       '"sichel", "sichel_skewness", "sichel_gamma" or "sichel_ig", got "lognormal"'):
+        Count.mixed_poisson(10.0, 0.5, mixing="lognormal")
+    a = Count.mixed_poisson(10.0, 0.5, mixing="sichel", skewness=1.5)
+    b = Count.mixed_poisson(10.0, 0.5, mixing="sichel_skewness", skewness=1.5)
+    assert a.pmf(3) == b.pmf(3)
+
+
+def test_bonus_malus_mixing_ig():
+    from prospicio.pricing import BonusMalus
+
+    scale = BonusMalus.rule(6, 5, down=1, up_per_claim=2)
+    a = scale.optimal_relativities(0.1, cv=0.8, mixing="inverse_gaussian")
+    assert scale.optimal_relativities(0.1, cv=0.8, mixing="ig") == a
+
+
 @pytest.mark.parametrize(
     "canonical, other",
     [("ldf", "age-to-age"), ("cdf", "age-to-ultimate"),
