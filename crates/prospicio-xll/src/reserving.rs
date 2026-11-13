@@ -152,17 +152,11 @@ pub fn average(grid: &Grid) -> Result<Development> {
     let cell = |i: usize| grid.cells.get(i).cloned().unwrap_or(Value::Empty);
     let kind = match cell(0) {
         v if v.is_blank() => Average::Volume,
-        Value::Text(s) => match s.trim().to_ascii_lowercase().as_str() {
-            "volume" => Average::Volume,
-            "simple" => Average::Simple,
-            "regression" => Average::Regression,
-            "geometric" => Average::Geometric,
-            other => {
-                return Err(format!(
-                    "average must be \"volume\", \"simple\", \"regression\" or \"geometric\", got {other:?}"
-                ));
-            }
-        },
+        Value::Text(s) => {
+            let key = s.trim().to_ascii_lowercase();
+            Average::from_name(&key)
+                .ok_or_else(|| crate::unknown_name("average", &key, Average::NAMES))?
+        }
         other => {
             return Err(format!(
                 "average's first cell is its kind (\"volume\", \"simple\", \"regression\" or \"geometric\"), got {other:?}"

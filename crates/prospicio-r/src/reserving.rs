@@ -207,18 +207,8 @@ fn development(
     excl: &Robj,
     pattern: Option<SelectedPattern>,
 ) -> Result<Development> {
-    let average = match average {
-        "volume" => Average::Volume,
-        "simple" => Average::Simple,
-        "regression" => Average::Regression,
-        "geometric" => Average::Geometric,
-        _ => {
-            return Err(Error::Other(format!(
-                "average must be \"volume\", \"simple\", \"regression\" or \"geometric\", \
-                 got \"{average}\""
-            )));
-        }
-    };
+    let average = Average::from_name(average)
+        .ok_or_else(|| crate::unknown_name("average", average, Average::NAMES))?;
     let sigma_interpolation =
         SigmaInterpolation::from_name(sigma_interpolation).ok_or_else(|| {
             crate::unknown_name(
