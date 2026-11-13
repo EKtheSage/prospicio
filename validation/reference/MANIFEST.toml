@@ -138,6 +138,11 @@ generators = ["aggregate_bounds.py"]
 sha256 = "86c12902116ddf9fa0df0cfb48cfa4897ca2c16b2f38da066014a0b32ae81953"
 
 [[file]]
+path = "chf_aggregate.csv"
+generators = ["aggregate_chf.py"]
+sha256 = "8bc746754410b6801bf8ffb86b28994bf0cd669210d7c30122a1964912ed5920"
+
+[[file]]
 path = "clash_aggregate.csv"
 generators = ["aggregate_clash.py"]
 sha256 = "bd70034dbd34a433b547236c093408306fcc037f4a3fa285b073417cad7c1e96"
