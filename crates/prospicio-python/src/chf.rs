@@ -443,7 +443,7 @@ impl PyNormalInverseGaussian {
 /// Examples
 /// --------
 /// >>> from prospicio.distributions import VarianceGamma
-/// >>> VarianceGamma(0.2, 0.5, -0.1).variance
+/// >>> round(VarianceGamma(0.2, 0.5, -0.1).variance, 12)
 /// 0.045
 #[pyclass(name = "VarianceGamma", module = "prospicio.distributions", frozen)]
 pub(crate) struct PyVarianceGamma {
