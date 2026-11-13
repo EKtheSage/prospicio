@@ -202,6 +202,7 @@
 "tower::layer_losses_from_unlimited" = "unbound on 2026-10-28 (seed); review"
 
 [python.prospicio_prob]
+"chf::ChfReport" = "bound as ChfDistribution's properties (Python) and the report list of a chf_distribution (R), not as a class"
 "DistortionKind" = "the front ends' table of distortion names (#834); Python builds a distortion by its constructor and reads a family name through Family::from_name, which uses the table"
 "FitStatistics" = "the Pareto fits' likelihood reaches Python and R through fit_severity with a t (#800)"
 "severity_fit::fit_severity" = "bound through fit_severity_with_threshold, which takes the body families with t = None (#800)"
@@ -497,6 +498,7 @@
 "tower::layer_losses_from_unlimited" = "unbound on 2026-10-28 (seed); review"
 
 [r.prospicio_prob]
+"chf::ChfReport" = "bound as ChfDistribution's properties (Python) and the report list of a chf_distribution (R), not as a class"
 "FitStatistics" = "the Pareto fits' likelihood reaches Python and R through fit_severity with a t (#800)"
 "severity_fit::fit_severity" = "bound through fit_severity_with_threshold, which takes the body families with t = None (#800)"
 "severity_fit::FitCurves" = "fit_curves returns its columns as a dict (Python) or a data frame (R) (#804)"

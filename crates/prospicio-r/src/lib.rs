@@ -15,6 +15,7 @@ mod bonus_malus;
 mod book;
 mod cashflow;
 mod casualty;
+mod chf;
 mod counts;
 mod credibility;
 mod discrete;
@@ -79,6 +80,7 @@ extendr_module! {
     use book;
     use cashflow;
     use casualty;
+    use chf;
     use counts;
     use credibility;
     use discrete;

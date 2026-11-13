@@ -603,6 +603,65 @@ Each family's native parameters follow SciPy and R (actuar) naming, with
 the mapping stated in the doc comment. Actuarial conveniences
 (`from_mean_cv`, `from_mean_sd`) are constructors, never alternate storage.
 
+## Distributions from a characteristic function (#779)
+
+`aggregate` 2.1.0's `AggregateCHF` (the `chfagg` statement) computes a law
+on a grid from its characteristic function `φ`, with no discretized
+severity and no claim count. `prospicio_prob::chf` follows it.
+
+**Built (first PR, untilted).** `chf::invert(law, options)` samples `φ` on
+the FFT's frequency grid, times `sinc(t h / 2)`, and inverts it once, so
+each bucket holds the law's probability within half a step of its point
+(the rounding discretization). `ChfLaw` is a normal, gamma (an
+exponential as shape 1), inverse Gaussian, Tweedie with `1 < p < 2` (its
+atom at 0 taken out of `φ` and added back to its bucket), `scale * X +
+shift` of one of them, or a user's `φ` on a given grid. `ChfOptions`
+carries `aggregate`'s two rules: rule A sizes the window from the
+Chernoff edges at mass `1 - bucket_sizing_p` (0.99999) beyond it, half on
+each side, rounds the bucket up the ladder `{1, 2, 4, 5, 8} * 10^k` (a
+power of two below 1), places 0 or the atom on a grid point, and walks the
+bucket down the ladder when `|φ(π/h)|` is above `1e-6`; rule C takes a
+given step. `ChfDistribution` holds the masses, a `ChfReport` (step, left
+edge, truncation, the Chernoff bounds on the mass outside, total mass,
+the law's mean and variance) and implements `Distribution`; `to_grid`
+gives a `Grid` from 0. The kernel inverts along `Im s = θ` for the tilt
+of the second PR. Python `invert_chf` and `ChfDistribution`, R
+`invert_chf()`, `chf_distribution` and `chf_to_grid()`. Every step, left
+edge, truncation, outside bound, moment, quantile and 2,837 masses of 11
+grids match `aggregate` 2.1.0 (`validation/reference/chf_aggregate.csv`,
+`validation/scripts/aggregate_chf.py`), the masses to `1e-13`.
+
+**Proposed for the user's acceptance:**
+
+- (a) *The engine lives in `prospicio-prob`*, not `prospicio-aggregate`,
+  so that the laws of #780 can be `Distribution`s through it
+  (`prospicio-prob` cannot depend on the aggregate crate); `rustfft` joins
+  its dependencies (pure Rust, so the WASM build keeps it).
+- (b) *Tilting comes in a second PR with the totally skewed stable law*.
+  `aggregate` tilts only a law with a power tail (its `tilt` is a
+  `ValueError` on any other), and none of the first PR's laws has one; a
+  light law barely wraps, and a tilt only amplifies its truncation ringing
+  by `e^{θx}` (checked in the unit tests). The two-sided stable split and
+  the other laws stay in #780.
+- (c) *The masses are never renormalized*, as in `aggregate`; the
+  `Distribution` statistics are those of the masses over their sum, the
+  window's, and `cdf(x)` sums the masses at grid points at or below `x`
+  (`aggregate`'s `cdf(kind='previous')`), `quantile(p)` the first grid
+  point whose cumulative mass reaches `p`.
+- (d) *A signed grid is its own type.* `ChfDistribution` starts anywhere
+  (a normal's window runs below 0), so it is not a `Grid`, which starts at
+  0 (open question 2 below); `to_grid` sets negative round-off to 0,
+  rescales the sum to 1 and refuses a window that starts below 0.
+- (e) *A user's `φ` needs `step` and `x_min`*, as `aggregate`'s `from_chf`
+  does, and is called on the real line only, at the frequencies `-t_j`
+  (`aggregate`'s convention); `x_min` without `step` is an error. Python
+  passes a list of floats and reads back complex numbers, R a numeric
+  vector and a complex vector; their errors come back as the message.
+- (f) *Left out*: the DecL statement, `validation_df`, `sharpen`,
+  `recommended_grid` and the pricing methods on the object (the masses go
+  to the pricing functions through `to_grid`), and an Excel function (the
+  Excel lane's, if wanted).
+
 ## Validation
 
 Every family ships with SciPy (and, where it differs, actuar) parity rows

@@ -1,0 +1,1 @@
+* **Creation**: [aggregate 2.1.0's characteristic-function engine, reproduced untilted](/findings/chf-inversion-aggregate.md), from #779's first PR (branch claude/cool-shannon-fqpoy8): the masses are bucket probabilities, rule A's bucket walks down the ladder past a truncation of 1e-6, and a tilt on a light law amplifies the truncation ringing by e^(theta x).

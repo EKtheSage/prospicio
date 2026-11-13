@@ -8,3 +8,4 @@ Finished items are in [done/probability.md](done/probability.md), which agents r
 
 ## Next
 
+- [chf-tilting] #779's second PR: exponential tilting of the characteristic-function engine with the totally skewed stable law (the tilt that balances the damped wrap against the amplified round-off, the bucket cap, the mass outside the window into the first bucket, a left tail by reflection; aggregate 2.1.0 parity)

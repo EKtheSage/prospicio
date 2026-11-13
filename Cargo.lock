@@ -4117,6 +4117,7 @@ dependencies = [
  "prospicio-core",
  "prospicio-math",
  "rayon",
+ "rustfft",
  "serde_json",
 ]
 
