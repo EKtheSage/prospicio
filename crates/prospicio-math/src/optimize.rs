@@ -39,13 +39,39 @@ pub fn minimize(lo: f64, hi: f64, mut f: impl FnMut(f64) -> f64) -> f64 {
 /// let x = golden_section(0.0, 3.0, |x| (x - 2.0).powi(2));
 /// assert!((x - 2.0).abs() < 1e-7);
 /// ```
-pub fn golden_section(a: f64, b: f64, mut f: impl FnMut(f64) -> f64) -> f64 {
+pub fn golden_section(a: f64, b: f64, f: impl FnMut(f64) -> f64) -> f64 {
+    golden_section_by(a, b, 200, |a, b, _| b - a <= 1e-15 * b.abs(), f)
+}
+
+/// [`golden_section`] with the caller's stop rule: at most `max_steps`
+/// steps, stopping before a step once `done(a, b, c)` holds for the
+/// bracket `[a, b]` and its lower interior point `c`. Returns the
+/// bracket's midpoint.
+///
+/// A rule that reads `c` stops where a search written around `c` would,
+/// such as a width relative to `1 + |c|`.
+///
+/// ```
+/// use prospicio_math::optimize::golden_section_by;
+///
+/// let x = golden_section_by(0.0, 3.0, usize::MAX, |a, b, c| b - a <= 1e-6 * (1.0 + c.abs()), |x| {
+///     (x - 2.0).powi(2)
+/// });
+/// assert!((x - 2.0).abs() < 1e-5);
+/// ```
+pub fn golden_section_by(
+    a: f64,
+    b: f64,
+    max_steps: usize,
+    mut done: impl FnMut(f64, f64, f64) -> bool,
+    mut f: impl FnMut(f64) -> f64,
+) -> f64 {
     let (mut a, mut b) = (a, b);
     let g = 0.5 * (5f64.sqrt() - 1.0);
     let (mut c, mut d) = (b - g * (b - a), a + g * (b - a));
     let (mut fc, mut fd) = (f(c), f(d));
-    for _ in 0..200 {
-        if b - a <= 1e-15 * b.abs() {
+    for _ in 0..max_steps {
+        if done(a, b, c) {
             break;
         }
         if fc < fd {
