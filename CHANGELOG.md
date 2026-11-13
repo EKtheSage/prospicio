@@ -25,7 +25,20 @@ under "Unreleased" until then.
   `fixed_count()` already did (#774, #815).
 - Rust: `prospicio_prob::Distortion` has the variant `Tsallis` and
   `prospicio_prob::Family` the variant `Tsallis`, so an exhaustive `match`
-  on either needs an arm for it (#769, #812).
+  on either needs an arm for it; it sits after `Exponential`, so the
+  implicit discriminants of `Family::CappedLinear`, `CappedLogLinear`,
+  `Lep` and `LinearYield` (read by an `as` cast) are one higher (#769,
+  #812).
+- Rust: `prospicio_prob::severity_fit::Family` has the variants
+  `Loglogistic`, `Exponential`, `Pareto` and `GenPareto`, and
+  `prospicio_prob::Dist` the variant `Exponential`, so an exhaustive
+  `match` on either needs arms for them (#800, #862).
+- Rust: `prospicio_prob::severity_fit::GoodnessOfFit` has the public field
+  `ks_p_value: f64`, so a struct literal of it needs the field (#805,
+  #872).
+- Rust: `prospicio_reserving::Error` has the variants `TooLarge` (a
+  triangle too large to build, #852) and `Stack` (stacking programs,
+  #838, #865), so an exhaustive `match` on it needs arms for them.
 - Rust: `prospicio_reserving::bayes::BayesOneYearFit` has the public field
   `warnings: Vec<String>`, so a struct literal of it needs the field (add
   `warnings: Vec::new()`) and an exhaustive pattern needs `..` (#762, #821).
