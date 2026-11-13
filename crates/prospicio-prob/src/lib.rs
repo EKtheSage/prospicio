@@ -14,6 +14,7 @@ pub mod affine;
 pub mod beta;
 pub mod burr;
 pub mod capital;
+pub mod chf;
 pub mod copula;
 pub mod count_families;
 pub mod counting;

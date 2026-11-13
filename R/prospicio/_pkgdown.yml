@@ -40,6 +40,8 @@ reference:
       - discrete_distribution
       - normal_distribution
       - ogive
+      - invert_chf
+      - chf_to_grid
       - sampled
       - gamma_distribution
       - tweedie

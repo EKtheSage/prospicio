@@ -18,6 +18,7 @@ mod bonus_malus;
 mod book;
 mod cashflow;
 mod casualty;
+mod chf;
 mod counts;
 mod credibility;
 mod discrete;
@@ -92,6 +93,8 @@ mod prospicio_native {
     use super::casualty::{
         PyCasualtyProfile, PyCasualtyRating, PyElfTable, PyIlfTable, PyParetoAnchor, poisson_tail,
     };
+    #[pymodule_export]
+    use super::chf::{PyChfDistribution, invert_chf};
     #[pymodule_export]
     use super::counts::PyCount;
     #[pymodule_export]

@@ -6921,6 +6921,139 @@ class ChainLadderFit:
         """
 
 @final
+class ChfDistribution:
+    """
+    A law's bucket masses on a grid, from its characteristic function: what
+    ``invert_chf`` returns.
+    
+    Bucket ``k`` holds the law's probability within half a step of
+    ``x_min + k * step`` (the rounding discretization). The masses are as
+    inverted, not renormalized; the statistics are those of the masses on
+    the window.
+    """
+    def __len__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        The sum of the masses at grid points at or below ``x``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def is_truncated(self, /) -> bool:
+        """
+        Whether ``truncation_error`` is above 1e-6.
+        """
+    @property
+    def law_mean(self, /) -> float:
+        """
+        The law's mean (``nan`` for your own function).
+        """
+    @property
+    def law_variance(self, /) -> float:
+        """
+        The law's variance (``nan`` for your own function).
+        """
+    @property
+    def log2(self, /) -> int:
+        """
+        The grid has ``2 ** log2`` buckets.
+        """
+    @property
+    def masses(self, /) -> list[float]:
+        """
+        The bucket masses, as inverted.
+        """
+    def mean(self, /) -> float:
+        """
+        The mean of the masses on the window.
+        """
+    @property
+    def outside_above(self, /) -> float:
+        """
+        The Chernoff bound on the law's mass above the window, which wraps
+        onto its bottom; 0 on a grid whose left edge was given.
+        """
+    @property
+    def outside_below(self, /) -> float:
+        """
+        The Chernoff bound on the law's mass below the window, which wraps
+        onto its top; 0 on a grid whose left edge was given.
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        The first grid point whose cumulative mass reaches ``p``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        """
+    def std_dev(self, /) -> float:
+        """
+        The standard deviation of the masses on the window.
+        """
+    @property
+    def step(self, /) -> float:
+        """
+        The bucket.
+        """
+    @property
+    def step_given(self, /) -> bool:
+        """
+        Whether the bucket was given rather than sized from the law's tails.
+        """
+    def to_grid(self, /) -> Grid:
+        """
+        The masses as a ``Grid`` from 0, negative round-off set to 0 and the
+        sum rescaled to 1, for the compound and risk-measure functions.
+        
+        Returns
+        -------
+        Grid
+        
+        Raises
+        ------
+        ValueError
+            If the window starts below 0.
+        """
+    @property
+    def total_mass(self, /) -> float:
+        """
+        The sum of the masses.
+        """
+    @property
+    def truncation_error(self, /) -> float:
+        """
+        ``|phi(pi / step)|`` of the continuous part: the frequencies the
+        inversion drops. Above 1e-6 the masses ring; lower the step.
+        """
+    def variance(self, /) -> float:
+        """
+        The variance of the masses on the window.
+        """
+    @property
+    def x_min(self, /) -> float:
+        """
+        The first grid point.
+        """
+    @property
+    def xs(self, /) -> list[float]:
+        """
+        The grid points.
+        """
+
+@final
 class ClaimsDevelopmentResult:
     """
     Merz and Wüthrich's (2008) one-year view of a Mack fit: standard errors
@@ -38553,6 +38686,58 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     >>> joined = iman_conover(pd, [[1.0, 0.7], [0.7, 1.0]], seed=3)
     >>> sorted(joined.marginal((1,)).draws) == sorted(pd.marginal((1,)).draws)
     True
+    """
+
+def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: float |None = None, bucket_sizing_p: float = ...) -> ChfDistribution:
+    """
+    A law's distribution on a grid, by inverting its characteristic
+    function: ``aggregate``'s ``AggregateCHF`` (``chfagg``).
+    
+    The characteristic function is sampled on the FFT's frequency grid,
+    times ``sinc(t step / 2)``, and inverted once, so bucket ``k`` holds the
+    probability within half a step of ``x_min + k * step``. With ``step``
+    left out, the window is sized from the law's tails (Chernoff bounds) to
+    leave ``1 - bucket_sizing_p`` of the mass outside, half on each side,
+    and the step is rounded up to 1, 2, 4, 5 or 8 times a power of ten
+    (a power of two below 1); when the dropped frequencies are above 1e-6
+    the step moves down that ladder while that helps. A Tweedie's mass at 0
+    is inverted apart, so it does not ring.
+    
+    Parameters
+    ----------
+    law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine or callable
+        A law with a closed-form characteristic function (an ``Affine`` of
+        one of them), or your own characteristic function: a callable of a
+        list of real frequencies ``t`` returning ``E exp(i t X)`` at each,
+        complex. Your own function needs ``step`` and ``x_min``, since it
+        says nothing of the law's tails.
+    log2 : int, default 16
+        The grid has ``2 ** log2`` buckets, 1 to 28.
+    step : float, optional
+        The bucket; sized from the tails when left out.
+    x_min : float, optional
+        The grid's first point, with ``step``; placed from the tails when
+        left out.
+    bucket_sizing_p : float, default 0.99999
+        The mass the window covers when it is sized from the tails.
+    
+    Returns
+    -------
+    ChfDistribution
+    
+    Raises
+    ------
+    ValueError
+        If an option is out of range, ``x_min`` is given without ``step``,
+        your own function is given without both, or it returns a value that
+        is not finite.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Gamma, invert_chf
+    >>> d = invert_chf(Gamma(4.0, 25.0), log2=12)
+    >>> d.step, d.x_min, round(d.mean(), 6)
+    (0.25, 0.0, 100.0)
     """
 
 def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str = "years", lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3, extend: bool = False) -> IrrResult:

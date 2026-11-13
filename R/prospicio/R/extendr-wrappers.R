@@ -1429,6 +1429,36 @@ ChainLadderFit$ultimate <- function() .Call(wrap__ChainLadderFit__ultimate, self
 #' @export
 `[[.ChainLadderFit` <- `$.ChainLadderFit`
 
+ChfDist <- new.env(parent = emptyenv())
+
+ChfDist$cdf <- function(x) .Call(wrap__ChfDist__cdf, self, x)
+
+ChfDist$masses <- function() .Call(wrap__ChfDist__masses, self)
+
+ChfDist$mean <- function() .Call(wrap__ChfDist__mean, self)
+
+ChfDist$new <- function(law, log2, step, x_min, bucket_sizing_p) .Call(wrap__ChfDist__new, law, log2, step, x_min, bucket_sizing_p)
+
+ChfDist$quantile <- function(p) .Call(wrap__ChfDist__quantile, self, p)
+
+ChfDist$report <- function() .Call(wrap__ChfDist__report, self)
+
+ChfDist$step <- function() .Call(wrap__ChfDist__step, self)
+
+ChfDist$to_grid <- function() .Call(wrap__ChfDist__to_grid, self)
+
+ChfDist$variance <- function() .Call(wrap__ChfDist__variance, self)
+
+ChfDist$x_min <- function() .Call(wrap__ChfDist__x_min, self)
+
+ChfDist$xs <- function() .Call(wrap__ChfDist__xs, self)
+
+#' @export
+`$.ChfDist` <- function (self, name) { func <- ChfDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ChfDist` <- `$.ChfDist`
+
 ClaimCount <- new.env(parent = emptyenv())
 
 ClaimCount$bernoulli <- function(p) .Call(wrap__ClaimCount__bernoulli, p)

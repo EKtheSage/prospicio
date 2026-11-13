@@ -25,6 +25,8 @@ arrow-schema = { workspace = true, optional = true }
 serde_json.workspace = true
 # Outer-loop parallelism over simulations (PredictiveDistribution::simulate).
 rayon.workspace = true
+# The characteristic-function engine's inverse transform (`chf`).
+rustfft.workspace = true
 
 [features]
 # Read and write PredictiveDistribution as Arrow IPC files. Off by default:
