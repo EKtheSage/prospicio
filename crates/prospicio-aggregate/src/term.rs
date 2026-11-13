@@ -14,6 +14,7 @@
 //! share a trend or a parameter drawn once per path.
 
 use prospicio_core::{Error, Result};
+use prospicio_math::roots::{Stop, try_bisect};
 use prospicio_prob::portfolio::CorrelationKind;
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
 
@@ -468,11 +469,11 @@ impl EventSet {
         // on (-1 / (T - 1), 1); stay a little inside, on the kind's scale.
         let edge = 1e-6;
         let floor = -1.0 / (n_years as f64 - 1.0) + edge;
-        let mut lo = match kind {
+        let lo = match kind {
             CorrelationKind::Pearson => floor,
             CorrelationKind::Spearman => 6.0 / std::f64::consts::PI * (floor / 2.0).asin(),
         };
-        let mut hi = 1.0 - edge;
+        let hi = 1.0 - edge;
         let (r_lo, low) = achieved(lo)?;
         let (r_hi, high) = achieved(hi)?;
         if ratio <= r_lo {
@@ -490,21 +491,13 @@ impl EventSet {
             });
         }
         let mut best = (hi, r_hi, high);
-        for _ in 0..60 {
-            let mid = 0.5 * (lo + hi);
+        try_bisect(lo, hi, Stop::absolute(1e-9).with_steps(60), |mid| {
             let (r, years) = achieved(mid)?;
             if (r - ratio).abs() < (best.1 - ratio).abs() {
                 best = (mid, r, years);
             }
-            if r < ratio {
-                lo = mid;
-            } else {
-                hi = mid;
-            }
-            if hi - lo < 1e-9 {
-                break;
-            }
-        }
+            Ok::<_, Error>(r < ratio)
+        })?;
         Ok(YearCalibration {
             correlation: best.0,
             ratio: best.1,
