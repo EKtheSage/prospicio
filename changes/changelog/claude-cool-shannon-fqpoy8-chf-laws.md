@@ -6,4 +6,4 @@
   `normal_inverse_gaussian_distribution()`,
   `variance_gamma_distribution()`, `tempered_stable_distribution()`),
   computed on a grid by `invert_chf` at parity with `aggregate` 2.1.0
-  (#780).
+  (#780, #917).
