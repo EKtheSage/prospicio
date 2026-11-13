@@ -133,15 +133,8 @@ fn loss_ratio_draws_of(
 }
 
 fn grain(name: &str) -> PyResult<Grain> {
-    match name.trim().to_ascii_lowercase().as_str() {
-        "m" | "month" => Ok(Grain::Month),
-        "q" | "quarter" => Ok(Grain::Quarter),
-        "s" | "semiannual" | "semi-annual" => Ok(Grain::Semester),
-        "y" | "year" => Ok(Grain::Year),
-        _ => Err(PyValueError::new_err(format!(
-            "grain must be \"M\", \"Q\", \"S\" or \"Y\" (or \"month\", \"quarter\", \"semiannual\", \"year\"), got {name:?}"
-        ))),
-    }
+    Grain::from_name(&name.trim().to_ascii_lowercase())
+        .ok_or_else(|| crate::unknown_name("grain", name, Grain::NAMES))
 }
 
 fn average(name: &str) -> PyResult<Average> {

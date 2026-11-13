@@ -568,7 +568,7 @@ fn ages_off_the_patterns_grid_are_read_log_linearly() {
         assert_eq!(
             error(&half.clone().grain(word).cl()),
             format!(
-                "grain must be \"year\", \"semiannual\", \"quarter\" or \"month\", got {word:?}"
+                "grain must be \"year\", \"y\", \"semiannual\", \"semi-annual\", \"s\", \"quarter\", \"q\", \"month\" or \"m\", got {word:?}"
             )
         );
     }
@@ -1132,7 +1132,7 @@ fn input_errors_name_their_argument() {
     assert!(e(no_exposure.bf(0.7)).starts_with("exposure is required"));
     assert_eq!(
         e(base().grain("week").cl()),
-        "grain must be \"year\", \"semiannual\", \"quarter\" or \"month\", got \"week\""
+        "grain must be \"year\", \"y\", \"semiannual\", \"semi-annual\", \"s\", \"quarter\", \"q\", \"month\" or \"m\", got \"week\""
     );
     assert_eq!(
         e(base().past_end("extend").cl()),
@@ -1144,7 +1144,7 @@ fn input_errors_name_their_argument() {
     );
     assert_eq!(
         e(base().pattern_origin("day").cl()),
-        "pattern_origin must be \"year\", \"semiannual\", \"quarter\" or \"month\", got \"day\""
+        "pattern_origin must be \"year\", \"y\", \"semiannual\", \"semi-annual\", \"s\", \"quarter\", \"q\", \"month\" or \"m\", got \"day\""
     );
     // An origin grain that is not a whole multiple of the pattern's.
     assert_eq!(

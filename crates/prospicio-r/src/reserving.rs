@@ -197,15 +197,8 @@ fn monthly_pattern_draws_of(
 }
 
 fn grain(name: &str, arg: &str) -> Result<Grain> {
-    match name.trim().to_ascii_lowercase().as_str() {
-        "m" | "month" => Ok(Grain::Month),
-        "q" | "quarter" => Ok(Grain::Quarter),
-        "s" | "semiannual" | "semi-annual" => Ok(Grain::Semester),
-        "y" | "year" => Ok(Grain::Year),
-        _ => Err(Error::Other(format!(
-            "{arg} must be \"M\", \"Q\", \"S\" or \"Y\" (or \"month\", \"quarter\", \"semiannual\", \"year\"), got \"{name}\""
-        ))),
-    }
+    Grain::from_name(&name.trim().to_ascii_lowercase())
+        .ok_or_else(|| crate::unknown_name(arg, name, Grain::NAMES))
 }
 
 fn development(
