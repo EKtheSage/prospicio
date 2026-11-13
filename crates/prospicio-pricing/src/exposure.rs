@@ -562,15 +562,9 @@ impl TabulatedCurve {
         let n = points - half;
         for k in 1..n {
             let target = k as f64 / n as f64;
-            let (mut lo, mut hi) = (0.0, 1.0);
-            for _ in 0..100 {
-                let mid = 0.5 * (lo + hi);
-                if curve.g(mid) < target {
-                    lo = mid;
-                } else {
-                    hi = mid;
-                }
-            }
+            let Ok((lo, hi)) = try_bisect(0.0, 1.0, Stop::steps(100), |mid| {
+                Ok::<_, Infallible>(curve.g(mid) < target)
+            });
             xs.push(0.5 * (lo + hi));
         }
         xs.push(0.0);
