@@ -1,1 +1,0 @@
-* **Creation**: [Python's ALE order of factor levels agrees with R's cmdscale](/findings/explain-parity.md), from #837 step 1 (branch claude/cool-shannon-fqpoy8-explain-parity): the shared reference validation/reference/explain_parity.csv (ALEPlot 1.1, PD and ICE) passes in Python and R on a factor with a negative eigenvalue; no searched distance matrix had a dominant one.

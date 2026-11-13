@@ -7,6 +7,390 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+## 0.1.0 (2026-11-13)
+
+### Breaking changes
+
+- Rust: `prospicio_aggregate::Layer` has the public field
+  `disappearing: Option<f64>`, so a struct literal of `Layer` needs it;
+  build layers with `Layer::xol` and the builders, or add
+  `disappearing: None` (#772, #816).
+- `Discrete` (Rust `Discrete::new`, Python `Discrete(values, probs)`, R
+  `discrete_distribution()`) refuses probabilities that do not sum to 1
+  within `1e-5`, naming the sum, as `aggregate` 2.1.0 refuses `dsev`;
+  before, it rescaled any positive total. Rescale weights or counts on
+  purpose with `Discrete::normalized`, Python `normalize=True` or R
+  `normalize = TRUE`. Python `Count.fixed` takes `3.0` and refuses a
+  fractional count such as `2.5` with a `ValueError`, as R
+  `fixed_count()` already did (#774, #815).
+- Rust: `prospicio_prob::Distortion` has the variant `Tsallis` and
+  `prospicio_prob::Family` the variant `Tsallis`, so an exhaustive `match`
+  on either needs an arm for it (#769, #812).
+- Rust: `prospicio_reserving::bayes::BayesOneYearFit` has the public field
+  `warnings: Vec<String>`, so a struct literal of it needs the field (add
+  `warnings: Vec::new()`) and an exhaustive pattern needs `..` (#762, #821).
+- Excel: `PRO.SEV.FIT(..., "compare")` with `t` blank now has seven
+  body-family rows (the loglogistic and exponential after the Weibull), so
+  a legacy array formula over a fixed range of six rows misses the Burr
+  and Lomax; a spilled formula needs two free rows more (#802, #863).
+- Excel: `PRO.SEV.FIT(..., "compare")` has three more columns (KS p, Tail
+  mean, Tail CV) before Converged and Note, and `"params"` three more rows
+  before Converged, so a formula that picked Converged or Note by position
+  moves (#805, #872).
+- The posterior predictive checks (`prospicio_bayes::ppc::check`,
+  `check_with`, `check_grouped`, `loo_pit`, and `BayesGlmFit`'s
+  `posterior_predictive_check` and `loo_pit`; Python `ppc_check`,
+  `loo_pit` and the fit's methods; R `ppc_check()`, `loo_pit()`,
+  `bayes_ppc()`, `bayes_loo_pit()`) return an error where they returned a
+  biased value: a replicate or observation that is not finite (a Bayesian
+  GLM's replicate is NaN where a posterior draw's mean is invalid for the
+  family, such as a mean at or below 0 under an identity link), or a
+  statistic that is not finite (the sd of one value). The error says how
+  many draws and observations are affected, and in `check_grouped` the
+  group; a group with fewer observations than its statistic needs (the
+  sd of a group of one) is left out of the grouped result
+  (`Statistic::min_observations`) (#831, #852).
+- Building from source needs Rust 1.92 for every crate (`rust-version`
+  in `Cargo.toml`, checked by CI's new `msrv` job). The declared 1.85 was
+  not true: let chains already needed 1.88, and `prospicio-nn` (Burn 0.21)
+  1.92. The R package already asked for 1.92; Python users get wheels
+  (#829, #852).
+- Python and R: a GLM of the gamma, inverse Gaussian or Tweedie family
+  given no `link` takes the log link, as Excel's `PRO.PRC.GLM` always did,
+  instead of the canonical link (inverse, inverse squared, `power(1 - p)`);
+  the Gaussian, Poisson, negative binomial and binomial keep theirs. This
+  holds for every model that takes a family and a link (`Glm`, `Gam`,
+  `ElasticNet`, `BayesGlm`, `DoubleGlm`, the networks' `scale="link"`).
+  R's `glm()` and statsmodels default to the canonical link, so give
+  `link` when porting such a model (`Family::default_link`; #835, #852).
+- Pricing's payment-pattern interpolation `"log-linear"` is now
+  `"log_linear_unpaid"` in Python and R (`Interpolation::LogLinearUnpaid`
+  in Rust): the unpaid share falls geometrically, a different curve from
+  the reserving patterns' log-linear reading of the development factors,
+  which keeps its name. The old name is an error that gives the new one
+  (#839, #852).
+- Pricing's monthly earned pattern (`MonthlyPatterns::from_annual` and
+  `from_paid`; Python `monthly_patterns`, R `cashflow_patterns_from_annual()`)
+  earns a month's premium as written evenly through the month, the
+  reserving crate's `UnderwritingBasis` convention, instead of at its
+  start: half of a year's even writing is earned by its end (was 54.2%),
+  and the accident-date route pays a little later (6.5% by month 12 on the
+  sample submission, was 7.3%). `written_timing="at_start"`
+  (`WrittenTiming::AtStart`) keeps the old rule for a contract written on
+  its inception date. Rust callers pass the new argument (#839, #852).
+
+### Aggregate and reinsurance
+
+- The parity references against `aggregate` are regenerated with
+  `aggregate` 2.1.0 and every script pins it; no prospicio result changes.
+  The values that moved are fixes in `aggregate` toward prospicio's: the
+  skewness it quotes for a layer, `PricingBounds` at `p -> 1` and below the
+  top atom, and the lower envelope of `Bounds`. The tolerances on layer
+  skewness are now 1e-8. The P&L ledger's annual aggregate deductible and
+  limit on an occurrence cover are checked against `aggregate` 2.1.0 to
+  1e-12 (#768, #811).
+- A disappearing deductible on a layer, `aggregate` 2.1.0's `y xs d1 to d2
+  disappearing` (`Layer::disappearing`; Python `Layer.with_disappearing`, R
+  `with_disappearing()`), on events and on the grid, saved in the tower's
+  JSON (format version 10), and the exact first three moments of one
+  occurrence's recovery under an ordinary, franchise or disappearing
+  deductible (`Layer::occurrence_moments`; Python and R
+  `occurrence_moments`), at parity with `aggregate` 2.1.0's analytic
+  severity moments (#772, #816).
+- Event loss tables of several units that share events, `aggregate`
+  2.1.0's `elt unit A [...] elt unit B [...]`: `UnitEventLossTables` with
+  the portfolio's table rolled up by event and each unit's own table, and
+  `EventLossTable::severity_moments`; Python `UnitEventLossTables` and
+  `EventLossTable.severity_moments`, R `unit_event_loss_tables()` and
+  `elt_severity_moments()` (#777, #819).
+- `aggregate` 2.1.0's lattice rule for a discrete severity's bucket:
+  `dyadic_lattice_step` (the dyadic step the atoms lie on),
+  `lattice_candidates` (the buckets tried for it) and `lattice_bucket` (the
+  first that holds the extent within `2^log2` points, or a coarser one with
+  a warning naming the `log2` needed); in Python and R (#776, #818).
+- The occurrence PML and OEP of a program's ceded or net loss, as
+  `aggregate` 2.1.0's `oep` on an `occurrence ceded to` or `net of` clause,
+  for any claim count: `pml::program_occurrence_pml`,
+  `program_occurrence_exceedance` and `Tower::occurrence_ceded` (the
+  program's ceded loss of one occurrence, annual terms left out); Python
+  `occurrence_pml(..., tower=, view=)` and `occurrence_exceedance(...,
+  tower=, view=)`, R the same arguments (#773, #817).
+- A validation verdict on a compound distribution on a grid, `aggregate`
+  2.1.0's `valid` and `Validation.passes`: `validate_grid` with
+  `Validation` (`passes`, the failures by `aggregate`'s names `SEV_MEAN` to
+  `AGG_SKEW`, `ALIASING` and `DEFECTIVE`, the six moment terms, the
+  convolution residual and the mass beyond the grid); Python
+  `validate_grid` and `Validation`, R `validate_grid()` (#778, #820).
+- `read_ylt(day = , hour = )` takes its rule from one Rust function,
+  `ylt::day_hour_times` (Python `prospicio.aggregate.day_hour_times`, R
+  `day_hour_times()`), so Python and R check the same way (#838, #866): a day or
+  hour that is missing or not a number is an error naming the row in both
+  (R's `which()` used to drop it and Python's `float()` failed without the
+  row; the user's decision of 2026-11-11).
+- `YearLossTable::new` (Python `read_ylt`, R `read_ylt()`) refuses a year
+  column whose largest year is above 2^24 and above 1,000 times the row
+  count, such as trial ids read as years (#832, #852).
+- The GIL is released during `EventLossTable.simulate`, `Hawkes.simulate`,
+  `EventSet.grouped`, `eventual_ruin`, `wiener_hopf`,
+  `Portfolio.price`, `Portfolio.calibrate`, `price_with_reinstatements`,
+  `TowerQuote.technical` and `Tower.deal_ledger`, and in `worst_var` and
+  `mars`, so other Python threads run while they compute (#847, #852).
+- `Tower::from_json` refuses a document with `format_version` 0, as the
+  model artifacts already did; no writer produces one (#840, #852).
+
+### Distributions and probability
+
+- The Tsallis distortion of order `alpha`, the Beta(alpha, 1) mixture of
+  TVaRs, priced at the mean plus the cumulative residual Tsallis entropy
+  (`Distortion::tsallis`; Python `Distortion.tsallis`, R
+  `distortion("tsallis", alpha)`, Excel `"tsallis"`), at parity with
+  `aggregate` 2.1.0 (#769, #812).
+- The Gini index of every distortion, `2 * integral(g) - 1`, and the member
+  of a one-parameter family with a given index (`Distortion::gini`,
+  `Distortion::from_gini`; Python `.gini` and `Distortion.from_gini`, R
+  `@gini` and `distortion_from_gini()`), at parity with `aggregate`
+  2.1.0 (#770, #812).
+- A set of distortion families calibrated to one premium, with
+  `aggregate` 2.1.0's extended set that adds Tsallis
+  (`distortion::calibrate_all`, `Family::EXTENDED`; Python and R
+  `calibrate_distortions(..., extended=)`, Excel
+  `PRO.CAP.DISTORTION.CALIBRATE` with `families` `"extended"`) (#771, #812).
+- A Spearman target of 1 between two groups is accepted by
+  `PredictiveDistribution::reorder_groups_with` (Python and R through the
+  same call) and gives near-comonotone group totals. Before, only the
+  diagonal's 1 stayed 1 in `CorrelationKind::Spearman`'s conversion and an
+  off-diagonal 1 made the matrix singular, which was refused. Reserving's
+  rank-correlated segments already accepted it and now use the same
+  conversion (#843, #888).
+- Tweedie parameter conversions, as `aggregate` 2.1.0's
+  `TweedieConversion`: a Tweedie from its power, mean and coefficient of
+  variation (`Tweedie::from_cv`), from its mean, coefficient of variation
+  and dispersion (`from_cv_dispersion`, the power then follows) and from a
+  Poisson count with a gamma severity's mean and coefficient of variation
+  (`from_compound`), with the accessors `cv`, `severity_mean`,
+  `severity_cv` and `p0`; Python `Tweedie.from_cv`, `.cv` and the others,
+  R `tweedie_from_cv()`, `tweedie_from_cv_dispersion()`,
+  `tweedie_from_compound()` and `@cv` (#775, #813).
+- The fit-curves table: `fit_curves` sets every fitted family's survival
+  conditional on a threshold beside the plotting positions
+  `(n - i + 0.5) / n`, the families in AIC order, thinned to numpy's rows;
+  `compare_fits` and `rank_by_aic` fit and rank any families, refusing a
+  comparison whose likelihoods condition on different thresholds. Python
+  `prospicio.distributions.fit_curves` and R `fit_curves()` (#804, #867).
+- The KS p-value of a severity fit by the parametric bootstrap
+  (`severity_fit::ks_bootstrap`, Python and R `ks_bootstrap`): samples
+  drawn from the fit under the data's reporting thresholds, bounds from
+  above and policy limits, each refitted, so the p-value accounts for the
+  fitted parameters, which `goodness_of_fit`'s classical `ks_p_value` does
+  not. Reproducible by seed on any number of threads (#876).
+- The classical two-sided Kolmogorov-Smirnov p-value
+  (`prospicio_math::kolmogorov::kolmogorov_sf`, matching SciPy's `kstwo`)
+  on every goodness of fit (`GoodnessOfFit::ks_p_value`), and the tail
+  mean and CV of a severity above a threshold (`tail_moments`); Python and
+  R `goodness_of_fit` return `ks_p_value`, `tail_mean` and `tail_cv` (#805, #872).
+- The loglogistic and exponential in `fit_severity`, and the single
+  Pareto and Riegel's generalized Pareto fitted from a threshold `t`
+  through `fit_severity_with_threshold`, scored on the same likelihood as
+  the body families so that all nine rank by AIC (`t` is not counted); an
+  `Exponential` distribution with exact layer moments, saved as JSON; the
+  log-likelihood, AIC and BIC of any Pareto, piecewise Pareto or
+  generalized Pareto fit (`fit_statistics`); Python
+  `fit_severity(..., t=)`, `SeverityFit.threshold` and `Exponential`, R
+  `severity_fit(..., t =)` and `exponential_distribution()` (#800, #862).
+- The `risk::*_sorted` value-at-risk and TVaR functions return an error on
+  an empty slice instead of panicking (#832, #852).
+- `Dist::from_json` refuses `format_version` 0, as the model artifacts
+  already did (#840, #852).
+- `PredictiveDistribution`'s Arrow IPC (the `arrow` feature) is on arrow 60
+  (was 59); the file format is unchanged (#829, #852).
+- A body severity fit that runs to a boundary of its family stops there:
+  the simplex runs in rounds and stops when one no longer improves the
+  likelihood. The gamma fitted to losses above a high threshold took 5.2
+  seconds and now takes under 0.1; fits that converged before are
+  unchanged. `ks_bootstrap` refits each replicate from the data's
+  estimate, several times faster (#883).
+
+### Reserving
+
+- The tables of `HierarchicalBf`'s fit and one-year view come from the
+  Rust core (`HierarchicalBfFit::totals`, and `to_long` and `totals` on its
+  one-year view), the same columns in Python's `to_frame` and
+  `totals_frame` and R's `as.data.frame()` as before; the one-year view's
+  claims development result moments are now computed as every other
+  model's (#838, #869).
+- `Triangle::stack`: one-segment triangles stacked as the segments of one
+  triangle under a key, the stacking `HierarchicalBf` takes from a dict of
+  triangles in Python and a named list in R, now one function in Rust that
+  both bindings call (#838, #865). A value column named as the key is an error in
+  both languages (Python accepted it before); the messages name the program
+  as `program "a" has no column "missing"` in both.
+- `HierarchicalBf`'s one-year view refits with a warm-started light refit
+  by default (no pilot run, the sampler scaled by the opening posterior, 4
+  chains of 150 warm-up and 250 kept draws), within 0.004 sd of full
+  refits in the total on the reference panel (and 0.042 sd of each
+  program's own) at about a tenth of their cost; `BayesOneYear::light_refit` sets another, and a refit mode chosen
+  keeps the fit's own sampler as for `Compartmental`. Python
+  `HierarchicalBf.one_year(light_refit=)` (its `refit` now defaults to
+  `None`, still moment matching then refitting) and R
+  `bayes_hierarchical_bf_one_year(light_refit =)`. A panel whose programs
+  stop at different ages now warns, naming the programs whose next diagonal
+  falls at ages they never observed (`BayesOneYearFit::warnings`; Python
+  `UserWarning` and `warnings`, R `warning()` and `warnings`) (#762, #821).
+- `Triangle::from_long` (and every reader built on it) refuses a long
+  table whose origins and ages span a grid of more than 2^24 cells in a
+  segment and more than 1,000 cells a row, as one origin far from the
+  others (a mistyped `9020-01` among monthly origins) does, with the new
+  `Error::TooLarge` naming the first and last origin and age, instead of
+  trying to allocate tens of gigabytes; many sparse segments over the same
+  periods are not affected (#832, #852).
+  Rust: `prospicio_reserving::Error` has a new variant, so an exhaustive
+  `match` on it needs an arm.
+- The `io` feature reads Excel files with calamine 0.38 (was 0.35), which
+  fixes its CFB/OLE2 parser's panics and unbounded allocations on a
+  malformed legacy `.xls`, and quick-xml's and zip's advisories; the seven
+  ignores in `deny.toml` are gone (#829, #852).
+
+### Bindings
+
+- The zero-inflated and hurdle count part's names come from one table,
+  `CountDistribution::NAMES` with `from_name` in `prospicio-glm`, which
+  Python, R and Excel read; an unknown name's error reads the same in all
+  three, `count must be "poisson", "negative_binomial" or "negbin", got
+  "binomial"` (R's argument is `dist`) (#834, #875).
+- A distortion's names come from one table, `DistortionKind::NAMES` with
+  `from_name` and `name` in `prospicio_prob::distortion` (and
+  `Family::kind`), which Python, R and Excel read: R's `distortion()` now
+  takes `aggregate`'s short names (`"ph"`, `"dual"`, `"exp"`, `"clin"`,
+  `"cll"`, `"ly"`, `"wtdtvar"`) as Python's calibration and Excel do, and
+  an unknown family in Excel reads `family must be "ccoc", "ph",
+  "proportional_hazard", ..., got "nope"` (#834, #912).
+- The GLM family and link names come from one table each,
+  `FamilyKind::NAMES` and `LinkKind::NAMES` with `from_name` and `name` in
+  `prospicio-models` (and `Family::kind`, `Link::kind`), which Python, R and
+  Excel read: Python and R now take Excel's `"normal"` and `"negbin"`, and
+  an unknown family or link reads the same in all three, `family must be
+  "gaussian", "normal", ..., got "weibull"` (Excel lists its
+  `"quasipoisson"` first). The GLMM family and the two-part models' zero
+  link read the same tables and keep their narrower lists; Excel's
+  `PRO.PRC.GLM` names the power link as one it has no exponent for (#834, #911).
+- A mixed Poisson count's mixing names come from one table,
+  `MixingFamily::NAMES` with `from_name` and `name` in
+  `prospicio_prob::count_families`, which Python and R read: `"ig"` is
+  `"inverse_gaussian"` in both, now also in R's `bonus_malus_portfolio()`,
+  Python accepts `"sichel_skewness"` as R does, and an unknown name's error
+  reads the same in both, `mixing must be "gamma", "inverse_gaussian",
+  "ig", ..., got "lognormal"` (#834, #910).
+- A selected pattern's kind takes its names from one table
+  (`PatternKind::NAMES` with `from_name` and `name` in
+  `prospicio-reserving`): `ldf_kind` in Python and R, the benchmark curve's
+  `kind` and Excel's `kind` accept the same spellings, and an unknown name's
+  error lists them the same way in all three (#834, #880).
+- Mack's and the Munich chain ladder's sigma interpolation and the
+  paid-incurred chain's variance extrapolation take their names from one
+  table each (`SigmaInterpolation::NAMES`, `VarianceExtrapolation::NAMES`
+  with `from_name` and `name` in `prospicio-reserving`); an unknown name's
+  error reads the same in Python, R and Excel (#834, #878).
+- One vocabulary for option names in Python, R and Excel (#834, step 1, #860).
+  Each front end now accepts every spelling another one did: `negbin` and
+  `negative_binomial` for the zero-inflated and hurdle count part;
+  `log-linear`, `loglinear` and `log_linear` for Mack's and the Munich
+  chain ladder's sigma, the paid-incurred chain's variance extrapolation
+  and Excel's tail; a grain as `M`, `Q`, `S` or `Y` or as `month`,
+  `quarter`, `semiannual` or `year`, in any case; the mixing alias `ig`
+  in R; a selected pattern's kind as `percent`, `percent developed`,
+  `age-to-age` or `age-to-ultimate` in Python and R. Distortion families
+  have one parser, `Family::from_name` in `prospicio-prob`, which all three
+  call: short or long names, in any case, with spaces or hyphens. R keeps
+  `match.arg()`'s partial matching (`"vol"` for `"volume"`), which Python
+  and Excel do not offer; nothing that was accepted before is refused.
+- Three R functions now call the Rust core instead of recomputing it
+  (#838, #864): `limited_fluctuation_credibility()` gives 0 for a `NaN` count,
+  as Python does (it gave `NaN`); `worst_var()` takes its quantiles from
+  the core, with its checks on `p` (in `(0, 1)`) and `n` (positive); and
+  `predict()` on a `hachemeister_fit` is the core's prediction.
+  `random_search(seed = )` no longer changes the caller's random state.
+  `partial_credibility()` in `prospicio_pricing::credibility` is the square
+  root rule on its own.
+
+### Pricing
+
+- Trend factors to a treaty period from a calendar-year rate schedule:
+  `ScheduleTrend` over a `RateSchedule` in `prospicio_pricing::ratemaking`,
+  losses or premium, risks attaching or losses occurring, an incomplete
+  latest year, a calendar year not in the schedule at the latest year's
+  rate; Python `schedule_trend`, R `schedule_trend()` (#801, #855).
+- The running premium-weighted loss ratio, `cumulative_loss_ratio` in
+  Rust, Python and R (#806, #855).
+- `DevelopmentPattern::from_history` sums the claims in the order each
+  first appears instead of a hash map's order, so its factors, and the
+  IBNER and burning cost built on them, are the same to the bit on every
+  run; a result may move once in its last bit (#830, #852).
+
+### Excel
+
+- `PRO.PRC.TREND.FACTORS` (trend factors by a calendar-year rate
+  schedule), `PRO.PRC.LR.CUMULATIVE` (the running premium-weighted loss
+  ratio) and `PRO.REVERSE` (a row reversed into a column, padded or cut
+  to a length) (#803, #806, #855).
+- `PRO.SEV.FIT` fits the loglogistic and exponential, gives the Pareto
+  families' log-likelihood, AIC and BIC, and with a `t` its `"compare"`
+  adds the Pareto and Riegel's generalized Pareto and ranks all nine
+  families by AIC; a range of names in `family` restricts the comparison.
+  The severity functions take `"exponential"` (`p1` the mean) (#802, #863).
+- `PRO.SEV.FIT(..., "curves")` spills the same table, with a tenth
+  argument `points` (#804, #867).
+- A function whose result would have no rows or no columns shows a
+  `#PROSPICIO!` error instead of an empty array (#832, #852).
+- `PRO.SEV.FIT.KS(losses, [family], [t], [thresholds], [censored],
+  [weights], [upper], [limits], [replicates], [seed])`: each fitted
+  family's KS distance with its classical p-value and the p-value by the
+  parametric bootstrap, in `PRO.SEV.FIT(..., "compare")`'s order (#883).
+- `PRO.CAP.NESTED.CDF(points, family, nodes, members)` and
+  `PRO.CAP.NESTED.SIM(family, nodes, members, [sims], [seed])`: nested
+  Archimedean copulas (Clayton or Gumbel) on a sheet, the tree as a table
+  of nodes (name, parent, theta) and the node each dimension joins; the
+  simulation runs asynchronously and draws what Python's
+  `NestedArchimedeanCopula.sample` draws at the same seed (#885).
+
+### Guides
+
+- Every guide that compares numbers now shows them as figures and formatted
+  tables on both docs sites: fitted distributions over the data, exceedance
+  curves, distortion functions, allocations by unit, development factors,
+  residuals and reserve distributions, drawn from the values each guide
+  computes, in the light and dark modes. 37 guides and their R twins (#808, #809).
+- The guides show their tables of numbers as formatted tables (great_tables
+  in Python, gt in R) in place of printed text: about 600 tables in the 38
+  executed guides and their R twins, every cell still checked by the guide
+  tests. The prose is about a fifth shorter (#810).
+
+### Models
+
+- `prospicio_bayes::elpd::psis` (and so `loo` and every Bayesian one-year
+  view) no longer returns a NaN Pareto k. A tail it cannot fit, because a
+  quarter or more of its exceedances are 0 (log ratios so far below the
+  largest that `exp` underflows, or ties at the cutoff), now gets an
+  infinite k and the raw weights, as a tail too short to fit already did.
+  Before, the NaN k also set every tail weight to the largest one. In the
+  one-year views those simulations are now moment-matched before they are
+  refitted (#782, #814).
+- `loo_pit` breaks ties with stream `u64::MAX` of its seed
+  (`prospicio_bayes::ppc::TIE_STREAM`) instead of stream 0, which
+  `BayesGlmFit::replicate` also gave its first draw; a seeded LOO-PIT of
+  counts with ties changes once (#831, #852).
+- `OnnxModel` returns an error quoting the parser's reason, not a Python
+  `PanicException`, for an ONNX file on which its parser panics, and refuses a constant whose data does
+  not fill its declared shape, which was read padded with zeros (#832, #852).
+- R's `booster_fit(dispersion_model = TRUE)` no longer gives the dispersion
+  booster the mean's `monotone` and `interaction_constraints`, as Python's
+  never did: they describe the mean, and the dispersion often moves the
+  other way. R dispersion models fitted with constraints change (#833, #852).
+- Both boosting adapters draw their bootstrap rows and the dispersion
+  model's folds from the Rust resampler (the new `bootstrap_rows`, and
+  `k_fold`), so one seed gives the same rows and folds in Python and R. The
+  bootstrap refits and dispersion models of both languages change once
+  (#833, #852).
+
 ## 0.0.9 (2026-11-08)
 
 ### Breaking changes
