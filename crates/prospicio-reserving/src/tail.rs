@@ -12,6 +12,8 @@ use crate::curve::{ShapeFit, curve_points, least_squares_line};
 use crate::development::DevelopmentFit;
 use crate::error::{Error, Result};
 use prospicio_core::Lag;
+use prospicio_math::roots::{Stop, try_bisect};
+use std::convert::Infallible;
 
 /// How development beyond the oldest age is estimated.
 ///
@@ -498,24 +500,16 @@ fn bondy_exponent(logs: &[f64]) -> Result<f64> {
     if best == 1 || best == GRID - 1 {
         return Err(Error::Tail("the Bondy exponent is not between 0 and 1"));
     }
-    let (mut lo, mut hi) = (
+    let (lo, hi) = (
         (best - 1) as f64 / GRID as f64,
         (best + 1) as f64 / GRID as f64,
     );
     if slope(lo) <= 0.0 || slope(hi) >= 0.0 {
         return Err(Error::Tail("the Bondy exponent could not be fitted"));
     }
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if mid <= lo || mid >= hi {
-            break;
-        }
-        if slope(mid) > 0.0 {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
+    let Ok((lo, hi)) = try_bisect(lo, hi, Stop::steps(200), |mid| {
+        Ok::<_, Infallible>(slope(mid) > 0.0)
+    });
     Ok(0.5 * (lo + hi))
 }
 
