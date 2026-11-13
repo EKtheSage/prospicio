@@ -16,7 +16,7 @@
 //! for plotting.
 
 use prospicio_core::{Error, Result};
-use prospicio_math::optimize::brent;
+use prospicio_math::optimize::{brent, golden_section_by};
 use prospicio_math::roots::illinois;
 use prospicio_models::{Design, Family, Fitted, Link, Model};
 use prospicio_prob::PredictiveDistribution;
@@ -339,28 +339,17 @@ fn max_over_phi(p: f64, y: &[f64], mu: &[f64], w: &[f64], start: f64) -> Result<
     Ok((phi, value))
 }
 
-/// Golden-section search for the maximum of a unimodal `f` on `[a, b]`.
-fn golden_max(mut a: f64, mut b: f64, tol: f64, f: impl Fn(f64) -> f64) -> f64 {
-    let r = (5f64.sqrt() - 1.0) / 2.0;
-    let mut c = b - r * (b - a);
-    let mut d = a + r * (b - a);
-    let (mut fc, mut fd) = (f(c), f(d));
-    while (b - a).abs() > tol * (1.0 + c.abs()) {
-        if fc > fd {
-            b = d;
-            d = c;
-            fd = fc;
-            c = b - r * (b - a);
-            fc = f(c);
-        } else {
-            a = c;
-            c = d;
-            fc = fd;
-            d = a + r * (b - a);
-            fd = f(d);
-        }
-    }
-    (a + b) / 2.0
+/// Golden-section search for the maximum of a unimodal `f` on `[a, b]`,
+/// until the bracket is within `tol (1 + |c|)` of its lower interior point
+/// `c`: the minimum of `-f` (negation is exact, so the steps are the same).
+fn golden_max(a: f64, b: f64, tol: f64, f: impl Fn(f64) -> f64) -> f64 {
+    golden_section_by(
+        a,
+        b,
+        usize::MAX,
+        |a, b, c| (b - a).abs() <= tol * (1.0 + c.abs()),
+        |x| -f(x),
+    )
 }
 
 #[cfg(test)]
