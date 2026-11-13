@@ -408,8 +408,9 @@ mod tests {
         let s1 = Stable::new(1.5, 1.0, 2.0, 0.0, StableParameterization::S1).unwrap();
         let s0 = Stable::new(1.5, 1.0, 2.0, s1.loc0(), StableParameterization::S0).unwrap();
         assert!((s0.loc() - s1.loc()).abs() < 1e-12);
-        // aggregate's print: Pr(X > x) ~ 1.12838 x^-1.5.
-        assert!((s1.tail_constant() - 1.128_379).abs() < 1e-6);
+        // aggregate's print: Pr(X > x) ~ 1.12838 x^-1.5, which is
+        // 2 C_1.5 2^1.5 = 2 / sqrt(pi) exactly.
+        assert!((s1.tail_constant() - std::f64::consts::FRAC_2_SQRT_PI).abs() < 1e-14);
         assert_eq!(s1.left_tail_constant(), 0.0);
         let r = s1.reflected();
         assert_eq!((r.beta(), r.loc()), (-1.0, -0.0));

@@ -24,10 +24,14 @@ fn chf_tilted_stable_matches_aggregate() {
             };
             let st = Stable::new(v("alpha"), v("beta"), v("scale"), v("loc"), parameterization)
                 .unwrap();
-            let tilt = match v("tilt") {
-                t if t == -1.0 => Tilt::Auto,
-                t if t == -2.0 => Tilt::Off,
-                t => Tilt::Fixed(t),
+            // -1 is the automatic tilt, -2 none, anything else the e-folds.
+            let code = v("tilt");
+            let tilt = if code == -1.0 {
+                Tilt::Auto
+            } else if code == -2.0 {
+                Tilt::Off
+            } else {
+                Tilt::Fixed(code)
             };
             let bs = v("bs");
             let options = ChfOptions {
