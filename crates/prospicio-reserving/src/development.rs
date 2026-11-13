@@ -31,6 +31,42 @@ pub enum Average {
 }
 
 impl Average {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// average (#834). Excel lower-cases and trims its argument first.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("volume", Self::Volume),
+        ("simple", Self::Simple),
+        ("regression", Self::Regression),
+        ("geometric", Self::Geometric),
+    ];
+
+    /// The average named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_reserving::Average;
+    ///
+    /// assert_eq!(Average::from_name("geometric"), Some(Average::Geometric));
+    /// assert_eq!(Average::from_name("harmonic"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, a)| a)
+    }
+
+    /// The name: `"volume"`, `"simple"`, `"regression"` or `"geometric"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Volume => "volume",
+            Self::Simple => "simple",
+            Self::Regression => "regression",
+            Self::Geometric => "geometric",
+        }
+    }
+}
+
+impl Average {
     /// Mack's `alpha`, or `None` for the geometric average, which is not a
     /// weighted regression.
     pub const fn alpha(self) -> Option<f64> {

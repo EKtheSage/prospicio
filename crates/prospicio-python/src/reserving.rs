@@ -138,24 +138,11 @@ fn grain(name: &str) -> PyResult<Grain> {
 }
 
 fn average(name: &str) -> PyResult<Average> {
-    match name {
-        "volume" => Ok(Average::Volume),
-        "simple" => Ok(Average::Simple),
-        "regression" => Ok(Average::Regression),
-        "geometric" => Ok(Average::Geometric),
-        _ => Err(PyValueError::new_err(format!(
-            "average must be \"volume\", \"simple\", \"regression\" or \"geometric\", got {name:?}"
-        ))),
-    }
+    Average::from_name(name).ok_or_else(|| crate::unknown_name("average", name, Average::NAMES))
 }
 
 fn average_name(a: Average) -> &'static str {
-    match a {
-        Average::Volume => "volume",
-        Average::Simple => "simple",
-        Average::Regression => "regression",
-        Average::Geometric => "geometric",
-    }
+    a.name()
 }
 
 fn sigma_interpolation(name: &str) -> PyResult<SigmaInterpolation> {
