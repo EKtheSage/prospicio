@@ -11,8 +11,8 @@ sources:
     resource: ../validation/scripts/aggregate_chf.py
     title: validation/scripts/aggregate_chf.py, the reference generator pinned to aggregate==2.1.0
   - id: test
-    resource: ../validation/tests/distributions.rs
-    title: validation/tests/distributions.rs, chf_inversion_matches_aggregate
+    resource: ../validation/tests/probability_chf.rs
+    title: validation/tests/probability_chf.rs, chf_inversion_matches_aggregate
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, characteristic_function.py (AggregateCHF, invert_characteristic_function, window_edges) and utilities.py (round_bucket)
