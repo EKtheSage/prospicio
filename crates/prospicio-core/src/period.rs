@@ -29,6 +29,47 @@ pub enum Grain {
 }
 
 impl Grain {
+    /// Every name the Python, R and Excel front ends accept, in lower case
+    /// (they lower-case and trim what they are given), with its grain, the
+    /// canonical name of each first (#834).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("year", Self::Year),
+        ("y", Self::Year),
+        ("semiannual", Self::Semester),
+        ("semi-annual", Self::Semester),
+        ("s", Self::Semester),
+        ("quarter", Self::Quarter),
+        ("q", Self::Quarter),
+        ("month", Self::Month),
+        ("m", Self::Month),
+    ];
+
+    /// The grain named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_core::Grain;
+    ///
+    /// assert_eq!(Grain::from_name("semi-annual"), Some(Grain::Semester));
+    /// assert_eq!(Grain::from_name("week"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, g)| g)
+    }
+
+    /// The canonical name: `"year"`, `"semiannual"`, `"quarter"` or
+    /// `"month"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Year => "year",
+            Self::Semester => "semiannual",
+            Self::Quarter => "quarter",
+            Self::Month => "month",
+        }
+    }
+
     /// Length of the period in months.
     pub const fn months(self) -> u32 {
         match self {

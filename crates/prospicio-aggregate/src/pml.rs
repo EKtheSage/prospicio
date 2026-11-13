@@ -16,7 +16,7 @@
 //! mean.
 
 use prospicio_core::{Error, Result};
-use prospicio_math::roots::bisect_log;
+use prospicio_math::roots::{Stop, bisect_log, try_bisect};
 use prospicio_prob::{Counting, Distribution};
 
 use crate::reinsurance::Tower;
@@ -179,18 +179,7 @@ fn largest_at_most<X: Distribution + ?Sized>(
             return Ok(f64::INFINITY);
         }
     }
-    let (mut lo, mut hi) = (0.0, hi);
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if mid <= lo || mid >= hi {
-            break;
-        }
-        if g(mid)? <= y {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
+    let (lo, _) = try_bisect(0.0, hi, Stop::steps(200), |mid| g(mid).map(|v| v <= y))?;
     Ok(lo)
 }
 
