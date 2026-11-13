@@ -44,6 +44,15 @@ for (g in c("y", " Y ", "year", "Year")) {
   stopifnot(identical(chain_ladder(tri(g), "paid")@ultimate, want))
 }
 
+# The GLM family and link names from one table (#834, step 2).
+gd <- data.frame(x = rep(0:4, 6), y = 1 + 0.3 * rep(0:4, 6) + rep(c(0, 0.1, 0.2), each = 10))
+stopifnot(identical(coef(glm_fit(y ~ x, gd, family = "normal")),
+                    coef(glm_fit(y ~ x, gd, family = "gaussian"))))
+expect_error_like(glm_fit(y ~ x, gd, family = "weibull"),
+                  'family must be "gaussian", "normal", "poisson", "gamma", "inverse_gaussian", "binomial", "negative_binomial", "negbin" or "tweedie", got "weibull"')
+expect_error_like(glm_fit(y ~ x, gd, family = "poisson", link = "sqrt"),
+                  'link must be "identity", "log", "logit", "probit", "cloglog", "inverse", "inverse_squared" or "power", got "sqrt"')
+
 # The mixing alias "ig".
 stopifnot(identical(pmf(mixed_poisson_count(10, 0.5, mixing = "ig"), 0:5),
                     pmf(mixed_poisson_count(10, 0.5, mixing = "inverse_gaussian"), 0:5)))

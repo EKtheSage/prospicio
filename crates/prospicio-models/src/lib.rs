@@ -36,6 +36,6 @@ pub mod simulate;
 pub mod stack;
 
 pub use design::{Coding, Column, Design, Frame, Term, Terms};
-pub use family::Family;
-pub use link::Link;
+pub use family::{Family, FamilyKind};
+pub use link::{Link, LinkKind};
 pub use model::{Fitted, Model};

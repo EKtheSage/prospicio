@@ -12,27 +12,23 @@ use prospicio_glm::glmm::{Glmm, GlmmFit, Grouping};
 use prospicio_glm::net::{CvPath, ElasticNet, ElasticNetFit};
 use prospicio_glm::{Dispersion, Glm, GlmFit, Robust};
 use prospicio_models::resample;
-use prospicio_models::{Design, Family, Fitted, Link, Model, metrics};
+use prospicio_models::{Design, Family, FamilyKind, Fitted, Link, LinkKind, Model, metrics};
 
 use crate::distributions::PredictiveDistribution;
 use crate::{to_r, whole};
 
 /// A family from its name; `theta` and `power` are NA when not used.
 pub(crate) fn family(name: &str, theta: f64, power: f64) -> Result<Family> {
-    let f = match name {
-        "gaussian" => Family::Gaussian,
-        "poisson" => Family::Poisson,
-        "gamma" => Family::Gamma,
-        "inverse_gaussian" => Family::InverseGaussian,
-        "binomial" => Family::Binomial,
-        "negative_binomial" => Family::NegativeBinomial { theta },
-        "tweedie" => Family::Tweedie { power },
-        other => {
-            return Err(Error::Other(format!(
-                "family must be gaussian, poisson, gamma, inverse_gaussian, binomial, \
-                 negative_binomial or tweedie, got {other}"
-            )));
-        }
+    let kind = FamilyKind::from_name(name)
+        .ok_or_else(|| crate::unknown_name("family", name, FamilyKind::NAMES))?;
+    let f = match kind {
+        FamilyKind::Gaussian => Family::Gaussian,
+        FamilyKind::Poisson => Family::Poisson,
+        FamilyKind::Gamma => Family::Gamma,
+        FamilyKind::InverseGaussian => Family::InverseGaussian,
+        FamilyKind::Binomial => Family::Binomial,
+        FamilyKind::NegativeBinomial => Family::NegativeBinomial { theta },
+        FamilyKind::Tweedie => Family::Tweedie { power },
     };
     f.validate().map_err(to_r)?;
     Ok(f)
@@ -42,23 +38,12 @@ pub(crate) fn family(name: &str, theta: f64, power: f64) -> Result<Family> {
 /// (`Family::default_link`: log for the gamma, inverse Gaussian and
 /// Tweedie, the canonical link otherwise; #835).
 pub(crate) fn link(name: &str, family: Family, link_power: f64) -> Result<Link> {
-    Ok(match name {
-        "" => family.default_link(),
-        "identity" => Link::Identity,
-        "log" => Link::Log,
-        "logit" => Link::Logit,
-        "probit" => Link::Probit,
-        "cloglog" => Link::Cloglog,
-        "inverse" => Link::Inverse,
-        "inverse_squared" => Link::InverseSquared,
-        "power" => Link::Power(link_power),
-        other => {
-            return Err(Error::Other(format!(
-                "link must be identity, log, logit, probit, cloglog, inverse, \
-                 inverse_squared or power, got {other}"
-            )));
-        }
-    })
+    if name.is_empty() {
+        return Ok(family.default_link());
+    }
+    LinkKind::from_name(name)
+        .map(|k| k.link(link_power))
+        .ok_or_else(|| crate::unknown_name("link", name, LinkKind::NAMES))
 }
 
 /// "" for the default, "pearson", "deviance", or "fixed" with `value`.
@@ -413,12 +398,12 @@ impl DglmModel {
 
 /// A GLMM's family by name.
 fn glmm_family(name: &str, power: f64) -> Result<Family> {
-    match name {
-        "poisson" => Ok(Family::Poisson),
-        "gamma" => Ok(Family::Gamma),
-        "tweedie" => Ok(Family::Tweedie { power }),
-        other => Err(Error::Other(format!(
-            "a GLMM's family must be poisson, gamma or tweedie, got {other}"
+    match FamilyKind::from_name(name) {
+        Some(FamilyKind::Poisson) => Ok(Family::Poisson),
+        Some(FamilyKind::Gamma) => Ok(Family::Gamma),
+        Some(FamilyKind::Tweedie) => Ok(Family::Tweedie { power }),
+        _ => Err(Error::Other(format!(
+            "a GLMM's family must be poisson, gamma or tweedie, got {name}"
         ))),
     }
 }
@@ -2914,13 +2899,11 @@ fn zero_fit_design(
     use prospicio_glm::zero::{CountDistribution, Hurdle, ZeroInflated};
     let count = CountDistribution::from_name(dist)
         .ok_or_else(|| crate::unknown_name("dist", dist, CountDistribution::NAMES))?;
-    let link = match zero_link {
-        "logit" => Link::Logit,
-        "probit" => Link::Probit,
-        "cloglog" => Link::Cloglog,
-        other => {
+    let link = match LinkKind::from_name(zero_link) {
+        Some(k @ (LinkKind::Logit | LinkKind::Probit | LinkKind::Cloglog)) => k.link(f64::NAN),
+        _ => {
             return Err(Error::Other(format!(
-                "link must be logit, probit or cloglog, got {other}"
+                "link must be logit, probit or cloglog, got {zero_link}"
             )));
         }
     };

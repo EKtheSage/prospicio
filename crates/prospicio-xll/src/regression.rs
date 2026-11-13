@@ -12,7 +12,7 @@ use prospicio_glm::zero::{
     CountDistribution, Hurdle, TwoPartFit, ZeroInflated, count_log_likelihoods, vuong,
 };
 use prospicio_math::special::norm_cdf;
-use prospicio_models::{Coding, Design, Family, Fitted, Link, Model};
+use prospicio_models::{Coding, Design, Family, Fitted, Link, LinkKind, Model};
 
 use crate::glm::{
     Predictor, Table, coding, column_name, design, number_text, predictors, term_level,
@@ -116,14 +116,15 @@ fn two_part_fit(args: &[Grid]) -> Result<(TwoPartModel, Table)> {
             .ok_or_else(|| crate::unknown_name("count", name, CountDistribution::NAMES))?,
     };
     let link = match text_option(&args[6], "zero_link")?.as_deref() {
-        None | Some("logit") => Link::Logit,
-        Some("probit") => Link::Probit,
-        Some("cloglog") => Link::Cloglog,
-        Some(other) => {
-            return Err(format!(
-                "zero_link must be \"logit\", \"probit\" or \"cloglog\", got {other:?}"
-            ));
-        }
+        None => Link::Logit,
+        Some(name) => match LinkKind::from_name(name) {
+            Some(k @ (LinkKind::Logit | LinkKind::Probit | LinkKind::Cloglog)) => k.link(f64::NAN),
+            _ => {
+                return Err(format!(
+                    "zero_link must be \"logit\", \"probit\" or \"cloglog\", got {name:?}"
+                ));
+            }
+        },
     };
     let exposure = column_name(&args[7], "exposure")?;
     let weights = column_name(&args[8], "weights")?;
