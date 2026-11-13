@@ -10,8 +10,9 @@ use microlp::{ComparisonOp, LinearExpr, OptimizationDirection, Problem};
 use prospicio_core::{Error, Result};
 use prospicio_math::linalg::solve;
 use prospicio_math::optimize::minimize;
-use prospicio_math::roots::bisect;
+use prospicio_math::roots::{Stop, bisect, try_bisect};
 use prospicio_prob::{PiecewisePareto, Severity, Truncation};
+use std::convert::Infallible;
 
 use crate::layer::{XsLayer, alpha_between_layers};
 
@@ -566,21 +567,18 @@ pub fn fit_references_bounded(
             )),
         });
     };
-    let (mut lo, mut hi) = (tiny, 1.0);
+    let (mut lo, hi) = (tiny, 1.0);
     if completion.solve(hi).is_some() {
         lo = hi;
     } else {
-        for _ in 0..40 {
-            let mid = (lo * hi).sqrt();
-            if completion.solve(mid).is_some() {
-                lo = mid;
-            } else {
-                hi = mid;
-            }
-            if hi / lo < 1.01 {
-                break;
-            }
-        }
+        // Bisection on the log scale, to a ratio of 1.01 between the ends.
+        let Ok((ln_lo, _)) = try_bisect(
+            lo.ln(),
+            hi.ln(),
+            Stop::absolute(1.01f64.ln()).with_steps(40),
+            |m| Ok::<_, Infallible>(completion.solve(m.exp()).is_some()),
+        );
+        lo = ln_lo.exp();
     }
     if let Some(sol) = completion.solve(0.5 * lo) {
         best = sol;
