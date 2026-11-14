@@ -29,7 +29,7 @@ pub enum EltBucketing {
     /// an ELT6 under `no2u`): the secondary uncertainty is dropped, and each
     /// row's mean is an atom split between its two neighbouring nodes so
     /// that the mean is kept exactly (`aggregate`'s `dsev_bucket='linear'`).
-    /// A mean within `1e-12` of the largest mean of a node lands on it
+    /// A mean within `1e-12` times the largest mean of a node lands on it
     /// whole; a mean at or above the top node lands on it.
     MeansLinear,
 }
@@ -158,7 +158,15 @@ impl EventLossTable {
                 }
             }
             EltBucketing::MeansLinear => {
-                let largest = self.means.iter().copied().fold(0.0, f64::max);
+                // aggregate's snap is relative to its largest atom, among
+                // the events with a positive rate.
+                let largest = self
+                    .rates
+                    .iter()
+                    .zip(&self.means)
+                    .filter(|(r, _)| **r > 0.0)
+                    .map(|(_, m)| *m)
+                    .fold(0.0, f64::max);
                 let tol = 1e-12 * largest / step;
                 let top = (points - 1) as f64;
                 for (&rate, &m) in self.rates.iter().zip(&self.means) {
