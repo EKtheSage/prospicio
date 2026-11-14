@@ -22,6 +22,9 @@ sources:
   - id: tweedie-test
     resource: ../validation/tests/probability_chf_tweedie.rs
     title: validation/tests/probability_chf_tweedie.rs, chf_tweedie_power_matches_aggregate, against validation/scripts/aggregate_chf_tweedie.py
+  - id: split-test
+    resource: ../validation/tests/probability_chf_split.rs
+    title: validation/tests/probability_chf_split.rs, chf_split_stable_matches_aggregate, against validation/scripts/aggregate_chf_split.py
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, characteristic_function.py (AggregateCHF, invert_characteristic_function, window_edges) and utilities.py (round_bucket)
@@ -91,3 +94,13 @@ sources:
   (the inverse Gaussian with shape 2) badly in both: its step ends at 0.25
   with a truncation of 0.008, and the masses' mean is 10.48, so a very
   skewed inverse Gaussian needs a given step.[^tweedie-test]
+* A stable law with two power tails is split into its totally skewed
+  halves, each inverted on twice the grid with its own tilt and convolved,
+  and the window cropped to equal mass outside on each side. Ten grids
+  match to 1e-10 in the masses and 1e-7 in the edge error (two tail series
+  and a convolution of tilted masses). A symmetric law (`beta = 0`) cannot
+  be matched reliably: at `alpha = 1.5`, log2 12 its two best crops,
+  a bucket apart, leave gaps of 1.011078e-7 and 1.011076e-7 between the
+  mass below and above, so round-off picks one, and prospicio and
+  aggregate picked different ones (x_min -128 against -127.9375); every
+  other case's best crop is at least 15% below the next.[^split-test]

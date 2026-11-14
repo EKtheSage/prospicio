@@ -38,10 +38,11 @@ when \code{NULL}.}
 the tails.}
 
 \item{tilt}{\code{TRUE}: a law with one power tail (a \code{\link[=stable_distribution]{stable_distribution()}}
-with \code{beta} 1 or -1) at the automatic tilt, every other law untilted.
-\code{FALSE}: never tilt (a heavy tail wraps onto the window). A number
-\code{tau >= 0}: exactly \code{tau} e-folds of damping across the window, for a
-law with one power tail only.}
+with \code{beta} 1 or -1) at the automatic tilt, a stable law with two split
+into its halves and each tilted, every other law untilted. \code{FALSE}:
+never tilt (a heavy tail wraps onto the window). A number \code{tau >= 0}:
+exactly \code{tau} e-folds of damping across the window, for a stable law
+only.}
 
 \item{ptr}{Internal.}
 }

@@ -25,7 +25,8 @@ A \code{stable_distribution} with properties \code{alpha}, \code{beta},
 \description{
 The parameters of \code{S(alpha, beta, scale, loc)} for \code{\link[=invert_chf]{invert_chf()}}: with
 \code{beta} 1 or -1 its one power tail is inverted along a tilted line, with
-\code{abs(beta) < 1} with \code{tilt = FALSE} only. At \code{alpha = 2} it is the normal
+\code{abs(beta) < 1} it is split into its two totally skewed halves, each
+inverted along its own tilted line and convolved. At \code{alpha = 2} it is the normal
 with variance \verb{2 scale^2}. For \code{alpha < 2},
 \code{P(X > x) ~ tail_constant * x^-alpha} and
 \code{P(X < -x) ~ left_tail_constant * x^-alpha}.

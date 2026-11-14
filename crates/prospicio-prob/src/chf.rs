@@ -142,8 +142,9 @@ pub enum ChfLaw {
     /// severities: `K(s) = λ((1 − θs)^(−α) − 1)`, an atom `e^(−λ)` at 0.
     Tweedie(Tweedie),
     /// An alpha-stable law. With `β = ±1` its power tail is inverted along
-    /// a tilted line ([`Tilt`]); with `|β| < 1` it is inverted untilted
-    /// only.
+    /// a tilted line ([`Tilt`]); with `|β| < 1` it is split into its two
+    /// totally skewed halves, each tilted toward its light side, and their
+    /// masses convolved.
     Stable(Stable),
     /// The normal inverse Gaussian law, light on both sides.
     NormalInverseGaussian(NormalInverseGaussian),
@@ -487,7 +488,9 @@ pub enum TiltSide {
 pub enum Tilt {
     /// A law with one power tail (a stable law with `β = ±1`) at the `τ`
     /// that balances the damped wrap `ρ e^(−τ)` against the amplified
-    /// round-off `ε κ e^τ`, its bucket capped; every other law untilted.
+    /// round-off `ε κ e^τ`, its bucket capped; a stable law with two (`|β| <
+    /// 1`) split into its totally skewed halves, each so tilted; every other
+    /// law untilted.
     #[default]
     Auto,
     /// Never tilt and never cap: a heavy tail wraps onto the window.
@@ -777,53 +780,55 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
         }
     }
     let tilting = options.tilt != Tilt::Off && !fixed_grid;
-    if tilting && law.tilt_side() == Some(TiltSide::Both) {
-        return Err(Error::Data(
-            "a stable law with |beta| < 1 has two power tails, which no tilted line serves: \
-             it is split into its two totally skewed halves, which is not built yet (#780); \
-             invert it untilted"
-                .into(),
-        ));
-    }
     let tilt_family = if tilting { law.tilt_family() } else { None };
     let (h, x0, tilt, edge_error, mut masses, below, above);
-    match tilt_family {
-        None => {
-            (h, x0) = match (options.step, options.x_min) {
-                (Some(h), Some(x)) => (h, x),
-                _ => plain_window(law, n, p, options.step)?,
-            };
-            masses = invert_on(law, x0, h, n, 0.0, law.atom())?;
-            (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
-            edge_error = match law.tilt_family() {
-                Some(fam) if law.tilt_side() != Some(TiltSide::Both) => {
-                    let y0 = if law.tilt_side() == Some(TiltSide::Right) {
-                        x0
-                    } else {
-                        -(x0 + (n - 1) as f64 * h)
-                    };
-                    let (rho, eps, kappa) = edge_terms(&fam, y0, h, n);
-                    edge_error_at(0.0, rho, eps, kappa)
-                }
-                _ => f64::NAN,
-            };
-            tilt = (0.0, 0.0);
-        }
-        Some(fam) => {
-            let (hh, y0, tau) = one_sided_window(&fam, n, p, options.step, options.tilt);
-            h = hh;
-            let left = law.tilt_side() == Some(TiltSide::Left);
-            x0 = if left { -(y0 + (n - 1) as f64 * h) } else { y0 };
-            let w = n as f64 * h;
-            masses = invert_on(&ChfLaw::Stable(fam), y0, h, n, tau / w, None)?;
-            let (rho, eps, kappa) = edge_terms(&fam, y0, h, n);
-            edge_error = edge_error_at(tau, rho, eps, kappa);
-            if left {
-                masses.reverse();
+    let split = match law {
+        ChfLaw::Stable(st) if tilting && law.tilt_side() == Some(TiltSide::Both) => Some(*st),
+        _ => None,
+    };
+    if let Some(st) = split {
+        let r = two_sided(&st, n, p, options.step, options.tilt)?;
+        (h, x0, tilt, edge_error, masses, below, above) =
+            (r.h, r.x0, r.tilt, r.edge_error, r.masses, r.below, r.above);
+    } else {
+        match tilt_family {
+            None => {
+                (h, x0) = match (options.step, options.x_min) {
+                    (Some(h), Some(x)) => (h, x),
+                    _ => plain_window(law, n, p, options.step)?,
+                };
+                masses = invert_on(law, x0, h, n, 0.0, law.atom())?;
+                (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
+                edge_error = match law.tilt_family() {
+                    Some(fam) if law.tilt_side() != Some(TiltSide::Both) => {
+                        let y0 = if law.tilt_side() == Some(TiltSide::Right) {
+                            x0
+                        } else {
+                            -(x0 + (n - 1) as f64 * h)
+                        };
+                        let (rho, eps, kappa) = edge_terms(&fam, y0, h, n);
+                        edge_error_at(0.0, rho, eps, kappa)
+                    }
+                    _ => f64::NAN,
+                };
+                tilt = (0.0, 0.0);
             }
-            (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
-            masses[0] += below;
-            tilt = if left { (tau, 0.0) } else { (0.0, tau) };
+            Some(fam) => {
+                let (hh, y0, tau) = one_sided_window(&fam, n, p, options.step, options.tilt);
+                h = hh;
+                let left = law.tilt_side() == Some(TiltSide::Left);
+                x0 = if left { -(y0 + (n - 1) as f64 * h) } else { y0 };
+                let w = n as f64 * h;
+                masses = invert_on(&ChfLaw::Stable(fam), y0, h, n, tau / w, None)?;
+                let (rho, eps, kappa) = edge_terms(&fam, y0, h, n);
+                edge_error = edge_error_at(tau, rho, eps, kappa);
+                if left {
+                    masses.reverse();
+                }
+                (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
+                masses[0] += below;
+                tilt = if left { (tau, 0.0) } else { (0.0, tau) };
+            }
         }
     }
     let total_mass: f64 = masses.iter().sum();
@@ -882,18 +887,37 @@ pub(crate) fn invert_on(
     theta: f64,
     atom: Option<(f64, f64)>,
 ) -> Result<Vec<f64>> {
+    invert_fn(&|s| law.chf(s), x0, h, n, theta, atom, true)
+}
+
+/// [`invert_on`] for any characteristic function, with the bucket factor
+/// `sinc(sh/2)` applied or not: without it the result is `h` times the
+/// density at the grid points, the form one half of a two-sided law takes
+/// before it is convolved with the other.
+fn invert_fn(
+    chf: &dyn Fn(&[Complex64]) -> Result<Vec<Complex64>>,
+    x0: f64,
+    h: f64,
+    n: usize,
+    theta: f64,
+    atom: Option<(f64, f64)>,
+    bucket: bool,
+) -> Result<Vec<f64>> {
     let i = Complex64::new(0.0, 1.0);
     let half = n / 2;
     let t: Vec<f64> = (0..=half)
         .map(|j| 2.0 * std::f64::consts::PI * j as f64 / (n as f64 * h))
         .collect();
     let s: Vec<Complex64> = t.iter().map(|&t| Complex64::new(-t, theta)).collect();
-    let mut c = law.chf(&s)?;
+    let mut c = chf(&s)?;
     for ((cj, &sj), &tj) in c.iter_mut().zip(&s).zip(&t) {
         if let Some((xa, wa)) = atom {
             *cj -= wa * (i * sj * xa).exp();
         }
-        *cj *= csinc(sj * h / 2.0) * (i * tj * x0).exp();
+        if bucket {
+            *cj *= csinc(sj * h / 2.0);
+        }
+        *cj *= (i * tj * x0).exp();
     }
     // numpy's irfft: the spectrum filled by Hermitian symmetry, the
     // imaginary parts at 0 and n/2 dropped.
@@ -1271,6 +1295,205 @@ fn outside_at(law: &ChfLaw, h: f64, x0: f64, n: usize, fixed_grid: bool) -> Resu
     }
 }
 
+/// The bucket cap of a two-sided law: both halves' truncation at
+/// round-off, so the whole law's at `2^(−104)`:
+/// `min(γ/10, πγ/(104 ln 2)^(1/α))`.
+fn bucket_cap_two_sided(st: &Stable) -> f64 {
+    let gamma = st.body_scale();
+    let h_trunc = std::f64::consts::PI * gamma / (104.0 * 2f64.ln()).powf(1.0 / st.alpha());
+    round_bucket_down((gamma / TILT_BODY_BUCKETS).min(h_trunc))
+}
+
+/// The left edge of a right-heavy half: its support bound, or the `1e-40`
+/// Chernoff edge of `K(−u) + σ²u²/2` when a normal of variance `σ²` has
+/// been moved onto it (which widens its light tail), as a multiple of `h`.
+fn light_edge(fam: &Stable, h: f64, sigma2: f64) -> f64 {
+    let (lo, _) = fam.support();
+    let x_l = if lo.is_finite() && sigma2 == 0.0 {
+        lo
+    } else {
+        let (s_minus, _) = fam.cgf_domain();
+        -chernoff_edge(
+            |u| fam.cgf(-u) + 0.5 * sigma2 * u * u,
+            -s_minus,
+            TILT_LEFT_EPS.ln(),
+            fam.body_scale().max(sigma2.sqrt()),
+        )
+    };
+    h * (x_l / h + 1e-12).floor()
+}
+
+/// What [`two_sided`] returns.
+struct TwoSided {
+    h: f64,
+    x0: f64,
+    tilt: (f64, f64),
+    edge_error: f64,
+    masses: Vec<f64>,
+    below: f64,
+    above: f64,
+}
+
+/// The linear convolution of `a` and `b`, by FFT on `len ≥ a.len() +
+/// b.len() − 1` points.
+fn convolve(a: &[f64], b: &[f64], len: usize) -> Vec<f64> {
+    let mut planner = FftPlanner::<f64>::new();
+    let fwd = planner.plan_fft_forward(len);
+    let mut fa: Vec<Complex64> = (0..len)
+        .map(|k| Complex64::new(a.get(k).copied().unwrap_or(0.0), 0.0))
+        .collect();
+    let mut fb: Vec<Complex64> = (0..len)
+        .map(|k| Complex64::new(b.get(k).copied().unwrap_or(0.0), 0.0))
+        .collect();
+    fwd.process(&mut fa);
+    fwd.process(&mut fb);
+    let mut prod: Vec<Complex64> = fa.iter().zip(&fb).map(|(x, y)| x * y).collect();
+    planner.plan_fft_inverse(len).process(&mut prod);
+    prod.iter().map(|z| z.re / len as f64).collect()
+}
+
+/// A stable law with `|β| < 1` under the tilt (`aggregate`'s
+/// `_two_sided_setup` and `_two_sided_masses`): split into its two totally
+/// skewed halves, each inverted on `2n` buckets tilted toward its own
+/// light side, combined by a linear convolution so nothing wraps, and
+/// cropped to the `n` buckets that leave equal mass below and above.
+///
+/// Near `|β| = 1` the light half is narrower than a bucket, so a normal of
+/// variance `σ²` is moved from the wide half to the narrow one (the
+/// product is unchanged), the least that brings the narrow half's
+/// truncation to round-off. The plus half carries the bucket factor and
+/// the minus half none, so it is applied once.
+fn two_sided(st: &Stable, n: usize, p: f64, step: Option<f64>, tilt: Tilt) -> Result<TwoSided> {
+    let (a_tail, b_tail, alpha) = (st.tail_constant(), st.left_tail_constant(), st.alpha());
+    let eps = 1.0 - p;
+    let x_r = st.loc() + (a_tail / (eps / 2.0)).powf(1.0 / alpha);
+    let x_l = st.loc() - (b_tail / (eps / 2.0)).powf(1.0 / alpha);
+    let h = match step {
+        Some(h) => h,
+        None => round_bucket((x_r - x_l) / n as f64).min(bucket_cap_two_sided(st)),
+    };
+    let (plus, minus) = st.halves().expect("a stable law with two power tails");
+    let minus_r = minus.reflected();
+    let pi = std::f64::consts::PI;
+    let roundoff = 52.0 * 2f64.ln();
+    let e_plus = (pi * plus.body_scale() / h).powf(alpha);
+    let e_minus = (pi * minus_r.body_scale() / h).powf(alpha);
+    let narrow_minus = e_minus <= e_plus;
+    let e_narrow = e_plus.min(e_minus);
+    let sigma2 = (roundoff - e_narrow).max(0.0) * 2.0 * h * h / (pi * pi);
+    let sigma = sigma2.sqrt();
+    // the narrow half gains the normal, the wide half loses it; s² is
+    // unchanged under the reflection s -> -s
+    let sign_plus = if narrow_minus { 1.0 } else { -1.0 };
+    let sign_minus = -sign_plus;
+    let chf_plus = move |s: &[Complex64]| -> Result<Vec<Complex64>> {
+        s.iter()
+            .map(|&s| Ok(plus.chf(s)? * (sign_plus * 0.5 * sigma2 * s * s).exp()))
+            .collect()
+    };
+    let chf_minus = move |s: &[Complex64]| -> Result<Vec<Complex64>> {
+        s.iter()
+            .map(|&s| Ok(minus_r.chf(s)? * (sign_minus * 0.5 * sigma2 * s * s).exp()))
+            .collect()
+    };
+    let y0_plus = light_edge(&plus, h, if narrow_minus { 0.0 } else { sigma2 });
+    let z0_minus = light_edge(&minus_r, h, if narrow_minus { sigma2 } else { 0.0 });
+    let mut bound_plus = plus.density_bound();
+    let mut bound_minus = minus_r.density_bound();
+    if sigma > 0.0 {
+        let normal = 1.0 / (sigma * (2.0 * pi).sqrt());
+        if narrow_minus {
+            bound_minus = bound_minus.min(normal);
+        } else {
+            bound_plus = bound_plus.min(normal);
+        }
+    }
+    let m = 2 * n;
+    let w_half = m as f64 * h;
+    let tau_for = |half: &Stable,
+                   chf: &dyn Fn(&[Complex64]) -> Result<Vec<Complex64>>,
+                   y0: f64,
+                   bound: f64|
+     -> Result<f64> {
+        Ok(match tilt {
+            Tilt::Fixed(tau) => tau,
+            _ => {
+                let x_end = y0 + w_half;
+                let q = ((x_end - half.loc()) / w_half).max(1e-12);
+                let rho = q.powf(alpha + 1.0) * hurwitz_zeta(alpha + 1.0, 1.0 + q);
+                let eps_eff = 2f64.powi(-52) + chf(&[Complex64::new(pi / h, 0.0)])?[0].norm();
+                let kappa =
+                    bound * (x_end - half.loc()).powf(alpha + 1.0) / (half.tail_constant() * alpha);
+                tau_star(rho, eps_eff, kappa)
+            }
+        })
+    };
+    let tau_plus = tau_for(&plus, &chf_plus, y0_plus, bound_plus)?;
+    let tau_minus = tau_for(&minus_r, &chf_minus, z0_minus, bound_minus)?;
+    let p_plus = invert_fn(&chf_plus, y0_plus, h, m, tau_plus / w_half, None, true)?;
+    let mut p_minus = invert_fn(&chf_minus, z0_minus, h, m, tau_minus / w_half, None, false)?;
+    p_minus.reverse();
+    let m0 = -(z0_minus + (m - 1) as f64 * h);
+    let full = convolve(&p_plus, &p_minus, 2 * m);
+    let start = y0_plus + m0;
+    let tail_plus = plus.tail_mass_above(y0_plus + (m - 1) as f64 * h + h / 2.0)?;
+    let tail_minus = minus_r.tail_mass_above(z0_minus + (m - 1) as f64 * h + h / 2.0)?;
+    let mut cum = Vec::with_capacity(full.len() + 1);
+    cum.push(0.0);
+    let mut acc = 0.0;
+    for &v in &full {
+        acc += v;
+        cum.push(acc);
+    }
+    let total = acc;
+    let b_plus = ((plus.loc() - y0_plus) / h - 1e-9).ceil() as isize;
+    let b_minus = ((minus_r.loc() - z0_minus) / h - 1e-9).ceil() as isize;
+    let k_lo = b_plus.min(m as isize - 1).max(0) as usize;
+    let k_hi = (2 * m as isize - 1 - n as isize - b_minus.max(0)).max(k_lo as isize) as usize;
+    let mut k = k_lo;
+    let mut best = f64::INFINITY;
+    for j in k_lo..=k_hi {
+        let below = cum[j] + tail_minus;
+        let above = total - cum[j + n] + tail_plus;
+        let gap = (below - above).abs();
+        if gap < best {
+            best = gap;
+            k = j;
+        }
+    }
+    let mut masses = full[k..k + n].to_vec();
+    let x0 = start + k as f64 * h;
+    let below = cum[k] + tail_minus;
+    let above = total - cum[k + n] + tail_plus;
+    masses[0] += below;
+    // the edge error: the one-sided model on the whole law, each side
+    // with its own tail constant and distance
+    let w = n as f64 * h;
+    let eps_eff = 2f64.powi(-52) + st.chf_real(pi / h).norm();
+    let mut edge_error = below + above;
+    for (constant, dist, tau) in [
+        (a_tail, x0 + w - st.loc(), tau_plus),
+        (b_tail, st.loc() - x0, tau_minus),
+    ] {
+        if constant <= 0.0 || dist <= 0.0 {
+            continue;
+        }
+        let q = dist / w;
+        let rho = q.powf(alpha + 1.0) * hurwitz_zeta(alpha + 1.0, 1.0 + q);
+        let kappa = st.density_bound() * dist.powf(alpha + 1.0) / (constant * alpha);
+        edge_error = edge_error.max(edge_error_at(tau, rho, eps_eff, kappa));
+    }
+    Ok(TwoSided {
+        h,
+        x0,
+        tilt: (tau_minus, tau_plus),
+        edge_error,
+        masses,
+        below,
+        above,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1494,7 +1717,7 @@ mod tests {
         assert!(invert(&gamma(), &fixed).is_err());
         assert!(invert(&gamma(), &ChfOptions::with_log2(10)).is_ok());
         let two_sided = stable(1.5, 0.5, 1.0, 0.0);
-        assert!(invert(&two_sided, &ChfOptions::with_log2(10)).is_err());
+        assert!(invert(&two_sided, &ChfOptions::with_log2(10)).is_ok());
         let off = ChfOptions {
             tilt: Tilt::Off,
             ..ChfOptions::with_log2(10)

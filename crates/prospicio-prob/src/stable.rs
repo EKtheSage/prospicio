@@ -284,6 +284,31 @@ impl Stable {
         ln_gamma(1.0 + 1.0 / self.alpha).exp() / (PI * self.scale)
     }
 
+    /// The two totally skewed laws whose sum is this one, for `|β| < 1`
+    /// below `α = 2`: `X₊ ~ S(α, 1, γ₊, δ₁)` and `X₋ ~ S(α, −1, γ₋, 0)` with
+    /// `γ± = γ ((1 ± β)/2)^(1/α)`, independent (`ln φ` is linear in `β`
+    /// with a coefficient proportional to `γ^α`, and S1 at `α = 1` has no
+    /// `γ ln γ` term). `None` for a law already one-sided or normal.
+    pub fn halves(&self) -> Option<(Self, Self)> {
+        if self.alpha == 2.0 || self.beta.abs() == 1.0 {
+            return None;
+        }
+        let (a, g) = (self.alpha, self.scale);
+        let plus = Self {
+            alpha: a,
+            beta: 1.0,
+            scale: g * ((1.0 + self.beta) / 2.0).powf(1.0 / a),
+            loc: self.loc,
+        };
+        let minus = Self {
+            alpha: a,
+            beta: -1.0,
+            scale: g * ((1.0 - self.beta) / 2.0).powf(1.0 / a),
+            loc: 0.0,
+        };
+        Some((plus, minus))
+    }
+
     /// The law of `−X`: `β` and the location negated.
     pub fn reflected(&self) -> Self {
         Self {
