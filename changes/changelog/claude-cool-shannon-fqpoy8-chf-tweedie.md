@@ -6,4 +6,4 @@
   positive extreme stable laws above `p = 2`
   (`prospicio_prob::levy::TweediePower`; Python `TweediePower`, R
   `tweedie_power_distribution()`), at parity with `aggregate` 2.1.0
-  (#780).
+  (#780, #918).
