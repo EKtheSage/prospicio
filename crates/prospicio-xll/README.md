@@ -414,6 +414,7 @@ labelled in `companies`, with their premiums; chain its summary into
 | `PRO.CAP.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3], [return_periods], [step], [points])` | Occurrence and aggregate PMLs by return period |
 | `PRO.CAP.ELT.STATS(rates, means, [sd_independent], [sd_correlated], exposures)` | Event loss table: event count, expected annual loss, SD, CV |
 | `PRO.CAP.ELT.OEP(rates, means, [sd_independent], [sd_correlated], exposures, [return_periods], [amounts])` | Its OEP curve with secondary uncertainty |
+| `PRO.CAP.ELT.AGG(rates, means, [sd_independent], [sd_correlated], exposures, [limit], [attachment], [probabilities], [bucketing], [step], [points])` | Its annual total on an FFT grid, ground up or to an occurrence layer: moments, VaR, TVaR |
 | `PRO.CAP.YLT.STATS(years, losses, [n_years], [probabilities], [quantile], [times], [hours], [negative])` | Year loss table: average annual loss, SD, VaR, TVaR |
 | `PRO.CAP.YLT.OEP(years, losses, [return_periods], [amounts], [n_years], [quantile], [times], [hours], [negative])` | Its occurrence and aggregate exceedance curves |
 

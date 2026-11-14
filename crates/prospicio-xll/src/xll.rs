@@ -625,6 +625,7 @@ mod exports {
     udf!(pro_cap_ylt_oep, years, losses, return_periods, amounts, n_years, quantile, times, hours, negative);
     udf!(pro_cap_elt_stats, rates, means, sd_independent, sd_correlated, exposures);
     udf!(pro_cap_elt_oep, rates, means, sd_independent, sd_correlated, exposures, return_periods, amounts);
+    udf!(pro_cap_elt_agg, rates, means, sd_independent, sd_correlated, exposures, limit, attachment, probabilities, bucketing, step, points);
     udf!(pro_cap_allocate, draws, family, parameter, method, r0);
     udf!(pro_cap_allocate_total, draws, total, method, measure, level);
 }

@@ -1267,6 +1267,20 @@ int main(int argc, char **argv) {
                                            fabs(el_run->val.array.lparray[1 * 4 + 2].val.num - 0.3934693402873666) < 1e-15);
     free12(el_run);
 
+    /* PRO.CAP.ELT.AGG: the same table on 8 points of 100, its mean loss on
+     * node 1 by the linear rule: an annual mean of 50. */
+    static XLOPER12 el_step, el_points;
+    el_step.xltype = el_points.xltype = xltypeNum;
+    el_step.val.num = 100;
+    el_points.val.num = 8;
+    XLOPER12 *ea_run = ((Fn11)GetProcAddress(xll, "pro_cap_elt_agg"))(&el_rate, &el_mean, &missing, &missing, &el_exp,
+                                                                  &missing, &missing, &missing, &missing, &el_step,
+                                                                  &el_points);
+    print_result("PRO.CAP.ELT.AGG(0.5, 100, , , 500, , , , , 100, 8)", ea_run);
+    check("PRO.CAP.ELT.AGG mean 50", (ea_run->xltype & 0xFFF) == xltypeMulti && ea_run->val.array.columns == 2 &&
+                                         fabs(ea_run->val.array.lparray[1].val.num - 50) < 1e-12);
+    free12(ea_run);
+
     /* PRO.CAP.ALLOCATE: two lines over four simulations, totals 3, 5, 7, 9;
      * TVaR 50% of 8 by Euler gives the first line 2.5. */
     static XLOPER12 al_c[8], al_draws, al_fam, al_par;

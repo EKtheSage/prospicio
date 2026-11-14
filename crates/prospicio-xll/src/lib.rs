@@ -3943,6 +3943,58 @@ pub static FUNCTIONS: &[Function] = &[
         run: cat::elt_oep,
     },
     Function {
+        symbol: "pro_cap_elt_agg",
+        name: "PRO.CAP.ELT.AGG",
+        help: "An event loss table's annual total on an FFT grid (compound Poisson), ground up or to an occurrence layer: moments, VaR and TVaR.",
+        args: &[
+            Arg {
+                name: "rates",
+                help: "Each event's annual rate: a column",
+            },
+            Arg {
+                name: "means",
+                help: "Each event's mean loss",
+            },
+            Arg {
+                name: "sd_independent",
+                help: "Each event's independent standard deviation; 0 if omitted",
+            },
+            Arg {
+                name: "sd_correlated",
+                help: "Each event's correlated standard deviation (added to the independent one); 0 if omitted",
+            },
+            Arg {
+                name: "exposures",
+                help: "Each event's exposure, the most it can lose",
+            },
+            Arg {
+                name: "limit",
+                help: "The occurrence layer's limit (or \"unlimited\"); ground up if limit and attachment are omitted",
+            },
+            Arg {
+                name: "attachment",
+                help: "The occurrence layer's attachment; 0 if omitted",
+            },
+            Arg {
+                name: "probabilities",
+                help: "Probabilities for VaR and TVaR; 0.99, 0.995, 0.999 if omitted",
+            },
+            Arg {
+                name: "bucketing",
+                help: "\"nearest\" (each loss's beta to the nearest node) or \"linear\" (means alone, split to keep them); nearest with SDs, linear without, if omitted",
+            },
+            Arg {
+                name: "step",
+                help: "The grid's step (with points); sized automatically if omitted",
+            },
+            Arg {
+                name: "points",
+                help: "The grid's number of points (with step)",
+            },
+        ],
+        run: cat::elt_agg,
+    },
+    Function {
         symbol: "pro_cap_allocate",
         name: "PRO.CAP.ALLOCATE",
         help: "A distortion risk measure of the portfolio allocated to its units: Euler (natural), covariance, proportional, marginal or Shapley.",

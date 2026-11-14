@@ -1,0 +1,1 @@
+* **Update**: [An event loss table on aggregate 2.1.0's FFT grid](/findings/elt-grid-aggregate.md), from #781's Excel function (branch claude/xll-elt-grid): the nearest rule is not mean-preserving, so 4,096 buckets under Alder Mutual's largest exposure left the annual mean 0.5% low; 2^16 buckets, aggregate's default, bring the mean and SD within 1e-4.
