@@ -1,6 +1,6 @@
 # Design note: discounted reserves and an IFRS 17 risk adjustment
 
-Status: **Accepted** (2026-11-14; issue #553, which the user took up on 2026-11-14, lifting its P4 parking). The user decided open decisions 1 to 4 on 2026-11-14 as recommended: (1a) spreading by each simulation's pattern, with `Compartmental`'s paid cells; (2a) both capital charges, end of year by default; (3a) mid-period payments by default; (4b) a stated basis. Decisions 5 to 8 are built as recommended unless the user decides otherwise. **PR 1 is built** (Rust, branch `claude/ifrs17-reserves`, 2026-11-14): `prospicio_reserving::discount`, with the decisions the build made recorded as open decisions 9 to 16, built as described there. PR 2 (Python and R) is next. Lane: Reserving (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on: `time-value.md` (Aggregate lane, read only: decisions 3, 4, 7 and 37(a))
+Status: **Accepted** (2026-11-14; issue #553, which the user took up on 2026-11-14, lifting its P4 parking). The user decided open decisions 1 to 4 on 2026-11-14 as recommended: (1a) spreading by each simulation's pattern, with `Compartmental`'s paid cells; (2a) both capital charges, end of year by default; (3a) mid-period payments by default; (4b) a stated basis. Decisions 5 to 8 are built as recommended unless the user decides otherwise. **PR 1 is built** (Rust, branch `claude/ifrs17-reserves`, 2026-11-14): `prospicio_reserving::discount`, with the decisions the build made recorded as open decisions 9 to 19, built as described there. PR 2 (Python and R) is next. Lane: Reserving (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on: `time-value.md` (Aggregate lane, read only: decisions 3, 4, 7 and 37(a))
 
 ## Goal
 
@@ -72,9 +72,13 @@ reserve draw `R_{s,w}` and cumulative pattern `c_s(d)` at the pattern's
 ages `d`:
 
 ```
-share_{s,w}(d) = (c_s(d) - c_s(d-1)) / (1 - c_s(a_w))   for d > a_w
+m_s(d)         = max(c_s(a_w), ..., c_s(d))      the running maximum
+share_{s,w}(d) = (m_s(d) - m_s(d-1)) / (m_s(last) - c_s(a_w))   for d > a_w
 payment_{s,w}(d) = R_{s,w} · share_{s,w}(d)
 ```
+
+For a pattern that never falls after `a_w` and ends at 1 this is
+`(c_s(d) - c_s(d-1)) / (1 - c_s(a_w))` (decision 17).
 
 paid at time `t = (d - a_w) · Δ - m` years after the valuation date, where
 `Δ` is the development period in years and `m` is 0 for payments at the
@@ -83,10 +87,14 @@ end of each period or `Δ/2` for the middle (open decision 3).
 * When `1 - c_s(a_w)` is at most `1e-12` (an origin fully developed in that
   simulation, or a pattern that has passed 1 by pseudo factors below 1),
   the whole reserve is paid at the next age.
-* Negative increments are kept and discounted as they are (incurred
-  patterns, salvage, falling bootstrap patterns); a negative reserve
-  discounts to a negative present value. The code does not go through
-  `PaymentPattern::new`.
+* A falling step of the pattern pays nothing and the rises are rescaled to
+  sum to 1, so every share is in `[0, 1]` and each draw's present value is
+  its reserve times a weighted average of its payment times' discount
+  factors (decision 17, which replaces keeping negative increments). A
+  negative reserve discounts to a negative present value. The code does
+  not go through `PaymentPattern::new`.
+* Under `PaymentBasis::Incurred` the amount spread is the fit's reserve,
+  the IBNR; the case reserves are the caller's to add (decision 18).
 * `Compartmental` uses its `paid` cells directly: the increments along
   `age` from `latest_paid`, each at its own calendar time. This is exact,
   process timing included. Under `IncurredOnly` it is an error, since the
@@ -136,7 +144,7 @@ the fit's dependence between segments). The best estimate is
 * `RiskAdjustment::ConfidenceLevel(p)`: `RA = Q_p(X) - BE`, inverted-cdf
   quantile.
 * `RiskAdjustment::Tvar(p)`: `RA = TVaR_p(X) - BE`.
-* `RiskAdjustment::CostOfCapital { rate, capital, convention }` (open
+* `RiskAdjustment::CostOfCapital { rate, capital, charge }` (open
   decisions 2 and 6): `K_0` is the capital at the valuation date,
   `K_t = K_0 · BE(t) / BE(0)`, where `BE(t)` is the mean discounted
   outstanding at `t` (EIOPA's method 2 run-off proxy), and
@@ -147,8 +155,8 @@ the fit's dependence between segments). The best estimate is
   ```
 
   with `v(t) = (1 + r(t))^-t` from the same curve. `capital` is
-  `Capital::Var(q)` (`Q_q(X) - BE`, default `q = 0.995`), `Capital::Tvar(q)`
-  or `Capital::Amount(k)` (a capital the user brings, such as the one-year
+  `Capital::Var(q)` (`Q_q(X) - BE`; no default, decision 6b),
+  `Capital::Tvar(q)` or `Capital::Amount(k)` (a capital the user brings, such as the one-year
   view's 99.5% VaR of the claims development result).
 
 Each result reports `amount`, `best_estimate`, and
@@ -273,8 +281,9 @@ No dependency on `prospicio-pricing` and nothing in `prospicio-core`
 5. `implied_confidence` of `ConfidenceLevel(p)` is at least `p`, and less
    than `p + 1/n`.
 6. `Compartmental` with process noise: the discounted total from the paid
-   cells and from spreading by its patterns agree in the mean within
-   simulation error and differ in spread; the test records both.
+   cells and from spreading by its patterns, side by side. As built
+   (decision 19) the means agree within 0.5% and the sds within 2%, not
+   within simulation error: the spread uses the population's pattern.
 7. The tail: an origin at the oldest age with a tail pays its whole
    reserve at the tail's age, one period on.
 
@@ -362,8 +371,8 @@ against the English text), currency, the LRC.
     `1 - c(a_w)` is at most 1e-12 (or not a number), or any share is not
     finite, the whole reserve is paid at the next pattern age; when the
     pattern has no later age, one development period on (the step between
-    the last two ages, or the only age itself). Negative shares and
-    reserves are kept.
+    the last two ages, or the only age itself). Negative reserves are kept;
+    negative shares were kept too until decision 17.
 11. **The run-off's end and a zero best estimate** (decided by the build).
     Built: `runoff` runs over `t = 0, 1, ...` whole years up to the first
     whole year at or after the last payment, where it is 0, so it ends with
@@ -396,3 +405,46 @@ against the English text), currency, the LRC.
     lives in `bayes/compartmental/tests.rs`, beside the triangle and quick
     sampler it uses; it also checks that `IncurredOnly` and
     `PaymentBasis::Incurred` are refused.
+17. **Patterns that fall after the latest age** (decided by the build,
+    after review). Keeping negative increments as shares over
+    `1 - c_s(a_w)` amplifies a reserve when a bootstrap's pattern goes just
+    past 1 and comes back: with `c(a_w) = 0.99998`, then 1.005 and 1.0, the
+    shares are about +251 and -250 and the draw's present value about 8.2
+    times its reserve at 3%. On RAA with 20,000 simulations at 3%
+    mid-period the ODP bootstrap's unit present values ran from -33 to 68
+    by origin and its discounted total from 0.05 to 1.92 times the
+    undiscounted. Built: the shares are the rises of the pattern's running
+    maximum after `a_w`, over their sum (falling steps pay nothing), for
+    each simulation's pattern and for a stated paid pattern alike; the
+    whole reserve is paid at the next age when `1 - c_s(a_w)` or that sum
+    is at most 1e-12 or the pattern is not finite. Every share is then in
+    `[0, 1]` and the unit present values on RAA lie between the first and
+    the last payment time's factors (0.79 to 0.99 for the Mack bootstrap,
+    0.89 to 0.99 for the ODP's; a unit test checks the bound on 2,000
+    simulations of each); a pattern that never falls is unchanged.
+    Salvage in a stated paid pattern is no longer timed as a negative
+    payment. Other rules (a clamp of each draw's increments, a fallback to
+    the mean pattern) remain open to the user.
+18. **The incurred basis covers the IBNR** (decided by the build, after
+    review; open to the user). The reserves of a fit on incurred claims are
+    ultimate less latest incurred, so `PaymentBasis::Incurred` discounts
+    the IBNR alone, spread over every paid increment after the origin's
+    latest age as if it were all the unpaid; the case reserves (latest
+    incurred less latest paid) are the caller's to discount and add. Built:
+    documented in `PaymentBasis::Incurred`, the module docs and here. The
+    alternative, taking each origin's latest paid with the basis so that
+    the unpaid (IBNR plus case) is spread along the paid pattern from the
+    paid age, changes decision 9 and what `reserves` means, and is the
+    user's to decide.
+19. **Validation target 6 as built** (decided by the build). The spread
+    route reaches `Compartmental` through a test-only helper
+    (`discount::compartmental_spread`), no public API, from each origin's
+    latest observed paid age, so the test uses the training triangle
+    without 1997 (which has no paid). On company 337 at 5% mid-period with
+    the quick sampler (Windows): from the cells 125,357 (sd 5,791), spread
+    125,450 (sd 5,780), a paired difference of -92 with a standard error of
+    16, so the means differ by more than simulation error (the spread uses
+    the population's pattern, the cells each origin's own development) but
+    by 0.07%, and process timing barely changes the spread. The test
+    (`the_discounted_cells_and_the_spread_patterns_side_by_side`) asserts
+    the means within 0.5% and the sds within 2%.

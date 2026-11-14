@@ -4,6 +4,7 @@
   `discounted_reserves` discounts each simulation of a bootstrap or Bayesian fit's reserves (and of
   their fits over segments) on a `DiscountCurve` (flat or spot rates), spreading each reserve over
   that simulation's pattern (`Compartmental`: its paid cells) at mid-period or end-of-period timing,
-  on a stated `PaymentBasis`; `DiscountedReserves::risk_adjustment` by a confidence level, TVaR or a
+  on a stated `PaymentBasis` (under `Incurred`, the IBNR alone: the case reserves are the caller's to
+  add); `DiscountedReserves::risk_adjustment` by a confidence level, TVaR or a
   cost of capital (charged at the end or the start of each year), with the implied confidence level
   and each segment's stand-alone result.

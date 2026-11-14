@@ -4162,3 +4162,65 @@ fn the_discounted_reserves_are_paid_by_the_cells() {
         Err(Error::NotSupported { .. })
     ));
 }
+
+/// Validation target 6 of `reserving-ifrs17.md`: with process noise in the
+/// paid cells, the discounted total from the cells and from spreading the
+/// same reserves by the fit's own patterns, side by side (printed with
+/// `--nocapture`). The spread uses the population's pattern (an origin with
+/// a zero effect) where the cells follow each origin's own development, so
+/// the means differ by a small systematic amount, not only by simulation
+/// error: on Windows, company 337 at 5% mid-period, 125,357 from the cells
+/// and 125,450 spread (a paired difference of -92 with a standard error of
+/// 16), sds 5,791 and 5,780. The test asserts the means within 0.5% and the
+/// sds within 2% of each other, not the digits.
+#[test]
+#[cfg_attr(
+    not(feature = "slow-tests"),
+    ignore = "samples with NUTS; needs --features slow-tests"
+)]
+fn the_discounted_cells_and_the_spread_patterns_side_by_side() {
+    use crate::discount::{
+        DiscountCurve, Discounting, PaymentBasis, PaymentTiming, compartmental_spread,
+        discounted_reserves,
+    };
+    let at = Discounting {
+        curve: DiscountCurve::flat(0.05).unwrap(),
+        timing: PaymentTiming::MidPeriod,
+    };
+    let tri = triangle(false);
+    let fit = quick(9).fit(&tri, "paid", incurred(), "premium").unwrap();
+    let cells = discounted_reserves(&fit, &at, &PaymentBasis::Paid).unwrap();
+    let spread = compartmental_spread(&fit, &at).unwrap();
+    let totals = |d: &crate::discount::DiscountedReserves| -> Vec<f64> {
+        let n = d.discounted.n_components();
+        d.discounted
+            .draw_matrix()
+            .chunks_exact(n)
+            .map(|r| r.iter().sum())
+            .collect()
+    };
+    let (a, b) = (totals(&cells), totals(&spread));
+    let n = a.len() as f64;
+    let mean = |x: &[f64]| x.iter().sum::<f64>() / n;
+    let sd = |x: &[f64]| {
+        let m = mean(x);
+        (x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
+    };
+    let diff: Vec<f64> = a.iter().zip(&b).map(|(x, y)| x - y).collect();
+    let se = sd(&diff) / n.sqrt();
+    let undiscounted = fit.reserves.total().mean();
+    println!(
+        "undiscounted {undiscounted:.1}; cells mean {:.1} sd {:.1}; spread mean {:.1} sd {:.1}; \
+         paired difference {:.1} (se {se:.1})",
+        mean(&a),
+        sd(&a),
+        mean(&b),
+        sd(&b),
+        mean(&diff),
+    );
+    assert!(mean(&a) < undiscounted && mean(&b) < undiscounted);
+    assert!((mean(&a) - mean(&b)).abs() <= 0.005 * mean(&a));
+    assert!((sd(&a) / sd(&b) - 1.0).abs() <= 0.02);
+    // The same reserves, timed differently in each simulation.
+    assert!(sd(&diff) > 0.0);
+}

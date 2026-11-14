@@ -16,9 +16,20 @@
 //! (`reserving-ifrs17.md` decision 1a):
 //!
 //! ```text
-//! share(d)   = (c_s(d) - c_s(d - 1)) / (1 - c_s(a_w))   for d > a_w
+//! m_s(d)     = max(c_s(a_w), c_s(a_w + 1), ..., c_s(d))    the running maximum
+//! share(d)   = (m_s(d) - m_s(d - 1)) / (m_s(last) - c_s(a_w))   for d > a_w
 //! payment(d) = R_{s,w} share(d)
 //! ```
+//!
+//! For a pattern that never falls after `a_w` and ends at 1 this is
+//! `(c_s(d) - c_s(d - 1)) / (1 - c_s(a_w))`. Where a simulation's pattern
+//! falls (a bootstrap's pseudo factors below 1), the falling steps pay
+//! nothing and the rises are rescaled to sum to 1, so every share is in
+//! `[0, 1]` and each draw's present value is its reserve times a weighted
+//! average of its payment times' discount factors (decision 17). Keeping
+//! the falling steps as negative shares over `1 - c_s(a_w)` would amplify a
+//! reserve into large payments of opposite signs when `c_s(a_w)` is just
+//! below 1.
 //!
 //! paid `t = (d - a_w) / 12` years after the valuation date at the end of
 //! each development period ([`PaymentTiming::EndOfPeriod`]), or half a
@@ -28,14 +39,20 @@
 //! need nothing special. With a tail the pattern has one more age, one
 //! development period past the oldest, where the tail's share is paid.
 //!
-//! * When `1 - c_s(a_w)` is at most `1e-12`, or a share is not finite, the
-//!   whole reserve is paid at the next age (one development period on when
-//!   the pattern has no later age).
-//! * Negative increments and negative reserves are kept and discounted as
-//!   they are.
+//! * When `1 - c_s(a_w)` or the rise `m_s(last) - c_s(a_w)` is at most
+//!   `1e-12`, or the pattern is not finite, the whole reserve is paid at the
+//!   next age (one development period on when the pattern has no later
+//!   age).
+//! * Negative reserves are kept and discounted as they are.
 //! * [`PaymentBasis::Paid`] spreads by each simulation's own pattern (the
 //!   fit's `patterns`); [`PaymentBasis::Incurred`] by one paid pattern the
 //!   caller brings, for a fit on incurred claims (decision 4b).
+//! * Under [`PaymentBasis::Incurred`] the amount discounted is the fit's
+//!   reserve, ultimate less latest incurred: the IBNR, without the case
+//!   reserves (decision 18). The present value of the unpaid claims also
+//!   needs the case reserves, latest incurred less latest paid, discounted
+//!   by the caller, and the IBNR is timed along the whole of the paid
+//!   pattern after `a_w`, as if it were all the unpaid.
 //! * `Compartmental` is not spread: its `paid` cells are each simulation's
 //!   cumulative paid by origin and age, so each increment from the latest
 //!   paid is paid at its own age, process timing included. Under
@@ -252,6 +269,13 @@ pub enum PaymentBasis {
     /// tail's age one period past the oldest when the fit has a tail), the
     /// same in every simulation and every segment. It must end at 1. Not
     /// for `Compartmental`, whose reserves are paid.
+    ///
+    /// The reserves of a fit on incurred claims are its IBNR (ultimate less
+    /// latest incurred), so the result leaves out the case reserves (latest
+    /// incurred less latest paid): for the liability for incurred claims
+    /// the caller adds their present value. The IBNR is spread over every
+    /// paid increment after the origin's latest age, as if it were all the
+    /// unpaid (decision 18).
     Incurred(Vec<f64>),
 }
 
@@ -816,6 +840,46 @@ mod bayes_fits {
     impl Discountable for CompartmentalFits {}
 }
 
+/// `Compartmental`'s reserves spread by its own patterns, as a fit without
+/// paid cells would be, instead of paid by its cells: the comparison of
+/// validation target 6, for its test in `bayes/compartmental/tests.rs`.
+/// Each origin is spread from its latest observed paid age.
+#[cfg(all(test, feature = "bayes"))]
+pub(crate) fn compartmental_spread(
+    fit: &crate::bayes::CompartmentalFit,
+    discounting: &Discounting,
+) -> Result<DiscountedReserves> {
+    let segment = match fit.patterns.segments() {
+        [only] => only,
+        other => {
+            return Err(Error::PatternDraws(format!(
+                "a fit of one segment with patterns of {} segments",
+                other.len()
+            )));
+        }
+    };
+    let ages = segment.ages();
+    let (_, _, latest_age) = fit.paid_timing();
+    let components = latest_age
+        .iter()
+        .map(|age| {
+            let latest = ages.iter().position(|a| a == age).ok_or_else(|| {
+                Error::PatternDraws(format!("no pattern age at the latest paid age {age}"))
+            })?;
+            Ok(Component {
+                segment: 0,
+                how: How::Spread {
+                    pattern: Pattern::Draws(segment),
+                    ages,
+                    latest,
+                },
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let flows = finish(&fit.reserves, vec![Vec::new()], false, components)?;
+    discount(flows, discounting, &PaymentBasis::Paid)
+}
+
 /// A component's payments in half-months from the valuation date, each a
 /// slot of the sorted distinct times.
 enum Plan<'a> {
@@ -962,7 +1026,10 @@ fn discount(
                     .zip(&factors)
                     .filter(|((y, _), _)| **y > t)
                     .map(|((_, m), f)| m * f / v)
-                    .sum()
+                    // An empty f64 sum is -0.0: adding 0.0 makes the
+                    // run-off's last entry +0.0.
+                    .sum::<f64>()
+                    + 0.0
             })
             .collect()
     };
@@ -1024,13 +1091,31 @@ fn pay(plan: &Plan<'_>, s: usize, reserve: f64, out: &mut Vec<(usize, f64)>) {
                 Pattern::Fixed(p) => p,
             };
             let base = c[*latest];
-            let rest = 1.0 - base;
             let start = out.len();
-            if rest > FULLY_DEVELOPED && base.is_finite() {
-                let mut previous = base;
+            if 1.0 - base > FULLY_DEVELOPED && base.is_finite() {
+                // The rises of the pattern's running maximum after the
+                // latest age, as shares of their sum (decision 17): each
+                // share is in [0, 1] and they sum to 1, so a pattern that
+                // goes past 1 and comes back cannot amplify the reserve
+                // into large payments of opposite signs. A pattern that
+                // never falls gives `(c(d) - c(d-1)) / (1 - c(a_w))`.
+                let mut top = base;
                 for (&k, &cum) in slots.iter().zip(&c[latest + 1..]) {
-                    out.push((k, reserve * (cum - previous) / rest));
-                    previous = cum;
+                    if !cum.is_finite() {
+                        top = f64::NAN;
+                        break;
+                    }
+                    let rise = (cum - top).max(0.0);
+                    top = top.max(cum);
+                    out.push((k, rise));
+                }
+                let total = top - base;
+                if total > FULLY_DEVELOPED {
+                    for (_, amount) in &mut out[start..] {
+                        *amount = reserve * (*amount / total);
+                    }
+                } else {
+                    out.truncate(start);
                 }
             }
             if out.len() == start || out[start..].iter().any(|(_, a)| !a.is_finite()) {
@@ -1289,7 +1374,8 @@ mod tests {
                 assert!(close(*a, *b, 1e-9), "{a} vs {b}");
             }
             assert!(close(d.runoff[0], d.best_estimate, 1e-9));
-            assert_eq!(*d.runoff.last().unwrap(), 0.0);
+            // +0.0, not -0.0, which would print as -0.
+            assert_eq!(d.runoff.last().unwrap().to_bits(), 0.0f64.to_bits());
             assert!(d.discount_factors.iter().all(|f| close(*f, 1.0, 1e-9)));
         }
     }
@@ -1405,7 +1491,8 @@ mod tests {
     /// Three origins at ages 12, 24 and 36 (a pattern to 36, no tail) in two
     /// simulations, with patterns `[0.5, 1.1, 1.0]` (a falling last step)
     /// and `[0.4, 1.0, 1.0]` (fully developed at 24), and a reserve on the
-    /// oldest origin with no later age.
+    /// oldest origin with no later age. The falling step pays nothing: the
+    /// shares are the rises of the pattern's running maximum (decision 17).
     #[test]
     fn a_hand_built_case_times_each_payment() {
         let ages: Vec<Lag> = vec![12, 24, 36];
@@ -1446,11 +1533,12 @@ mod tests {
             let d = discount(flows(), &at(0.10, timing), &PaymentBasis::Paid).unwrap();
             let pv = d.discounted.draw_matrix();
             let want = [
-                // Simulation 0: origin 1 pays 120 at the next age and -20
-                // after it; origin 2's pattern has passed 1, so it pays its
-                // 50 at the next age; origin 3 has no later age and pays one
-                // period on.
-                120.0 * v(1.0 - m) - 20.0 * v(2.0 - m),
+                // Simulation 0: origin 1's pattern rises to 1.1 at the next
+                // age and falls after it, so it pays its 100 at the next
+                // age (not 120 and then -20); origin 2's pattern has passed
+                // 1, so it pays its 50 at the next age; origin 3 has no
+                // later age and pays one period on.
+                100.0 * v(1.0 - m),
                 50.0 * v(1.0 - m),
                 5.0 * v(1.0 - m),
                 // Simulation 1: origin 1 pays everything at 24, nothing at
@@ -1462,12 +1550,12 @@ mod tests {
             for (a, b) in pv.iter().zip(want) {
                 assert!(close(*a, b, 1e-12), "{timing:?}: {a} vs {b}");
             }
-            // Mean payments: 147.5 in the first year, -10 in the second.
-            let be0 = 147.5 * v(1.0 - m) - 10.0 * v(2.0 - m);
+            // Mean payments: 137.5 in the first year, 0 in the second.
+            let be0 = 137.5 * v(1.0 - m);
             assert!(close(d.runoff[0], be0, 1e-12));
-            assert!(close(d.runoff[1], -10.0 * v(2.0 - m) / v(1.0), 1e-12));
+            assert_eq!(d.runoff[1], 0.0);
             assert_eq!(d.runoff.len(), 3);
-            assert_eq!(d.runoff[2], 0.0);
+            assert_eq!(d.runoff[2].to_bits(), 0.0f64.to_bits());
             assert!(close(d.best_estimate, be0, 1e-12));
         }
     }
@@ -1505,6 +1593,68 @@ mod tests {
             }
             assert!(some);
         }
+    }
+
+    /// Each draw's present value is its reserve times a weighted average of
+    /// its payment times' discount factors, so its unit value lies between
+    /// the factors of the first and the last payment time, even where a
+    /// bootstrap pattern goes past 1 and comes back just after an origin's
+    /// latest age (decision 17).
+    #[test]
+    fn every_draw_discounts_within_its_payment_times_factors() {
+        let tri = raa();
+        let odp = OdpBootstrap {
+            n_sims: 2000,
+            seed: 1,
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .unwrap();
+        let mack = MackBootstrap {
+            n_sims: 2000,
+            seed: 1,
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .unwrap();
+        let mid = at(0.03, PaymentTiming::MidPeriod);
+        let v = |t: f64| 1.03f64.powf(-t);
+        let check = |name: &str,
+                     reserves: &PredictiveDistribution,
+                     d: &DiscountedReserves,
+                     n_ages: usize,
+                     latest: &[usize]| {
+            let n = reserves.n_components();
+            let mut checked = 0;
+            for (pv, r) in d
+                .discounted
+                .draw_matrix()
+                .chunks_exact(n)
+                .zip(reserves.draw_matrix().chunks_exact(n))
+            {
+                for w in 0..n {
+                    if r[w] == 0.0 {
+                        continue;
+                    }
+                    let last = (n_ages - 1 - latest[w]).max(1) as f64;
+                    let (lo, hi) = (v(last - 0.5), v(0.5));
+                    let unit = pv[w] / r[w];
+                    assert!(
+                        unit >= lo * (1.0 - 1e-9) && unit <= hi * (1.0 + 1e-9),
+                        "{name} origin {w}: {unit} outside [{lo}, {hi}]"
+                    );
+                    checked += 1;
+                }
+            }
+            assert!(checked > 1000, "{name}: {checked}");
+        };
+        let n_ages = |p: &DevelopmentPatterns| p.segment(&[]).unwrap().ages().len();
+        let d = discounted_reserves(&odp, &mid, &PaymentBasis::Paid).unwrap();
+        let latest = &odp.chain_ladder.latest_position;
+        check("ODP", &odp.reserves, &d, n_ages(&odp.patterns), latest);
+        let d = discounted_reserves(&mack, &mid, &PaymentBasis::Paid).unwrap();
+        let latest = &mack.mack.chain_ladder.latest_position;
+        check("Mack", &mack.reserves, &d, n_ages(&mack.patterns), latest);
     }
 
     #[test]

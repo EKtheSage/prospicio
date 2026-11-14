@@ -8,7 +8,7 @@ generated: { by: claude-code/local-session, at: 2026-11-14T12:00:00+00:00 }
 sources:
   - id: note
     resource: ../docs/design/reserving-ifrs17.md
-    title: docs/design/reserving-ifrs17.md (the method, decisions 1 to 13)
+    title: docs/design/reserving-ifrs17.md (the method, decisions 1 to 19)
   - id: code
     resource: ../crates/prospicio-reserving/src/discount.rs
     title: prospicio_reserving::discount (DiscountCurve, discounted_reserves, RiskAdjustment, its unit tests)
@@ -28,6 +28,31 @@ sources:
   summed. The best estimate is `BE = mean(X)`. Quantiles of `X` are never
   formed by scaling undiscounted quantiles by a discount factor, which is
   exact for one origin only and changes the ranks of a total.[^code][^note]
+* **Spreading by a bootstrap's pattern.** A bootstrap's pattern can pass 1
+  and come back after an origin's latest age (pseudo factors below 1).
+  Spreading the reserve by the raw increments over `1 - c(a_w)` then
+  amplifies it into large payments of opposite signs when `c(a_w)` is just
+  below 1: on RAA with 20,000 ODP bootstrap simulations at 3% mid-period,
+  the unit present values by origin ran from -33 to 68 and the discounted
+  total from 0.05 to 1.92 times the undiscounted, which corrupts the tail
+  the risk adjustment is read from. The shares are therefore the rises of
+  the pattern's running maximum over their sum: each in `[0, 1]`, so each
+  draw's present value is its reserve times a weighted average of its
+  payment times' factors (decision 17; a unit test checks the bound on
+  2,000 ODP and Mack bootstrap simulations of RAA).[^note][^code]
+* **An incurred fit discounts the IBNR.** Under the incurred basis the
+  amount discounted is the fit's reserve, ultimate less latest incurred:
+  the case reserves (latest incurred less latest paid) are left for the
+  caller to discount and add for the liability for incurred claims, and
+  the IBNR is spread over the whole paid pattern after the origin's latest
+  age (decision 18).[^note]
+* **Cells against spreading for `Compartmental`.** On company 337 at 5%
+  mid-period (quick sampler, Windows) the discounted total from the paid
+  cells has mean 125,357 and sd 5,791, and spread by the fit's own
+  (population) pattern 125,450 and 5,780: the paired difference, -92 with a
+  standard error of 16, is systematic but 0.07% of the mean, and the
+  process timing of the cells barely changes the spread (decision 19; the
+  test asserts 0.5% and 2%, not the digits).[^note]
 * **Confidence level.** `RA = Q_p(X) - BE`, with the inverted-cdf quantile
   (`prospicio_prob::risk::var_sorted`, numpy's `inverted_cdf`, R's
   `type = 1`): the smallest draw with `F(x) >= p`. Since `F(Q(p)) >= p`,
