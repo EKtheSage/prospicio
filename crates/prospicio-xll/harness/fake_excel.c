@@ -259,7 +259,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and forty-nine functions registered", registered == 149);
+    check("one hundred and fifty functions registered", registered == 150);
     check("eleven of them asynchronous (xll.md, decision 48)", async_registered == 11);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
