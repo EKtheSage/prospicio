@@ -8,7 +8,7 @@ use prospicio_prob::Distribution;
 use prospicio_prob::chf::{
     BUCKET_SIZING_P, ChfDistribution, ChfFn, ChfLaw, ChfOptions, Complex64, Tilt, UserChf, invert,
 };
-use prospicio_prob::levy::{NormalInverseGaussian, TemperedStable, VarianceGamma};
+use prospicio_prob::levy::{NormalInverseGaussian, TemperedStable, TweediePower, VarianceGamma};
 use prospicio_prob::{Stable, StableParameterization};
 use pyo3::prelude::*;
 
@@ -619,6 +619,108 @@ impl PyTemperedStable {
     }
 }
 
+/// The Tweedie law at any power ``p`` outside ``(0, 1]`` for
+/// ``invert_chf``, in its reproductive form: mean ``mean``, variance
+/// ``dispersion * mean ** p`` (Jorgensen's exponential dispersion model).
+///
+/// ``p = 0`` is the normal, ``p < 0`` the extreme stable laws on the whole
+/// line, ``1 < p < 2`` the compound Poisson-gamma (``Tweedie``) with its
+/// mass at 0, ``p = 2`` the gamma, ``p = 3`` the inverse Gaussian and
+/// ``p > 2`` the positive extreme stable laws, all with light tails.
+///
+/// Parameters
+/// ----------
+/// power : float
+///     At most 0, or above 1 and finite.
+/// mean : float
+///     Positive.
+/// dispersion : float
+///     Positive.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is out of range.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import TweediePower, invert_chf
+/// >>> d = invert_chf(TweediePower(2.5, 3.0, 0.4), log2=12)
+/// >>> round(d.mean(), 6)
+/// 3.0
+#[pyclass(name = "TweediePower", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyTweediePower {
+    inner: TweediePower,
+}
+
+#[pymethods]
+impl PyTweediePower {
+    #[new]
+    fn new(power: f64, mean: f64, dispersion: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: TweediePower::new(power, mean, dispersion).map_err(to_py)?,
+        })
+    }
+
+    /// The law with power ``power``, mean ``mean`` and coefficient of
+    /// variation ``cv``: dispersion ``cv**2 * mean ** (2 - power)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// power : float
+    /// mean : float
+    /// cv : float
+    ///
+    /// Returns
+    /// -------
+    /// TweediePower
+    #[staticmethod]
+    fn from_mean_cv(power: f64, mean: f64, cv: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: TweediePower::from_mean_cv(power, mean, cv).map_err(to_py)?,
+        })
+    }
+
+    /// The power ``p``.
+    #[getter]
+    fn power(&self) -> f64 {
+        self.inner.power()
+    }
+
+    /// The mean.
+    #[getter]
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    /// The dispersion.
+    #[getter]
+    fn dispersion(&self) -> f64 {
+        self.inner.dispersion()
+    }
+
+    /// The variance, ``dispersion * mean ** power``.
+    #[getter]
+    fn variance(&self) -> f64 {
+        self.inner.variance()
+    }
+
+    /// The skewness, ``power`` times the coefficient of variation.
+    #[getter]
+    fn skewness(&self) -> f64 {
+        self.inner.skewness()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TweediePower(power={:?}, mean={:?}, dispersion={:?})",
+            self.inner.power(),
+            self.inner.mean(),
+            self.inner.dispersion()
+        )
+    }
+}
+
 /// A Python callable of a list of frequencies returning their complex
 /// values. A Python exception becomes the error message.
 fn py_chf(f: Py<PyAny>) -> Arc<ChfFn> {
@@ -670,7 +772,7 @@ fn py_chf(f: Py<PyAny>) -> Arc<ChfFn> {
 ///
 /// Parameters
 /// ----------
-/// law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, Stable, NormalInverseGaussian, VarianceGamma, TemperedStable or callable
+/// law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, Stable, NormalInverseGaussian, VarianceGamma, TemperedStable, TweediePower or callable
 ///     A law with a closed-form characteristic function (an ``Affine`` of
 ///     one of them), or your own characteristic function: a callable of a
 ///     list of real frequencies ``t`` returning ``E exp(i t X)`` at each,
@@ -744,6 +846,8 @@ pub(crate) fn invert_chf(
         ChfLaw::VarianceGamma(d.inner)
     } else if let Ok(d) = law.extract::<PyRef<'_, PyTemperedStable>>() {
         ChfLaw::TemperedStable(d.inner)
+    } else if let Ok(d) = law.extract::<PyRef<'_, PyTweediePower>>() {
+        ChfLaw::TweediePower(d.inner)
     } else if let Ok(d) = extract_dist(law) {
         ChfLaw::from_dist(&d).map_err(to_py)?
     } else if law.is_callable() {
@@ -751,7 +855,7 @@ pub(crate) fn invert_chf(
     } else {
         return Err(pyo3::exceptions::PyTypeError::new_err(
             "law must be a Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, \
-             Stable, NormalInverseGaussian, VarianceGamma or TemperedStable, or a callable \
+             Stable, NormalInverseGaussian, VarianceGamma, TemperedStable or TweediePower, or a callable \
              characteristic function",
         ));
     };

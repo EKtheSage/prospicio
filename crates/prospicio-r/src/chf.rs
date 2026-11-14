@@ -9,7 +9,7 @@ use prospicio_prob::Distribution;
 use prospicio_prob::chf::{
     ChfDistribution, ChfFn, ChfLaw, ChfOptions, Complex64, Tilt, UserChf, invert,
 };
-use prospicio_prob::levy::{NormalInverseGaussian, TemperedStable, VarianceGamma};
+use prospicio_prob::levy::{NormalInverseGaussian, TemperedStable, TweediePower, VarianceGamma};
 use prospicio_prob::{Stable, StableParameterization};
 
 use crate::distributions::{Grid, dist_from_robj};
@@ -203,6 +203,41 @@ impl TemperedStableLaw {
     }
 }
 
+/// The Tweedie law at any power.
+#[extendr]
+pub(crate) struct TweediePowerLaw {
+    inner: TweediePower,
+}
+
+#[extendr]
+impl TweediePowerLaw {
+    /// `cv` is `NaN` when the dispersion is given.
+    fn new(power: f64, mean: f64, dispersion: f64, cv: f64) -> Result<Self> {
+        let inner = if cv.is_nan() {
+            TweediePower::new(power, mean, dispersion)
+        } else {
+            TweediePower::from_mean_cv(power, mean, cv)
+        }
+        .map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    /// `c(power, mean, dispersion)`.
+    fn parameters(&self) -> Vec<f64> {
+        let d = self.inner;
+        vec![d.power(), d.mean(), d.dispersion()]
+    }
+
+    /// `c(mean, variance, skewness)`.
+    fn moments(&self) -> Vec<f64> {
+        vec![
+            self.inner.mean(),
+            self.inner.variance(),
+            self.inner.skewness(),
+        ]
+    }
+}
+
 /// A law's bucket masses from its characteristic function.
 #[extendr]
 pub(crate) struct ChfDist {
@@ -238,6 +273,8 @@ impl ChfDist {
             ChfLaw::VarianceGamma(d.inner)
         } else if let Ok(d) = <&TemperedStableLaw>::try_from(&law) {
             ChfLaw::TemperedStable(d.inner)
+        } else if let Ok(d) = <&TweediePowerLaw>::try_from(&law) {
+            ChfLaw::TweediePower(d.inner)
         } else if let Ok(f) = Function::try_from(law.clone()) {
             ChfLaw::User(UserChf::new(r_chf(f), "chf", false))
         } else {
@@ -321,4 +358,5 @@ extendr_module! {
     impl NigLaw;
     impl VarianceGammaLaw;
     impl TemperedStableLaw;
+    impl TweediePowerLaw;
 }

@@ -33,6 +33,7 @@ NULL
 #'   [tweedie()], an [affine_distribution()] of one of them, a
 #'   [stable_distribution()], [normal_inverse_gaussian_distribution()],
 #'   [variance_gamma_distribution()], [tempered_stable_distribution()],
+#'   [tweedie_power_distribution()],
 #'   or your own characteristic function: an R function of a numeric vector
 #'   of frequencies `t` returning `E exp(i t X)` at each, as a complex
 #'   vector. Your own function needs `step` and `x_min`.
@@ -291,6 +292,53 @@ tempered_stable_distribution <- S7::new_class(
   constructor = function(C, G, M, Y, mu = 0) {
     ptr <- rust_result(TemperedStableLaw$new(as.double(C), as.double(G), as.double(M),
                                              as.double(Y), as.double(mu)))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+#' The Tweedie law at any power
+#'
+#' The Tweedie law with power `power` outside `(0, 1]` for [invert_chf()],
+#' in its reproductive form: mean `mean`, variance
+#' `dispersion * mean^power` (Jorgensen's exponential dispersion model).
+#' `power = 0` is the normal, `power < 0` the extreme stable laws on the
+#' whole line, `1 < power < 2` the compound Poisson-gamma ([tweedie()])
+#' with its mass at 0, `power = 2` the gamma, `power = 3` the inverse
+#' Gaussian and `power > 2` the positive extreme stable laws.
+#'
+#' @param power At most 0, or above 1 and finite.
+#' @param mean Positive.
+#' @param dispersion Positive; leave it out when `cv` is given.
+#' @param cv The coefficient of variation instead of `dispersion`:
+#'   dispersion `cv^2 * mean^(2 - power)`.
+#' @returns A `tweedie_power_distribution` with properties `power`, `mean`,
+#'   `dispersion`, `variance` and `skewness`.
+#' @export
+#' @examples
+#' d <- invert_chf(tweedie_power_distribution(2.5, 3, 0.4), log2 = 12)
+#' mean(d)
+#' tweedie_power_distribution(2.5, 10, cv = 0.3)@dispersion
+tweedie_power_distribution <- S7::new_class(
+  "tweedie_power_distribution",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("TweediePowerLaw"),
+    power = S7::new_property(S7::class_double, getter = function(self) self@ptr$parameters()[[1]]),
+    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$parameters()[[2]]),
+    dispersion = S7::new_property(S7::class_double,
+                                  getter = function(self) self@ptr$parameters()[[3]]),
+    variance = S7::new_property(S7::class_double, getter = function(self) self@ptr$moments()[[2]]),
+    skewness = S7::new_property(S7::class_double, getter = function(self) self@ptr$moments()[[3]])
+  ),
+  constructor = function(power, mean, dispersion = NULL, cv = NULL) {
+    if (is.null(dispersion) == is.null(cv)) {
+      stop("give one of dispersion and cv", call. = FALSE)
+    }
+    ptr <- rust_result(TweediePowerLaw$new(
+      as.double(power), as.double(mean),
+      if (is.null(dispersion)) NaN else as.double(dispersion),
+      if (is.null(cv)) NaN else as.double(cv)
+    ))
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )

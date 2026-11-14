@@ -35374,6 +35374,83 @@ class TweedieGlm:
         """
 
 @final
+class TweediePower:
+    """
+    The Tweedie law at any power ``p`` outside ``(0, 1]`` for
+    ``invert_chf``, in its reproductive form: mean ``mean``, variance
+    ``dispersion * mean ** p`` (Jorgensen's exponential dispersion model).
+    
+    ``p = 0`` is the normal, ``p < 0`` the extreme stable laws on the whole
+    line, ``1 < p < 2`` the compound Poisson-gamma (``Tweedie``) with its
+    mass at 0, ``p = 2`` the gamma, ``p = 3`` the inverse Gaussian and
+    ``p > 2`` the positive extreme stable laws, all with light tails.
+    
+    Parameters
+    ----------
+    power : float
+        At most 0, or above 1 and finite.
+    mean : float
+        Positive.
+    dispersion : float
+        Positive.
+    
+    Raises
+    ------
+    ValueError
+        If a parameter is out of range.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import TweediePower, invert_chf
+    >>> d = invert_chf(TweediePower(2.5, 3.0, 0.4), log2=12)
+    >>> round(d.mean(), 6)
+    3.0
+    """
+    def __new__(cls, /, power: float, mean: float, dispersion: float) -> TweediePower: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def dispersion(self, /) -> float:
+        """
+        The dispersion.
+        """
+    @staticmethod
+    def from_mean_cv(power: float, mean: float, cv: float) -> TweediePower:
+        """
+        The law with power ``power``, mean ``mean`` and coefficient of
+        variation ``cv``: dispersion ``cv**2 * mean ** (2 - power)``.
+        
+        Parameters
+        ----------
+        power : float
+        mean : float
+        cv : float
+        
+        Returns
+        -------
+        TweediePower
+        """
+    @property
+    def mean(self, /) -> float:
+        """
+        The mean.
+        """
+    @property
+    def power(self, /) -> float:
+        """
+        The power ``p``.
+        """
+    @property
+    def skewness(self, /) -> float:
+        """
+        The skewness, ``power`` times the coefficient of variation.
+        """
+    @property
+    def variance(self, /) -> float:
+        """
+        The variance, ``dispersion * mean ** power``.
+        """
+
+@final
 class TwoPartFit:
     """
     A fitted zero-inflated or hurdle model, from ``ZeroInflated.fit`` or
@@ -39025,7 +39102,7 @@ def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: flo
     
     Parameters
     ----------
-    law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, Stable, NormalInverseGaussian, VarianceGamma, TemperedStable or callable
+    law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, Stable, NormalInverseGaussian, VarianceGamma, TemperedStable, TweediePower or callable
         A law with a closed-form characteristic function (an ``Affine`` of
         one of them), or your own characteristic function: a callable of a
         list of real frequencies ``t`` returning ``E exp(i t X)`` at each,

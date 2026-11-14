@@ -89,6 +89,7 @@ reference:
       - distributions.NormalInverseGaussian
       - distributions.Stable
       - distributions.TemperedStable
+      - distributions.TweediePower
       - distributions.VarianceGamma
       - distributions.ChfDistribution
       - distributions.Sampled

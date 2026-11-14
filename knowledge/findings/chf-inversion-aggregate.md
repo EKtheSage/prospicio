@@ -19,6 +19,9 @@ sources:
   - id: levy-test
     resource: ../validation/tests/probability_chf_levy.rs
     title: validation/tests/probability_chf_levy.rs, chf_levy_laws_match_aggregate, against validation/scripts/aggregate_chf_levy.py
+  - id: tweedie-test
+    resource: ../validation/tests/probability_chf_tweedie.rs
+    title: validation/tests/probability_chf_tweedie.rs, chf_tweedie_power_matches_aggregate, against validation/scripts/aggregate_chf_tweedie.py
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, characteristic_function.py (AggregateCHF, invert_characteristic_function, window_edges) and utilities.py (round_bucket)
@@ -80,3 +83,11 @@ sources:
   ends with a truncation of 0.038 and 3.6% of the mass outside; a CGMY
   with `Y = -0.5` keeps a truncation of 0.025 (its density has a
   singularity at 0).[^levy-test]
+* The Tweedie at any power through the cumulant form
+  `lambda (kappa(theta + s/lambda) - kappa(theta))` matches `aggregate`'s
+  `tweedie` family at `p` from -3 to 5 to the untilted tolerances, and at
+  `1 < p < 2` it gives the compound Poisson-gamma form's masses to 1e-13,
+  so the two forms agree. Rule A handles `p = 3`, mean 10, dispersion 0.5
+  (the inverse Gaussian with shape 2) badly in both: its step ends at 0.25
+  with a truncation of 0.008, and the masses' mean is 10.48, so a very
+  skewed inverse Gaussian needs a given step.[^tweedie-test]
