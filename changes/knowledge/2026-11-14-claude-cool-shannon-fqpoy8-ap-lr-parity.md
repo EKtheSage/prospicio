@@ -1,0 +1,2 @@
+* **Creation**: [The AP pricing demo's inputs](/datasets/ap-pricing-demo-inputs.md), supplied by the user (branch claude/cool-shannon-fqpoy8-ap-lr-parity): the demo's inputs.json copied verbatim to validation/data, on which the running loss ratio's four printed values match to 5e-13.
+* **Update**: [Trend factors from a calendar-year rate schedule](/findings/schedule-trend.md) (same branch): the demo's printed cumulative loss ratios are now a test in Rust, Python and R.
