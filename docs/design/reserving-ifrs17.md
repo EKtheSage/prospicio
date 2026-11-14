@@ -1,6 +1,6 @@
 # Design note: discounted reserves and an IFRS 17 risk adjustment
 
-Status: **Accepted** (2026-11-14; issue #553, which the user took up on 2026-11-14, lifting its P4 parking). The user decided open decisions 1 to 4 on 2026-11-14 as recommended: (1a) spreading by each simulation's pattern, with `Compartmental`'s paid cells; (2a) both capital charges, end of year by default; (3a) mid-period payments by default; (4b) a stated basis. Decisions 5 to 8 are built as recommended unless the user decides otherwise. Nothing is built yet. Lane: Reserving (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on: `time-value.md` (Aggregate lane, read only: decisions 3, 4, 7 and 37(a))
+Status: **Accepted** (2026-11-14; issue #553, which the user took up on 2026-11-14, lifting its P4 parking). The user decided open decisions 1 to 4 on 2026-11-14 as recommended: (1a) spreading by each simulation's pattern, with `Compartmental`'s paid cells; (2a) both capital charges, end of year by default; (3a) mid-period payments by default; (4b) a stated basis. Decisions 5 to 8 are built as recommended unless the user decides otherwise. **PR 1 is built** (Rust, branch `claude/ifrs17-reserves`, 2026-11-14): `prospicio_reserving::discount`, with the decisions the build made recorded as open decisions 9 to 16, built as described there. PR 2 (Python and R) is next. Lane: Reserving (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on: `time-value.md` (Aggregate lane, read only: decisions 3, 4, 7 and 37(a))
 
 ## Goal
 
@@ -173,35 +173,70 @@ That amount can be brought to `Capital::Amount`.
 Rust (`crates/prospicio-reserving/src/discount.rs`, a new module):
 
 ```rust
-pub struct DiscountCurve { /* flat rate or (maturity, spot) pairs */ }
+pub struct DiscountCurve { /* (maturity, spot) pairs; flat is one pair */ }
 impl DiscountCurve {
     pub fn flat(rate: f64) -> Result<Self>;
     pub fn spot(maturities: &[f64], rates: &[f64]) -> Result<Self>;
+    pub fn rate(&self, t: f64) -> f64;
     pub fn factor(&self, t: f64) -> f64;
 }
 
-pub enum PaymentTiming { EndOfPeriod, MidPeriod }
+#[derive(Default)]
+pub enum PaymentTiming { #[default] MidPeriod, EndOfPeriod }
 
 pub struct Discounting { pub curve: DiscountCurve, pub timing: PaymentTiming }
 
-pub fn discounted_reserves<F: Discountable>(fit: &F, discounting: &Discounting)
-    -> Result<DiscountedReserves>;
+pub enum PaymentBasis { Paid, Incurred(Vec<f64>) }   // decision 4b; 9
+
+pub trait Discountable: sealed::Sealed {}
+
+pub fn discounted_reserves<F: Discountable + ?Sized>(
+    fit: &F,
+    discounting: &Discounting,
+    basis: &PaymentBasis,
+) -> Result<DiscountedReserves>;
+
+pub struct DiscountedReserves {
+    pub reserves: PredictiveDistribution,
+    pub discounted: PredictiveDistribution,
+    pub best_estimate: f64,
+    pub runoff: Vec<f64>,              // BE(t), t = 0, 1, ..., ending at 0
+    pub discount_factors: Vec<f64>,    // mean PV / mean reserve per component
+    /* the discounting, segments and their run-offs */
+}
+
+pub enum Capital { Var(f64), Tvar(f64), Amount(f64) }   // no default (6b)
+#[derive(Default)]
+pub enum CapitalCharge { #[default] EndOfYear, StartOfYear }
 
 pub enum RiskAdjustment {
     ConfidenceLevel(f64),
     Tvar(f64),
-    CostOfCapital { rate: f64, capital: Capital, convention: CapitalCharge },
+    CostOfCapital { rate: f64, capital: Capital, charge: CapitalCharge },
 }
 impl DiscountedReserves {
+    pub fn discounting(&self) -> &Discounting;
+    pub fn segment_labels(&self) -> Vec<Vec<String>>;
+    pub fn segment_runoff(&self, i: usize) -> Option<&[f64]>;
     pub fn risk_adjustment(&self, method: &RiskAdjustment) -> Result<RiskAdjustmentResult>;
 }
+
+pub struct RiskAdjustmentResult {
+    pub amount: f64,
+    pub best_estimate: f64,
+    pub implied_confidence: f64,
+    pub capital: Option<f64>,                     // K_0 of a cost of capital
+    pub segments: Vec<SegmentRiskAdjustment>,     // stand-alone, decision 8a
+}
+pub struct SegmentRiskAdjustment { pub label: Vec<String>, pub result: RiskAdjustmentResult }
 ```
 
 `Discountable` is implemented by the fits with reserves and patterns:
 the ODP and Mack bootstraps, `BayesOdp`, `BayesBf`, `BayesBfNormalised`,
 `Meyers` (spreading only) and `Compartmental` (its paid cells), and their
-`*Fits`. `HierarchicalBf` and analytic `Mack` are not: the message says why
-(no pattern per simulation; no simulations).
+`*Fits`. `HierarchicalBfFit` and analytic `MackFit` implement it too and
+return `Error::NotSupported` with the reason (no pattern per simulation; no
+simulations) (decision 13).
 
 Python: `fit.discounted(rate=0.03 | curve=..., timing="mid")` returning
 `DiscountedReserves` with `reserves`, `discounted`, `best_estimate`,
@@ -313,3 +348,51 @@ against the English text), currency, the LRC.
 8. **Segments.** (a) The RA of the joint total, with each segment's
    stand-alone RA beside it and no allocation. (b) The total allocated to
    segments by a `prospicio-prob` allocation method. Recommended: (a).
+
+9. **Names and the paid basis's pattern** (decided by the build).
+   `Basis` is already `excess::Basis` at the crate root, so the stated
+   basis is `PaymentBasis { Paid, Incurred(Vec<f64>) }`; the cost of
+   capital's field is `charge`. Built: `Incurred` holds the cumulative paid
+   share at each of the fit's pattern ages (the triangle's development ages,
+   plus the tail's age when the fit has a tail), finite and ending at 1
+   within 1e-9, applied to every simulation and every segment; a pattern of
+   another length is `Error::LengthMismatch`, so segments with different
+   ages need their own fits discounted one by one.
+10. **Shares that cannot be used** (decided by the build). Built: when
+    `1 - c(a_w)` is at most 1e-12 (or not a number), or any share is not
+    finite, the whole reserve is paid at the next pattern age; when the
+    pattern has no later age, one development period on (the step between
+    the last two ages, or the only age itself). Negative shares and
+    reserves are kept.
+11. **The run-off's end and a zero best estimate** (decided by the build).
+    Built: `runoff` runs over `t = 0, 1, ...` whole years up to the first
+    whole year at or after the last payment, where it is 0, so it ends with
+    that 0. In the cost of capital, `BE(0) = 0` gives a risk adjustment of
+    0 when `K_0` is 0 and an error otherwise.
+12. **Each origin's discount factor** (decided by the build). Built:
+    `discount_factors` is mean PV over mean reserve per component, and 1
+    where the mean reserve is exactly 0 (an origin with nothing to pay).
+13. **The unsupported fits and the trait** (decided by the build). Built:
+    `Discountable` is sealed (its cash flows are internal); analytic
+    `MackFit` and `HierarchicalBfFit` implement it and return
+    `Error::NotSupported` with the reason. Errors reuse the existing
+    variants (`InvalidSetting`, `LengthMismatch`, `PatternDraws`,
+    `NotSupported`), so no binding's match on `Error` changes.
+14. **The implied confidence level against the level itself** (decided by
+    the build). Built: for `ConfidenceLevel(p)` and `Tvar(p)` the draws are
+    counted against `Q_p` or `TVaR_p` itself rather than `BE + RA`, since
+    `BE + (Q_p - BE)` can round below `Q_p` and drop a tied draw; for the
+    cost of capital against `BE + RA`.
+15. **Segments under a capital amount** (decided by the build). Built: a
+    `Capital::Amount` is the total's capital, so no stand-alone segment
+    results are reported for it (`segments` is empty); `Var` and `Tvar`
+    capitals give each segment its own `K_0` and run-off. A fit of one
+    segment reports no segments.
+16. **`Compartmental`'s valuation age** (decided by the build). Built: each
+    origin's paid increments are timed from its latest observed paid age
+    (an origin with no observed paid from age 0, the start of the origin),
+    each cell's increment from the previous cell, the first from the latest
+    paid. Its unit test (`the_discounted_reserves_are_paid_by_the_cells`)
+    lives in `bayes/compartmental/tests.rs`, beside the triangle and quick
+    sampler it uses; it also checks that `IncurredOnly` and
+    `PaymentBasis::Incurred` are refused.

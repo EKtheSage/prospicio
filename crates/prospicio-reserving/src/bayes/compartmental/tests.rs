@@ -4085,3 +4085,80 @@ fn the_loo_is_pinned_on_linux() {
         )
     });
 }
+
+/// Discounted reserves from the paid cells (`reserving-ifrs17.md` decision
+/// 1a): a zero rate gives the reserves back, each increment is discounted
+/// at its own age, and a fit on incurred alone or a stated incurred basis
+/// is refused. Here rather than in `discount.rs` because the triangle and
+/// the quick sampler are this module's.
+#[test]
+#[cfg_attr(
+    not(feature = "slow-tests"),
+    ignore = "samples with NUTS; needs --features slow-tests"
+)]
+fn the_discounted_reserves_are_paid_by_the_cells() {
+    use crate::discount::{
+        DiscountCurve, Discounting, PaymentBasis, PaymentTiming, discounted_reserves,
+    };
+    let at = |rate| Discounting {
+        curve: DiscountCurve::flat(rate).unwrap(),
+        timing: PaymentTiming::EndOfPeriod,
+    };
+    let tri = triangle(true);
+    let fit = quick(9).fit(&tri, "paid", incurred(), "premium").unwrap();
+    let zero = discounted_reserves(&fit, &at(0.0), &PaymentBasis::Paid).unwrap();
+    for (a, b) in zero
+        .discounted
+        .draw_matrix()
+        .iter()
+        .zip(fit.reserves.draw_matrix())
+    {
+        assert!((a - b).abs() <= 1e-9 * b.abs().max(1.0), "{a} vs {b}");
+    }
+    // By hand: 1996, observed at 12 months, pays each increment of its paid
+    // cells one year apart from the valuation date.
+    let d = discounted_reserves(&fit, &at(0.05), &PaymentBasis::Paid).unwrap();
+    let origin = |o: i32| -> Vec<KeyValue> { vec![Period::year(o).into()] };
+    let j = d.discounted.component_index(&origin(1996)).unwrap();
+    let n = d.discounted.n_components();
+    let ages: Vec<i64> = (2..=10).map(|k| 12 * k).collect();
+    let cells: Vec<usize> = ages
+        .iter()
+        .map(|&a| {
+            let mut key = origin(1996);
+            key.push(KeyValue::Int(a));
+            fit.paid.component_index(&key).unwrap()
+        })
+        .collect();
+    let m = fit.paid.n_components();
+    for s in 0..fit.reserves.n_sims() {
+        let row = &fit.paid.draw_matrix()[s * m..(s + 1) * m];
+        let mut previous = fit.latest_paid[8];
+        let mut want = 0.0;
+        for (k, &c) in cells.iter().enumerate() {
+            want += (row[c] - previous) * 1.05f64.powi(-(k as i32 + 1));
+            previous = row[c];
+        }
+        let got = d.discounted.draw_matrix()[s * n + j];
+        assert!(
+            (got - want).abs() <= 1e-9 * want.abs().max(1.0),
+            "{got} vs {want}"
+        );
+    }
+    assert!(d.best_estimate < zero.best_estimate);
+    assert!(matches!(
+        discounted_reserves(&fit, &at(0.05), &PaymentBasis::Incurred(vec![1.0; 10])),
+        Err(Error::NotSupported { .. })
+    ));
+    let incurred_only = Compartmental {
+        fitted: Fitted::IncurredOnly,
+        rate_order: RateOrder::Ordered,
+        ..quick(9)
+    }
+    .fit(&tri, "paid", incurred(), "premium")
+    .unwrap();
+    assert!(matches!(
+        discounted_reserves(&incurred_only, &at(0.05), &PaymentBasis::Paid),
+        Err(Error::NotSupported { .. })
+    ));
+}
