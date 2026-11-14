@@ -7,4 +7,4 @@
   `from_compound_pareto`; Python `+`, `-`, `*`, `/` and `@` on `Stable`,
   R `stable_add()`, `stable_scale()`, `stable_copies()`,
   `stable_from_compound_pareto()`), at parity with `aggregate` 2.1.0
-  (#780).
+  (#780, #920).
