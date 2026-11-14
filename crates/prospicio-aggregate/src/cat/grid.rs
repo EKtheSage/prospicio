@@ -62,7 +62,7 @@ impl EventLossTable {
     /// (points − 1) step`: each row's loss bucketed by `bucketing`,
     /// weighted by `rate / Λ`. With [`count`](Self::count) it is the
     /// severity of the compound Poisson model of the table, for
-    /// [`fft`](crate::fft) and [`Tower::on_grid`](crate::Tower::on_grid).
+    /// [`fft`](fn@crate::fft) and [`Tower::on_grid`](crate::Tower::on_grid).
     ///
     /// ```
     /// use prospicio_aggregate::cat::{EltBucketing, EventLossTable};
@@ -79,9 +79,11 @@ impl EventLossTable {
     /// let (sev, report) = elt.severity_grid(100.0, 32, EltBucketing::MeansLinear).unwrap();
     /// assert!((sev.probs()[2] - 0.7 * 0.05 / 0.06).abs() < 1e-15);
     /// assert!((report.grid_mean - report.severity_mean).abs() < 1e-12);
-    /// // The beta row bucketed by the nearest node.
+    /// // By the nearest node: the atom at 230 on node 2 whole, with the beta
+    /// // row's small mass in (150, 250].
     /// let (sev, report) = elt.severity_grid(100.0, 32, EltBucketing::Nearest).unwrap();
-    /// assert!((sev.probs()[2] - 0.05 / 0.06).abs() < 1e-3);
+    /// let beta_there = sev.probs()[2] - 0.05 / 0.06;
+    /// assert!(beta_there > 0.0 && beta_there < 0.01);
     /// assert_eq!(report.rate_above, 0.0);
     /// ```
     pub fn severity_grid(
@@ -210,7 +212,7 @@ impl EventLossTable {
 
     /// The annual total loss on the grid `0, step, …, (points − 1) step`:
     /// the Poisson count of [`count`](Self::count) compounded with
-    /// [`severity_grid`](Self::severity_grid) by [`fft`](crate::fft), the
+    /// [`severity_grid`](Self::severity_grid) by [`fft`](fn@crate::fft), the
     /// severity on the same `points`. Check the compound report's
     /// `aliasing_error` and `tail_mass`, and the severity report's
     /// `rate_above`.
