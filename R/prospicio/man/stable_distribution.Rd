@@ -4,7 +4,14 @@
 \alias{stable_distribution}
 \title{An alpha-stable law}
 \usage{
-stable_distribution(alpha, beta, scale = 1, loc = 0, parameterization = "S1")
+stable_distribution(
+  alpha,
+  beta,
+  scale = 1,
+  loc = 0,
+  parameterization = "S1",
+  ptr = NULL
+)
 }
 \arguments{
 \item{alpha}{The index of stability, in \verb{(0, 2]}.}
@@ -16,11 +23,14 @@ stable_distribution(alpha, beta, scale = 1, loc = 0, parameterization = "S1")
 \item{loc}{The location, read in \code{parameterization}.}
 
 \item{parameterization}{\code{"S1"} (Nolan's S1, scipy's default) or \code{"S0"}.}
+
+\item{ptr}{Internal.}
 }
 \value{
 A \code{stable_distribution} with properties \code{alpha}, \code{beta},
 \code{scale}, \code{loc} (S1), \code{loc0} (S0), \code{tail_constant},
-\code{left_tail_constant} and \code{mean}.
+\code{left_tail_constant}, \code{mean} and \code{prob_above_loc}; \code{\link[=stable_add]{stable_add()}} and
+its siblings give its algebra.
 }
 \description{
 The parameters of \code{S(alpha, beta, scale, loc)} for \code{\link[=invert_chf]{invert_chf()}}: with

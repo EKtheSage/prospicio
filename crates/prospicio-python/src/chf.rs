@@ -206,6 +206,11 @@ impl PyChfDistribution {
 /// halves, each inverted along its own tilted line and convolved. At
 /// ``alpha = 2`` it is the normal with variance ``2 scale ** 2``.
 ///
+/// Laws with a common ``alpha`` add (``x + y``), and ``c * x``, ``x + b``,
+/// ``-x`` and ``t @ x`` (``t`` independent copies) are stable too; each
+/// operand is an independent copy, so ``x + x`` is ``2 @ x``, not
+/// ``2 * x``.
+///
 /// Parameters
 /// ----------
 /// alpha : float
@@ -300,6 +305,132 @@ impl PyStable {
     #[getter]
     fn mean(&self) -> f64 {
         self.inner.mean()
+    }
+
+    /// ``P(X > loc)`` in closed form; ``nan`` at ``alpha = 1`` unless
+    /// ``beta = 0``.
+    #[getter]
+    fn prob_above_loc(&self) -> f64 {
+        self.inner.prob_above_loc()
+    }
+
+    /// The sum of ``t > 0`` independent copies, ``t @ X``: scale
+    /// ``t ** (1 / alpha) * scale``, location ``t * loc``.
+    ///
+    /// Parameters
+    /// ----------
+    /// t : float
+    ///
+    /// Returns
+    /// -------
+    /// Stable
+    fn copies(&self, t: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: self.inner.copies(t).map_err(to_py)?,
+        })
+    }
+
+    /// The stable limit of a Poisson compound with a Pareto tail (the
+    /// generalized central limit theorem): ``S(alpha, 1, gamma, frequency *
+    /// sev_mean)`` with ``gamma ** alpha = frequency * theta ** alpha *
+    /// Gamma(1 - alpha) * cos(pi alpha / 2)``, the compound's mean and
+    /// right tail.
+    ///
+    /// Parameters
+    /// ----------
+    /// frequency : float
+    ///     The expected claim count.
+    /// alpha : float
+    ///     The severity's tail index, strictly between 1 and 2.
+    /// theta : float
+    ///     The severity's tail scale, ``P(X > x) ~ (theta / x) ** alpha``.
+    /// sev_mean : float
+    ///     The severity's mean.
+    ///
+    /// Returns
+    /// -------
+    /// Stable
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Stable
+    /// >>> s = Stable.from_compound_pareto(50.0, 1.6, 3.0, 12.0)
+    /// >>> s.loc, round(s.tail_constant / (50 * 3.0 ** 1.6), 12)
+    /// (600.0, 1.0)
+    #[staticmethod]
+    fn from_compound_pareto(
+        frequency: f64,
+        alpha: f64,
+        theta: f64,
+        sev_mean: f64,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: Stable::from_compound_pareto(frequency, alpha, theta, sev_mean)
+                .map_err(to_py)?,
+        })
+    }
+
+    /// ``X + Y`` for an independent stable ``Y`` with the same ``alpha``,
+    /// or ``X + b`` for a number.
+    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let inner = if let Ok(y) = other.extract::<PyRef<'_, PyStable>>() {
+            self.inner.add(&y.inner).map_err(to_py)?
+        } else {
+            self.inner.shift(other.extract::<f64>()?)
+        };
+        Ok(Self { inner })
+    }
+
+    fn __radd__(&self, other: f64) -> Self {
+        Self {
+            inner: self.inner.shift(other),
+        }
+    }
+
+    /// ``X - Y`` (an independent copy) or ``X - b``.
+    fn __sub__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let inner = if let Ok(y) = other.extract::<PyRef<'_, PyStable>>() {
+            let neg = y.inner.scale_by(-1.0).map_err(to_py)?;
+            self.inner.add(&neg).map_err(to_py)?
+        } else {
+            self.inner.shift(-other.extract::<f64>()?)
+        };
+        Ok(Self { inner })
+    }
+
+    fn __rsub__(&self, other: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: self.inner.scale_by(-1.0).map_err(to_py)?.shift(other),
+        })
+    }
+
+    /// ``c * X`` for a real ``c != 0``.
+    fn __mul__(&self, c: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: self.inner.scale_by(c).map_err(to_py)?,
+        })
+    }
+
+    fn __rmul__(&self, c: f64) -> PyResult<Self> {
+        self.__mul__(c)
+    }
+
+    fn __truediv__(&self, c: f64) -> PyResult<Self> {
+        if c == 0.0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "division by zero does not give a stable law",
+            ));
+        }
+        self.__mul__(1.0 / c)
+    }
+
+    fn __neg__(&self) -> PyResult<Self> {
+        self.__mul__(-1.0)
+    }
+
+    /// ``t @ X``, as :meth:`copies`.
+    fn __rmatmul__(&self, t: f64) -> PyResult<Self> {
+        self.copies(t)
     }
 
     fn __repr__(&self) -> String {

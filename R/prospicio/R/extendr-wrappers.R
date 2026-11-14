@@ -4121,9 +4121,15 @@ SizeOfLossDist$variance <- function() .Call(wrap__SizeOfLossDist__variance, self
 
 StableLaw <- new.env(parent = emptyenv())
 
+StableLaw$add <- function(other) .Call(wrap__StableLaw__add, self, other)
+
 StableLaw$alpha <- function() .Call(wrap__StableLaw__alpha, self)
 
 StableLaw$beta <- function() .Call(wrap__StableLaw__beta, self)
+
+StableLaw$copies <- function(t) .Call(wrap__StableLaw__copies, self, t)
+
+StableLaw$from_compound_pareto <- function(frequency, alpha, theta, sev_mean) .Call(wrap__StableLaw__from_compound_pareto, frequency, alpha, theta, sev_mean)
 
 StableLaw$left_tail_constant <- function() .Call(wrap__StableLaw__left_tail_constant, self)
 
@@ -4135,7 +4141,13 @@ StableLaw$mean <- function() .Call(wrap__StableLaw__mean, self)
 
 StableLaw$new <- function(alpha, beta, scale, loc, parameterization) .Call(wrap__StableLaw__new, alpha, beta, scale, loc, parameterization)
 
+StableLaw$prob_above_loc <- function() .Call(wrap__StableLaw__prob_above_loc, self)
+
 StableLaw$scale <- function() .Call(wrap__StableLaw__scale, self)
+
+StableLaw$scale_by <- function(c) .Call(wrap__StableLaw__scale_by, self, c)
+
+StableLaw$shift <- function(b) .Call(wrap__StableLaw__shift, self, b)
 
 StableLaw$tail_constant <- function() .Call(wrap__StableLaw__tail_constant, self)
 

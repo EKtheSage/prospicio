@@ -827,6 +827,11 @@ generators = ["scipy_special.py"]
 sha256 = "9385ad521fe786b8096ab18b85bb4bfe1a69138f571d3a6d631691876892ef3a"
 
 [[file]]
+path = "stable_algebra_aggregate.csv"
+generators = ["aggregate_stable_algebra.py"]
+sha256 = "c349cac4b05baa147a42f98ed5aee2e25af975ad73f01cd2891f919a88eb8a1c"
+
+[[file]]
 path = "stacking_grid.csv"
 generators = ["stacking_grid.py"]
 sha256 = "c8901dbcaf0c921cc9c90b654f1c606d1cea405596bb100e721ee2f42544de8a"

@@ -711,6 +711,20 @@ step) match `aggregate` 2.1.0 (`validation/reference/chf_split_aggregate.csv`,
 of the reference: its crop is a tie between two windows a bucket apart
 that round-off decides.
 
+**Built (#780, fourth PR, the stable algebra).** `Stable::add` (laws with
+a common `α`: `γ^α` adds, `β` is the `γ^α`-weighted average, locations
+add), `shift`, `scale_by` (any real `c ≠ 0`, with `−(2/π)βγc ln|c|` at
+`α = 1`), `copies(t)` (`t @ X`, `φ^t`), `prob_above_loc` and
+`from_compound_pareto` (the generalized central limit theorem: `γ^α = λ
+θ^α Γ(1 − α) cos(πα/2)`, the compound's mean and right tail), as
+`aggregate`'s `Stable` operators; Python `x + y`, `c * x`, `x + b`, `-x`,
+`x - y`, `x / c`, `t @ x`, `Stable.copies`, `Stable.from_compound_pareto`,
+R `stable_add()`, `stable_scale()`, `stable_copies()`,
+`stable_from_compound_pareto()`. 330 values of 26 results match
+`aggregate` 2.1.0 to `1e-13` (`validation/reference/stable_algebra_aggregate.csv`,
+`validation/scripts/aggregate_stable_algebra.py`), and every operation's
+characteristic function equals the operands' to `1e-13`.
+
 **Proposed for the user's acceptance:**
 
 - (a) *The engine lives in `prospicio-prob`*, not `prospicio-aggregate`,
@@ -745,13 +759,20 @@ that round-off decides.
 - (g) *`|β| < 1` under the tilt is split into its two totally skewed
   halves* (built in #780's third PR; until then it was an error); a fixed
   tilt on a law with no power tail is an error, as in `aggregate`.
+- (l) *The laws are `Distribution`s through the engine*: `invert(law,
+  options)` returns a `ChfDistribution`, which implements `Distribution`
+  (cdf, quantile, draws, moments of the masses), so `Stable`,
+  `NormalInverseGaussian`, `VarianceGamma`, `TemperedStable` and
+  `TweediePower` stay parameter types with closed forms (moments, the
+  characteristic and cumulant generating functions) and no `Distribution`
+  of their own, which would have to choose a grid; this closes #780.
 - (k) *A tie in the crop is broken toward the lower window*: a symmetric
   law leaves two windows a bucket apart with gaps equal to round-off, and
   the first minimum is kept, as `numpy.argmin` keeps it, so the two
   engines can place such a law a bucket apart.
-- (h) *`Stable` is not yet a `Distribution`*: it holds the parameters and
-  the closed forms the engine needs, and its distribution is `invert`'s
-  grid; #780 makes it one, with the stable algebra (sums, scaling).
+- (h) *`Stable` holds the parameters and the closed forms*; its
+  distribution is `invert`'s grid (item (l)), and its algebra (sums,
+  scaling) is built in #780's fourth PR.
 - (i) *A stable law takes its own scale and location*:
   `ChfLaw::affine` refuses a stable base, since the S1 location of `cX +
   b` is not `c δ₁ + b` at `α = 1`.

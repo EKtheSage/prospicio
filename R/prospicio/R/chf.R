@@ -163,9 +163,11 @@ S7::method(print, chf_distribution) <- function(x, ...) {
 #' @param scale Positive.
 #' @param loc The location, read in `parameterization`.
 #' @param parameterization `"S1"` (Nolan's S1, scipy's default) or `"S0"`.
+#' @param ptr Internal.
 #' @returns A `stable_distribution` with properties `alpha`, `beta`,
 #'   `scale`, `loc` (S1), `loc0` (S0), `tail_constant`,
-#'   `left_tail_constant` and `mean`.
+#'   `left_tail_constant`, `mean` and `prob_above_loc`; [stable_add()] and
+#'   its siblings give its algebra.
 #' @export
 #' @examples
 #' s <- stable_distribution(1.5, 1, 2)
@@ -186,14 +188,68 @@ stable_distribution <- S7::new_class(
                                      getter = function(self) self@ptr$tail_constant()),
     left_tail_constant = S7::new_property(S7::class_double,
                                           getter = function(self) self@ptr$left_tail_constant()),
-    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean())
+    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean()),
+    prob_above_loc = S7::new_property(S7::class_double,
+                                      getter = function(self) self@ptr$prob_above_loc())
   ),
-  constructor = function(alpha, beta, scale = 1, loc = 0, parameterization = "S1") {
-    ptr <- rust_result(StableLaw$new(as.double(alpha), as.double(beta), as.double(scale),
-                                     as.double(loc), as.character(parameterization)))
+  constructor = function(alpha, beta, scale = 1, loc = 0, parameterization = "S1", ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(StableLaw$new(as.double(alpha), as.double(beta), as.double(scale),
+                                       as.double(loc), as.character(parameterization)))
+    }
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
+
+#' Algebra of alpha-stable laws
+#'
+#' `stable_add(x, y)` is the law of `X + Y` for independent stable laws with
+#' a common `alpha` (`gamma^alpha` adds, `beta` is the `gamma^alpha`
+#' weighted average, the locations add) or of `X + y` for a number `y`;
+#' `stable_scale(x, c)` the law of `c X` for a real `c != 0` (the log term
+#' at `alpha = 1` included); `stable_copies(x, t)` the sum of `t > 0`
+#' independent copies; `stable_from_compound_pareto()` the stable limit of
+#' a Poisson compound with a Pareto tail (the generalized central limit
+#' theorem: the compound's mean and right tail). Each operand is an
+#' independent copy, so `stable_add(x, x)` is `stable_copies(x, 2)`, not
+#' `stable_scale(x, 2)`.
+#'
+#' @param x,y [stable_distribution()]s, or `y` a number.
+#' @param c A real number, not 0.
+#' @param t A positive number of copies, not necessarily whole.
+#' @param frequency The expected claim count.
+#' @param alpha The severity's tail index, strictly between 1 and 2.
+#' @param theta The severity's tail scale, `P(X > x) ~ (theta / x)^alpha`.
+#' @param sev_mean The severity's mean.
+#' @returns A [stable_distribution()].
+#' @export
+#' @examples
+#' x <- stable_distribution(1.5, 0.4, 2, 1)
+#' y <- stable_distribution(1.5, -0.8, 1, -3)
+#' stable_add(x, y)@beta
+#' stable_copies(x, 2.7)@scale
+#' stable_from_compound_pareto(50, 1.6, 3, 12)@loc
+stable_add <- function(x, y) {
+  ptr <- if (is.numeric(y)) x@ptr$shift(as.double(y)) else rust_result(x@ptr$add(y@ptr))
+  stable_from_ptr(ptr)
+}
+
+#' @rdname stable_add
+#' @export
+stable_scale <- function(x, c) stable_from_ptr(rust_result(x@ptr$scale_by(as.double(c))))
+
+#' @rdname stable_add
+#' @export
+stable_copies <- function(x, t) stable_from_ptr(rust_result(x@ptr$copies(as.double(t))))
+
+#' @rdname stable_add
+#' @export
+stable_from_compound_pareto <- function(frequency, alpha, theta, sev_mean) {
+  stable_from_ptr(rust_result(StableLaw$from_compound_pareto(
+    as.double(frequency), as.double(alpha), as.double(theta), as.double(sev_mean))))
+}
+
+stable_from_ptr <- function(ptr) stable_distribution(ptr = ptr)
 
 S7::method(print, stable_distribution) <- function(x, ...) {
   cat(sprintf("<stable_distribution> alpha = %s, beta = %s, scale = %s, loc = %s (S1)\n",
