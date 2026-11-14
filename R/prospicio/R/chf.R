@@ -44,10 +44,11 @@ NULL
 #' @param bucket_sizing_p The mass the window covers when it is sized from
 #'   the tails.
 #' @param tilt `TRUE`: a law with one power tail (a [stable_distribution()]
-#'   with `beta` 1 or -1) at the automatic tilt, every other law untilted.
-#'   `FALSE`: never tilt (a heavy tail wraps onto the window). A number
-#'   `tau >= 0`: exactly `tau` e-folds of damping across the window, for a
-#'   law with one power tail only.
+#'   with `beta` 1 or -1) at the automatic tilt, a stable law with two split
+#'   into its halves and each tilted, every other law untilted. `FALSE`:
+#'   never tilt (a heavy tail wraps onto the window). A number `tau >= 0`:
+#'   exactly `tau` e-folds of damping across the window, for a stable law
+#'   only.
 #' @param ptr Internal.
 #' @returns A `chf_distribution`, which inherits from [distribution], with
 #'   properties `xs`, `masses`, `step`, `x_min` and `report` (a list:
@@ -151,7 +152,8 @@ S7::method(print, chf_distribution) <- function(x, ...) {
 #'
 #' The parameters of `S(alpha, beta, scale, loc)` for [invert_chf()]: with
 #' `beta` 1 or -1 its one power tail is inverted along a tilted line, with
-#' `abs(beta) < 1` with `tilt = FALSE` only. At `alpha = 2` it is the normal
+#' `abs(beta) < 1` it is split into its two totally skewed halves, each
+#' inverted along its own tilted line and convolved. At `alpha = 2` it is the normal
 #' with variance `2 scale^2`. For `alpha < 2`,
 #' `P(X > x) ~ tail_constant * x^-alpha` and
 #' `P(X < -x) ~ left_tail_constant * x^-alpha`.

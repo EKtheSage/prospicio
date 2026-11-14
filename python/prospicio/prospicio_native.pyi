@@ -31709,7 +31709,8 @@ class Stable:
     An alpha-stable law ``S(alpha, beta, scale, loc)`` for ``invert_chf``.
     
     With ``beta`` 1 or -1 its one power tail is inverted along a tilted
-    line; with ``|beta| < 1`` it is inverted with ``tilt=False`` only. At
+    line; with ``|beta| < 1`` it is split into its two totally skewed
+    halves, each inverted along its own tilted line and convolved. At
     ``alpha = 2`` it is the normal with variance ``2 scale ** 2``.
     
     Parameters
@@ -39118,10 +39119,11 @@ def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: flo
     bucket_sizing_p : float, default 0.99999
         The mass the window covers when it is sized from the tails.
     tilt : bool or float, default True
-        ``True``: a law with one power tail at the automatic tilt, every
+        ``True``: a law with one power tail at the automatic tilt, a
+        stable law with two split into its halves and each tilted, every
         other law untilted. ``False``: never tilt (a heavy tail wraps). A
         number ``tau >= 0``: exactly ``tau`` e-folds of damping across the
-        window, for a law with one power tail only.
+        window, for a stable law only.
     
     Returns
     -------
@@ -39132,8 +39134,7 @@ def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: flo
     ValueError
         If an option is out of range, ``x_min`` is given without ``step``,
         your own function is given without both, or it returns a value that
-        is not finite; a number ``tilt`` on a law with no power tail; the
-        automatic tilt on a stable law with ``|beta| < 1``.
+        is not finite; a number ``tilt`` on a law with no power tail.
     
     Examples
     --------

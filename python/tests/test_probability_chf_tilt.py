@@ -63,8 +63,9 @@ def test_tilt_options():
     assert math.isnan(invert_chf(Gamma(2.0, 1.0), log2=10).edge_error)
     with pytest.raises(ValueError, match="power tail"):
         invert_chf(Gamma(2.0, 1.0), log2=10, tilt=4.0)
-    with pytest.raises(ValueError, match="#780"):
-        invert_chf(Stable(1.5, 0.5), log2=10)
+    # Two power tails: split, each half tilted toward its light side.
+    split = invert_chf(Stable(1.5, 0.5), log2=10)
+    assert split.tilt[0] > 0 and split.tilt[1] > 0
     with pytest.raises(TypeError):
         invert_chf(s, tilt="yes")
 

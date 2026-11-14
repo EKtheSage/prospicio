@@ -148,6 +148,11 @@ generators = ["aggregate_chf_levy.py"]
 sha256 = "75f9cb835b9c530f2405567fe9ed15e7c933e2fbd64aeb3feb569f062c3ff030"
 
 [[file]]
+path = "chf_split_aggregate.csv"
+generators = ["aggregate_chf_split.py"]
+sha256 = "a925bae9cad84ada41800c8f18949d3abeb7da56cf674f539bcdb6ec67b9eacb"
+
+[[file]]
 path = "chf_tilt_aggregate.csv"
 generators = ["aggregate_chf_tilt.py"]
 sha256 = "3ddb353979137207bb13f14bd3f78b2eb4d23a64c2ff57428b47cc1ae5b4cf09"

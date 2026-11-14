@@ -45,6 +45,7 @@ stopifnot(auto@report$tilt_right > 0, off@report$tilt_right == 0,
 stopifnot(invert_chf(s, log2 = 12, tilt = 8)@report$tilt_right == 8)
 stopifnot(is.nan(invert_chf(gamma_distribution(2, 1), log2 = 10)@report$edge_error))
 expect_error_like(invert_chf(gamma_distribution(2, 1), log2 = 10, tilt = 4), "power tail")
-expect_error_like(invert_chf(stable_distribution(1.5, 0.5), log2 = 10), "#780")
+split <- invert_chf(stable_distribution(1.5, 0.5), log2 = 10)
+stopifnot(split@report$tilt_left > 0, split@report$tilt_right > 0)
 expect_error_like(invert_chf(s, tilt = "yes"), "tilt must be")
 expect_error_like(stable_distribution(2.5, 0), "alpha")

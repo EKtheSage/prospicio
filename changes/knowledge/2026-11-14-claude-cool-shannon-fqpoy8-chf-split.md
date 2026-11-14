@@ -1,0 +1,1 @@
+* **Update**: [aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt](/findings/chf-inversion-aggregate.md), from #780's third PR (branch claude/cool-shannon-fqpoy8-chf-split): the two-sided stable split matched to 1e-10, and a symmetric law's crop, a tie between two windows that round-off decides.

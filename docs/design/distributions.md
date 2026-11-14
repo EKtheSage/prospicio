@@ -690,6 +690,27 @@ dispersion)` or with `cv`. Ten grids from `p = −3` to `p = 5` match
 `validation/scripts/aggregate_chf_tweedie.py`, 2,720 values) at the first
 PR's tolerances, the `1 < p < 2` grids to the bit of the compound form's.
 
+**Built (#780, third PR, the two-sided stable split).** A stable law
+with `|β| < 1` under the tilt is split as `aggregate` splits it
+(`_two_sided_setup`, `_two_sided_masses`): `Stable::halves` gives `X₊ ~
+S(α, 1, γ₊, δ₁)` and `X₋ ~ S(α, −1, γ₋, 0)`, `γ± = γ((1 ± β)/2)^(1/α)`;
+each half is inverted on `2n` buckets tilted toward its light side (the
+plus half with the bucket factor, the reflected minus half without, so it
+is applied once), a normal of variance `σ²` moved from the wide half to
+the narrow one when the narrow half's truncation is above round-off, the
+two convolved linearly by FFT on `4n` points and cropped to the `n`
+buckets, within the range where every entry is complete, that leave equal
+mass below and above, the mass below added to the first bucket. The step
+is capped at `min(γ/10, πγ/(104 ln 2)^(1/α))`; the report's tilt is the
+pair `(τ₋, τ₊)` and its edge error the larger of the one-sided model on
+each side of the whole law and the mass left out. Ten grids (`α` 0.8 to
+1.8, `β` −0.9 to 0.99, a scale and location, S0, a fixed tilt and a given
+step) match `aggregate` 2.1.0 (`validation/reference/chf_split_aggregate.csv`,
+`validation/scripts/aggregate_chf_split.py`, 2,718 values), the masses to
+`1e-10` and the edge error to `1e-7` relative. A symmetric law is left out
+of the reference: its crop is a tie between two windows a bucket apart
+that round-off decides.
+
 **Proposed for the user's acceptance:**
 
 - (a) *The engine lives in `prospicio-prob`*, not `prospicio-aggregate`,
@@ -721,10 +742,13 @@ PR's tolerances, the `1 < p < 2` grids to the bit of the compound form's.
   `recommended_grid` and the pricing methods on the object (the masses go
   to the pricing functions through `to_grid`), and an Excel function (the
   Excel lane's, if wanted).
-- (g) *`|β| < 1` under the automatic tilt is an error*, pointing to
-  `Tilt::Off` and #780: `aggregate` splits such a law into its two
-  totally skewed halves, tilts each and convolves them, which is #780's;
-  a fixed tilt on a law with no power tail is an error, as in `aggregate`.
+- (g) *`|β| < 1` under the tilt is split into its two totally skewed
+  halves* (built in #780's third PR; until then it was an error); a fixed
+  tilt on a law with no power tail is an error, as in `aggregate`.
+- (k) *A tie in the crop is broken toward the lower window*: a symmetric
+  law leaves two windows a bucket apart with gaps equal to round-off, and
+  the first minimum is kept, as `numpy.argmin` keeps it, so the two
+  engines can place such a law a bucket apart.
 - (h) *`Stable` is not yet a `Distribution`*: it holds the parameters and
   the closed forms the engine needs, and its distribution is `invert`'s
   grid; #780 makes it one, with the stable algebra (sums, scaling).
