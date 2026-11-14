@@ -111,6 +111,40 @@ impl StableLaw {
     fn mean(&self) -> f64 {
         self.inner.mean()
     }
+
+    fn prob_above_loc(&self) -> f64 {
+        self.inner.prob_above_loc()
+    }
+
+    fn add(&self, other: &StableLaw) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.add(&other.inner).map_err(to_r)?,
+        })
+    }
+
+    fn shift(&self, b: f64) -> Self {
+        Self {
+            inner: self.inner.shift(b),
+        }
+    }
+
+    fn scale_by(&self, c: f64) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.scale_by(c).map_err(to_r)?,
+        })
+    }
+
+    fn copies(&self, t: f64) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.copies(t).map_err(to_r)?,
+        })
+    }
+
+    fn from_compound_pareto(frequency: f64, alpha: f64, theta: f64, sev_mean: f64) -> Result<Self> {
+        Ok(Self {
+            inner: Stable::from_compound_pareto(frequency, alpha, theta, sev_mean).map_err(to_r)?,
+        })
+    }
 }
 
 /// The normal inverse Gaussian law's parameters.

@@ -25,6 +25,9 @@ sources:
   - id: split-test
     resource: ../validation/tests/probability_chf_split.rs
     title: validation/tests/probability_chf_split.rs, chf_split_stable_matches_aggregate, against validation/scripts/aggregate_chf_split.py
+  - id: algebra-test
+    resource: ../validation/tests/probability_stable_algebra.rs
+    title: validation/tests/probability_stable_algebra.rs, stable_algebra_matches_aggregate, against validation/scripts/aggregate_stable_algebra.py
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, characteristic_function.py (AggregateCHF, invert_characteristic_function, window_edges) and utilities.py (round_bucket)
@@ -104,3 +107,10 @@ sources:
   mass below and above, so round-off picks one, and prospicio and
   aggregate picked different ones (x_min -128 against -127.9375); every
   other case's best crop is at least 15% below the next.[^split-test]
+* `aggregate`'s `Stable` algebra is exact in S1: the sum, `c X` (with
+  `-(2/pi) beta gamma c ln|c|` at `alpha = 1`) and `t @ X` each have the
+  operands' characteristic function to 1e-13, and its 330 parameter values
+  of 26 results match prospicio's to 1e-13. `Pr(X > loc)` is `nan` at
+  `alpha = 1` unless `beta = 0`, since `X - loc` is not strictly stable
+  there, and the compound Pareto limit's right tail constant equals
+  `lambda theta^alpha` exactly by the reflection formula.[^algebra-test]

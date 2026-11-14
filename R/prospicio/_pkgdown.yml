@@ -42,6 +42,7 @@ reference:
       - ogive
       - invert_chf
       - normal_inverse_gaussian_distribution
+      - stable_add
       - stable_distribution
       - tempered_stable_distribution
       - tweedie_power_distribution

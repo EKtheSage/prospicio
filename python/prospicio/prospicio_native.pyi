@@ -31713,6 +31713,11 @@ class Stable:
     halves, each inverted along its own tilted line and convolved. At
     ``alpha = 2`` it is the normal with variance ``2 scale ** 2``.
     
+    Laws with a common ``alpha`` add (``x + y``), and ``c * x``, ``x + b``,
+    ``-x`` and ``t @ x`` (``t`` independent copies) are stable too; each
+    operand is an independent copy, so ``x + x`` is ``2 @ x``, not
+    ``2 * x``.
+    
     Parameters
     ----------
     alpha : float
@@ -31738,8 +31743,30 @@ class Stable:
     >>> round(s.tail_constant, 6), round(s.loc0, 12)
     (1.128379, -2.0)
     """
+    def __add__(self, other: object, /) -> Stable:
+        """
+        ``X + Y`` for an independent stable ``Y`` with the same ``alpha``,
+        or ``X + b`` for a number.
+        """
+    def __mul__(self, c: object, /) -> Stable:
+        """
+        ``c * X`` for a real ``c != 0``.
+        """
+    def __neg__(self, /) -> Stable: ...
     def __new__(cls, /, alpha: float, beta: float, scale: float = 1.0, loc: float = 0.0, parameterization: str = "S1") -> Stable: ...
+    def __radd__(self, other: object, /) -> Stable: ...
     def __repr__(self, /) -> str: ...
+    def __rmatmul__(self, t: object, /) -> Stable:
+        """
+        ``t @ X``, as :meth:`copies`.
+        """
+    def __rmul__(self, c: object, /) -> Stable: ...
+    def __rsub__(self, other: object, /) -> Stable: ...
+    def __sub__(self, other: object, /) -> Stable:
+        """
+        ``X - Y`` (an independent copy) or ``X - b``.
+        """
+    def __truediv__(self, c: object, /) -> Stable: ...
     @property
     def alpha(self, /) -> float:
         """
@@ -31749,6 +31776,50 @@ class Stable:
     def beta(self, /) -> float:
         """
         The skewness.
+        """
+    def copies(self, /, t: float) -> Stable:
+        """
+        The sum of ``t > 0`` independent copies, ``t @ X``: scale
+        ``t ** (1 / alpha) * scale``, location ``t * loc``.
+        
+        Parameters
+        ----------
+        t : float
+        
+        Returns
+        -------
+        Stable
+        """
+    @staticmethod
+    def from_compound_pareto(frequency: float, alpha: float, theta: float, sev_mean: float) -> Stable:
+        """
+        The stable limit of a Poisson compound with a Pareto tail (the
+        generalized central limit theorem): ``S(alpha, 1, gamma, frequency *
+        sev_mean)`` with ``gamma ** alpha = frequency * theta ** alpha *
+        Gamma(1 - alpha) * cos(pi alpha / 2)``, the compound's mean and
+        right tail.
+        
+        Parameters
+        ----------
+        frequency : float
+            The expected claim count.
+        alpha : float
+            The severity's tail index, strictly between 1 and 2.
+        theta : float
+            The severity's tail scale, ``P(X > x) ~ (theta / x) ** alpha``.
+        sev_mean : float
+            The severity's mean.
+        
+        Returns
+        -------
+        Stable
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Stable
+        >>> s = Stable.from_compound_pareto(50.0, 1.6, 3.0, 12.0)
+        >>> s.loc, round(s.tail_constant / (50 * 3.0 ** 1.6), 12)
+        (600.0, 1.0)
         """
     @property
     def left_tail_constant(self, /) -> float:
@@ -31769,6 +31840,12 @@ class Stable:
     def mean(self, /) -> float:
         """
         The mean: ``loc`` for ``alpha > 1``, else infinite or ``nan``.
+        """
+    @property
+    def prob_above_loc(self, /) -> float:
+        """
+        ``P(X > loc)`` in closed form; ``nan`` at ``alpha = 1`` unless
+        ``beta = 0``.
         """
     @property
     def scale(self, /) -> float:

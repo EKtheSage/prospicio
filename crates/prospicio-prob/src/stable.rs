@@ -309,6 +309,131 @@ impl Stable {
         Some((plus, minus))
     }
 
+    /// The law of the sum of independent `self` and `other`, which share
+    /// `α` (Nolan 2020, Prop. 1.3): `γ^α` adds, `β` is the `γ^α`-weighted
+    /// average and the locations add.
+    pub fn add(&self, other: &Self) -> Result<Self> {
+        if other.alpha != self.alpha {
+            return Err(Error::Data(format!(
+                "only stable laws with a common alpha add to a stable law, got {} and {}",
+                self.alpha, other.alpha
+            )));
+        }
+        let a = self.alpha;
+        let (w1, w2) = (self.scale.powf(a), other.scale.powf(a));
+        let beta = ((self.beta * w1 + other.beta * w2) / (w1 + w2)).clamp(-1.0, 1.0);
+        Ok(Self {
+            alpha: a,
+            beta: if a == 2.0 { 0.0 } else { beta },
+            scale: (w1 + w2).powf(1.0 / a),
+            loc: self.loc + other.loc,
+        })
+    }
+
+    /// `X + b`: the location shifted.
+    pub fn shift(&self, b: f64) -> Self {
+        Self {
+            loc: self.loc + b,
+            ..*self
+        }
+    }
+
+    /// `c X` for a real `c ≠ 0` (Nolan 2020, Prop. 1.4): skewness
+    /// `sign(c) β`, scale `|c| γ`, location `c δ₁`, less
+    /// `(2/π) β γ c ln|c|` at `α = 1`.
+    pub fn scale_by(&self, c: f64) -> Result<Self> {
+        if c == 0.0 || !c.is_finite() {
+            return Err(Error::InvalidParameter {
+                name: "c",
+                value: c,
+                reason: "must be finite and not 0: scaling by 0 gives a point mass",
+            });
+        }
+        let mut loc = c * self.loc;
+        if self.alpha == 1.0 {
+            loc -= 2.0 / PI * self.beta * self.scale * c * c.abs().ln();
+        }
+        Ok(Self {
+            alpha: self.alpha,
+            beta: c.signum() * self.beta,
+            scale: c.abs() * self.scale,
+            loc,
+        })
+    }
+
+    /// `t @ X`, the sum of `t > 0` independent copies (`t` need not be a
+    /// whole number): the characteristic function `φ^t`, so scale
+    /// `t^(1/α) γ`, location `t δ₁` and the same `β`, at every `α`.
+    pub fn copies(&self, t: f64) -> Result<Self> {
+        if !(t.is_finite() && t > 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "t",
+                value: t,
+                reason: "must be finite and positive",
+            });
+        }
+        Ok(Self {
+            scale: t.powf(1.0 / self.alpha) * self.scale,
+            loc: t * self.loc,
+            ..*self
+        })
+    }
+
+    /// `P(X > δ₁) = 1/2 + arctan(β tan(πα/2)) / (πα)` for `α ≠ 1`; 1/2 at
+    /// `α = 2` and at `α = 1`, `β = 0`; NaN at `α = 1` otherwise, where
+    /// `X − δ₁` is not strictly stable.
+    pub fn prob_above_loc(&self) -> f64 {
+        let (a, b) = (self.alpha, self.beta);
+        if a == 2.0 {
+            0.5
+        } else if a == 1.0 {
+            if b == 0.0 { 0.5 } else { f64::NAN }
+        } else {
+            0.5 + (b * (PI * a / 2.0).tan()).atan() / (PI * a)
+        }
+    }
+
+    /// The stable limit of a Poisson compound with a Pareto tail (the
+    /// generalized central limit theorem, Feller 1971, ch. XVII): with
+    /// expected count `λ`, severity tail `P(X > x) = θ^α x^(−α)(1 + o(1))`,
+    /// `1 < α < 2`, and severity mean `m`, `S(α, 1, γ, λ m; 1)` with
+    /// `γ^α = λ θ^α Γ(1 − α) cos(πα/2)`: the compound's mean and right
+    /// tail exactly.
+    pub fn from_compound_pareto(
+        frequency: f64,
+        alpha: f64,
+        theta: f64,
+        sev_mean: f64,
+    ) -> Result<Self> {
+        if !(alpha > 1.0 && alpha < 2.0) {
+            return Err(Error::InvalidParameter {
+                name: "alpha",
+                value: alpha,
+                reason: "the limit theorem form needs a tail index strictly between 1 and 2",
+            });
+        }
+        for (name, x) in [("frequency", frequency), ("theta", theta)] {
+            if !(x.is_finite() && x > 0.0) {
+                return Err(Error::InvalidParameter {
+                    name,
+                    value: x,
+                    reason: "must be finite and positive",
+                });
+            }
+        }
+        // Γ(1 − α) < 0 and cos(πα/2) < 0 on (1, 2): Γ by reflection.
+        let gamma_1ma = PI / ((PI * (1.0 - alpha)).sin() * ln_gamma(alpha).exp());
+        let g = (frequency * theta.powf(alpha) * gamma_1ma * (PI * alpha / 2.0).cos())
+            .powf(1.0 / alpha);
+        Self::new(
+            alpha,
+            1.0,
+            g,
+            frequency * sev_mean,
+            StableParameterization::S1,
+        )
+    }
+
     /// The law of `−X`: `β` and the location negated.
     pub fn reflected(&self) -> Self {
         Self {
@@ -466,5 +591,50 @@ mod tests {
         let x: f64 = 1e6;
         let lead = st.tail_constant() * x.powf(-0.7);
         assert!((st.tail_mass_above(x).unwrap() / lead - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn the_algebra_matches_the_characteristic_function() {
+        let x = Stable::new(1.5, 0.4, 2.0, 1.0, StableParameterization::S1).unwrap();
+        let y = Stable::new(1.5, -0.8, 1.0, -3.0, StableParameterization::S1).unwrap();
+        let z = x.add(&y).unwrap();
+        for t in [-2.0, -0.3, 0.7, 1.9] {
+            let lhs = z.chf_real(t);
+            let rhs = x.chf_real(t) * y.chf_real(t);
+            assert!((lhs - rhs).norm() < 1e-14, "sum {t}");
+            // c X: phi_X(c t), for both signs and at alpha = 1.
+            for st in [
+                x,
+                Stable::new(1.0, 0.6, 1.7, 0.5, StableParameterization::S1).unwrap(),
+            ] {
+                for c in [2.5, -0.4] {
+                    let lhs = st.scale_by(c).unwrap().chf_real(t);
+                    assert!((lhs - st.chf_real(c * t)).norm() < 1e-13, "scale {c} {t}");
+                }
+                let lhs = st.copies(2.7).unwrap().chf_real(t);
+                assert!(
+                    (lhs - st.chf_real(t).powf(2.7)).norm() < 1e-13,
+                    "copies {t}"
+                );
+            }
+        }
+        assert!(
+            x.add(&Stable::new(1.2, 0.0, 1.0, 0.0, StableParameterization::S1).unwrap())
+                .is_err()
+        );
+        assert!(x.scale_by(0.0).is_err() && x.copies(-1.0).is_err());
+        // Pr(X > delta_1) = 1 - 1/alpha for beta = 1, 1 < alpha < 2.
+        let one = Stable::new(1.5, 1.0, 1.0, 0.0, StableParameterization::S1).unwrap();
+        assert!((one.prob_above_loc() - (1.0 - 1.0 / 1.5)).abs() < 1e-15);
+    }
+
+    #[test]
+    fn the_compound_pareto_limit_has_the_compound_tail() {
+        // The right tail constant 2 C_alpha gamma^alpha equals lambda theta^alpha.
+        let (lam, a, th) = (50.0, 1.6, 3.0);
+        let st = Stable::from_compound_pareto(lam, a, th, 12.0).unwrap();
+        assert!((st.tail_constant() / (lam * th.powf(a)) - 1.0).abs() < 1e-12);
+        assert_eq!(st.loc(), 600.0);
+        assert!(Stable::from_compound_pareto(lam, 0.9, th, 1.0).is_err());
     }
 }
