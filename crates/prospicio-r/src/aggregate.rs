@@ -1452,6 +1452,62 @@ fn aggregate_elt_severity_moments(
         .to_vec())
 }
 
+fn elt_bucketing(name: &str) -> Result<prospicio_aggregate::EltBucketing> {
+    match name {
+        "nearest" => Ok(prospicio_aggregate::EltBucketing::Nearest),
+        "means_linear" => Ok(prospicio_aggregate::EltBucketing::MeansLinear),
+        other => Err(Error::Other(format!(
+            "bucketing must be \"nearest\" or \"means_linear\", got \"{other}\""
+        ))),
+    }
+}
+
+fn elt_grid_list(r: &prospicio_aggregate::EltGridReport) -> List {
+    let rule = match r.bucketing {
+        prospicio_aggregate::EltBucketing::Nearest => "nearest",
+        prospicio_aggregate::EltBucketing::MeansLinear => "means_linear",
+    };
+    list!(
+        bucketing = rule,
+        rate_above = r.rate_above,
+        severity_mean = r.severity_mean,
+        grid_mean = r.grid_mean
+    )
+}
+
+/// An event loss table's severity on a grid (`list(severity, report)`) and,
+/// with `annual`, the annual total by FFT (`list(annual, severity_report)`).
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn aggregate_elt_grid(
+    rate: &[f64],
+    mean: &[f64],
+    sd_independent: &[f64],
+    sd_correlated: &[f64],
+    exposure: &[f64],
+    step: f64,
+    points: f64,
+    bucketing: &str,
+    annual: bool,
+) -> Result<List> {
+    let t = elt(rate, mean, sd_independent, sd_correlated, exposure)?;
+    let points = whole(points, "points")? as usize;
+    let rule = elt_bucketing(bucketing)?;
+    if annual {
+        let (g, report, sev) = t.aggregate_grid(step, points, rule).map_err(to_r)?;
+        Ok(list!(
+            annual = Grid::with_report(g, compound_list(&report)),
+            severity_report = elt_grid_list(&sev)
+        ))
+    } else {
+        let (g, report) = t.severity_grid(step, points, rule).map_err(to_r)?;
+        Ok(list!(
+            severity = Grid::wrap(g),
+            report = elt_grid_list(&report)
+        ))
+    }
+}
+
 /// Simulated years from an event loss table: `list(events, ids)`, with
 /// `ids` a list per year of each loss's event row, from 1.
 #[extendr]
@@ -1756,6 +1812,7 @@ extendr_module! {
     fn aggregate_elt_values;
     fn aggregate_elt_units;
     fn aggregate_elt_severity_moments;
+    fn aggregate_elt_grid;
     fn aggregate_elt_simulate;
 }
 

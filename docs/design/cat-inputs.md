@@ -238,6 +238,47 @@ event are an error*, never averaged; (d) *simulated years carry no unit
 split*: the rolled table simulates as any `EventLossTable`, and splitting
 each simulated event loss among units needs the joint model of (a).
 
+### An event loss table on a grid (#781)
+
+`aggregate` 2.1.0 lowers `agg NAME elt [...]` to a compound Poisson: the
+year's events a Poisson count with mean `Λ = Σ rate`, one event's loss the
+mixture of the rows' losses by `rate / Λ`, bucketed on the FFT grid.
+`EventLossTable::count()` is that Poisson, `severity_grid(step, points,
+bucketing)` the severity on `0, step, …, (points − 1) step` with an
+`EltGridReport` (`rate_above`, the table's and the grid's severity mean),
+and `aggregate_grid(step, points, bucketing)` the annual total by `fft`
+with the severity on the same points. The severity goes to any grid
+engine: `fft`, `panjer`, `Tower::on_grid` for a tower's gross, ceded and
+net annual losses. Python `EventLossTable.count()`, `severity_grid()` and
+`aggregate_grid()` (the report a dict); R `elt_severity_grid()` and
+`elt_aggregate_grid()`.
+
+Decisions, proposed for the user's acceptance:
+
+(a) *Two bucketing rules, aggregate's two*. `EltBucketing::Nearest`, the
+default, is `aggregate`'s rule for an ELT6 (a table with secondary
+uncertainty, quantized by `eltq`'s survival method): each row's beta or
+atom bucketed by the nearest node, node `k` taking `((k − ½) h, (k + ½)
+h]`, the mass above the top edge `(n − ½) h` moved onto the top node.
+`EltBucketing::MeansLinear` is its rule for an ELT3, an ELT4 or an ELT6
+under `no2u`: the secondary uncertainty dropped, each mean an atom split
+between its two neighbouring nodes so that the mean is exact
+(`dsev_bucket='linear'`, with `aggregate`'s `1e-12` snap of an atom that
+round-off moved off a node). A table always has standard deviations here,
+so the caller chooses `MeansLinear` for a means-only model, as `no2u` does.
+(b) *The nearest rule is computed exactly*, from each row's beta survival at
+the bucket edges; `eltq` interpolates each row's survival between
+log-spaced nodes, within about `1e-4` relative of it, so the two agree to
+about `1e-8` in a bucket's probability, and prospicio matches SciPy's beta
+exactly. (c) *An atom exactly on a bucket edge is split evenly* between
+its two nodes, as `eltq` does; elsewhere an atom lands whole. (d) *The
+step and the number of points are the caller's*, as for `fft`; `aggregate`'s
+choice of bucket for an ELT (its tail check) is not repeated, and
+`rate_above` says how much of the table the grid cut off. (e) *The annual
+total keeps `fft`'s conventions*: the mass above the grid lumped onto the
+last node (`tail_mass`) and the wrap-around measured
+(`aliasing_error`), where `aggregate` leaves the mass out.
+
 ## Validation
 
 - Each row's beta has the row's mean and standard deviation (unit test).
@@ -291,6 +332,19 @@ each simulated event loss among units needs the joint model of (a).
   the data identify them (unit tests in `hawkes.rs`;
   `validation/tests/aggregate.rs`, `hawkes_fits_match_scipy`; Python and
   R tests).
+
+- An event loss table on a grid: the severity and the annual total of a
+  table of means placed by the linear scatter, with and without an
+  occurrence layer (`1000 xs 500` through `Tower::on_grid`), against
+  `aggregate` 2.1.0 to `1e-13`; a table with secondary uncertainty
+  against `aggregate` (through `eltq` 2.15.0) to `1e-7` and against the
+  exact nearest-node buckets of SciPy's beta to `1e-12`, at every node of
+  a 1,024-point grid (`validation/reference/elt_grid_aggregate.csv`,
+  `validation/scripts/aggregate_elt_grid.py`;
+  `validation/tests/aggregate_elt_grid.rs`, Python and R tests on the same
+  rows); an atom on
+  a bucket edge splits evenly, the rate above the top edge is reported,
+  and the mean is kept by the linear rule (unit tests in `cat/grid.rs`).
 
 ## Next
 

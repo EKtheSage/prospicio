@@ -117,6 +117,10 @@ what it is aiming for by v1.0.
     (`kolmogorov_sf`, `tail_moments`, #805).
   - The KS p-value of a fit by the parametric bootstrap, under truncation,
     censoring and policy limits too (`ks_bootstrap`).
+  - A law's distribution on a grid from its characteristic function, with
+    exponential tilting for a power tail (#779), and the laws that need it:
+    alpha-stable with its algebra, normal inverse Gaussian, variance gamma,
+    CGMY tempered stable and Tweedie at any power (#780).
 - **Next:** nothing planned; the Guides lane's issues for this lane
   (#328 to #331, #365 to #369, #373 and #375) are closed.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
@@ -169,7 +173,9 @@ what it is aiming for by v1.0.
     the two lines' losses in an event coupled by a copula; renewal claim
     counts, with any law for the waits between claims, and their eventual
     ruin by Wiener–Hopf; self-exciting (Hawkes) event times for clustered
-    catastrophe years, simulated, fitted and as event sets (#567).
+    catastrophe years, simulated, fitted and as event sets (#567); an
+    event loss table as the severity of a compound Poisson on a grid, for
+    the FFT and towers on the grid (#781).
 - **Next:** open. (Done: deficit and credit carry-forward in profit
   commissions and sliding scales over multi-year terms,
   `Tower::apply_term`, `docs/design/aggregate.md`; the P&L ledger, the

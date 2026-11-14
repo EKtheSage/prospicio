@@ -131,6 +131,7 @@ reference:
       - read_ylt
       - day_hour_times
       - event_loss_table
+      - elt_severity_grid
       - merge_event_sets
       - permute_events
       - filter_events

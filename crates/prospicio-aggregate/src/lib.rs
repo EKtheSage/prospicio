@@ -50,7 +50,7 @@ pub mod trials;
 pub mod ylt;
 
 pub use bivariate::{BivariateReport, Clash, JointGrid, fft_bivariate};
-pub use cat::{EventLossTable, UnitEventLossTables};
+pub use cat::{EltBucketing, EltGridReport, EventLossTable, UnitEventLossTables};
 pub use collective::CollectiveModel;
 pub use compound::{CompoundMethod, CompoundReport};
 pub use deal::{DealColumn, DealColumns, DealScale, Deduction};

@@ -25,6 +25,10 @@ use prospicio_prob::{Beta, Counting, Distribution, Poisson};
 
 use crate::EventSet;
 
+mod grid;
+
+pub use grid::{EltBucketing, EltGridReport};
+
 /// The loss of one event given that it occurs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum EventLoss {
