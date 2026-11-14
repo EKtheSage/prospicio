@@ -69,7 +69,7 @@ use crate::distribution::{Distribution, check_probability};
 use crate::gamma::Gamma;
 use crate::grid::Grid;
 use crate::inverse_gaussian::InverseGaussian;
-use crate::levy::{NormalInverseGaussian, TemperedStable, VarianceGamma};
+use crate::levy::{NormalInverseGaussian, TemperedStable, TweediePower, VarianceGamma};
 use crate::normal::Normal;
 use crate::stable::{Stable, hurwitz_zeta};
 use crate::tweedie::Tweedie;
@@ -151,6 +151,9 @@ pub enum ChfLaw {
     VarianceGamma(VarianceGamma),
     /// The CGMY tempered stable law, light on both sides.
     TemperedStable(TemperedStable),
+    /// The Tweedie law at any power outside `(0, 1]`; its atom at 0 for
+    /// `1 < p < 2` is inverted apart.
+    TweediePower(TweediePower),
     /// `Y = scale · X + shift` with `scale > 0`:
     /// `φ_Y(s) = e^{i shift s} φ_X(scale s)`.
     Affine {
@@ -247,6 +250,7 @@ impl ChfLaw {
             Self::NormalInverseGaussian(d) => s.iter().map(|&s| d.chf(s)).collect(),
             Self::VarianceGamma(d) => s.iter().map(|&s| d.chf(s)).collect(),
             Self::TemperedStable(d) => s.iter().map(|&s| d.chf(s)).collect(),
+            Self::TweediePower(d) => s.iter().map(|&s| d.chf(s)).collect(),
             Self::Affine { base, scale, shift } => {
                 let inner: Vec<Complex64> = s.iter().map(|&s| s * *scale).collect();
                 base.chf(&inner)?
@@ -304,6 +308,7 @@ impl ChfLaw {
             Self::NormalInverseGaussian(d) => d.cgf(s),
             Self::VarianceGamma(d) => d.cgf(s),
             Self::TemperedStable(d) => d.cgf(s),
+            Self::TweediePower(d) => d.cgf(s),
             Self::Affine { base, scale, shift } => base.cgf(scale * s) + shift * s,
             Self::User(_) => 0.0,
         }
@@ -324,6 +329,7 @@ impl ChfLaw {
             Self::NormalInverseGaussian(d) => d.cgf_domain(),
             Self::VarianceGamma(d) => d.cgf_domain(),
             Self::TemperedStable(d) => d.cgf_domain(),
+            Self::TweediePower(d) => d.cgf_domain(),
             Self::Affine { base, scale, .. } => {
                 let (lo, hi) = base.cgf_domain();
                 (lo / scale, hi / scale)
@@ -342,6 +348,7 @@ impl ChfLaw {
             | Self::TemperedStable(_) => (f64::NEG_INFINITY, f64::INFINITY),
             Self::Gamma(_) | Self::InverseGaussian(_) | Self::Tweedie(_) => (0.0, f64::INFINITY),
             Self::Stable(st) => st.support(),
+            Self::TweediePower(d) => d.support(),
             Self::Affine { base, scale, shift } => {
                 let (lo, hi) = base.support();
                 (scale * lo + shift, scale * hi + shift)
@@ -353,6 +360,7 @@ impl ChfLaw {
     pub fn atom(&self) -> Option<(f64, f64)> {
         match self {
             Self::Tweedie(t) => Some((0.0, (-t.lambda()).exp())),
+            Self::TweediePower(d) => d.atom(),
             Self::Affine { base, scale, shift } => base.atom().map(|(x, w)| (scale * x + shift, w)),
             _ => None,
         }
@@ -369,6 +377,7 @@ impl ChfLaw {
             Self::NormalInverseGaussian(d) => d.mean(),
             Self::VarianceGamma(d) => d.mean(),
             Self::TemperedStable(d) => d.mean(),
+            Self::TweediePower(d) => d.mean(),
             Self::Affine { base, scale, shift } => scale * base.mean() + shift,
             Self::User(_) => f64::NAN,
         }
@@ -385,6 +394,7 @@ impl ChfLaw {
             Self::NormalInverseGaussian(d) => d.variance(),
             Self::VarianceGamma(d) => d.variance(),
             Self::TemperedStable(d) => d.variance(),
+            Self::TweediePower(d) => d.variance(),
             Self::Affine { base, scale, .. } => scale * scale * base.variance(),
             Self::User(_) => f64::NAN,
         }

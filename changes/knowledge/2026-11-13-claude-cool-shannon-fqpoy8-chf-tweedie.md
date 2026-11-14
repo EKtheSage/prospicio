@@ -1,0 +1,1 @@
+* **Update**: [aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt](/findings/chf-inversion-aggregate.md), from #780's second PR (branch claude/cool-shannon-fqpoy8-chf-tweedie): the Tweedie at any power in Jorgensen's cumulant form, equal to the compound Poisson-gamma form at 1 < p < 2, and rule A's weak grid for a very skewed inverse Gaussian.

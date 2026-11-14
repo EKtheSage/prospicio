@@ -372,6 +372,155 @@ impl TemperedStable {
     }
 }
 
+/// The Tweedie law at any power `p` outside `(0, 1]`, in its
+/// reproductive form (mean `μ`, dispersion `φ`, variance `φ μ^p`):
+/// Jørgensen's exponential dispersion model with `λ = 1/φ`, canonical
+/// `θ = (α − 1) μ^(1−p)`, `α = (p − 2)/(p − 1)` and
+/// `K(s) = λ(κ(θ + s/λ) − κ(θ))`, `κ(θ) = ((α − 1)/α) (θ/(α − 1))^α`
+/// (`−ln(−θ)` at `p = 2`) (Jørgensen 1997, eq. 4.13).
+///
+/// `p = 0` is the normal, `p < 0` the extreme stable laws on the whole
+/// line, `1 < p < 2` the compound Poisson-gamma with its atom `e^(−λ_N)`
+/// at 0 (as [`crate::Tweedie`]), `p = 2` the gamma, `p = 3` the inverse
+/// Gaussian and `p > 2` the positive extreme stable laws, each tilted by
+/// its own `θ` so that both tails are light. `p = 1` is a lattice law and
+/// `p = ∞` has a power tail; both are refused.
+///
+/// ```
+/// use prospicio_prob::levy::TweediePower;
+///
+/// let d = TweediePower::new(3.0, 10.0, 0.5).unwrap();
+/// assert!((d.variance() - 0.5 * 1000.0).abs() < 1e-9);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TweediePower {
+    power: f64,
+    mean: f64,
+    dispersion: f64,
+}
+
+impl TweediePower {
+    /// The law with power `power` (at most 0, or above 1), mean `mean`
+    /// (positive) and dispersion `dispersion` (positive).
+    pub fn new(power: f64, mean: f64, dispersion: f64) -> Result<Self> {
+        if !power.is_finite() || (power > 0.0 && power <= 1.0) {
+            return Err(Error::InvalidParameter {
+                name: "power",
+                value: power,
+                reason: "must be finite and at most 0 or above 1: p = 1 is a lattice law \
+                         and no Tweedie law has 0 < p < 1",
+            });
+        }
+        positive("mean", mean)?;
+        positive("dispersion", dispersion)?;
+        Ok(Self {
+            power,
+            mean,
+            dispersion,
+        })
+    }
+
+    /// The law with power `power`, mean `mean` and coefficient of
+    /// variation `cv`: dispersion `cv² μ^(2−p)`.
+    pub fn from_mean_cv(power: f64, mean: f64, cv: f64) -> Result<Self> {
+        positive("cv", cv)?;
+        Self::new(power, mean, cv * cv * mean.powf(2.0 - power))
+    }
+
+    /// `p`.
+    pub fn power(&self) -> f64 {
+        self.power
+    }
+
+    /// `μ`.
+    pub fn mean(&self) -> f64 {
+        self.mean
+    }
+
+    /// `φ`.
+    pub fn dispersion(&self) -> f64 {
+        self.dispersion
+    }
+
+    fn alpha(&self) -> f64 {
+        (self.power - 2.0) / (self.power - 1.0)
+    }
+
+    fn theta(&self) -> f64 {
+        (self.alpha() - 1.0) * self.mean.powf(1.0 - self.power)
+    }
+
+    fn kappa(&self, theta: Complex64) -> Complex64 {
+        if self.power == 2.0 {
+            return -(-theta).ln();
+        }
+        let a = self.alpha();
+        (a - 1.0) / a * (theta / (a - 1.0)).powf(a)
+    }
+
+    /// `φ(s) = exp K(is)`, on the closed upper half plane.
+    pub fn chf(&self, s: Complex64) -> Complex64 {
+        let lam = 1.0 / self.dispersion;
+        let theta = Complex64::new(self.theta(), 0.0);
+        let i = Complex64::new(0.0, 1.0);
+        (lam * (self.kappa(theta + i * s / lam) - self.kappa(theta))).exp()
+    }
+
+    /// `K(s)`, NaN outside [`Self::cgf_domain`].
+    pub fn cgf(&self, s: f64) -> f64 {
+        let (lo, hi) = self.cgf_domain();
+        if !(s > lo && s < hi) && s != 0.0 {
+            return f64::NAN;
+        }
+        let lam = 1.0 / self.dispersion;
+        let theta = Complex64::new(self.theta(), 0.0);
+        (lam * (self.kappa(theta + s / lam) - self.kappa(theta))).re
+    }
+
+    /// The whole line at `p = 0`, `(−λθ, ∞)` below it, `(−∞, −λθ)` above.
+    pub fn cgf_domain(&self) -> (f64, f64) {
+        let edge = -self.theta() / self.dispersion;
+        if self.power == 0.0 {
+            (f64::NEG_INFINITY, f64::INFINITY)
+        } else if self.power < 0.0 {
+            (edge, f64::INFINITY)
+        } else {
+            (f64::NEG_INFINITY, edge)
+        }
+    }
+
+    /// The whole line for `p ≤ 0`, `[0, ∞)` above 1.
+    pub fn support(&self) -> (f64, f64) {
+        if self.power <= 0.0 {
+            (f64::NEG_INFINITY, f64::INFINITY)
+        } else {
+            (0.0, f64::INFINITY)
+        }
+    }
+
+    /// `(0, e^(−λ_N))` for `1 < p < 2`, the compound Poisson's mass at 0,
+    /// `λ_N = μ^(2−p) / (φ (2 − p))`.
+    pub fn atom(&self) -> Option<(f64, f64)> {
+        let p = self.power;
+        if p > 1.0 && p < 2.0 {
+            let frequency = self.mean.powf(2.0 - p) / (self.dispersion * (2.0 - p));
+            Some((0.0, (-frequency).exp()))
+        } else {
+            None
+        }
+    }
+
+    /// `φ μ^p`.
+    pub fn variance(&self) -> f64 {
+        self.dispersion * self.mean.powf(self.power)
+    }
+
+    /// `p` times the coefficient of variation.
+    pub fn skewness(&self) -> f64 {
+        self.power * self.variance().sqrt() / self.mean
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,5 +570,34 @@ mod tests {
         assert!(TemperedStable::new(1.0, 1.0, 1.0, 1.0, 0.0).is_err());
         assert!(TemperedStable::new(1.0, 1.0, 1.0, 2.0, 0.0).is_err());
         assert!((gamma_fn(-0.5) + 2.0 * PI.sqrt()).abs() < 1e-13);
+    }
+
+    #[test]
+    fn tweedie_power_meets_the_named_laws() {
+        // p = 0 is the normal with variance phi; p = 2 the gamma with shape
+        // 1/phi; p = 3 the inverse Gaussian with shape 1/phi.
+        let n = TweediePower::new(0.0, 5.0, 4.0).unwrap();
+        assert!((n.cgf(0.3) - (5.0 * 0.3 + 0.5 * 4.0 * 0.09)).abs() < 1e-12);
+        let g = TweediePower::new(2.0, 10.0, 0.25).unwrap();
+        // gamma shape 4, scale 2.5: K(s) = -4 ln(1 - 2.5 s)
+        assert!((g.cgf(0.1) + 4.0 * (1.0f64 - 0.25).ln()).abs() < 1e-12);
+        let ig = TweediePower::new(3.0, 10.0, 0.5).unwrap();
+        // inverse Gaussian mean 10, shape 2
+        let s = 0.005;
+        let k = 2.0 / 10.0 * (1.0 - (1.0 - 2.0 * 100.0 * s / 2.0f64).sqrt());
+        assert!((ig.cgf(s) - k).abs() < 1e-12);
+        for t in [
+            TweediePower::new(-1.0, 3.0, 2.0).unwrap(),
+            TweediePower::new(2.5, 3.0, 0.4).unwrap(),
+            TweediePower::new(1.5, 10.0, 2.0).unwrap(),
+            TweediePower::new(5.0, 2.0, 0.1).unwrap(),
+        ] {
+            check_moments(|s| t.cgf(s), t.mean(), t.variance());
+        }
+        assert!(TweediePower::new(0.5, 1.0, 1.0).is_err());
+        assert!(TweediePower::new(1.0, 1.0, 1.0).is_err());
+        assert!(TweediePower::new(f64::INFINITY, 1.0, 1.0).is_err());
+        let cv = TweediePower::from_mean_cv(2.5, 10.0, 0.3).unwrap();
+        assert!((cv.variance().sqrt() / 10.0 - 0.3).abs() < 1e-12);
     }
 }

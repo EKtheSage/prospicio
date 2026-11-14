@@ -673,6 +673,23 @@ Laplace law and one whose slow decay walks the bucket down, CGMY at `Y`
 `validation/scripts/aggregate_chf_levy.py`, 2,447 values) at the first
 PR's tolerances. Like `Stable`, they are not yet `Distribution`s.
 
+**Built (#780, second PR, the Tweedie at any power).**
+`levy::TweediePower` is Jørgensen's exponential dispersion model in its
+reproductive form (mean `μ`, dispersion `φ`, variance `φ μ^p`) at any `p`
+outside `(0, 1]`: `K(s) = λ(κ(θ + s/λ) − κ(θ))` with `λ = 1/φ`, `θ = (α −
+1) μ^(1−p)`, `α = (p − 2)/(p − 1)` and `κ(θ) = ((α − 1)/α) (θ/(α −
+1))^α`, `−ln(−θ)` at `p = 2` (Jørgensen 1997, eq. 4.13): the normal at
+`p = 0`, the extreme stable laws below it, the compound Poisson-gamma
+with its atom for `1 < p < 2`, the gamma at 2, the inverse Gaussian at 3
+and the positive extreme stable laws above 2, each tilted by its own `θ`
+so both tails are light. `p = 1` (a lattice law) and `p = ∞` (a power
+tail) are refused, as in `aggregate`. Python `TweediePower` (and
+`TweediePower.from_mean_cv`), R `tweedie_power_distribution(power, mean,
+dispersion)` or with `cv`. Ten grids from `p = −3` to `p = 5` match
+`aggregate` 2.1.0 (`validation/reference/chf_tweedie_aggregate.csv`,
+`validation/scripts/aggregate_chf_tweedie.py`, 2,720 values) at the first
+PR's tolerances, the `1 < p < 2` grids to the bit of the compound form's.
+
 **Proposed for the user's acceptance:**
 
 - (a) *The engine lives in `prospicio-prob`*, not `prospicio-aggregate`,

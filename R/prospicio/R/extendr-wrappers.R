@@ -4525,6 +4525,20 @@ TweedieDist$variance <- function() .Call(wrap__TweedieDist__variance, self)
 #' @export
 `[[.TweedieDist` <- `$.TweedieDist`
 
+TweediePowerLaw <- new.env(parent = emptyenv())
+
+TweediePowerLaw$moments <- function() .Call(wrap__TweediePowerLaw__moments, self)
+
+TweediePowerLaw$new <- function(power, mean, dispersion, cv) .Call(wrap__TweediePowerLaw__new, power, mean, dispersion, cv)
+
+TweediePowerLaw$parameters <- function() .Call(wrap__TweediePowerLaw__parameters, self)
+
+#' @export
+`$.TweediePowerLaw` <- function (self, name) { func <- TweediePowerLaw[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.TweediePowerLaw` <- `$.TweediePowerLaw`
+
 UltimateExhibit <- new.env(parent = emptyenv())
 
 UltimateExhibit$ages <- function() .Call(wrap__UltimateExhibit__ages, self)

@@ -44,6 +44,7 @@ reference:
       - normal_inverse_gaussian_distribution
       - stable_distribution
       - tempered_stable_distribution
+      - tweedie_power_distribution
       - variance_gamma_distribution
       - chf_to_grid
       - sampled

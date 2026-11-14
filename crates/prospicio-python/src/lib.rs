@@ -95,8 +95,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::chf::{
-        PyChfDistribution, PyNormalInverseGaussian, PyStable, PyTemperedStable, PyVarianceGamma,
-        invert_chf,
+        PyChfDistribution, PyNormalInverseGaussian, PyStable, PyTemperedStable, PyTweediePower,
+        PyVarianceGamma, invert_chf,
     };
     #[pymodule_export]
     use super::counts::PyCount;
