@@ -3026,6 +3026,101 @@ impl PyEventLossTable {
         Ok((PyEventSet { inner }, ids))
     }
 
+    /// The year's number of events, a Poisson count with mean ``rate``.
+    ///
+    /// Returns
+    /// -------
+    /// Poisson
+    fn count(&self) -> PyPoisson {
+        PyPoisson {
+            inner: self.inner.count(),
+        }
+    }
+
+    /// One event's loss on the grid ``0, step, ..., (points - 1) * step``,
+    /// the severity of the table's compound Poisson model for ``fft`` and
+    /// ``Tower.on_grid`` with ``count()``.
+    ///
+    /// ``bucketing="nearest"`` is ``aggregate``'s rule for a table with
+    /// secondary uncertainty: each row's loss law bucketed by the nearest
+    /// node, an atom exactly on a bucket edge split evenly, and the mass
+    /// above the top bucket's edge on the top node. ``"means_linear"`` is
+    /// its rule for a table of means alone: the secondary uncertainty is
+    /// dropped and each mean split between its two neighbouring nodes so
+    /// that the mean is kept.
+    ///
+    /// Parameters
+    /// ----------
+    /// step : float
+    /// points : int
+    /// bucketing : {"nearest", "means_linear"}, default "nearest"
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (Grid, dict)
+    ///     The severity and a report: ``bucketing``, ``rate_above`` (the
+    ///     annual rate of events above the grid, moved onto its top node),
+    ///     ``severity_mean`` and ``grid_mean``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventLossTable, fft
+    /// >>> elt = EventLossTable([0.5, 0.25], [100.0, 300.0], [0.0, 0.0], [0.0, 0.0], [400.0, 400.0])
+    /// >>> sev, report = elt.severity_grid(100.0, 64)
+    /// >>> [round(p, 12) for p in sev.probs[:4]]
+    /// [0.0, 0.666666666667, 0.0, 0.333333333333]
+    /// >>> annual, _ = fft(elt.count(), sev, 64)
+    /// >>> round(annual.mean(), 9)
+    /// 125.0
+    #[pyo3(signature = (step, points, bucketing = "nearest"))]
+    fn severity_grid<'py>(
+        &self,
+        py: Python<'py>,
+        step: f64,
+        points: usize,
+        bucketing: &str,
+    ) -> PyResult<(PyGrid, Bound<'py, PyDict>)> {
+        let rule = elt_bucketing(bucketing)?;
+        let (inner, report) = self
+            .inner
+            .severity_grid(step, points, rule)
+            .map_err(to_py)?;
+        Ok((PyGrid { inner }, elt_grid_report(py, &report)?))
+    }
+
+    /// The annual total loss on the grid ``0, step, ..., (points - 1) *
+    /// step``: ``count()`` compounded with ``severity_grid`` by ``fft``.
+    ///
+    /// Parameters
+    /// ----------
+    /// step : float
+    /// points : int
+    /// bucketing : {"nearest", "means_linear"}, default "nearest"
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (Grid, CompoundReport, dict)
+    ///     The annual total, the compound report and the severity's report.
+    #[pyo3(signature = (step, points, bucketing = "nearest"))]
+    fn aggregate_grid<'py>(
+        &self,
+        py: Python<'py>,
+        step: f64,
+        points: usize,
+        bucketing: &str,
+    ) -> PyResult<(PyGrid, PyCompoundReport, Bound<'py, PyDict>)> {
+        let rule = elt_bucketing(bucketing)?;
+        let table = &self.inner;
+        let (inner, report, sev) = py
+            .detach(|| table.aggregate_grid(step, points, rule))
+            .map_err(to_py)?;
+        Ok((
+            PyGrid { inner },
+            PyCompoundReport { inner: report },
+            elt_grid_report(py, &sev)?,
+        ))
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "EventLossTable(events={}, rate={})",
@@ -3033,6 +3128,32 @@ impl PyEventLossTable {
             self.inner.rate()
         )
     }
+}
+
+fn elt_bucketing(name: &str) -> PyResult<prospicio_aggregate::EltBucketing> {
+    match name {
+        "nearest" => Ok(prospicio_aggregate::EltBucketing::Nearest),
+        "means_linear" => Ok(prospicio_aggregate::EltBucketing::MeansLinear),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "bucketing must be \"nearest\" or \"means_linear\", got {other:?}"
+        ))),
+    }
+}
+
+fn elt_grid_report<'py>(
+    py: Python<'py>,
+    r: &prospicio_aggregate::EltGridReport,
+) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    let rule = match r.bucketing {
+        prospicio_aggregate::EltBucketing::Nearest => "nearest",
+        prospicio_aggregate::EltBucketing::MeansLinear => "means_linear",
+    };
+    d.set_item("bucketing", rule)?;
+    d.set_item("rate_above", r.rate_above)?;
+    d.set_item("severity_mean", r.severity_mean)?;
+    d.set_item("grid_mean", r.grid_mean)?;
+    Ok(d)
 }
 
 /// A joint distribution of two losses on a grid, ``P(A = i * step_a, B = j

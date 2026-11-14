@@ -12802,6 +12802,30 @@ class EventLossTable:
     def __len__(self, /) -> int: ...
     def __new__(cls, /, rate: Sequence[float], mean: Sequence[float], sd_independent: Sequence[float], sd_correlated: Sequence[float], exposure: Sequence[float]) -> EventLossTable: ...
     def __repr__(self, /) -> str: ...
+    def aggregate_grid(self, /, step: float, points: int, bucketing: str = "nearest") -> tuple[Grid, CompoundReport, dict]:
+        """
+        The annual total loss on the grid ``0, step, ..., (points - 1) *
+        step``: ``count()`` compounded with ``severity_grid`` by ``fft``.
+        
+        Parameters
+        ----------
+        step : float
+        points : int
+        bucketing : {"nearest", "means_linear"}, default "nearest"
+        
+        Returns
+        -------
+        tuple of (Grid, CompoundReport, dict)
+            The annual total, the compound report and the severity's report.
+        """
+    def count(self, /) -> Poisson:
+        """
+        The year's number of events, a Poisson count with mean ``rate``.
+        
+        Returns
+        -------
+        Poisson
+        """
     def exceedance_frequency(self, /, x: float) -> float:
         """
         The annual frequency of events losing more than ``x``.
@@ -12849,6 +12873,44 @@ class EventLossTable:
     def rate(self, /) -> float:
         """
         The mean number of events a year, the rates' sum.
+        """
+    def severity_grid(self, /, step: float, points: int, bucketing: str = "nearest") -> tuple[Grid, dict]:
+        """
+        One event's loss on the grid ``0, step, ..., (points - 1) * step``,
+        the severity of the table's compound Poisson model for ``fft`` and
+        ``Tower.on_grid`` with ``count()``.
+        
+        ``bucketing="nearest"`` is ``aggregate``'s rule for a table with
+        secondary uncertainty: each row's loss law bucketed by the nearest
+        node, an atom exactly on a bucket edge split evenly, and the mass
+        above the top bucket's edge on the top node. ``"means_linear"`` is
+        its rule for a table of means alone: the secondary uncertainty is
+        dropped and each mean split between its two neighbouring nodes so
+        that the mean is kept.
+        
+        Parameters
+        ----------
+        step : float
+        points : int
+        bucketing : {"nearest", "means_linear"}, default "nearest"
+        
+        Returns
+        -------
+        tuple of (Grid, dict)
+            The severity and a report: ``bucketing``, ``rate_above`` (the
+            annual rate of events above the grid, moved onto its top node),
+            ``severity_mean`` and ``grid_mean``.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventLossTable, fft
+        >>> elt = EventLossTable([0.5, 0.25], [100.0, 300.0], [0.0, 0.0], [0.0, 0.0], [400.0, 400.0])
+        >>> sev, report = elt.severity_grid(100.0, 64)
+        >>> [round(p, 12) for p in sev.probs[:4]]
+        [0.0, 0.666666666667, 0.0, 0.333333333333]
+        >>> annual, _ = fft(elt.count(), sev, 64)
+        >>> round(annual.mean(), 9)
+        125.0
         """
     def severity_moments(self, /) -> list[float]:
         """

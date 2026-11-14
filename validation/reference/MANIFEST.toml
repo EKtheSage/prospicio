@@ -299,6 +299,11 @@ generators = ["r_loo.R"]
 sha256 = "7215261f48bf875fceacfd449a08c5f52514092ddd0514db7ad5630816bc23ce"
 
 [[file]]
+path = "elt_grid_aggregate.csv"
+generators = ["aggregate_elt_grid.py"]
+sha256 = "416eacc236c4f3333c7d1d9890fbe14f8c243767db7a9c2c5f605a66f8a54ff0"
+
+[[file]]
 path = "elt_units_aggregate.csv"
 generators = ["aggregate_elt_units.py"]
 sha256 = "97bfc9b9dac93cf72def2d7febef78126a91d194a3f518c27090027df0edccec"

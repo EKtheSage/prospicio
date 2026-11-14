@@ -1470,6 +1470,63 @@ elt_severity_moments <- function(elt) {
                                              cols$sd_correlated, cols$exposure))
 }
 
+#' An event loss table on a grid
+#'
+#' `elt_severity_grid()` puts one event's loss given that it occurs on the
+#' grid `0, step, ..., (points - 1) * step`: with `poisson_count(elt$rate)`
+#' it is the severity of the table's compound Poisson model, for
+#' [compound_distribution()] and [tower_on_grid()]. `elt_aggregate_grid()`
+#' gives the annual total on the same grid by FFT. Both follow `aggregate`
+#' 2.1.0's `agg NAME elt [...]`.
+#'
+#' `bucketing = "nearest"` is `aggregate`'s rule for a table with secondary
+#' uncertainty: each row's loss law bucketed by the nearest node, an atom
+#' exactly on a bucket edge split evenly, and the mass above the top
+#' bucket's edge moved onto the top node. `"means_linear"` is its rule for
+#' a table of means alone: the secondary uncertainty is dropped and each
+#' mean split between its two neighbouring nodes so that the mean is kept.
+#'
+#' @param elt An [event_loss_table()].
+#' @param step The grid's step.
+#' @param points The grid's number of points.
+#' @param bucketing `"nearest"` or `"means_linear"`.
+#' @returns `elt_severity_grid()`: a list with `severity`, a
+#'   [grid_distribution], and `report`, a list with `bucketing`, `rate_above`
+#'   (the annual rate of events above the grid, moved onto its top node),
+#'   `severity_mean` and `grid_mean`. `elt_aggregate_grid()`: a list with
+#'   `annual`, a [grid_distribution] whose `report` describes the FFT, and
+#'   `severity_report`.
+#' @export
+#' @examples
+#' elt <- event_loss_table(rate = c(0.5, 0.25), mean = c(100, 300),
+#'                         sd_independent = c(0, 0), sd_correlated = c(0, 0),
+#'                         exposure = c(400, 400))
+#' s <- elt_severity_grid(elt, 100, 64)
+#' s$report$rate_above
+#' annual <- compound_distribution(poisson_count(elt$rate), s$severity, 64, method = "fft")
+#' mean(annual)
+#' mean(elt_aggregate_grid(elt, 100, 64)$annual)
+elt_severity_grid <- function(elt, step, points, bucketing = c("nearest", "means_linear")) {
+  bucketing <- match.arg(bucketing)
+  r <- elt_grid_call(elt, step, points, bucketing, FALSE)
+  list(severity = grid_distribution(ptr = r$severity), report = r$report)
+}
+
+#' @rdname elt_severity_grid
+#' @export
+elt_aggregate_grid <- function(elt, step, points, bucketing = c("nearest", "means_linear")) {
+  bucketing <- match.arg(bucketing)
+  r <- elt_grid_call(elt, step, points, bucketing, TRUE)
+  list(annual = grid_distribution(ptr = r$annual), severity_report = r$severity_report)
+}
+
+elt_grid_call <- function(elt, step, points, bucketing, annual) {
+  cols <- elt$columns
+  rust_result(aggregate_elt_grid(cols$rate, cols$mean, cols$sd_independent, cols$sd_correlated,
+                                 cols$exposure, as.double(step), as.double(points), bucketing,
+                                 annual))
+}
+
 #' @rdname event_loss_table
 #' @export
 elt_oep <- function(elt, x) {

@@ -9,6 +9,8 @@ NULL
 
 actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta, power, dispersion) .Call(wrap__actual_vs_expected_rust, periods, y, mu, weights, family_name, theta, power, dispersion)
 
+aggregate_elt_grid <- function(rate, mean, sd_independent, sd_correlated, exposure, step, points, bucketing, annual) .Call(wrap__aggregate_elt_grid, rate, mean, sd_independent, sd_correlated, exposure, step, points, bucketing, annual)
+
 aggregate_elt_severity_moments <- function(rate, mean, sd_independent, sd_correlated, exposure) .Call(wrap__aggregate_elt_severity_moments, rate, mean, sd_independent, sd_correlated, exposure)
 
 aggregate_elt_simulate <- function(rate, mean, sd_independent, sd_correlated, exposure, n_years, seed) .Call(wrap__aggregate_elt_simulate, rate, mean, sd_independent, sd_correlated, exposure, n_years, seed)
