@@ -1752,7 +1752,7 @@ pl.column_dimensions["C"].width = 22
 # (examples/data/cat_book_*.csv), against the numbers the guide
 # docs/guides/cat-2-risk-metrics.md prints.
 ct = wb.create_sheet("Cat")
-ct["A1"] = "prospicio XLL test: year and event loss tables (PRO.CAP.YLT.STATS, PRO.CAP.YLT.OEP, PRO.CAP.ELT.STATS, PRO.CAP.ELT.OEP)"
+ct["A1"] = "prospicio XLL test: year and event loss tables (PRO.CAP.YLT.STATS, PRO.CAP.YLT.OEP, PRO.CAP.ELT.STATS, PRO.CAP.ELT.OEP, PRO.CAP.ELT.AGG)"
 ct["A1"].font = Font(bold=True, size=13)
 ct["A2"] = "Alder Mutual's 2,000 simulated years and its event loss table, as in the guide cat-2-risk-metrics."; ct["A2"].font = note
 for c, h in enumerate(["Year", "Loss", "Time"]):
@@ -1806,6 +1806,15 @@ for i, (name, cell, value, digits) in enumerate(checks):
     ct[f"Q{row}"] = f"={cell}"
     ct[f"R{row}"] = value
     ct[f"S{row}"] = f"=ROUND(Q{row},{digits})=R{row}"
+ct["K32"] = "The event loss table's annual total on a grid"; ct["K32"].font = bold
+ct["K33"] = ArrayFormula("K33:L52", f"=PRO.CAP.ELT.AGG({E},,,{{0.9,0.99}})")
+ct["K54"] = "To the occurrence layer 50 xs 50"; ct["K54"].font = bold
+ct["K55"] = ArrayFormula("K55:L74", f"=PRO.CAP.ELT.AGG({E},50,50,{{0.9,0.99}})")
+row = 27 + len(checks)
+ct[f"P{row}"] = "Grid mean within 1e-4 of the ELT's"
+ct[f"Q{row}"] = "=L33"
+ct[f"R{row}"] = "=L26"
+ct[f"S{row}"] = f"=ABS(Q{row}/R{row}-1)<1E-4"
 ct.column_dimensions["K"].width = 20
 ct.column_dimensions["P"].width = 30
 

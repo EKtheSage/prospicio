@@ -9,12 +9,19 @@
 //!   each quantile rule, the OEP and AEP at amounts, raw and under a
 //!   72-hour clause, the PMLs by return period, and the ELT's rate,
 //!   expected annual loss, OEP and occurrence PMLs;
-//! * the ELT's SD against its simulated years, and the errors.
+//! * the ELT's SD against its simulated years, and the errors;
+//! * `PRO.CAP.ELT.AGG` (decision 66) cell for cell against the core's
+//!   `EventLossTable::aggregate_grid` and `Tower::on_grid` on the tables of
+//!   `validation/tests/aggregate_elt_grid.rs`, which match `aggregate`
+//!   2.1.0 at every node, and sized automatically on Alder's table against
+//!   `PRO.CAP.ELT.STATS`.
 
 use crate::common;
 
-use common::{n, num, t, text, validation};
-use prospicio_aggregate::cat::EventLossTable;
+use common::{fails, n, num, t, text, validation};
+use prospicio_aggregate::cat::{EltBucketing, EventLossTable};
+use prospicio_aggregate::{Layer, Tower};
+use prospicio_prob::Distribution;
 use prospicio_xll::call;
 use prospicio_xll::sheet::{Grid, Value};
 
@@ -458,4 +465,148 @@ fn small_tables_and_errors() {
 
 fn v(x: f64) -> Value {
     Value::Number(x)
+}
+
+/// The table of means of `validation/tests/aggregate_elt_grid.rs` (an
+/// ELT3: rates and means, exposures twice the means) and its table with
+/// secondary uncertainty: rates, means, SDs and exposures as columns.
+fn grid_tables() -> ([Grid; 5], [Grid; 5]) {
+    let rates = [0.5, 0.25, 0.05, 0.01, 0.002];
+    let means = [130.0, 270.5, 1234.5, 2999.9, 7777.7];
+    let exposures = means.map(|m| 2.0 * m);
+    let col = |x: &[f64]| Grid::column(x);
+    (
+        [col(&rates), col(&means), none(), none(), col(&exposures)],
+        [
+            col(&[0.01, 0.05, 0.002, 0.2, 0.0005]),
+            col(&[800.0, 250.0, 1500.0, 40.0, 6000.0]),
+            col(&[200.0, 0.0, 300.0, 30.0, 3000.0]),
+            col(&[100.0, 0.0, 300.0, 10.0, 1000.0]),
+            col(&[2000.0, 500.0, 5000.0, 300.0, 20000.0]),
+        ],
+    )
+}
+
+fn grid_core(cols: &[Grid; 5]) -> EventLossTable {
+    let read = |g: &Grid| -> Vec<f64> {
+        if g.is_blank() {
+            vec![0.0; 5]
+        } else {
+            (0..g.rows).map(|r| num(g.get(r, 0))).collect()
+        }
+    };
+    EventLossTable::new(
+        &read(&cols[0]),
+        &read(&cols[1]),
+        &read(&cols[2]),
+        &read(&cols[3]),
+        &read(&cols[4]),
+    )
+    .unwrap()
+}
+
+/// `PRO.CAP.ELT.AGG` on a table, with a layer, bucketing and grid.
+fn elt_agg(cols: &[Grid; 5], limit: Grid, attachment: Grid, rule: Grid, grid: Option<(f64, f64)>) -> Grid {
+    let mut args = cols.to_vec();
+    args.extend([limit, attachment, Grid::column(&[0.9, 0.99, 0.996]), rule]);
+    if let Some((step, points)) = grid {
+        args.extend([n(step), n(points)]);
+    }
+    call("pro_cap_elt_agg", args)
+}
+
+/// VaR and TVaR at 0.9, 0.99 and 0.996 equal the grid's.
+fn same_tail(out: &Grid, total: &prospicio_prob::Grid) {
+    for (p, label) in [(0.9, "90%"), (0.99, "99%"), (0.996, "99.6%")] {
+        assert_eq!(get(out, &format!("VaR {label}")), total.quantile(p).unwrap());
+        let tvar = total.tvar(p).unwrap();
+        assert!((get(out, &format!("TVaR {label}")) - tvar).abs() < 1e-9 * tvar);
+    }
+}
+
+#[test]
+fn elt_agg_is_the_cores_grid() {
+    let (means, secondary) = grid_tables();
+    let grid = Some((10.0, 1024.0));
+    // Means alone: the linear rule by default, the mean exact.
+    let out = elt_agg(&means, none(), none(), none(), grid);
+    let elt = grid_core(&means);
+    let (total, report, sev) = elt
+        .aggregate_grid(10.0, 1024, EltBucketing::MeansLinear)
+        .unwrap();
+    same_tail(&out, &total);
+    assert_eq!(out.get(15, 0), &Value::from("Bucketing"));
+    assert_eq!(out.get(15, 1), &Value::from("linear"));
+    assert!((get(&out, "Mean") - elt.expected_annual_loss()).abs() < 1e-9);
+    assert_eq!(get(&out, "Grid mean"), total.mean());
+    assert_eq!(get(&out, "Event mean, grid"), sev.grid_mean);
+    assert_eq!(get(&out, "Tail mass"), report.tail_mass);
+    assert_eq!(get(&out, "Aliasing error"), report.aliasing_error);
+    assert_eq!(get(&out, "Points"), 1024.0);
+    // The occurrence layer 1000 xs 500, as `Tower::on_grid` cedes it.
+    let out = elt_agg(&means, n(1000.0), n(500.0), none(), grid);
+    let (sev, _) = elt
+        .severity_grid(10.0, 1024, EltBucketing::MeansLinear)
+        .unwrap();
+    let tower = Tower::new(vec![Layer::xol("1000 xs 500", 1000.0, 500.0).unwrap()]).unwrap();
+    let r = tower.on_grid(&elt.count(), &sev, 1024).unwrap();
+    same_tail(&out, &r.ceded[0]);
+    assert!((get(&out, "Grid mean") - r.ceded[0].mean()).abs() < 1e-9);
+    assert!((get(&out, "Mean") - r.ceded[0].mean()).abs() < 1e-6);
+    // Secondary uncertainty: the nearest rule by default, and by name.
+    let elt = grid_core(&secondary);
+    let (total, _, _) = elt.aggregate_grid(10.0, 1024, EltBucketing::Nearest).unwrap();
+    for rule in [none(), t("Nearest")] {
+        let out = elt_agg(&secondary, none(), none(), rule, grid);
+        same_tail(&out, &total);
+        assert_eq!(get(&out, "Grid mean"), total.mean());
+    }
+    // ...or the means alone, as aggregate's `no2u`.
+    let out = elt_agg(&secondary, none(), none(), t("linear"), grid);
+    let (total, _, _) = elt
+        .aggregate_grid(10.0, 1024, EltBucketing::MeansLinear)
+        .unwrap();
+    same_tail(&out, &total);
+    // A grid too short says how much it cut off.
+    let out = elt_agg(&secondary, none(), none(), none(), Some((10.0, 64.0)));
+    assert!(get(&out, "Rate above the grid") > 0.0);
+}
+
+#[test]
+fn elt_agg_sizes_its_grid_on_alders_table() {
+    let elt = alder_elt();
+    let st = call("pro_cap_elt_stats", elt.to_vec());
+    let out = elt_agg(&elt, none(), none(), none(), None);
+    // The beta of every event under the grid, to about 2^16 buckets of
+    // the largest exposure: its moments within the rounding of the exact.
+    assert_eq!(get(&out, "Rate above the grid"), 0.0);
+    let eal = get(&st, "Expected annual loss");
+    assert!((get(&out, "Mean") / eal - 1.0).abs() < 1e-4);
+    assert!((get(&out, "SD") / get(&st, "SD") - 1.0).abs() < 1e-4);
+    assert!(get(&out, "Tail mass") < 1e-12);
+    assert!(get(&out, "Aliasing error") < 1e-9);
+    // The total's VaR at least the occurrence PML at the same probability.
+    let oep = call(
+        "pro_cap_elt_oep",
+        [elt.to_vec(), vec![Grid::column(&[100.0])]].concat(),
+    );
+    assert!(get(&out, "VaR 99%") >= num(oep.get(1, 2)) - get(&out, "Step"));
+    // To a layer the grid reaches only the layer's top.
+    let layer = elt_agg(&elt, n(50.0), n(50.0), none(), None);
+    assert!(get(&layer, "Step") < get(&out, "Step"));
+    assert!(get(&layer, "Mean") < eal);
+}
+
+#[test]
+fn elt_agg_errors() {
+    let (means, _) = grid_tables();
+    let mut args = means.to_vec();
+    args.extend([none(), none(), none(), t("exact")]);
+    assert!(fails("pro_cap_elt_agg", args).contains("bucketing must be"));
+    let mut args = means.to_vec();
+    args.extend([none(), none(), none(), none(), n(10.0)]);
+    assert!(fails("pro_cap_elt_agg", args).contains("give both step and points"));
+    let mut args = means.to_vec();
+    args.extend([n(-5.0)]);
+    fails("pro_cap_elt_agg", args);
 }

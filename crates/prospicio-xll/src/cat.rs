@@ -1,7 +1,8 @@
 //! Catastrophe model output on a sheet (`docs/design/xll.md`, decision
 //! 44): a year loss table's annual totals and largest occurrences, and an
-//! event loss table's occurrence exceedance curve, over
-//! `prospicio_aggregate::ylt` and `prospicio_aggregate::cat`.
+//! event loss table's occurrence exceedance curve and its annual total on
+//! an FFT grid (decision 66), over `prospicio_aggregate::ylt` and
+//! `prospicio_aggregate::cat`.
 //!
 //! A year loss table is columns of one row per loss: its year, from 1,
 //! and its loss, with optionally its time, the fraction of its year
@@ -14,12 +15,13 @@
 //! `k`-th worst year, with the mean of the `k` worst), as
 //! `prospicio.risk.statistics` reads them.
 
-use prospicio_aggregate::EventSet;
-use prospicio_aggregate::cat::EventLossTable;
+use prospicio_aggregate::cat::{EltBucketing, EventLossTable};
 use prospicio_aggregate::ylt::{Expansion, YearLossTable};
+use prospicio_aggregate::{EventSet, compound_moments, fft, round_bucket};
 use prospicio_prob::statistics::{QuantileMethod, TvarMethod};
+use prospicio_prob::{Distribution, Grid as Lattice};
 
-use crate::aggregate::percent;
+use crate::aggregate::{MAX_POINTS, grid_control, layer, percent};
 use crate::pricing::{Result, numbers};
 use crate::reserving::{count, number, text_option};
 use crate::sheet::{Grid, Value, position};
@@ -486,5 +488,115 @@ pub fn elt_oep(args: &[Grid]) -> Result<Grid> {
             period(f),
         ]);
     }
+    Ok(Grid::from_rows(rows))
+}
+
+/// The `bucketing` argument: `"nearest"` or `"linear"`; if omitted,
+/// `"nearest"` for a table with secondary uncertainty and `"linear"` for
+/// one of means alone, as `aggregate` lowers an ELT6 and an ELT3.
+fn bucketing(g: &Grid, elt: &EventLossTable) -> Result<EltBucketing> {
+    match text_option(g, "bucketing")?.as_deref() {
+        None if elt.standard_deviations().iter().any(|&s| s > 0.0) => Ok(EltBucketing::Nearest),
+        None => Ok(EltBucketing::MeansLinear),
+        Some("nearest") => Ok(EltBucketing::Nearest),
+        Some("linear") => Ok(EltBucketing::MeansLinear),
+        Some(other) => Err(format!(
+            "bucketing must be \"nearest\" or \"linear\", got {other:?}"
+        )),
+    }
+}
+
+/// An event loss table's annual total on an FFT grid, ground up or of an
+/// occurrence layer's losses: `PRO.CAP.ELT.AGG(rates, means,
+/// [sd_independent], [sd_correlated], exposures, [limit], [attachment],
+/// [probabilities], [bucketing], [step], [points])`. The year's events
+/// are a Poisson count with mean `Λ = Σ rate` and one event's loss the
+/// rows' losses mixed by `rate / Λ`, bucketed on the grid
+/// (`EventLossTable::severity_grid`), as `aggregate` lowers `agg NAME elt`.
+/// The rows are the total's mean, SD, CV and skewness (exact for the
+/// bucketed severity), its VaR and TVaR at each probability (0.99, 0.995
+/// and 0.999 if omitted), then how the grid was built: its mean, the
+/// events a year, one event's ground-up mean in the table and on the
+/// grid, the rate of events above the grid, the bucketing, the step, the
+/// points, the tail mass and the aliasing error. Without `step` and
+/// `points` the step puts about 2^16 buckets under the largest exposure
+/// (or the layer's top, if lower), as `aggregate`'s default `log2 = 16`,
+/// and the points reach the total's mean plus 12 SDs.
+pub fn elt_agg(args: &[Grid]) -> Result<Grid> {
+    let e = |e: prospicio_core::Error| e.to_string();
+    let (elt, _, _) = elt(args)?;
+    let layer = layer(&args[5], &args[6])?;
+    let ps = probabilities(&args[7])?;
+    let rule = bucketing(&args[8], &elt)?;
+    let count = elt.count();
+    let image = |g: Lattice| -> Result<Lattice> {
+        match layer {
+            None => Ok(g),
+            Some((l, a)) => g.map(|x| (x - a).clamp(0.0, l)).map(|(g, _)| g).map_err(e),
+        }
+    };
+    let ((severity, report), points) = match grid_control(&args[9], &args[10])? {
+        Some((step, points)) => (elt.severity_grid(step, points, rule).map_err(e)?, points),
+        None => {
+            let top = elt.exposures().iter().copied().fold(0.0, f64::max);
+            let reach = match layer {
+                Some((l, a)) if l.is_finite() => (a + l).min(top),
+                _ => top,
+            };
+            let mut step = round_bucket(reach / 65536.0).map_err(e)?;
+            loop {
+                let n = (reach / step).ceil() as usize + 2;
+                let (sev, report) = elt.severity_grid(step, n, rule).map_err(e)?;
+                let m = compound_moments(&count, &image(sev.clone())?).map_err(e)?;
+                let extent = m.mean + 12.0 * m.variance.sqrt() + reach;
+                let points = ((extent / step).ceil() as usize + 1)
+                    .next_power_of_two()
+                    .max(1 << 10);
+                if points <= MAX_POINTS {
+                    break ((sev, report), points);
+                }
+                step = round_bucket(2.0 * step).map_err(e)?;
+            }
+        }
+    };
+    let severity = image(severity)?;
+    let m = compound_moments(&count, &severity).map_err(e)?;
+    let (total, compound) = fft(&count, &severity, points).map_err(e)?;
+    let mut rows = vec![
+        row("Mean", m.mean),
+        row("SD", m.variance.sqrt()),
+        row("CV", m.cv()),
+        row("Skewness", m.skew()),
+    ];
+    for &p in &ps {
+        rows.push(vec![
+            Value::Text(format!("VaR {}", percent(p))),
+            Value::number(total.quantile(p).map_err(e)?),
+        ]);
+    }
+    for &p in &ps {
+        rows.push(vec![
+            Value::Text(format!("TVaR {}", percent(p))),
+            Value::number(total.tvar(p).map_err(e)?),
+        ]);
+    }
+    rows.extend([
+        row("Grid mean", total.mean()),
+        row("Events a year", elt.rate()),
+        row("Event mean, table", report.severity_mean),
+        row("Event mean, grid", report.grid_mean),
+        row("Rate above the grid", report.rate_above),
+        vec![
+            Value::from("Bucketing"),
+            Value::from(match rule {
+                EltBucketing::Nearest => "nearest",
+                EltBucketing::MeansLinear => "linear",
+            }),
+        ],
+        row("Step", total.step()),
+        row("Points", total.len() as f64),
+        row("Tail mass", compound.tail_mass),
+        row("Aliasing error", compound.aliasing_error),
+    ]);
     Ok(Grid::from_rows(rows))
 }

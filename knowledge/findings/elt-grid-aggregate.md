@@ -10,6 +10,9 @@ sources:
   - id: script
     resource: ../validation/scripts/aggregate_elt_grid.py
     title: validation/scripts/aggregate_elt_grid.py (aggregate 2.1.0 with eltq 2.15.0 and SciPy 1.18.1)
+  - id: xll
+    resource: ../crates/prospicio-xll/tests/cat.rs
+    title: crates/prospicio-xll/tests/cat.rs (PRO.CAP.ELT.AGG on Alder Mutual's table)
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, _loss_table.py (_lower_elt), _severity.py (SeverityElt.quantize), _aggregate_compute.py (discretize)
@@ -41,5 +44,14 @@ sources:
 * `occurrence ceded to 1000 xs 500` on the table of means, on a grid whose
   nodes include the layer's attachment and limit, equals
   `Tower::on_grid`'s ceded annual loss to 1e-13.
+* The nearest rule is not mean-preserving, so a coarse step biases the
+  annual mean down when the largest exposure is far above the typical
+  event: on Alder Mutual's table (`examples/data/cat_book_elt_alder.csv`,
+  largest exposure about 490 times the mean event) 4,096 buckets under
+  the largest exposure left the mean 0.5% low, and 2^16 buckets
+  (`aggregate`'s default `log2 = 16`) bring the mean and SD within 1e-4
+  of the exact compound Poisson ones; `PRO.CAP.ELT.AGG` sizes its grid
+  that way.[^xll]
 
 [^script]: validation/scripts/aggregate_elt_grid.py, run 2026-11-14.
+[^xll]: crates/prospicio-xll/tests/cat.rs, `elt_agg_sizes_its_grid_on_alders_table`.

@@ -46,7 +46,7 @@ fn count(mean: &Range, dispersion: &Range) -> Result<Box<dyn Counting>> {
 }
 
 /// `step` and `points`, both or neither.
-fn grid_control(step: &Range, points: &Range) -> Result<Option<(f64, usize)>> {
+pub(crate) fn grid_control(step: &Range, points: &Range) -> Result<Option<(f64, usize)>> {
     match (step.is_blank(), points.is_blank()) {
         (true, true) => Ok(None),
         (false, false) => {
@@ -67,10 +67,10 @@ fn grid_control(step: &Range, points: &Range) -> Result<Option<(f64, usize)>> {
 }
 
 /// The most points a grid may have: 2^20 (about 8 MB a buffer).
-const MAX_POINTS: usize = 1 << 20;
+pub(crate) const MAX_POINTS: usize = 1 << 20;
 
 /// A per-occurrence layer, `None` for ground up.
-fn layer(limit: &Range, attachment: &Range) -> Result<Option<(f64, f64)>> {
+pub(crate) fn layer(limit: &Range, attachment: &Range) -> Result<Option<(f64, f64)>> {
     if limit.is_blank() && attachment.is_blank() {
         return Ok(None);
     }

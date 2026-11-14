@@ -104,6 +104,7 @@ fn every_function_has_a_group() {
 /// Grouped functions added after the rename of decision 47, so with no old
 /// name in its table.
 const ADDED_AFTER_THE_RENAME: &[&str] = &[
+    "PRO.CAP.ELT.AGG",
     "PRO.RES.CURVE",
     "PRO.RES.DEV.EXHIBIT",
     "PRO.RES.SELECT",

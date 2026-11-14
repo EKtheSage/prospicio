@@ -1763,6 +1763,55 @@ real Excel.
     distribution year by year on the grid) or a simulation of years from
     the grid, and neither exists in the crates today.
 
+66. **An event loss table's annual total on a grid** (#781, whose issue
+    asks for an Excel function "where a worksheet fits"; the core is
+    #921's `EventLossTable::severity_grid`, Aggregate lane).
+    `PRO.CAP.ELT.AGG(rates, means, [sd_independent], [sd_correlated],
+    exposures, [limit], [attachment], [probabilities], [bucketing],
+    [step], [points])` reads the table as `PRO.CAP.ELT.STATS` does and
+    gives the annual total of the compound Poisson that `aggregate` 2.1.0
+    lowers `agg NAME elt` to, ground up or of an occurrence layer's
+    losses, in `PRO.CAP.AGG.STATS`'s layout: mean, SD, CV and skewness
+    (`compound_moments` of the bucketed severity), VaR and TVaR at each
+    probability (the FFT grid's), then the grid mean, the events a year,
+    one event's ground-up mean in the table and on the grid, the rate of
+    events above the grid (`EltGridReport::rate_above`), the bucketing,
+    the step, the points, the tail mass and the aliasing error. The
+    aggregate PML at a return period `T` is the VaR at `1 - 1/T`.
+    - **Bucketing by the table if omitted.** `"nearest"` when some row has
+      a standard deviation, `"linear"` when none has, as `aggregate`
+      lowers an ELT6 and an ELT3; the core's own default is `Nearest`
+      always, and a sheet that leaves the SD columns blank means a table
+      of means. Either may be named.
+    - **The grid sized as `aggregate` sizes it, unless given.** `step`
+      and `points`, both or neither, as the `PRO.CAP.AGG.` functions. If
+      omitted, about 2^16 buckets under the largest exposure (or under
+      the layer's top, if lower), `aggregate`'s default `log2 = 16`, and
+      as many points, a power of two from 1,024, as the total's mean plus
+      12 SDs needs, the step doubled while that passes 2^20. 4,096
+      buckets, as `PRO.CAP.AGG.STATS` takes for a layer, left Alder
+      Mutual's mean 0.5% low: its largest exposure is about 490 times
+      its mean event, and the nearest rule is not mean-preserving at a
+      coarse step.
+    - **A layer on the severity grid.** Each node's loss mapped to
+      `min(max(x - attachment, 0), limit)`, as `PRO.CAP.AGG.STATS`
+      takes a layer; the annual total is then `fft`'s.
+    - **Parity.** `tests/cat.rs`: on the two tables of
+      `validation/tests/aggregate_elt_grid.rs` (which match `aggregate`
+      2.1.0 at every node of a 1,024-point grid), at the same step and
+      points, every VaR equals the core's `aggregate_grid`, and every
+      TVaR and the grid mean equal it to 1e-9 relative, for the table of
+      means (linear by default, its mean the expected annual loss to
+      1e-9), the same table to `1000 xs 500` (against `Tower::on_grid`'s
+      ceded grid) and the table with secondary uncertainty (nearest by
+      default and by name, linear by name); a short grid reports its
+      rate above. Sized automatically on Alder Mutual's table, the mean
+      and SD are within 1e-4 of `PRO.CAP.ELT.STATS`'s exact ones, the
+      99% VaR is at least the 100-year occurrence PML, and a layer's
+      grid is finer. The fake Excel checks a one-event table's mean
+      through the C API, and the test workbook's Cat sheet gives
+      Alder's total ground up and to `50 xs 50`, checking its mean.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
