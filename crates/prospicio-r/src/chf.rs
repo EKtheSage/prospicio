@@ -9,6 +9,7 @@ use prospicio_prob::Distribution;
 use prospicio_prob::chf::{
     ChfDistribution, ChfFn, ChfLaw, ChfOptions, Complex64, Tilt, UserChf, invert,
 };
+use prospicio_prob::levy::{NormalInverseGaussian, TemperedStable, VarianceGamma};
 use prospicio_prob::{Stable, StableParameterization};
 
 use crate::distributions::{Grid, dist_from_robj};
@@ -112,6 +113,96 @@ impl StableLaw {
     }
 }
 
+/// The normal inverse Gaussian law's parameters.
+#[extendr]
+pub(crate) struct NigLaw {
+    inner: NormalInverseGaussian,
+}
+
+#[extendr]
+impl NigLaw {
+    fn new(alpha: f64, beta: f64, delta: f64, mu: f64) -> Result<Self> {
+        Ok(Self {
+            inner: NormalInverseGaussian::new(alpha, beta, delta, mu).map_err(to_r)?,
+        })
+    }
+
+    /// `c(alpha, beta, delta, mu)`.
+    fn parameters(&self) -> Vec<f64> {
+        let d = self.inner;
+        vec![d.alpha(), d.beta(), d.delta(), d.mu()]
+    }
+
+    /// `c(mean, variance, skewness)`.
+    fn moments(&self) -> Vec<f64> {
+        vec![
+            self.inner.mean(),
+            self.inner.variance(),
+            self.inner.skewness(),
+        ]
+    }
+}
+
+/// The variance gamma law's parameters.
+#[extendr]
+pub(crate) struct VarianceGammaLaw {
+    inner: VarianceGamma,
+}
+
+#[extendr]
+impl VarianceGammaLaw {
+    fn new(sigma: f64, nu: f64, theta: f64, mu: f64) -> Result<Self> {
+        Ok(Self {
+            inner: VarianceGamma::new(sigma, nu, theta, mu).map_err(to_r)?,
+        })
+    }
+
+    /// `c(sigma, nu, theta, mu)`.
+    fn parameters(&self) -> Vec<f64> {
+        let d = self.inner;
+        vec![d.sigma(), d.nu(), d.theta(), d.mu()]
+    }
+
+    /// `c(mean, variance, skewness)`.
+    fn moments(&self) -> Vec<f64> {
+        vec![
+            self.inner.mean(),
+            self.inner.variance(),
+            self.inner.skewness(),
+        ]
+    }
+}
+
+/// The CGMY tempered stable law's parameters.
+#[extendr]
+pub(crate) struct TemperedStableLaw {
+    inner: TemperedStable,
+}
+
+#[extendr]
+impl TemperedStableLaw {
+    fn new(c: f64, g: f64, m: f64, y: f64, mu: f64) -> Result<Self> {
+        Ok(Self {
+            inner: TemperedStable::new(c, g, m, y, mu).map_err(to_r)?,
+        })
+    }
+
+    /// `c(C, G, M, Y, mu)`.
+    fn parameters(&self) -> Vec<f64> {
+        let d = self.inner;
+        vec![d.c(), d.g(), d.m(), d.y(), d.mu()]
+    }
+
+    /// `c(mean, variance, skewness)`.
+    fn moments(&self) -> Vec<f64> {
+        vec![
+            self.inner.mean(),
+            self.inner.variance(),
+            self.inner.skewness(),
+        ]
+    }
+}
+
 /// A law's bucket masses from its characteristic function.
 #[extendr]
 pub(crate) struct ChfDist {
@@ -141,6 +232,12 @@ impl ChfDist {
             ChfLaw::Normal(n.inner)
         } else if let Ok(st) = <&StableLaw>::try_from(&law) {
             ChfLaw::Stable(st.inner)
+        } else if let Ok(d) = <&NigLaw>::try_from(&law) {
+            ChfLaw::NormalInverseGaussian(d.inner)
+        } else if let Ok(d) = <&VarianceGammaLaw>::try_from(&law) {
+            ChfLaw::VarianceGamma(d.inner)
+        } else if let Ok(d) = <&TemperedStableLaw>::try_from(&law) {
+            ChfLaw::TemperedStable(d.inner)
         } else if let Ok(f) = Function::try_from(law.clone()) {
             ChfLaw::User(UserChf::new(r_chf(f), "chf", false))
         } else {
@@ -221,4 +318,7 @@ extendr_module! {
     mod chf;
     impl ChfDist;
     impl StableLaw;
+    impl NigLaw;
+    impl VarianceGammaLaw;
+    impl TemperedStableLaw;
 }

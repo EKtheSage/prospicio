@@ -8,6 +8,7 @@ use prospicio_prob::Distribution;
 use prospicio_prob::chf::{
     BUCKET_SIZING_P, ChfDistribution, ChfFn, ChfLaw, ChfOptions, Complex64, Tilt, UserChf, invert,
 };
+use prospicio_prob::levy::{NormalInverseGaussian, TemperedStable, VarianceGamma};
 use prospicio_prob::{Stable, StableParameterization};
 use pyo3::prelude::*;
 
@@ -311,6 +312,313 @@ impl PyStable {
     }
 }
 
+/// The normal inverse Gaussian law ``NIG(alpha, beta, delta, mu)`` for
+/// ``invert_chf`` (Barndorff-Nielsen, 1997).
+///
+/// With ``|beta| < alpha`` and ``gamma = sqrt(alpha**2 - beta**2)``, its
+/// cumulant generating function is
+/// ``mu s + delta (gamma - sqrt(alpha**2 - (beta + s)**2))``. SciPy's
+/// ``norminvgauss(a, b, loc, scale)`` is ``alpha = a / scale``,
+/// ``beta = b / scale``, ``delta = scale``, ``mu = loc``.
+///
+/// Parameters
+/// ----------
+/// alpha : float
+///     Tail heaviness, positive.
+/// beta : float
+///     Skewness, ``|beta| < alpha``.
+/// delta : float
+///     Scale, positive.
+/// mu : float, default 0
+///     Location.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is out of range.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import NormalInverseGaussian, invert_chf
+/// >>> d = invert_chf(NormalInverseGaussian(2.0, 0.5, 1.5, 0.3), log2=12)
+/// >>> round(d.mean(), 6)
+/// 0.687298
+#[pyclass(
+    name = "NormalInverseGaussian",
+    module = "prospicio.distributions",
+    frozen
+)]
+pub(crate) struct PyNormalInverseGaussian {
+    inner: NormalInverseGaussian,
+}
+
+#[pymethods]
+impl PyNormalInverseGaussian {
+    #[new]
+    #[pyo3(signature = (alpha, beta, delta, mu = 0.0))]
+    fn new(alpha: f64, beta: f64, delta: f64, mu: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: NormalInverseGaussian::new(alpha, beta, delta, mu).map_err(to_py)?,
+        })
+    }
+
+    /// ``alpha``.
+    #[getter]
+    fn alpha(&self) -> f64 {
+        self.inner.alpha()
+    }
+
+    /// ``beta``.
+    #[getter]
+    fn beta(&self) -> f64 {
+        self.inner.beta()
+    }
+
+    /// ``delta``.
+    #[getter]
+    fn delta(&self) -> f64 {
+        self.inner.delta()
+    }
+
+    /// ``mu``.
+    #[getter]
+    fn mu(&self) -> f64 {
+        self.inner.mu()
+    }
+
+    /// The mean.
+    #[getter]
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    /// The variance.
+    #[getter]
+    fn variance(&self) -> f64 {
+        self.inner.variance()
+    }
+
+    /// The skewness.
+    #[getter]
+    fn skewness(&self) -> f64 {
+        self.inner.skewness()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "NormalInverseGaussian(alpha={:?}, beta={:?}, delta={:?}, mu={:?})",
+            self.inner.alpha(),
+            self.inner.beta(),
+            self.inner.delta(),
+            self.inner.mu()
+        )
+    }
+}
+
+/// The variance gamma law ``VG(sigma, nu, theta)`` with a location ``mu``
+/// for ``invert_chf`` (Madan, Carr and Chang, 1998).
+///
+/// Its characteristic function is
+/// ``exp(i mu s) (1 - i theta nu s + sigma**2 nu s**2 / 2) ** (-1 / nu)``;
+/// at ``theta = 0``, ``nu = 1`` it is the Laplace law with scale
+/// ``sigma / sqrt(2)``. A large ``nu`` decays slowly in frequency and needs
+/// a small step.
+///
+/// Parameters
+/// ----------
+/// sigma : float
+///     Volatility, positive.
+/// nu : float
+///     Variance rate, positive.
+/// theta : float, default 0
+///     Drift.
+/// mu : float, default 0
+///     Location.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is out of range.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import VarianceGamma
+/// >>> round(VarianceGamma(0.2, 0.5, -0.1).variance, 12)
+/// 0.045
+#[pyclass(name = "VarianceGamma", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyVarianceGamma {
+    inner: VarianceGamma,
+}
+
+#[pymethods]
+impl PyVarianceGamma {
+    #[new]
+    #[pyo3(signature = (sigma, nu, theta = 0.0, mu = 0.0))]
+    fn new(sigma: f64, nu: f64, theta: f64, mu: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: VarianceGamma::new(sigma, nu, theta, mu).map_err(to_py)?,
+        })
+    }
+
+    /// ``sigma``.
+    #[getter]
+    fn sigma(&self) -> f64 {
+        self.inner.sigma()
+    }
+
+    /// ``nu``.
+    #[getter]
+    fn nu(&self) -> f64 {
+        self.inner.nu()
+    }
+
+    /// ``theta``.
+    #[getter]
+    fn theta(&self) -> f64 {
+        self.inner.theta()
+    }
+
+    /// ``mu``.
+    #[getter]
+    fn mu(&self) -> f64 {
+        self.inner.mu()
+    }
+
+    /// The mean.
+    #[getter]
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    /// The variance.
+    #[getter]
+    fn variance(&self) -> f64 {
+        self.inner.variance()
+    }
+
+    /// The skewness.
+    #[getter]
+    fn skewness(&self) -> f64 {
+        self.inner.skewness()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "VarianceGamma(sigma={:?}, nu={:?}, theta={:?}, mu={:?})",
+            self.inner.sigma(),
+            self.inner.nu(),
+            self.inner.theta(),
+            self.inner.mu()
+        )
+    }
+}
+
+/// The CGMY tempered stable law with a location ``mu`` for ``invert_chf``
+/// (Carr, Geman, Madan and Yor, 2002).
+///
+/// Its cumulant generating function is
+/// ``mu s + C Gamma(-Y) ((M - s)**Y - M**Y + (G + s)**Y - G**Y)`` for
+/// ``-G < s < M``.
+///
+/// Parameters
+/// ----------
+/// C : float
+///     Activity, positive.
+/// G : float
+///     Left tempering, positive.
+/// M : float
+///     Right tempering, positive.
+/// Y : float
+///     Index, below 2 and not 0 or 1.
+/// mu : float, default 0
+///     Location.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a parameter is out of range.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import TemperedStable
+/// >>> round(TemperedStable(1.0, 5.0, 10.0, 0.5).mean, 6)
+/// -0.232166
+#[pyclass(name = "TemperedStable", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyTemperedStable {
+    inner: TemperedStable,
+}
+
+#[pymethods]
+impl PyTemperedStable {
+    #[new]
+    #[pyo3(signature = (C, G, M, Y, mu = 0.0))]
+    #[allow(non_snake_case)]
+    fn new(C: f64, G: f64, M: f64, Y: f64, mu: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: TemperedStable::new(C, G, M, Y, mu).map_err(to_py)?,
+        })
+    }
+
+    /// ``C``.
+    #[getter(C)]
+    fn c(&self) -> f64 {
+        self.inner.c()
+    }
+
+    /// ``G``.
+    #[getter(G)]
+    fn g(&self) -> f64 {
+        self.inner.g()
+    }
+
+    /// ``M``.
+    #[getter(M)]
+    fn m(&self) -> f64 {
+        self.inner.m()
+    }
+
+    /// ``Y``.
+    #[getter(Y)]
+    fn y(&self) -> f64 {
+        self.inner.y()
+    }
+
+    /// ``mu``.
+    #[getter]
+    fn mu(&self) -> f64 {
+        self.inner.mu()
+    }
+
+    /// The mean.
+    #[getter]
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    /// The variance.
+    #[getter]
+    fn variance(&self) -> f64 {
+        self.inner.variance()
+    }
+
+    /// The skewness.
+    #[getter]
+    fn skewness(&self) -> f64 {
+        self.inner.skewness()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TemperedStable(C={:?}, G={:?}, M={:?}, Y={:?}, mu={:?})",
+            self.inner.c(),
+            self.inner.g(),
+            self.inner.m(),
+            self.inner.y(),
+            self.inner.mu()
+        )
+    }
+}
+
 /// A Python callable of a list of frequencies returning their complex
 /// values. A Python exception becomes the error message.
 fn py_chf(f: Py<PyAny>) -> Arc<ChfFn> {
@@ -362,7 +670,7 @@ fn py_chf(f: Py<PyAny>) -> Arc<ChfFn> {
 ///
 /// Parameters
 /// ----------
-/// law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, Stable or callable
+/// law : Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, Stable, NormalInverseGaussian, VarianceGamma, TemperedStable or callable
 ///     A law with a closed-form characteristic function (an ``Affine`` of
 ///     one of them), or your own characteristic function: a callable of a
 ///     list of real frequencies ``t`` returning ``E exp(i t X)`` at each,
@@ -430,14 +738,21 @@ pub(crate) fn invert_chf(
         ChfLaw::Normal(n.inner)
     } else if let Ok(st) = law.extract::<PyRef<'_, PyStable>>() {
         ChfLaw::Stable(st.inner)
+    } else if let Ok(d) = law.extract::<PyRef<'_, PyNormalInverseGaussian>>() {
+        ChfLaw::NormalInverseGaussian(d.inner)
+    } else if let Ok(d) = law.extract::<PyRef<'_, PyVarianceGamma>>() {
+        ChfLaw::VarianceGamma(d.inner)
+    } else if let Ok(d) = law.extract::<PyRef<'_, PyTemperedStable>>() {
+        ChfLaw::TemperedStable(d.inner)
     } else if let Ok(d) = extract_dist(law) {
         ChfLaw::from_dist(&d).map_err(to_py)?
     } else if law.is_callable() {
         ChfLaw::User(UserChf::new(py_chf(law.clone().unbind()), "chf", false))
     } else {
         return Err(pyo3::exceptions::PyTypeError::new_err(
-            "law must be a Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine \
-             or Stable, or a callable characteristic function",
+            "law must be a Normal, Gamma, Exponential, InverseGaussian, Tweedie, Affine, \
+             Stable, NormalInverseGaussian, VarianceGamma or TemperedStable, or a callable \
+             characteristic function",
         ));
     };
     let options = ChfOptions {

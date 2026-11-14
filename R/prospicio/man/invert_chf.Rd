@@ -20,7 +20,8 @@ chf_distribution(ptr)
 \item{law}{A \code{\link[=normal_distribution]{normal_distribution()}}, \code{\link[=gamma_distribution]{gamma_distribution()}},
 \code{\link[=exponential_distribution]{exponential_distribution()}}, \code{\link[=inverse_gaussian_distribution]{inverse_gaussian_distribution()}},
 \code{\link[=tweedie]{tweedie()}}, an \code{\link[=affine_distribution]{affine_distribution()}} of one of them, a
-\code{\link[=stable_distribution]{stable_distribution()}},
+\code{\link[=stable_distribution]{stable_distribution()}}, \code{\link[=normal_inverse_gaussian_distribution]{normal_inverse_gaussian_distribution()}},
+\code{\link[=variance_gamma_distribution]{variance_gamma_distribution()}}, \code{\link[=tempered_stable_distribution]{tempered_stable_distribution()}},
 or your own characteristic function: an R function of a numeric vector
 of frequencies \code{t} returning \verb{E exp(i t X)} at each, as a complex
 vector. Your own function needs \code{step} and \code{x_min}.}

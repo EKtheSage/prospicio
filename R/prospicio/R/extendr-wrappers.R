@@ -3323,6 +3323,20 @@ NegativeBinomial$variance <- function() .Call(wrap__NegativeBinomial__variance, 
 #' @export
 `[[.NegativeBinomial` <- `$.NegativeBinomial`
 
+NigLaw <- new.env(parent = emptyenv())
+
+NigLaw$moments <- function() .Call(wrap__NigLaw__moments, self)
+
+NigLaw$new <- function(alpha, beta, delta, mu) .Call(wrap__NigLaw__new, alpha, beta, delta, mu)
+
+NigLaw$parameters <- function() .Call(wrap__NigLaw__parameters, self)
+
+#' @export
+`$.NigLaw` <- function (self, name) { func <- NigLaw[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.NigLaw` <- `$.NigLaw`
+
 NormalDist <- new.env(parent = emptyenv())
 
 NormalDist$cdf <- function(x) .Call(wrap__NormalDist__cdf, self, x)
@@ -4209,6 +4223,20 @@ Tabulated$x <- function() .Call(wrap__Tabulated__x, self)
 #' @export
 `[[.Tabulated` <- `$.Tabulated`
 
+TemperedStableLaw <- new.env(parent = emptyenv())
+
+TemperedStableLaw$moments <- function() .Call(wrap__TemperedStableLaw__moments, self)
+
+TemperedStableLaw$new <- function(c, g, m, y, mu) .Call(wrap__TemperedStableLaw__new, c, g, m, y, mu)
+
+TemperedStableLaw$parameters <- function() .Call(wrap__TemperedStableLaw__parameters, self)
+
+#' @export
+`$.TemperedStableLaw` <- function (self, name) { func <- TemperedStableLaw[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.TemperedStableLaw` <- `$.TemperedStableLaw`
+
 Timeline <- new.env(parent = emptyenv())
 
 Timeline$aggregate_pattern <- function() .Call(wrap__Timeline__aggregate_pattern, self)
@@ -4530,6 +4558,20 @@ UltimateExhibit$with_method <- function(name, ultimate) .Call(wrap__UltimateExhi
 
 #' @export
 `[[.UltimateExhibit` <- `$.UltimateExhibit`
+
+VarianceGammaLaw <- new.env(parent = emptyenv())
+
+VarianceGammaLaw$moments <- function() .Call(wrap__VarianceGammaLaw__moments, self)
+
+VarianceGammaLaw$new <- function(sigma, nu, theta, mu) .Call(wrap__VarianceGammaLaw__new, sigma, nu, theta, mu)
+
+VarianceGammaLaw$parameters <- function() .Call(wrap__VarianceGammaLaw__parameters, self)
+
+#' @export
+`$.VarianceGammaLaw` <- function (self, name) { func <- VarianceGammaLaw[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.VarianceGammaLaw` <- `$.VarianceGammaLaw`
 
 WeibullDist <- new.env(parent = emptyenv())
 

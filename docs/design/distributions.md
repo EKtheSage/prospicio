@@ -654,6 +654,25 @@ given bucket and `|β| < 1` untilted) match `aggregate` 2.1.0
 `1e-11` (round-off amplified by up to `e^14.6` at the heavy end) and the
 tilts and edge errors to `1e-9`.
 
+**Built (#780, first PR, the laws of Lévy processes).**
+`prospicio_prob::levy` holds three laws light on both sides, each with
+its characteristic function on the closed upper half plane, its cumulant
+generating function and domain and its first three moments, as
+`ChfLaw` variants: the normal inverse Gaussian `NIG(α, β, δ, μ)`
+(Barndorff-Nielsen 1997; SciPy's `norminvgauss(a, b, loc, scale)` is `α =
+a / scale`, `β = b / scale`), the variance gamma `VG(σ, ν, θ)` with a
+location (Madan, Carr and Chang 1998; the Laplace law at `θ = 0`, `ν =
+1`) and the CGMY tempered stable law with a location (Carr, Geman, Madan
+and Yor 2002; `Y < 2`, not 0 or 1, `Γ(−Y)` by reflection). Python
+`NormalInverseGaussian`, `VarianceGamma`, `TemperedStable`; R
+`normal_inverse_gaussian_distribution()`, `variance_gamma_distribution()`,
+`tempered_stable_distribution()`. Nine grids (two NIG, a VG with the
+Laplace law and one whose slow decay walks the bucket down, CGMY at `Y`
+0.5, 1.5, −0.5 and 1.8) match `aggregate` 2.1.0
+(`validation/reference/chf_levy_aggregate.csv`,
+`validation/scripts/aggregate_chf_levy.py`, 2,447 values) at the first
+PR's tolerances. Like `Stable`, they are not yet `Distribution`s.
+
 **Proposed for the user's acceptance:**
 
 - (a) *The engine lives in `prospicio-prob`*, not `prospicio-aggregate`,

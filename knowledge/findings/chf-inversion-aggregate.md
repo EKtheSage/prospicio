@@ -16,6 +16,9 @@ sources:
   - id: tilt-test
     resource: ../validation/tests/probability_chf_tilt.rs
     title: validation/tests/probability_chf_tilt.rs, chf_tilted_stable_matches_aggregate, against validation/scripts/aggregate_chf_tilt.py
+  - id: levy-test
+    resource: ../validation/tests/probability_chf_levy.rs
+    title: validation/tests/probability_chf_levy.rs, chf_levy_laws_match_aggregate, against validation/scripts/aggregate_chf_levy.py
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, characteristic_function.py (AggregateCHF, invert_characteristic_function, window_edges) and utilities.py (round_bucket)
@@ -68,3 +71,12 @@ sources:
   agree to 1e-9 relative. Untilted, the same law's modelled edge error is
   11.9 (a relative error of order one near the right edge), tilted
   1.1e-5.
+* The normal inverse Gaussian, variance gamma and CGMY tempered stable
+  laws (aggregate's `norminvgauss`, `variancegamma`, `temperedstable`) go
+  through the same untilted rule A unchanged, since each has a finite
+  cumulant generating function on both sides; nine grids match at the
+  untilted tolerances (masses to 1e-13). A variance gamma with `nu = 4`
+  decays as `t^(-1/2)`, so rule A's bucket walks down to 1/512 and still
+  ends with a truncation of 0.038 and 3.6% of the mass outside; a CGMY
+  with `Y = -0.5` keeps a truncation of 0.025 (its density has a
+  singularity at 0).[^levy-test]

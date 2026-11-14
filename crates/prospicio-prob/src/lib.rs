@@ -33,6 +33,7 @@ pub mod inverse_gaussian;
 #[cfg(feature = "arrow")]
 pub mod ipc;
 pub mod large_losses;
+pub mod levy;
 pub mod local_pareto;
 pub mod loglogistic;
 pub mod lognormal;
