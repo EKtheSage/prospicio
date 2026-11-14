@@ -129,8 +129,10 @@ current rate level and trend (#179), then the indication itself.
     to date is 0, as the demo's `IF(SUM(...)=0, 0, ...)` gives. A row
     with both values missing adds nothing (a blank row of the sheet does
     the same in that formula); one missing value, a negative premium or a
-    value that is not finite is an error. The demo's own inputs are not
-    in the repository, so its four printed values are not yet a test.
+    value that is not finite is an error. On the demo's own inputs
+    (`validation/data/ap_pricing_demo_inputs.json`, a copy of its
+    `inputs.json`) its four printed values (rows 1, 2, 3 and 14) are
+    reproduced to `5e-13` in Rust, Python and R.
 
 ## Out of scope
 
