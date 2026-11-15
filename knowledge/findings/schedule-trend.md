@@ -5,7 +5,7 @@ description: Each accident year trends from y + 0.5 (losses) or y (premium) to i
 tags: [ratemaking, trend, pricing, excel, parity]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-11-10T12:00:00Z }
-verified: { by: process:ci, at: 2026-11-10T12:00:00Z }
+verified: { by: process:ci, at: 2026-11-14T12:00:00Z }
 sources:
   - id: code
     resource: ../crates/prospicio-pricing/src/ratemaking.rs
@@ -57,6 +57,8 @@ premium factors agree (1.060710030249) while 2012's do not.
 ## The running loss ratio
 
 `cumulative_loss_ratio` is the demo's `CUM_WEIGHTED_LR`, `0` while the
-premium to date is `0`. The demo's printed values (0.61, 0.594705882353,
-0.638120662040, ..., 0.637034303676 in row 14) need its `inputs.json`,
-which is not in the repository, so they are not yet a test.
+premium to date is `0`. On the demo's `inputs.json`
+(`validation/data/ap_pricing_demo_inputs.json`) the demo's printed values
+(0.61, 0.594705882353, 0.638120662040, ..., 0.637034303676 in row 14) are
+reproduced to `5e-13` in Rust, Python and R
+(`validation/tests/pricing_ap_cumulative_lr.rs`).
