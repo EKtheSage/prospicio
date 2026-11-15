@@ -87,10 +87,10 @@ end of each period or `Δ/2` for the middle (open decision 3).
 
 * When `1 - c_s(a_w)` is at most `1e-12` (an origin fully developed in that
   simulation, or a pattern that has passed 1 by pseudo factors below 1),
-  the whole reserve is paid at the next age.
+  the whole unpaid is paid at the next age.
 * A falling step of the pattern pays nothing and the rises are rescaled to
   sum to 1, so every share is in `[0, 1]` and each draw's present value is
-  its reserve times a weighted average of its payment times' discount
+  its unpaid times a weighted average of its payment times' discount
   factors (decision 17, which replaces keeping negative increments). A
   negative reserve discounts to a negative present value. The code does
   not go through `PaymentPattern::new`.
@@ -384,7 +384,7 @@ against the English text), currency, the LRC.
    `Error::InvalidSetting`.
 10. **Shares that cannot be used** (decided by the build). Built: when
     `1 - c(a_w)` is at most 1e-12 (or not a number), or any share is not
-    finite, the whole reserve is paid at the next pattern age; when the
+    finite, the whole unpaid is paid at the next pattern age; when the
     pattern has no later age, one development period on (the step between
     the last two ages, or the only age itself). Negative reserves are kept;
     negative shares were kept too until decision 17.
@@ -394,8 +394,9 @@ against the English text), currency, the LRC.
     that 0. In the cost of capital, `BE(0) = 0` gives a risk adjustment of
     0 when `K_0` is 0 and an error otherwise.
 12. **Each origin's discount factor** (decided by the build). Built:
-    `discount_factors` is mean PV over mean reserve per component, and 1
-    where the mean reserve is exactly 0 (an origin with nothing to pay).
+    `discount_factors` is mean PV over mean unpaid per component (mean
+    reserve on the paid basis), and 1 where the mean unpaid is exactly 0
+    (an origin with nothing to pay).
 13. **The unsupported fits and the trait** (decided by the build). Built:
     `Discountable` is sealed (its cash flows are internal); analytic
     `MackFit` and `HierarchicalBfFit` implement it and return
@@ -432,7 +433,7 @@ against the English text), currency, the LRC.
     undiscounted. Built: the shares are the rises of the pattern's running
     maximum after `a_w`, over their sum (falling steps pay nothing), for
     each simulation's pattern and for a stated paid pattern alike; the
-    whole reserve is paid at the next age when `1 - c_s(a_w)` or that sum
+    whole unpaid is paid at the next age when `1 - c_s(a_w)` or that sum
     is at most 1e-12 or the pattern is not finite. Every share is then in
     `[0, 1]` and the unit present values on RAA lie between the first and
     the last payment time's factors (0.79 to 0.99 for the Mack bootstrap,

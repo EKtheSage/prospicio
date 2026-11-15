@@ -145,7 +145,7 @@ use crate::triangle::Label;
 use sealed::{CashFlows, Component, How, Pattern};
 
 /// The share of the ultimate still to develop at or below which an
-/// origin's whole reserve is paid at its next age.
+/// origin's whole unpaid is paid at its next age.
 const FULLY_DEVELOPED: f64 = 1e-12;
 
 /// Annual effective spot rates by maturity in years: linear in the rate
@@ -374,7 +374,8 @@ pub struct SegmentRiskAdjustment {
     pub result: RiskAdjustmentResult,
 }
 
-/// A fit's reserves discounted simulation by simulation
+/// A fit's unpaid claims (its reserves, plus the case reserves on the
+/// incurred basis) discounted simulation by simulation
 /// ([`discounted_reserves`]).
 #[derive(Debug, Clone)]
 pub struct DiscountedReserves {
@@ -414,8 +415,10 @@ pub struct DiscountedReserves {
 /// internal.
 pub trait Discountable: sealed::Sealed {}
 
-/// Each simulation of `fit`'s reserves discounted from the valuation date
-/// along its payment timing (see the [module docs](self)).
+/// Each simulation of `fit`'s unpaid claims (its reserves, plus each
+/// origin's case reserve under [`PaymentBasis::Incurred`]) discounted from
+/// the valuation date along its payment timing (see the
+/// [module docs](self)).
 ///
 /// Fails for a fit with no pattern per simulation or no simulations
 /// ([`Error::NotSupported`]), for a `Compartmental` fit under
@@ -2180,6 +2183,8 @@ mod tests {
             .collect();
         let n = latest.len();
         assert_eq!(n, fits.reserves.n_components());
+        // The latest incurred the incurred basis reads is the fit's own.
+        assert_eq!(latest, crate::UltimateDraws::latest_values(&fits));
         // Segment A's case reserves are a tenth of its latest, B's a half.
         let latest_paid: Vec<f64> = latest
             .iter()
