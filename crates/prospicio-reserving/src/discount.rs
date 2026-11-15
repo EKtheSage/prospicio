@@ -1131,15 +1131,26 @@ fn discount(
     let mut provenance = unpaid.provenance().clone();
     provenance.parameters.retain(|(k, _)| k != "output");
     let provenance = provenance
-        .param("output", "discounted reserves")
-        .param("timing", format!("{timing:?}"))
+        .param("output", "discounted unpaid")
         .param(
-            "basis",
-            match basis {
-                PaymentBasis::Paid => "paid",
-                PaymentBasis::Incurred { .. } => "incurred",
-            },
-        );
+            "curve",
+            format!(
+                "{:?} {:?}",
+                discounting.curve.maturities(),
+                discounting.curve.rates()
+            ),
+        )
+        .param("timing", format!("{timing:?}"));
+    let provenance = match basis {
+        PaymentBasis::Paid => provenance.param("basis", "paid"),
+        PaymentBasis::Incurred {
+            paid_pattern,
+            latest_paid,
+        } => provenance
+            .param("basis", "incurred")
+            .param("paid pattern", format!("{paid_pattern:?}"))
+            .param("latest paid", format!("{latest_paid:?}")),
+    };
     let discounted = PredictiveDistribution::from_draws(
         unpaid.dims().to_vec(),
         unpaid.components().to_vec(),
@@ -1892,7 +1903,7 @@ mod tests {
         }
     }
 
-    /// Each draw's present value is its reserve times a weighted average of
+    /// Each draw's present value is its unpaid times a weighted average of
     /// its payment times' discount factors, so its unit value lies between
     /// the factors of the first and the last payment time, even where a
     /// bootstrap pattern goes past 1 and comes back just after an origin's

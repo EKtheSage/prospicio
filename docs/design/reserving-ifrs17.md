@@ -257,11 +257,11 @@ the ODP and Mack bootstraps, `BayesOdp`, `BayesBf`, `BayesBfNormalised`,
 return `Error::NotSupported` with the reason (no pattern per simulation; no
 simulations) (decision 13).
 
-Python: `fit.discounted(rate=0.03 | curve=..., timing="mid")` returning
+Python: `fit.discounted(rate=0.03 | curve=..., timing="mid", basis="paid" | basis="incurred" with paid_pattern=, latest_paid=)` returning
 `DiscountedReserves` with `unpaid`, `discounted`, `best_estimate`,
 `runoff`, and `risk_adjustment(method="confidence", p=0.75)` (and
 `"tvar"`, `"cost_of_capital"` with `rate`, `capital`, `charge`).
-R: `discounted_reserves(fit, rate =, curve =, timing =)` and
+R: `discounted_reserves(fit, rate =, curve =, timing =, basis =, paid_pattern =, latest_paid =)` and
 `risk_adjustment(d, method =, ...)`.
 
 ## Crates touched

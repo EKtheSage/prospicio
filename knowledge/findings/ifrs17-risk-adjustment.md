@@ -38,7 +38,7 @@ sources:
   total from 0.05 to 1.92 times the undiscounted, which corrupts the tail
   the risk adjustment is read from. The shares are therefore the rises of
   the pattern's running maximum over their sum: each in `[0, 1]`, so each
-  draw's present value is its reserve times a weighted average of its
+  draw's present value is its unpaid times a weighted average of its
   payment times' factors (decision 17; a unit test checks the bound on
   2,000 ODP and Mack bootstrap simulations of RAA).[^note][^code]
 * **An incurred fit discounts the whole unpaid.** A fit on incurred claims
