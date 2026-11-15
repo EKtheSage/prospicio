@@ -1,6 +1,6 @@
 # Design note: discounted reserves and an IFRS 17 risk adjustment
 
-Status: **Accepted** (2026-11-14; issue #553, which the user took up on 2026-11-14, lifting its P4 parking). The user decided open decisions 1 to 4 on 2026-11-14 as recommended: (1a) spreading by each simulation's pattern, with `Compartmental`'s paid cells; (2a) both capital charges, end of year by default; (3a) mid-period payments by default; (4b) a stated basis. Decisions 5 to 8 are built as recommended unless the user decides otherwise. **PR 1 is built** (Rust, branch `claude/ifrs17-reserves`, 2026-11-14): `prospicio_reserving::discount`, with the decisions the build made recorded as open decisions 9 to 19, built as described there. PR 2 (Python and R) is next. Lane: Reserving (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on: `time-value.md` (Aggregate lane, read only: decisions 3, 4, 7 and 37(a))
+Status: **Accepted** (2026-11-14; issue #553, which the user took up on 2026-11-14, lifting its P4 parking). The user decided open decisions 1 to 4 on 2026-11-14 as recommended: (1a) spreading by each simulation's pattern, with `Compartmental`'s paid cells; (2a) both capital charges, end of year by default; (3a) mid-period payments by default; (4b) a stated basis. Decisions 5 to 8 are built as recommended unless the user decides otherwise. **PR 1 is built** (Rust, branch `claude/ifrs17-reserves`, 2026-11-14): `prospicio_reserving::discount`, with the decisions the build made recorded as open decisions 9 to 19, built as described there; on 2026-11-15 the user decided 17 (the running maximum kept) and 18 (the incurred basis discounts the whole unpaid, IBNR plus case reserves, built on the same branch). PR 2 (Python and R) is next. Lane: Reserving (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on: `time-value.md` (Aggregate lane, read only: decisions 3, 4, 7 and 37(a))
 
 ## Goal
 
@@ -68,8 +68,9 @@ Three pieces are missing:
 ### 1. Each simulation's payments
 
 For simulation `s`, origin `w` at age `a_w` (its latest position) with
-reserve draw `R_{s,w}` and cumulative pattern `c_s(d)` at the pattern's
-ages `d`:
+unpaid draw `R_{s,w}` (the reserve on the paid basis; the reserve plus the
+origin's case reserve on the incurred basis, decision 18) and cumulative
+paid pattern `c_s(d)` at the pattern's ages `d`:
 
 ```
 m_s(d)         = max(c_s(a_w), ..., c_s(d))      the running maximum
@@ -93,8 +94,13 @@ end of each period or `Δ/2` for the middle (open decision 3).
   factors (decision 17, which replaces keeping negative increments). A
   negative reserve discounts to a negative present value. The code does
   not go through `PaymentPattern::new`.
-* Under `PaymentBasis::Incurred` the amount spread is the fit's reserve,
-  the IBNR; the case reserves are the caller's to add (decision 18).
+* Under `PaymentBasis::Incurred { paid_pattern, latest_paid }` the amount
+  spread is the whole unpaid: each simulation's reserve (ultimate less
+  latest incurred, the IBNR) plus the origin's case reserve (the fit's
+  latest incurred less `latest_paid`), along `paid_pattern` from `a_w` by
+  the same share rule (decision 18). An origin fully paid by the pattern at
+  `a_w` pays its case reserve at the next age; a latest paid above the
+  latest incurred is a negative case reserve, kept.
 * `Compartmental` uses its `paid` cells directly: the increments along
   `age` from `latest_paid`, each at its own calendar time. This is exact,
   process timing included. Under `IncurredOnly` it is an error, since the
@@ -129,8 +135,10 @@ the undiscounted quantiles origin by origin (`time-value.md` decision 7
 scales each draw by one factor, which is exact for one origin only and
 changes the ranks of a total across origins).
 
-Output: `DiscountedReserves` with the undiscounted and discounted reserves
-as `PredictiveDistribution`s on the same dimensions and simulations as the
+Output: `DiscountedReserves` with the undiscounted unpaid (`unpaid`: the
+fit's reserves on the paid basis, the reserves plus the case reserves on
+the incurred basis) and its present values (`discounted`) as
+`PredictiveDistribution`s on the same dimensions and simulations as the
 fit's `reserves`, the discount factor of each origin's mean
 (`mean PV / mean R`), and the mean discounted run-off at each future year
 (the best estimate outstanding at `t`, used by the cost-of-capital method).
@@ -194,7 +202,10 @@ pub enum PaymentTiming { #[default] MidPeriod, EndOfPeriod }
 
 pub struct Discounting { pub curve: DiscountCurve, pub timing: PaymentTiming }
 
-pub enum PaymentBasis { Paid, Incurred(Vec<f64>) }   // decision 4b; 9
+pub enum PaymentBasis {                               // decision 4b; 9, 18
+    Paid,
+    Incurred { paid_pattern: Vec<f64>, latest_paid: Vec<f64> },
+}
 
 pub trait Discountable: sealed::Sealed {}
 
@@ -205,11 +216,11 @@ pub fn discounted_reserves<F: Discountable + ?Sized>(
 ) -> Result<DiscountedReserves>;
 
 pub struct DiscountedReserves {
-    pub reserves: PredictiveDistribution,
+    pub unpaid: PredictiveDistribution,  // reserves; plus case reserves if incurred
     pub discounted: PredictiveDistribution,
     pub best_estimate: f64,
     pub runoff: Vec<f64>,              // BE(t), t = 0, 1, ..., ending at 0
-    pub discount_factors: Vec<f64>,    // mean PV / mean reserve per component
+    pub discount_factors: Vec<f64>,    // mean PV / mean unpaid per component
     /* the discounting, segments and their run-offs */
 }
 
@@ -247,7 +258,7 @@ return `Error::NotSupported` with the reason (no pattern per simulation; no
 simulations) (decision 13).
 
 Python: `fit.discounted(rate=0.03 | curve=..., timing="mid")` returning
-`DiscountedReserves` with `reserves`, `discounted`, `best_estimate`,
+`DiscountedReserves` with `unpaid`, `discounted`, `best_estimate`,
 `runoff`, and `risk_adjustment(method="confidence", p=0.75)` (and
 `"tvar"`, `"cost_of_capital"` with `rate`, `capital`, `charge`).
 R: `discounted_reserves(fit, rate =, curve =, timing =)` and
@@ -360,13 +371,17 @@ against the English text), currency, the LRC.
 
 9. **Names and the paid basis's pattern** (decided by the build).
    `Basis` is already `excess::Basis` at the crate root, so the stated
-   basis is `PaymentBasis { Paid, Incurred(Vec<f64>) }`; the cost of
-   capital's field is `charge`. Built: `Incurred` holds the cumulative paid
-   share at each of the fit's pattern ages (the triangle's development ages,
-   plus the tail's age when the fit has a tail), finite and ending at 1
-   within 1e-9, applied to every simulation and every segment; a pattern of
-   another length is `Error::LengthMismatch`, so segments with different
-   ages need their own fits discounted one by one.
+   basis is `PaymentBasis { Paid, Incurred { paid_pattern, latest_paid } }`;
+   the cost of capital's field is `charge`. Built: `paid_pattern` is the
+   cumulative paid share at each of the fit's pattern ages (the triangle's
+   development ages, plus the tail's age when the fit has a tail), finite
+   and ending at 1 within 1e-9, applied to every simulation and every
+   segment; a pattern of another length is `Error::LengthMismatch`, so
+   segments with different ages need their own fits discounted one by one.
+   `latest_paid` (decision 18) is one finite value per component of the
+   fit's reserves, segment-major for a fit over segments; another length
+   is `Error::LengthMismatch`, a value that is not finite
+   `Error::InvalidSetting`.
 10. **Shares that cannot be used** (decided by the build). Built: when
     `1 - c(a_w)` is at most 1e-12 (or not a number), or any share is not
     finite, the whole reserve is paid at the next pattern age; when the
@@ -406,7 +421,8 @@ against the English text), currency, the LRC.
     sampler it uses; it also checks that `IncurredOnly` and
     `PaymentBasis::Incurred` are refused.
 17. **Patterns that fall after the latest age** (decided by the build,
-    after review). Keeping negative increments as shares over
+    after review; decided by the user on 2026-11-15: the running maximum
+    kept as built). Keeping negative increments as shares over
     `1 - c_s(a_w)` amplifies a reserve when a bootstrap's pattern goes just
     past 1 and comes back: with `c(a_w) = 0.99998`, then 1.005 and 1.0, the
     shares are about +251 and -250 and the draw's present value about 8.2
@@ -423,19 +439,32 @@ against the English text), currency, the LRC.
     0.89 to 0.99 for the ODP's; a unit test checks the bound on 2,000
     simulations of each); a pattern that never falls is unchanged.
     Salvage in a stated paid pattern is no longer timed as a negative
-    payment. Other rules (a clamp of each draw's increments, a fallback to
-    the mean pattern) remain open to the user.
-18. **The incurred basis covers the IBNR** (decided by the build, after
-    review; open to the user). The reserves of a fit on incurred claims are
-    ultimate less latest incurred, so `PaymentBasis::Incurred` discounts
-    the IBNR alone, spread over every paid increment after the origin's
-    latest age as if it were all the unpaid; the case reserves (latest
-    incurred less latest paid) are the caller's to discount and add. Built:
-    documented in `PaymentBasis::Incurred`, the module docs and here. The
-    alternative, taking each origin's latest paid with the basis so that
-    the unpaid (IBNR plus case) is spread along the paid pattern from the
-    paid age, changes decision 9 and what `reserves` means, and is the
-    user's to decide.
+    payment. The other rules considered (a clamp of each draw's
+    increments, a fallback to the mean pattern) were not taken.
+18. **The incurred basis discounts the whole unpaid** (decided by the user
+    on 2026-11-15). The reserves of a fit on incurred claims are ultimate
+    less latest incurred, the IBNR; the first build discounted that alone
+    and left the case reserves to the caller, which understates both the
+    liability for incurred claims and its risk adjustment. Built:
+    `PaymentBasis::Incurred { paid_pattern, latest_paid }`; each
+    simulation's unpaid for origin `w` is `reserve_{s,w} + (latest
+    incurred_w - latest_paid_w)`, with the latest incurred the fit's own
+    (its chain ladder's latest values, as `UltimateDraws::latest_values`
+    gives them, for every spread fit including Meyers' and the `*Fits`),
+    spread along `paid_pattern` from the origin's latest age with the paid
+    basis's share rule (decision 17). `DiscountedReserves::reserves` is
+    renamed `unpaid`: the reserves plus the case reserves on the incurred
+    basis, the reserves themselves on the paid basis; the discount factors
+    and the run-off follow it. The case reserves are fixed, the same in
+    every simulation, so they add to the mean and not to the spread of the
+    undiscounted total, but their timing does move the discounted one. An
+    origin that the paid pattern has fully paid at its latest age pays its
+    case reserve at the next age, and a latest paid above the latest
+    incurred is a negative case reserve, kept and documented. Unit tests:
+    a hand-built four-origin case against present values by hand, the
+    IBNR-only result when every latest paid equals the latest incurred,
+    RAA at a zero rate (the mean reserve plus the case reserves), a fit
+    over segments (segment-major), and the length and finiteness errors.
 19. **Validation target 6 as built** (decided by the build). The spread
     route reaches `Compartmental` through a test-only helper
     (`discount::compartmental_spread`), no public API, from each origin's

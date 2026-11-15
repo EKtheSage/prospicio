@@ -20,8 +20,9 @@ sources:
 # Finding
 
 * **What the risk adjustment is read from.** Every convention works on the
-  discounted total `X`, one value per simulation: each simulation's reserve
-  by origin is spread over that simulation's paid pattern (or, for
+  discounted total `X`, one value per simulation: each simulation's unpaid
+  by origin (its reserve; on the incurred basis its reserve plus the
+  origin's case reserve) is spread over that simulation's paid pattern (or, for
   `Compartmental`, its paid cells), each payment discounted from the
   valuation date by `(1 + r(t))^-t` on an annual effective spot curve
   (linear between maturities, flat outside), and the origins (and segments)
@@ -40,12 +41,19 @@ sources:
   draw's present value is its reserve times a weighted average of its
   payment times' factors (decision 17; a unit test checks the bound on
   2,000 ODP and Mack bootstrap simulations of RAA).[^note][^code]
-* **An incurred fit discounts the IBNR.** Under the incurred basis the
-  amount discounted is the fit's reserve, ultimate less latest incurred:
-  the case reserves (latest incurred less latest paid) are left for the
-  caller to discount and add for the liability for incurred claims, and
-  the IBNR is spread over the whole paid pattern after the origin's latest
-  age (decision 18).[^note]
+* **An incurred fit discounts the whole unpaid.** A fit on incurred claims
+  has reserves of ultimate less latest incurred, the IBNR alone; discounting
+  only those leaves the case reserves (latest incurred less latest paid)
+  out of the liability for incurred claims and its risk adjustment. Under
+  the incurred basis the caller therefore brings each origin's latest paid
+  with the paid pattern, and each simulation's unpaid, reserve plus case
+  reserve, is spread along the paid pattern from the origin's latest age
+  by the same running-maximum rule; at a zero rate the discounted total's
+  mean is the mean reserve plus the sum of the case reserves (a unit test
+  on RAA), and with every latest paid equal to the latest incurred the
+  result is the IBNR-only one. The case reserves are the same in every
+  simulation, so they move the mean, not the spread, of the undiscounted
+  total (decision 18, the user's of 2026-11-15).[^note][^code]
 * **Cells against spreading for `Compartmental`.** On company 337 at 5%
   mid-period (quick sampler, Windows) the discounted total from the paid
   cells has mean 125,357 and sd 5,791, and spread by the fit's own

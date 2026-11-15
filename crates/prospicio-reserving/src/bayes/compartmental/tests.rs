@@ -4147,7 +4147,14 @@ fn the_discounted_reserves_are_paid_by_the_cells() {
     }
     assert!(d.best_estimate < zero.best_estimate);
     assert!(matches!(
-        discounted_reserves(&fit, &at(0.05), &PaymentBasis::Incurred(vec![1.0; 10])),
+        discounted_reserves(
+            &fit,
+            &at(0.05),
+            &PaymentBasis::Incurred {
+                paid_pattern: vec![1.0; 10],
+                latest_paid: fit.latest_paid.clone(),
+            }
+        ),
         Err(Error::NotSupported { .. })
     ));
     let incurred_only = Compartmental {

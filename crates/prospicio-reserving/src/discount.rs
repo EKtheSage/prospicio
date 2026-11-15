@@ -3,17 +3,19 @@
 //! #553).
 //!
 //! [`discounted_reserves`] discounts every simulation of a stochastic fit's
-//! reserves from the valuation date along its payment timing, by origin and
-//! in total, and [`DiscountedReserves::risk_adjustment`] reads a risk
-//! adjustment off the discounted total by a confidence level, TVaR or a
-//! cost-of-capital method, with the confidence level it corresponds to
-//! (IFRS 17 para. 119).
+//! unpaid claims (its reserves on paid claims; its reserves plus the case
+//! reserves on incurred claims) from the valuation date along its payment
+//! timing, by origin and in total, and [`DiscountedReserves::risk_adjustment`]
+//! reads a risk adjustment off the discounted total by a confidence level,
+//! TVaR or a cost-of-capital method, with the confidence level it
+//! corresponds to (IFRS 17 para. 119).
 //!
 //! # Each simulation's payments
 //!
-//! For simulation `s`, origin `w` at its latest age `a_w` with reserve
-//! `R_{s,w}` and cumulative pattern `c_s` at the pattern's ages `d`
-//! (`reserving-ifrs17.md` decision 1a):
+//! For simulation `s`, origin `w` at its latest age `a_w` with unpaid
+//! `R_{s,w}` (the reserve on the paid basis, the reserve plus the case
+//! reserve on the incurred basis) and cumulative paid pattern `c_s` at the
+//! pattern's ages `d` (`reserving-ifrs17.md` decision 1a):
 //!
 //! ```text
 //! m_s(d)     = max(c_s(a_w), c_s(a_w + 1), ..., c_s(d))    the running maximum
@@ -25,11 +27,11 @@
 //! `(c_s(d) - c_s(d - 1)) / (1 - c_s(a_w))`. Where a simulation's pattern
 //! falls (a bootstrap's pseudo factors below 1), the falling steps pay
 //! nothing and the rises are rescaled to sum to 1, so every share is in
-//! `[0, 1]` and each draw's present value is its reserve times a weighted
+//! `[0, 1]` and each draw's present value is its unpaid times a weighted
 //! average of its payment times' discount factors (decision 17). Keeping
-//! the falling steps as negative shares over `1 - c_s(a_w)` would amplify a
-//! reserve into large payments of opposite signs when `c_s(a_w)` is just
-//! below 1.
+//! the falling steps as negative shares over `1 - c_s(a_w)` would amplify an
+//! unpaid amount into large payments of opposite signs when `c_s(a_w)` is
+//! just below 1.
 //!
 //! paid `t = (d - a_w) / 12` years after the valuation date at the end of
 //! each development period ([`PaymentTiming::EndOfPeriod`]), or half a
@@ -40,19 +42,24 @@
 //! development period past the oldest, where the tail's share is paid.
 //!
 //! * When `1 - c_s(a_w)` or the rise `m_s(last) - c_s(a_w)` is at most
-//!   `1e-12`, or the pattern is not finite, the whole reserve is paid at the
+//!   `1e-12`, or the pattern is not finite, the whole unpaid is paid at the
 //!   next age (one development period on when the pattern has no later
 //!   age).
-//! * Negative reserves are kept and discounted as they are.
+//! * Negative reserves and unpaid amounts are kept and discounted as they
+//!   are.
 //! * [`PaymentBasis::Paid`] spreads by each simulation's own pattern (the
 //!   fit's `patterns`); [`PaymentBasis::Incurred`] by one paid pattern the
 //!   caller brings, for a fit on incurred claims (decision 4b).
-//! * Under [`PaymentBasis::Incurred`] the amount discounted is the fit's
-//!   reserve, ultimate less latest incurred: the IBNR, without the case
-//!   reserves (decision 18). The present value of the unpaid claims also
-//!   needs the case reserves, latest incurred less latest paid, discounted
-//!   by the caller, and the IBNR is timed along the whole of the paid
-//!   pattern after `a_w`, as if it were all the unpaid.
+//! * Under [`PaymentBasis::Incurred`] the amount discounted is the whole
+//!   unpaid (decision 18): each simulation's reserve, ultimate less latest
+//!   incurred (the IBNR), plus the origin's case reserve, the fit's latest
+//!   incurred less the latest paid the caller brings. It is spread along
+//!   the stated paid pattern from `a_w` by the rule above, so the
+//!   discounted amount and the risk adjustment cover the liability for
+//!   incurred claims, and [`DiscountedReserves::unpaid`] is the reserves
+//!   plus the case reserves. An origin fully paid by the pattern at `a_w`
+//!   pays its case reserve at the next age. A latest paid above the latest
+//!   incurred is a negative case reserve, kept as it is.
 //! * `Compartmental` is not spread: its `paid` cells are each simulation's
 //!   cumulative paid by origin and age, so each increment from the latest
 //!   paid is paid at its own age, process timing included. Under
@@ -90,7 +97,9 @@
 //! keeps the dependence between segments. Under
 //! [`PaymentBasis::Incurred`] the one paid pattern is applied to every
 //! segment, so every segment must have the same development ages; give the
-//! segments their own paid patterns by discounting each segment's fit.
+//! segments their own paid patterns by discounting each segment's fit. Its
+//! latest paid values are segment-major, one per component of the fit's
+//! reserves in their order.
 //!
 //! ```
 //! use prospicio_reserving::{
@@ -263,20 +272,28 @@ pub enum PaymentBasis {
     /// The fit is on paid claims: each simulation's reserve is paid along
     /// that simulation's own pattern (`Compartmental`: its paid cells).
     Paid,
-    /// The fit is on incurred claims: its reserves are paid along this
-    /// cumulative paid pattern, the share of the ultimate paid by each of
-    /// the fit's pattern ages (the triangle's development ages, and the
-    /// tail's age one period past the oldest when the fit has a tail), the
-    /// same in every simulation and every segment. It must end at 1. Not
-    /// for `Compartmental`, whose reserves are paid.
-    ///
-    /// The reserves of a fit on incurred claims are its IBNR (ultimate less
-    /// latest incurred), so the result leaves out the case reserves (latest
-    /// incurred less latest paid): for the liability for incurred claims
-    /// the caller adds their present value. The IBNR is spread over every
-    /// paid increment after the origin's latest age, as if it were all the
-    /// unpaid (decision 18).
-    Incurred(Vec<f64>),
+    /// The fit is on incurred claims. Each simulation's unpaid for origin
+    /// `w` is its reserve (the IBNR, ultimate less latest incurred) plus
+    /// the origin's case reserve, its latest incurred (the fit's) less
+    /// `latest_paid[w]`, and that whole unpaid is paid along
+    /// `paid_pattern` from the origin's latest age with the paid basis's
+    /// share rule, so the discounted amount and the risk adjustment cover
+    /// the liability for incurred claims (decision 18). Not for
+    /// `Compartmental`, whose reserves are paid.
+    Incurred {
+        /// The cumulative paid pattern: the share of the ultimate paid by
+        /// each of the fit's pattern ages (the triangle's development ages,
+        /// and the tail's age one period past the oldest when the fit has a
+        /// tail), the same in every simulation and every segment. Finite
+        /// and ending at 1.
+        paid_pattern: Vec<f64>,
+        /// Each origin's latest paid, at the same age as the fit's latest
+        /// incurred, one per component of the fit's `reserves` in their
+        /// order (segment-major for a fit over segments). Finite. A latest
+        /// paid above the latest incurred is allowed: that origin's case
+        /// reserve is negative and lowers its unpaid.
+        latest_paid: Vec<f64>,
+    },
 }
 
 /// The capital a cost-of-capital risk adjustment charges for, at the
@@ -361,10 +378,14 @@ pub struct SegmentRiskAdjustment {
 /// ([`discounted_reserves`]).
 #[derive(Debug, Clone)]
 pub struct DiscountedReserves {
-    /// The fit's reserves, undiscounted.
-    pub reserves: PredictiveDistribution,
-    /// The present value of each reserve draw: the same dimensions,
-    /// components and simulations as [`reserves`](Self::reserves).
+    /// The unpaid claims, undiscounted: under [`PaymentBasis::Paid`] the
+    /// fit's reserves; under [`PaymentBasis::Incurred`] each reserve draw
+    /// plus its origin's case reserve (latest incurred less latest paid).
+    /// The same dimensions, components and simulations as the fit's
+    /// `reserves`.
+    pub unpaid: PredictiveDistribution,
+    /// The present value of each draw of [`unpaid`](Self::unpaid): the
+    /// same dimensions, components and simulations.
     pub discounted: PredictiveDistribution,
     /// The mean discounted total.
     pub best_estimate: f64,
@@ -373,8 +394,9 @@ pub struct DiscountedReserves {
     /// `t`, ending with the first year after the last payment, where it is
     /// 0. `runoff[0]` is the best estimate up to rounding.
     pub runoff: Vec<f64>,
-    /// Each component's mean present value over its mean reserve, in the
-    /// order of the components; 1 where the mean reserve is 0.
+    /// Each component's mean present value over its mean
+    /// [`unpaid`](Self::unpaid), in the order of the components; 1 where
+    /// the mean unpaid is 0.
     pub discount_factors: Vec<f64>,
     discounting: Discounting,
     /// Each segment's label (one empty label for a fit of one segment).
@@ -398,15 +420,27 @@ pub trait Discountable: sealed::Sealed {}
 /// Fails for a fit with no pattern per simulation or no simulations
 /// ([`Error::NotSupported`]), for a `Compartmental` fit under
 /// `Fitted::IncurredOnly` or [`PaymentBasis::Incurred`], for a paid pattern
-/// of the wrong length or not ending at 1, or when the fit's patterns do
-/// not match its reserves.
+/// of the wrong length or not ending at 1, for latest paid values that are
+/// not finite or not one per component of the reserves, or when the fit's
+/// patterns do not match its reserves.
 pub fn discounted_reserves<F: Discountable + ?Sized>(
     fit: &F,
     discounting: &Discounting,
     basis: &PaymentBasis,
 ) -> Result<DiscountedReserves> {
-    if let PaymentBasis::Incurred(pattern) = basis {
-        check_paid_pattern(pattern)?;
+    if let PaymentBasis::Incurred {
+        paid_pattern,
+        latest_paid,
+    } = basis
+    {
+        check_paid_pattern(paid_pattern)?;
+        if let Some(&bad) = latest_paid.iter().find(|v| !v.is_finite()) {
+            return Err(Error::InvalidSetting {
+                name: "latest paid",
+                value: bad,
+                expected: "finite",
+            });
+        }
     }
     let flows = fit.cash_flows(basis)?;
     discount(flows, discounting, basis)
@@ -419,6 +453,21 @@ fn check_paid_pattern(pattern: &[f64]) -> Result<()> {
             name: "paid pattern",
             value: last,
             expected: "finite cumulative shares ending at 1",
+        });
+    }
+    Ok(())
+}
+
+/// Under [`PaymentBasis::Incurred`], one latest paid per component of the
+/// fit's reserves.
+fn check_latest_paid(basis: &PaymentBasis, reserves: &PredictiveDistribution) -> Result<()> {
+    if let PaymentBasis::Incurred { latest_paid, .. } = basis
+        && latest_paid.len() != reserves.n_components()
+    {
+        return Err(Error::LengthMismatch {
+            column: "latest paid".into(),
+            expected: reserves.n_components(),
+            found: latest_paid.len(),
         });
     }
     Ok(())
@@ -443,6 +492,9 @@ mod sealed {
 
     pub struct Component<'a> {
         pub(super) segment: usize,
+        /// Added to each reserve draw to give the unpaid: the case reserve
+        /// under [`PaymentBasis::Incurred`], 0 otherwise.
+        pub(super) case: f64,
         pub(super) how: How<'a>,
     }
 
@@ -495,28 +547,58 @@ fn spread_segment<'a>(
              (and at most one tail age)"
         )));
     }
-    let pattern = match basis {
-        PaymentBasis::Paid => Pattern::Draws(patterns),
-        PaymentBasis::Incurred(paid) => {
-            if paid.len() != ages.len() {
+    let (pattern, latest_paid) = match basis {
+        PaymentBasis::Paid => (Pattern::Draws(patterns), None),
+        PaymentBasis::Incurred {
+            paid_pattern,
+            latest_paid,
+        } => {
+            if paid_pattern.len() != ages.len() {
                 return Err(Error::LengthMismatch {
                     column: "paid pattern".into(),
                     expected: ages.len(),
-                    found: paid.len(),
+                    found: paid_pattern.len(),
                 });
             }
-            Pattern::Fixed(paid)
+            (Pattern::Fixed(paid_pattern.as_slice()), Some(latest_paid))
         }
     };
-    for &latest in &chain_ladder.latest_position {
+    if chain_ladder.latest.len() != chain_ladder.latest_position.len() {
+        return Err(Error::PatternDraws(format!(
+            "{} latest values for {} origins",
+            chain_ladder.latest.len(),
+            chain_ladder.latest_position.len()
+        )));
+    }
+    for (&latest, &latest_incurred) in chain_ladder
+        .latest_position
+        .iter()
+        .zip(&chain_ladder.latest)
+    {
         if latest >= ages.len() {
             return Err(Error::PatternDraws(format!(
                 "an origin's latest position {latest} is past the patterns' {} ages",
                 ages.len()
             )));
         }
+        // The components are pushed in the order of the reserves, so this
+        // origin's latest paid is at index `out.len()`; its case reserve is
+        // the latest incurred less it.
+        let case = match latest_paid {
+            None => 0.0,
+            Some(paid) => {
+                let j = out.len();
+                let p = paid.get(j).ok_or_else(|| Error::LengthMismatch {
+                    column: "latest paid".into(),
+                    expected: j + 1,
+                    found: paid.len(),
+                })?;
+                latest_incurred - p
+            }
+        };
         out.push(Component {
             segment,
+            case,
             how: How::Spread {
                 pattern,
                 ages,
@@ -558,6 +640,7 @@ fn one_segment<'a>(
     basis: &'a PaymentBasis,
 ) -> Result<CashFlows<'a>> {
     check_sims(reserves, patterns)?;
+    check_latest_paid(basis, reserves)?;
     let segment = match patterns.segments() {
         [only] => only,
         other => {
@@ -580,6 +663,7 @@ fn over_segments<'a, T: ReserveFit>(
     basis: &'a PaymentBasis,
 ) -> Result<CashFlows<'a>> {
     check_sims(reserves, patterns)?;
+    check_latest_paid(basis, reserves)?;
     let mut components = Vec::new();
     let mut labels = Vec::new();
     for (s, (label, fit)) in segments.iter().enumerate() {
@@ -728,7 +812,7 @@ mod bayes_fits {
     impl Discountable for HierarchicalBfFit {}
 
     fn compartmental_checks(fit: &CompartmentalFit, basis: &PaymentBasis) -> Result<()> {
-        if matches!(basis, PaymentBasis::Incurred(_)) {
+        if matches!(basis, PaymentBasis::Incurred { .. }) {
             return Err(Error::NotSupported {
                 setting: "PaymentBasis::Incurred",
                 method: "Compartmental",
@@ -794,6 +878,7 @@ mod bayes_fits {
         for ((cells, &latest_value), &latest_age) in cells.zip(&fit.latest_paid).zip(&latest_age) {
             out.push(Component {
                 segment,
+                case: 0.0,
                 how: How::Cells {
                     paid,
                     cells,
@@ -868,6 +953,7 @@ pub(crate) fn compartmental_spread(
             })?;
             Ok(Component {
                 segment: 0,
+                case: 0.0,
                 how: How::Spread {
                     pattern: Pattern::Draws(segment),
                     ages,
@@ -957,6 +1043,7 @@ fn discount(
     let years: Vec<f64> = keys.iter().map(|&k| k as f64 / 24.0).collect();
     let factors: Vec<f64> = years.iter().map(|&t| discounting.curve.factor(t)).collect();
     let component_segment: Vec<usize> = flows.components.iter().map(|c| c.segment).collect();
+    let unpaid = unpaid_of(flows.reserves, &flows.components, basis)?;
     let plans: Vec<Plan<'_>> = flows
         .components
         .into_iter()
@@ -990,18 +1077,17 @@ fn discount(
             },
         })
         .collect();
-    let reserves = flows.reserves;
-    let n_comp = reserves.n_components();
-    let n_sims = reserves.n_sims();
+    let n_comp = unpaid.n_components();
+    let n_sims = unpaid.n_sims();
     let n_segments = flows.segments.len();
     let mut pv = Vec::with_capacity(n_sims * n_comp);
     // The sum over the simulations of each segment's payments in each slot.
     let mut paid_in = vec![vec![0.0; keys.len()]; n_segments];
     let mut payments: Vec<(usize, f64)> = Vec::new();
-    for (s, row) in reserves.draw_matrix().chunks_exact(n_comp).enumerate() {
-        for (j, (plan, &reserve)) in plans.iter().zip(row).enumerate() {
+    for (s, row) in unpaid.draw_matrix().chunks_exact(n_comp).enumerate() {
+        for (j, (plan, &amount)) in plans.iter().zip(row).enumerate() {
             payments.clear();
-            pay(plan, s, reserve, &mut payments);
+            pay(plan, s, amount, &mut payments);
             let mut value = 0.0;
             for &(k, amount) in &payments {
                 value += amount * factors[k];
@@ -1039,7 +1125,7 @@ fn discount(
         .collect();
     let runoff = runoff_of(&total_mean);
 
-    let mut provenance = reserves.provenance().clone();
+    let mut provenance = unpaid.provenance().clone();
     provenance.parameters.retain(|(k, _)| k != "output");
     let provenance = provenance
         .param("output", "discounted reserves")
@@ -1048,23 +1134,23 @@ fn discount(
             "basis",
             match basis {
                 PaymentBasis::Paid => "paid",
-                PaymentBasis::Incurred(_) => "incurred",
+                PaymentBasis::Incurred { .. } => "incurred",
             },
         );
     let discounted = PredictiveDistribution::from_draws(
-        reserves.dims().to_vec(),
-        reserves.components().to_vec(),
+        unpaid.dims().to_vec(),
+        unpaid.components().to_vec(),
         pv,
         provenance,
     )?;
-    let discount_factors = column_means(reserves)
+    let discount_factors = column_means(&unpaid)
         .into_iter()
         .zip(column_means(&discounted))
         .map(|(r, d)| if r == 0.0 { 1.0 } else { d / r })
         .collect();
     let best_estimate = mean(&row_sums(&discounted, |_| true));
     Ok(DiscountedReserves {
-        reserves: reserves.clone(),
+        unpaid,
         discounted,
         best_estimate,
         runoff,
@@ -1075,6 +1161,32 @@ fn discount(
         component_segment,
         segment_runoff,
     })
+}
+
+/// The undiscounted unpaid: the fit's reserves under the paid basis; under
+/// the incurred basis each draw plus its component's case reserve.
+fn unpaid_of(
+    reserves: &PredictiveDistribution,
+    components: &[Component<'_>],
+    basis: &PaymentBasis,
+) -> Result<PredictiveDistribution> {
+    if matches!(basis, PaymentBasis::Paid) {
+        return Ok(reserves.clone());
+    }
+    let n = components.len();
+    let draws: Vec<f64> = reserves
+        .draw_matrix()
+        .chunks_exact(n)
+        .flat_map(|row| row.iter().zip(components).map(|(r, c)| r + c.case))
+        .collect();
+    let mut provenance = reserves.provenance().clone();
+    provenance.parameters.retain(|(k, _)| k != "output");
+    Ok(PredictiveDistribution::from_draws(
+        reserves.dims().to_vec(),
+        reserves.components().to_vec(),
+        draws,
+        provenance.param("output", "unpaid"),
+    )?)
 }
 
 /// Simulation `s`'s payments of `reserve` as `(slot, amount)`.
@@ -1463,9 +1575,21 @@ mod tests {
         }
         assert!(d.best_estimate < fit.reserves.total().mean());
 
-        // The same pattern given as a paid pattern reproduces it.
-        let given =
-            discounted_reserves(&fit, &mid, &PaymentBasis::Incurred(pattern.clone())).unwrap();
+        // The same pattern given as a paid pattern, with every latest paid
+        // equal to the latest incurred (no case reserves), reproduces it:
+        // the unpaid is the IBNR alone, as before decision 18.
+        let latest_incurred = fit.mack.chain_ladder.latest.clone();
+        let incurred = |paid_pattern: Vec<f64>, latest_paid: Vec<f64>| PaymentBasis::Incurred {
+            paid_pattern,
+            latest_paid,
+        };
+        let given = discounted_reserves(
+            &fit,
+            &mid,
+            &incurred(pattern.clone(), latest_incurred.clone()),
+        )
+        .unwrap();
+        assert_eq!(given.unpaid.draw_matrix(), fit.reserves.draw_matrix());
         for (a, b) in given
             .discounted
             .draw_matrix()
@@ -1475,7 +1599,7 @@ mod tests {
             assert!(close(*a, *b, 1e-12));
         }
         // A paid pattern of the wrong length or not ending at 1.
-        let short = PaymentBasis::Incurred(pattern[1..].to_vec());
+        let short = incurred(pattern[1..].to_vec(), latest_incurred.clone());
         assert!(matches!(
             discounted_reserves(&fit, &mid, &short),
             Err(Error::LengthMismatch { .. })
@@ -1483,9 +1607,178 @@ mod tests {
         let mut low = pattern.clone();
         *low.last_mut().unwrap() = 0.9;
         assert!(matches!(
-            discounted_reserves(&fit, &mid, &PaymentBasis::Incurred(low)),
+            discounted_reserves(&fit, &mid, &incurred(low, latest_incurred.clone())),
             Err(Error::InvalidSetting { .. })
         ));
+        // Latest paid values not one per origin, or not finite.
+        for wrong in [latest_incurred[1..].to_vec(), {
+            let mut v = latest_incurred.clone();
+            v.push(0.0);
+            v
+        }] {
+            assert!(matches!(
+                discounted_reserves(&fit, &mid, &incurred(pattern.clone(), wrong)),
+                Err(Error::LengthMismatch { .. })
+            ));
+        }
+        for bad in [f64::NAN, f64::INFINITY] {
+            let mut v = latest_incurred.clone();
+            v[3] = bad;
+            assert!(matches!(
+                discounted_reserves(&fit, &mid, &incurred(pattern.clone(), v)),
+                Err(Error::InvalidSetting {
+                    name: "latest paid",
+                    ..
+                })
+            ));
+        }
+    }
+
+    /// Decision 18: under the incurred basis each draw's unpaid is its
+    /// reserve plus the origin's case reserve (latest incurred less latest
+    /// paid), spread along the paid pattern from the origin's latest age.
+    /// Four origins at 12 to 48 with latest incurred 120, 160, 170 and 165;
+    /// paid pattern `[0.4, 0.7, 0.9, 1.0]`.
+    #[test]
+    fn the_incurred_basis_discounts_the_case_reserves_with_the_ibnr() {
+        let origin =
+            [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(crate::Month::january);
+        let tri = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
+            values: &[(
+                "incurred",
+                &[
+                    90.0, 140.0, 160.0, 165.0, 100.0, 150.0, 170.0, 110.0, 160.0, 120.0,
+                ],
+            )],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let fit = MackBootstrap {
+            n_sims: 50,
+            seed: 7,
+            ..Default::default()
+        }
+        .fit(&tri, "incurred")
+        .unwrap();
+        // The fit's origins run oldest first: 2020 at 48 down to 2023 at 12.
+        assert_eq!(fit.mack.chain_ladder.latest_position, [3, 2, 1, 0]);
+        assert_eq!(fit.mack.chain_ladder.latest, [165.0, 170.0, 160.0, 120.0]);
+        let latest_paid = vec![160.0, 140.0, 100.0, 50.0];
+        let case = [5.0, 30.0, 60.0, 70.0];
+        let paid_pattern = vec![0.4, 0.7, 0.9, 1.0];
+        let basis = PaymentBasis::Incurred {
+            paid_pattern: paid_pattern.clone(),
+            latest_paid,
+        };
+        let v = |t: f64| 1.1f64.powf(-t);
+        for (timing, m) in [
+            (PaymentTiming::EndOfPeriod, 0.0),
+            (PaymentTiming::MidPeriod, 0.5),
+        ] {
+            let d = discounted_reserves(&fit, &at(0.10, timing), &basis).unwrap();
+            // Each origin's present value of one unit of unpaid: 2020 is
+            // fully paid by the pattern at 48 and pays its case reserve one
+            // period on; 2021 pays all of it at 48; 2022 pays 0.2 / 0.3 and
+            // 0.1 / 0.3; 2023 pays 0.3 / 0.6, 0.2 / 0.6 and 0.1 / 0.6.
+            let unit = [
+                v(1.0 - m),
+                v(1.0 - m),
+                (0.2 * v(1.0 - m) + 0.1 * v(2.0 - m)) / 0.3,
+                (0.3 * v(1.0 - m) + 0.2 * v(2.0 - m) + 0.1 * v(3.0 - m)) / 0.6,
+            ];
+            let n = 4;
+            let mut mean_unpaid = 0.0;
+            for ((u, pv), r) in d
+                .unpaid
+                .draw_matrix()
+                .chunks_exact(n)
+                .zip(d.discounted.draw_matrix().chunks_exact(n))
+                .zip(fit.reserves.draw_matrix().chunks_exact(n))
+            {
+                for w in 0..n {
+                    assert_eq!(u[w], r[w] + case[w]);
+                    let want = (r[w] + case[w]) * unit[w];
+                    assert!(close(pv[w], want, 1e-12), "{w}: {} vs {want}", pv[w]);
+                    mean_unpaid += u[w];
+                }
+            }
+            mean_unpaid /= fit.reserves.n_sims() as f64;
+            assert!(close(
+                mean_unpaid,
+                fit.reserves.total().mean() + case.iter().sum::<f64>(),
+                1e-12
+            ));
+            // The discount factors follow the unpaid, not the reserves.
+            for (w, f) in d.discount_factors.iter().enumerate() {
+                assert!(close(*f, unit[w], 1e-12), "{w}: {f} vs {}", unit[w]);
+            }
+            // The run-off covers the case reserves too.
+            assert!(close(d.runoff[0], d.best_estimate, 1e-12));
+        }
+        // A latest paid above the latest incurred is a negative case
+        // reserve, which lowers the unpaid.
+        let negative = PaymentBasis::Incurred {
+            paid_pattern,
+            latest_paid: vec![170.0, 170.0, 160.0, 120.0],
+        };
+        let d = discounted_reserves(&fit, &at(0.0, PaymentTiming::MidPeriod), &negative).unwrap();
+        for (u, r) in d
+            .unpaid
+            .draw_matrix()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(fit.reserves.draw_matrix().as_chunks::<4>().0)
+        {
+            assert_eq!(u[0], r[0] - 5.0);
+            assert_eq!(u[1..], r[1..]);
+        }
+    }
+
+    /// On RAA with a bootstrap, at a zero rate the incurred basis's total
+    /// is the mean reserve plus the sum of the case reserves.
+    #[test]
+    fn the_incurred_basis_on_raa_adds_the_case_reserves_at_a_zero_rate() {
+        let (fit, pattern) = selected_fit();
+        let latest = &fit.mack.chain_ladder.latest;
+        let latest_paid: Vec<f64> = latest.iter().map(|l| 0.8 * l).collect();
+        let cases: f64 = latest.iter().zip(&latest_paid).map(|(i, p)| i - p).sum();
+        let zero = at(0.0, PaymentTiming::MidPeriod);
+        let d = discounted_reserves(
+            &fit,
+            &zero,
+            &PaymentBasis::Incurred {
+                paid_pattern: pattern,
+                latest_paid,
+            },
+        )
+        .unwrap();
+        let want = fit.reserves.total().mean() + cases;
+        assert!(
+            close(d.best_estimate, want, 1e-9),
+            "{} vs {want}",
+            d.best_estimate
+        );
+        assert!(close(d.unpaid.total().mean(), want, 1e-9));
+        for (a, b) in d
+            .discounted
+            .draw_matrix()
+            .iter()
+            .zip(d.unpaid.draw_matrix())
+        {
+            assert!(close(*a, *b, 1e-9), "{a} vs {b}");
+        }
+        assert!(
+            d.unpaid
+                .provenance()
+                .parameters
+                .contains(&("output".into(), "unpaid".into()))
+        );
     }
 
     /// Three origins at ages 12, 24 and 36 (a pattern to 36, no tail) in two
@@ -1517,6 +1810,7 @@ mod tests {
             components: (0..3)
                 .map(|latest| Component {
                     segment: 0,
+                    case: 0.0,
                     how: How::Spread {
                         pattern: Pattern::Draws(&patterns),
                         ages: &ages,
@@ -1864,6 +2158,57 @@ mod tests {
         };
         assert_eq!(coc(Capital::Var(0.995)).segments.len(), 2);
         assert!(coc(Capital::Amount(1e4)).segments.is_empty());
+    }
+
+    /// Over segments the latest paid values are segment-major, in the
+    /// order of the reserves' components.
+    #[test]
+    fn the_incurred_basis_over_segments_takes_the_latest_paid_segment_major() {
+        let fits = OdpBootstrap {
+            n_sims: 100,
+            seed: 2,
+            ..Default::default()
+        }
+        .fit_segments(&two_lines(), "paid")
+        .unwrap();
+        let cl = ChainLadder::default().fit(&raa(), "values").unwrap();
+        let pattern = raa_pattern(cl.ldf());
+        let latest: Vec<f64> = fits
+            .segments
+            .iter()
+            .flat_map(|(_, f)| f.chain_ladder.latest.clone())
+            .collect();
+        let n = latest.len();
+        assert_eq!(n, fits.reserves.n_components());
+        // Segment A's case reserves are a tenth of its latest, B's a half.
+        let latest_paid: Vec<f64> = latest
+            .iter()
+            .enumerate()
+            .map(|(j, l)| if j < n / 2 { 0.9 * l } else { 0.5 * l })
+            .collect();
+        let basis = PaymentBasis::Incurred {
+            paid_pattern: pattern,
+            latest_paid: latest_paid.clone(),
+        };
+        let d = discounted_reserves(&fits, &at(0.0, PaymentTiming::MidPeriod), &basis).unwrap();
+        for (u, r) in d
+            .unpaid
+            .draw_matrix()
+            .chunks_exact(n)
+            .zip(fits.reserves.draw_matrix().chunks_exact(n))
+        {
+            for j in 0..n {
+                assert!(close(u[j], r[j] + latest[j] - latest_paid[j], 1e-12));
+            }
+        }
+        for (a, b) in d
+            .discounted
+            .draw_matrix()
+            .iter()
+            .zip(d.unpaid.draw_matrix())
+        {
+            assert!(close(*a, *b, 1e-9));
+        }
     }
 
     #[test]
