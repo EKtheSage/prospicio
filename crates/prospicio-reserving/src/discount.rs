@@ -106,13 +106,18 @@
 //!     DevelopmentColumn, DiscountCurve, Discounting, Grain, Long, MackBootstrap, Month,
 //!     PaymentBasis, PaymentTiming, RiskAdjustment, Triangle, discounted_reserves,
 //! };
+//! use prospicio_prob::Distribution;
 //!
-//! let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+//! let origin = [2019, 2019, 2019, 2019, 2020, 2020, 2020, 2021, 2021, 2022]
+//!     .map(Month::january);
 //! let tri = Triangle::from_long(&Long {
 //!     keys: &[],
 //!     origin: &origin,
-//!     development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12]),
-//!     values: &[("paid", &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0])],
+//!     development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
+//!     values: &[(
+//!         "paid",
+//!         &[100.0, 150.0, 170.0, 175.0, 110.0, 160.0, 185.0, 120.0, 185.0, 130.0],
+//!     )],
 //!     origin_grain: Grain::Year,
 //!     development_grain: Grain::Year,
 //!     cumulative: true,
@@ -123,7 +128,7 @@
 //!     timing: PaymentTiming::MidPeriod,
 //! };
 //! let d = discounted_reserves(&fit, &discounting, &PaymentBasis::Paid)?;
-//! assert!(d.best_estimate < fit.reserves.mean());
+//! assert!(d.best_estimate < fit.reserves.total().mean());
 //! let ra = d.risk_adjustment(&RiskAdjustment::ConfidenceLevel(0.75))?;
 //! assert!(ra.implied_confidence >= 0.75);
 //! # Ok::<(), prospicio_reserving::Error>(())
