@@ -332,10 +332,10 @@ pub enum CapitalCharge {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RiskAdjustment {
     /// `Q_p(X) - BE`, the inverted-cdf quantile
-    /// ([`var_sorted`](prospicio_prob::risk::var_sorted)).
+    /// ([`var_sorted`]).
     ConfidenceLevel(f64),
     /// `TVaR_p(X) - BE`, the exact TVaR of the draws
-    /// ([`tvar_sorted`](prospicio_prob::risk::tvar_sorted): the draw at the
+    /// ([`tvar_sorted`]: the draw at the
     /// VaR counted with the share of its mass above `p`).
     Tvar(f64),
     /// `rate` times the capital held in each future year, discounted:
