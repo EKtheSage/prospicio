@@ -3,6 +3,7 @@
 \name{discounted_reserves}
 \alias{discounted_reserves}
 \alias{discounted_reserves_class}
+\alias{segment_runoff}
 \alias{risk_adjustment}
 \title{Discounted reserves and the IFRS 17 risk adjustment}
 \usage{
@@ -17,6 +18,8 @@ discounted_reserves(
 )
 
 discounted_reserves_class(ptr)
+
+segment_runoff(d, i)
 
 risk_adjustment(
   d,
@@ -49,19 +52,24 @@ fit over segments).}
 
 \item{d}{A \code{discounted_reserves} result.}
 
+\item{i}{A segment, counted from 1 in the order of \code{segment_labels}.}
+
 \item{method}{\code{"confidence"}, \code{"tvar"} or \code{"cost_of_capital"}.}
 
 \item{p}{The level of \code{"confidence"} and \code{"tvar"}, in \verb{[0, 1]}.}
 
 \item{capital}{\code{K_0} of \code{"cost_of_capital"}, with no default: \code{c(var = q)}
 (\code{Q_q(X) - BE}), \code{c(tvar = q)}, or an amount (a number or
-\code{c(amount = k)}), such as the one-year view's 99.5\% loss. An amount is
-the total's, so no segment results are reported for it.}
+\code{c(amount = k)}), such as the one-year view's capital, the mean claims
+development result less its 0.5\% quantile (the 99.5\% loss less the
+expected loss). An amount is the total's, so no segment results are
+reported for it.}
 
 \item{charge}{\code{"end"} (the default) or \code{"start"} of each year.}
 }
 \value{
 \code{discounted_reserves()}: a \code{discounted_reserves} result.
+\code{segment_runoff()}: a numeric vector.
 \code{risk_adjustment()}: a list with \code{amount}, \code{best_estimate},
 \code{implied_confidence} (the share of discounted draws at or below
 \code{best_estimate + amount}), \code{capital} (\code{K_0}, or \code{NULL}) and \code{segments}, a
@@ -109,6 +117,9 @@ best estimate outstanding at \verb{t = 0, 1, ...} whole years, ending with 0),
 \code{discount_factors} (each component's mean present value over its mean
 unpaid; 1 where that is 0), \code{curve}, \code{timing} and \code{segment_labels} (one
 character vector per segment of a fit over segments).
+\code{segment_runoff(d, i)} is segment \code{i}'s run-off, as \code{runoff}, with \code{i}
+counted from 1 in the order of \code{segment_labels} (a fit over two or more
+segments only).
 }
 \examples{
 long <- data.frame(year = rep(2019:2022, 4:1),

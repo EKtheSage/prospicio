@@ -1098,14 +1098,14 @@ print(f"ADC pays on average {ceded.mean():.1f}, attaches in {1 - ceded.cdf(0.0):
 lpt = Tower([Layer.quota_share("LPT", 1.0)]).apply_aggregate(mb.reserves)
 print(f"gross 99.5% tail value at risk {mb.reserves.tvar(0.995):.0f}")
 print("LPT cedes", round(lpt.aggregate(["kind"]).marginal(("ceded",)).mean()))
-print(f"one-year capital, -cdr.quantile(0.005): {-mack_1y.cdr.quantile(0.005):.0f}")
+print(f"one-year 99.5% loss, -cdr.quantile(0.005): {-mack_1y.cdr.quantile(0.005):.0f}")
 ```
 
 ```text
 ADC pays on average 17.7, attaches in 18.7% of simulations
 gross 99.5% tail value at risk 2019
 LPT cedes 1541
-one-year capital, -cdr.quantile(0.005): 326
+one-year 99.5% loss, -cdr.quantile(0.005): 326
 ```
 
 ```python
@@ -1129,10 +1129,11 @@ net    1,523.7  1,700      176
 ```
 
 The ADC caps the net 99.5% at 1,700 and cuts the lifetime capital from 440 to
-176. The one-year capital of the same reserve is 326 (section 7). These figures
-are undiscounted and exclude unallocated loss adjustment expenses; section 11
-discounts the reserve and adds an IFRS 17 risk adjustment, and the price of a
-cover discounts as below.
+176. Over one year the same reserve's 99.5% loss is 326 (section 7), and its
+one-year capital, that loss less the expected loss, is 325 (section 11). These
+figures are undiscounted and exclude unallocated loss adjustment expenses;
+section 11 discounts the reserve and adds an IFRS 17 risk adjustment, and the
+price of a cover discounts as below.
 
 The LPT cedes all 1,541 on average. Its price starts from that mean, adds a load
 for the risk and subtracts a discount for the time to pay. Use

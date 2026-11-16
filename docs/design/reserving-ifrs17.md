@@ -165,7 +165,7 @@ the fit's dependence between segments). The best estimate is
   with `v(t) = (1 + r(t))^-t` from the same curve. `capital` is
   `Capital::Var(q)` (`Q_q(X) - BE`; no default, decision 6b),
   `Capital::Tvar(q)` or `Capital::Amount(k)` (a capital the user brings, such as the one-year
-  view's 99.5% VaR of the claims development result).
+  view's capital, `mean CDR - Q_0.005(CDR)`, decision 24).
 
 Each result reports `amount`, `best_estimate`, and
 `implied_confidence = #{X_s ≤ BE + RA} / n` (IFRS 17 para. 119), on the
@@ -283,6 +283,7 @@ discounted_reserves(fit, basis, rate = NULL, curve = NULL, timing = c("mid", "en
                     paid_pattern = NULL, latest_paid = NULL)   # a discounted_reserves object
 risk_adjustment(d, method = c("confidence", "tvar", "cost_of_capital"), p = NULL,
                 rate = NULL, capital = NULL, charge = c("end", "start"))   # a list
+segment_runoff(d, i)   # segment i's run-off, i counted from 1
 discount_curve(maturities, rates); discount_curve_factor(curve, t); discount_curve_rate(curve, t)
 ```
 

@@ -76,6 +76,14 @@ stopifnot(ra$implied_confidence >= 0.75, ra$implied_confidence < 0.75 + 1 / 500,
           is.null(ra$capital), nrow(ra$segments) == 0)
 tv <- risk_adjustment(d, "tvar", p = 0.75)
 stopifnot(tv$amount > ra$amount)
+# 0.75 n is whole: the TVaR is the mean of the largest quarter of draws.
+x <- sort(total)
+near(tv$amount, mean(x[376:500]) - d@best_estimate, rel = 1e-9)
+stopifnot(tv$implied_confidence == mean(x <= d@best_estimate + tv$amount))
+# Elsewhere the draw at the boundary counts for its mass above p.
+k <- ceiling(500 * 0.901)
+want <- ((k / 500 - 0.901) * x[k] + sum(x[(k + 1):500]) / 500) / (1 - 0.901)
+near(risk_adjustment(d, "tvar", p = 0.901)$amount, want - d@best_estimate, rel = 1e-9)
 
 # The cost of capital under both charges, by hand from the run-off.
 run <- d@runoff
@@ -96,6 +104,8 @@ two <- triangle(rbind(cbind(long, lob = "A"), transform(cbind(long, lob = "B"), 
                 "origin", "development", "value", keys = "lob")
 seg <- discounted_reserves(odp_bootstrap(two, n_sims = 400, seed = 2), basis = "paid", rate = 0.03)
 stopifnot(identical(seg@segment_labels, list("A", "B")))
+stopifnot(length(segment_runoff(seg, 1)) > 1, length(segment_runoff(seg, 2)) > 1)
+stopifnot(inherits(tryCatch(segment_runoff(seg, 3), error = identity), "error"))
 ra <- risk_adjustment(seg, "confidence", p = 0.9)
 stopifnot(identical(ra$segments$segment, c("A", "B")),
           ra$segments$amount[1] > ra$segments$amount[2])

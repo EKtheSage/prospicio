@@ -14,5 +14,5 @@
 
 - `reserving-methods.md` section 11: the discounted reserve at a flat rate
   and on a spot curve, the IFRS 17 risk adjustment and its implied
-  confidence level, and the one-year view's 99.5% loss as the capital of a
-  cost-of-capital risk margin (#553).
+  confidence level, and the one-year view's capital (its 99.5% loss less the
+  expected loss) as the capital of a cost-of-capital risk margin (#553).

@@ -376,8 +376,9 @@ impl PyDiscountedReserves {
     ///     ``K_0`` for ``"cost_of_capital"`` (no default): a pair
     ///     ``("var", q)`` (``Q_q(X) - BE``) or ``("tvar", q)``, or an amount
     ///     (a float or ``("amount", k)``), such as the one-year view's
-    ///     99.5% loss. An amount is the total's, so no segment results are
-    ///     reported for it.
+    ///     capital, ``cdr.mean() - cdr.quantile(0.005)`` (the 99.5% loss
+    ///     less the expected loss). An amount is the total's, so no segment
+    ///     results are reported for it.
     /// charge : {"end", "start"}, default "end"
     ///     Charge each year's capital at its end, ``rate sum K_t v(t + 1)``
     ///     (Solvency II's risk margin), or its start,

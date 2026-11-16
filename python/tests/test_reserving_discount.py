@@ -150,7 +150,18 @@ def test_the_risk_adjustment_and_its_implied_confidence(boot):
     assert ra.capital is None and ra.segments == []
     tv = d.risk_adjustment("tvar", 0.75)
     assert tv.amount > ra.amount
+    # 0.75 n is whole: the TVaR is the mean of the largest quarter of draws.
+    x = sorted(total.draws)
+    assert n * 0.75 == int(n * 0.75)
+    tail = x[int(n * 0.75):]
+    assert close(tv.amount, sum(tail) / len(tail) - d.best_estimate)
+    assert tv.implied_confidence == sum(v <= d.best_estimate + tv.amount for v in x) / n
     assert tv.implied_confidence > 0.75
+    # Elsewhere the draw at the boundary counts for its mass above p.
+    p = 0.901
+    k = math.ceil(n * p)
+    want = ((k / n - p) * x[k - 1] + sum(x[k:]) / n) / (1 - p)
+    assert close(d.risk_adjustment("tvar", p).amount, want - d.best_estimate)
 
 
 def test_the_cost_of_capital_under_both_charges(boot):

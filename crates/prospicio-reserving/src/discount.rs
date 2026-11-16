@@ -309,8 +309,9 @@ pub enum Capital {
     Var(f64),
     /// `TVaR_q(X) - BE`.
     Tvar(f64),
-    /// A capital the caller brings, such as the one-year view's 99.5% VaR
-    /// of the claims development result.
+    /// A capital the caller brings, such as the one-year view's capital,
+    /// the mean claims development result less its 0.5% quantile (the
+    /// 99.5% loss less the expected loss).
     Amount(f64),
 }
 

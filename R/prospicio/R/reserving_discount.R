@@ -106,6 +106,9 @@ discount_curve_rate <- function(curve, t) {
 #' `discount_factors` (each component's mean present value over its mean
 #' unpaid; 1 where that is 0), `curve`, `timing` and `segment_labels` (one
 #' character vector per segment of a fit over segments).
+#' `segment_runoff(d, i)` is segment `i`'s run-off, as `runoff`, with `i`
+#' counted from 1 in the order of `segment_labels` (a fit over two or more
+#' segments only).
 #'
 #' @param fit A stochastic reserving fit (see Details).
 #' @param basis `"paid"` or `"incurred"`: what the fit's column is.
@@ -124,10 +127,14 @@ discount_curve_rate <- function(curve, t) {
 #' @param p The level of `"confidence"` and `"tvar"`, in `[0, 1]`.
 #' @param capital `K_0` of `"cost_of_capital"`, with no default: `c(var = q)`
 #'   (`Q_q(X) - BE`), `c(tvar = q)`, or an amount (a number or
-#'   `c(amount = k)`), such as the one-year view's 99.5% loss. An amount is
-#'   the total's, so no segment results are reported for it.
+#'   `c(amount = k)`), such as the one-year view's capital, the mean claims
+#'   development result less its 0.5% quantile (the 99.5% loss less the
+#'   expected loss). An amount is the total's, so no segment results are
+#'   reported for it.
+#' @param i A segment, counted from 1 in the order of `segment_labels`.
 #' @param charge `"end"` (the default) or `"start"` of each year.
 #' @returns `discounted_reserves()`: a `discounted_reserves` result.
+#'   `segment_runoff()`: a numeric vector.
 #'   `risk_adjustment()`: a list with `amount`, `best_estimate`,
 #'   `implied_confidence` (the share of discounted draws at or below
 #'   `best_estimate + amount`), `capital` (`K_0`, or `NULL`) and `segments`, a
@@ -207,6 +214,15 @@ discounted_reserves_class <- S7::new_class(
                    discounted = predictive_distribution(ptr = ptr$discounted()))
   }
 )
+
+#' @rdname discounted_reserves
+#' @export
+segment_runoff <- function(d, i) {
+  if (!S7::S7_inherits(d, discounted_reserves_class)) {
+    stop("d must be the result of discounted_reserves()", call. = FALSE)
+  }
+  reserving_result(d@ptr$segment_runoff(single_number(i, "i")))
+}
 
 S7::method(print, discounted_reserves_class) <- function(x, ...) {
   cat(sprintf("discounted_reserves: best estimate %s (undiscounted %s), timing %s\n",
