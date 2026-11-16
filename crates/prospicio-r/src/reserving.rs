@@ -3069,7 +3069,7 @@ impl ChainLadderFit {
 /// A Mack chain ladder fitted to every segment of a triangle column.
 #[extendr]
 pub(crate) struct MackFit {
-    inner: SegmentFits<MackInner>,
+    pub(crate) inner: SegmentFits<MackInner>,
 }
 
 #[extendr]
@@ -3299,7 +3299,7 @@ impl CapeCodFit {
 /// observed.
 #[extendr]
 pub(crate) struct OdpBootstrapFit {
-    inner: OdpBootstrapFits,
+    pub(crate) inner: OdpBootstrapFits,
 }
 
 #[extendr]
@@ -3398,7 +3398,7 @@ impl OdpBootstrapFit {
 /// there is no residual.
 #[extendr]
 pub(crate) struct MackBootstrapFit {
-    inner: MackBootstrapFits,
+    pub(crate) inner: MackBootstrapFits,
 }
 
 #[extendr]
@@ -3839,7 +3839,7 @@ impl PaidIncurredFit {
 /// A Bayesian ODP chain ladder of a single-segment triangle column.
 #[extendr]
 pub(crate) struct BayesOdpFit {
-    inner: BayesOdpInner,
+    pub(crate) inner: BayesOdpInner,
 }
 
 #[extendr]
@@ -4684,7 +4684,7 @@ fn summary_list(s: &[ParamSummary]) -> List {
 /// segment needs a single-segment fit.
 #[extendr]
 pub(crate) struct BayesOdpFits {
-    inner: BayesOdpFitsInner,
+    pub(crate) inner: BayesOdpFitsInner,
 }
 
 impl BayesOdpFits {
@@ -4816,7 +4816,7 @@ impl BayesOdpFits {
 /// Meyers' CRC, CSR or CAY model of a single-segment triangle column.
 #[extendr]
 pub(crate) struct MeyersFit {
-    inner: MeyersInner,
+    pub(crate) inner: MeyersInner,
 }
 
 #[extendr]
@@ -5236,7 +5236,7 @@ impl BayesNewYear {
 /// single-segment triangle column.
 #[extendr]
 pub(crate) struct BayesBfNormalisedFit {
-    inner: BayesBfNormalisedInner,
+    pub(crate) inner: BayesBfNormalisedInner,
 }
 
 #[extendr]
@@ -5420,7 +5420,7 @@ impl BayesBfNormalisedFit {
 /// triangle column.
 #[extendr]
 pub(crate) struct HierarchicalBfFit {
-    inner: HierarchicalBfInner,
+    pub(crate) inner: HierarchicalBfInner,
 }
 
 #[extendr]
@@ -5639,7 +5639,7 @@ impl HierarchicalBfOneYearFit {
 /// A Bayesian Bornhuetter-Ferguson of a single-segment triangle column.
 #[extendr]
 pub(crate) struct BayesBfFit {
-    inner: BayesBfInner,
+    pub(crate) inner: BayesBfInner,
 }
 
 #[extendr]
@@ -5803,7 +5803,7 @@ impl BayesBfFit {
 /// segment needs a single-segment fit.
 #[extendr]
 pub(crate) struct MeyersFits {
-    inner: MeyersFitsInner,
+    pub(crate) inner: MeyersFitsInner,
 }
 
 impl MeyersFits {
@@ -6577,7 +6577,7 @@ impl CompartmentalOneYearFits {
 /// single-segment fit.
 #[extendr]
 pub(crate) struct CompartmentalFits {
-    inner: CompartmentalFitsInner,
+    pub(crate) inner: CompartmentalFitsInner,
 }
 
 impl CompartmentalFits {
@@ -6765,7 +6765,7 @@ impl CompartmentalFits {
 /// A fitted Gesmann and Morris compartmental model of a single-segment triangle.
 #[extendr]
 pub(crate) struct CompartmentalFit {
-    inner: CompartmentalInner,
+    pub(crate) inner: CompartmentalInner,
 }
 
 #[extendr]

@@ -59,6 +59,7 @@ use prospicio_models::{Column, Terms};
 
 use crate::distributions::{KeyArg, PyPredictiveDistribution, key_from_py};
 use crate::models::{PyElpd, PyGlm, PyTerms};
+use crate::reserving_discount::{DiscountArgs, PyDiscountCurve, PyDiscountedReserves, discounted};
 use crate::to_py;
 use prospicio_prob::ComponentKey;
 use prospicio_reserving::UltimateDraws;
@@ -4347,6 +4348,71 @@ impl PyMackFit {
 
 #[pymethods]
 impl PyMackFit {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Analytic Mack has no simulations to discount: this raises
+    /// ``NotSupportedError``; discount a ``MackBootstrap`` fit instead.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        let (_, first) = self.inner.iter().next().expect("a fit has a segment");
+        discounted(py, first, args)
+    }
+
     /// The underlying chain-ladder projection.
     #[getter]
     fn chain_ladder(&self) -> PyChainLadderFit {
@@ -8711,6 +8777,71 @@ impl PyOdpBootstrapFit {
 
 #[pymethods]
 impl PyOdpBootstrapFit {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Each simulation's reserve is spread over that simulation's pattern:
+    /// the rises of its running maximum after each origin's latest age, the
+    /// tail's share one period past the oldest age.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// Each simulation's development pattern, to pair with the
     /// simulation's loss ratio in the cash-flow engine.
     ///
@@ -9527,6 +9658,71 @@ pub(crate) struct PyMackBootstrapFit {
 
 #[pymethods]
 impl PyMackBootstrapFit {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Each simulation's reserve is spread over that simulation's pattern:
+    /// the rises of its running maximum after each origin's latest age, the
+    /// tail's share one period past the oldest age.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// Each simulation's development pattern, to pair with the
     /// simulation's loss ratio in the cash-flow engine.
     ///
@@ -10539,6 +10735,70 @@ pub(crate) struct PyBayesOdpFit {
 
 #[pymethods]
 impl PyBayesOdpFit {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Each simulation's reserve is spread over the pattern of its own
+    /// posterior draw.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// Each simulation's development pattern, to pair with the
     /// simulation's loss ratio in the cash-flow engine.
     ///
@@ -10942,6 +11202,70 @@ impl PyBayesOdpFits {
 
 #[pymethods]
 impl PyBayesOdpFits {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Each segment is spread over its own posterior patterns, keeping the
+    /// simulations together across segments.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// Each simulation's development pattern, to pair with the
     /// simulation's loss ratio in the cash-flow engine.
     ///
@@ -12318,6 +12642,70 @@ pub(crate) struct PyBayesBfFit {
 
 #[pymethods]
 impl PyBayesBfFit {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Each simulation's reserve is spread over the pattern of its own
+    /// posterior draw.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// Each simulation's development pattern, to pair with the
     /// simulation's loss ratio in the cash-flow engine.
     ///
@@ -13054,6 +13442,70 @@ pub(crate) struct PyBayesBfNormalisedFit {
 
 #[pymethods]
 impl PyBayesBfNormalisedFit {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Each simulation's reserve is spread over the pattern of its own
+    /// posterior draw.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// The posterior predictive of a new underwriting year, the origin
     /// after the triangle's newest, for pricing a year not yet written.
     ///
@@ -13919,6 +14371,70 @@ pub(crate) struct PyHierarchicalBfFit {
 
 #[pymethods]
 impl PyHierarchicalBfFit {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// The hierarchical BF has no pattern per simulation: this raises
+    /// ``NotSupportedError``.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// The programs, in the triangle's segment order.
     ///
     /// Returns
@@ -16012,6 +16528,70 @@ pub(crate) struct PyMeyersFit {
 
 #[pymethods]
 impl PyMeyersFit {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Meyers' models simulate no path, so each reserve is spread over its
+    /// simulation's pattern.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// The posterior predictive of a new underwriting year, the origin
     /// after the triangle's newest, for pricing a year not yet written.
     ///
@@ -16362,6 +16942,70 @@ impl PyMeyersFits {
 
 #[pymethods]
 impl PyMeyersFits {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Meyers' models simulate no path, so each reserve is spread over its
+    /// simulation's pattern, each segment by its own.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// The model: ``"crc"``, ``"csr"`` or ``"cay"``.
     #[getter]
     fn model(&self) -> &'static str {
@@ -18606,6 +19250,71 @@ pub(crate) struct PyCompartmentalFit {
 
 #[pymethods]
 impl PyCompartmentalFit {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Paid by the simulated paid cells, each increment at its own age
+    /// (process timing included), not spread; ``basis`` must be ``"paid"``,
+    /// and a fit on incurred claims only is refused.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// Origin period of each component, those of the premium column.
     #[getter]
     fn origins(&self) -> Vec<String> {
@@ -18942,6 +19651,70 @@ impl PyCompartmentalFits {
 
 #[pymethods]
 impl PyCompartmentalFits {
+    /// The unpaid claims discounted simulation by simulation, by origin and
+    /// in total, for the IFRS 17 liability for incurred claims and its risk
+    /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
+    ///
+    /// Paid by each segment's simulated paid cells, not spread; ``basis``
+    /// must be ``"paid"``.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"paid", "incurred"}
+    ///     What the fit's column is, stated by the caller (no default), so
+    ///     that a fit on incurred claims is not discounted by its reporting
+    ///     pattern by mistake. ``"paid"`` pays each simulation's reserve
+    ///     along that simulation's own pattern. ``"incurred"`` pays each
+    ///     reserve (the IBNR) plus the origin's case reserve (its latest
+    ///     incurred less ``latest_paid``) along ``paid_pattern``.
+    /// rate : float, optional
+    ///     A flat annual effective rate. Give ``rate`` or ``curve``.
+    /// curve : DiscountCurve, optional
+    ///     Spot rates by maturity.
+    /// timing : {"mid", "end"}, default "mid"
+    ///     Payments at the middle or the end of each development period.
+    /// paid_pattern : list of float, optional
+    ///     For ``basis="incurred"``: the cumulative paid share at each of
+    ///     the fit's pattern ages (with the tail's age when the fit has a
+    ///     tail), ending at 1.
+    /// latest_paid : list of float, optional
+    ///     For ``basis="incurred"``: each origin's latest paid, one per
+    ///     component of ``reserves`` in their order.
+    ///
+    /// Returns
+    /// -------
+    /// DiscountedReserves
+    #[pyo3(signature = (
+        *,
+        basis,
+        rate = None,
+        curve = None,
+        timing = "mid",
+        paid_pattern = None,
+        latest_paid = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn discounted(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        rate: Option<f64>,
+        curve: Option<PyRef<'_, PyDiscountCurve>>,
+        timing: &str,
+        paid_pattern: Option<Vec<f64>>,
+        latest_paid: Option<Vec<f64>>,
+    ) -> PyResult<PyDiscountedReserves> {
+        let args = DiscountArgs {
+            basis,
+            rate,
+            curve,
+            timing,
+            paid_pattern,
+            latest_paid,
+        };
+        discounted(py, &self.inner, args)
+    }
+
     /// Names of the triangle's key columns; empty without keys.
     #[getter]
     fn keys(&self) -> Vec<String> {

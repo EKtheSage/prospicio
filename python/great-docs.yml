@@ -402,6 +402,8 @@ reference:
       - reserving.ClarkLdf
       - reserving.ClarkCapeCod
       - reserving.ClarkFit
+      - reserving.DiscountCurve
+      - reserving.DiscountedReserves
       - reserving.PaidIncurredChain
       - reserving.PaidIncurredFit
       - reserving.ExcessLayer
@@ -410,6 +412,8 @@ reference:
       - reserving.ExcessPattern
       - reserving.RatioDevelopment
       - reserving.RatioDevelopmentFit
+      - reserving.RiskAdjustmentResult
+      - reserving.SegmentRiskAdjustment
       - reserving.UlaeEstimate
       - reserving.ulae_classical
       - reserving.ulae_kittel
