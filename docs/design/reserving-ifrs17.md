@@ -1,6 +1,6 @@
 # Design note: discounted reserves and an IFRS 17 risk adjustment
 
-Status: **Accepted** (2026-11-14; issue #553, which the user took up on 2026-11-14, lifting its P4 parking). The user decided open decisions 1 to 4 on 2026-11-14 as recommended: (1a) spreading by each simulation's pattern, with `Compartmental`'s paid cells; (2a) both capital charges, end of year by default; (3a) mid-period payments by default; (4b) a stated basis. Decisions 5 to 8 are built as recommended unless the user decides otherwise. **PR 1 is built** (Rust, branch `claude/ifrs17-reserves`, 2026-11-14): `prospicio_reserving::discount`, with the decisions the build made recorded as open decisions 9 to 19, built as described there; on 2026-11-15 the user decided 17 (the running maximum kept) and 18 (the incurred basis discounts the whole unpaid, IBNR plus case reserves, built on the same branch). PR 2 (Python and R) is next. Lane: Reserving (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on: `time-value.md` (Aggregate lane, read only: decisions 3, 4, 7 and 37(a))
+Status: **Accepted** (2026-11-14; issue #553, which the user took up on 2026-11-14, lifting its P4 parking). The user decided open decisions 1 to 4 on 2026-11-14 as recommended: (1a) spreading by each simulation's pattern, with `Compartmental`'s paid cells; (2a) both capital charges, end of year by default; (3a) mid-period payments by default; (4b) a stated basis. Decisions 5 to 8 are built as recommended unless the user decides otherwise. **PR 1 is built** (Rust, branch `claude/ifrs17-reserves`, 2026-11-14): `prospicio_reserving::discount`, with the decisions the build made recorded as open decisions 9 to 19, built as described there; on 2026-11-15 the user decided 17 (the running maximum kept) and 18 (the incurred basis discounts the whole unpaid, IBNR plus case reserves, built on the same branch). **PR 2 is built** (branch `claude/ifrs17-bindings`, 2026-11-16): the Python and R bindings, with the decisions the build made recorded as open decisions 20 to 25, and the section of `docs/guides/reserving-methods.md` (a Guides-lane file, edited with the user's go-ahead of 2026-11-16). Lane: Reserving (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on: `time-value.md` (Aggregate lane, read only: decisions 3, 4, 7 and 37(a))
 
 ## Goal
 
@@ -181,8 +181,9 @@ A doc section only: the one-year view's `cdr` (`OneYearFit`, the Bayesian
 `one_year`, `MackFit.cdr`) is the reserve-risk input. The CDR is the
 opening ultimate less the closing one (`one_year_bootstrap.rs:27-30`), so
 an adverse year is a negative CDR and the 99.5% VaR of the loss is
-`-cdr.total().quantile(0.005)` (less the mean CDR, if it is not zero).
-That amount can be brought to `Capital::Amount`.
+`-cdr.total().quantile(0.005)`. The capital above the expected loss is that
+less the expected loss, `-mean CDR`, so `mean CDR - Q_0.005(CDR)` (decision
+24). That amount can be brought to `Capital::Amount`.
 
 ## API
 
@@ -257,12 +258,33 @@ the ODP and Mack bootstraps, `BayesOdp`, `BayesBf`, `BayesBfNormalised`,
 return `Error::NotSupported` with the reason (no pattern per simulation; no
 simulations) (decision 13).
 
-Python: `fit.discounted(rate=0.03 | curve=..., timing="mid", basis="paid" | basis="incurred" with paid_pattern=, latest_paid=)` returning
-`DiscountedReserves` with `unpaid`, `discounted`, `best_estimate`,
-`runoff`, and `risk_adjustment(method="confidence", p=0.75)` (and
-`"tvar"`, `"cost_of_capital"` with `rate`, `capital`, `charge`).
-R: `discounted_reserves(fit, rate =, curve =, timing =, basis =, paid_pattern =, latest_paid =)` and
-`risk_adjustment(d, method =, ...)`.
+Python, as built (PR 2, decisions 20 to 23), in `prospicio.reserving`:
+
+```python
+fit.discounted(*, basis, rate=None, curve=None, timing="mid",
+               paid_pattern=None, latest_paid=None) -> DiscountedReserves
+DiscountCurve(maturities, rates); DiscountCurve.flat(rate)   # .rate(t), .factor(t)
+DiscountedReserves: unpaid, discounted, best_estimate, runoff, discount_factors,
+    curve, timing, segment_labels, segment_runoff(i),
+    risk_adjustment(method, p=None, *, rate=None, capital=None, charge="end")
+RiskAdjustmentResult: amount, best_estimate, implied_confidence, capital, segments
+SegmentRiskAdjustment: label, result
+```
+
+on `OdpBootstrapFit`, `MackBootstrapFit`, `BayesOdpFit`, `BayesOdpFits`,
+`BayesBfFit`, `BayesBfNormalisedFit`, `MeyersFit`, `MeyersFits`,
+`CompartmentalFit` and `CompartmentalFits`, and on `MackFit` and
+`HierarchicalBfFit`, where it raises `NotSupportedError`.
+
+R, as built:
+
+```r
+discounted_reserves(fit, basis, rate = NULL, curve = NULL, timing = c("mid", "end"),
+                    paid_pattern = NULL, latest_paid = NULL)   # a discounted_reserves object
+risk_adjustment(d, method = c("confidence", "tvar", "cost_of_capital"), p = NULL,
+                rate = NULL, capital = NULL, charge = c("end", "start"))   # a list
+discount_curve(maturities, rates); discount_curve_factor(curve, t); discount_curve_rate(curve, t)
+```
 
 ## Crates touched
 
@@ -478,3 +500,60 @@ against the English text), currency, the LRC.
     by 0.07%, and process timing barely changes the spread. The test
     (`the_discounted_cells_and_the_spread_patterns_side_by_side`) asserts
     the means within 0.5% and the sds within 2%.
+20. **The bindings' arguments** (decided by the build, PR 2). Python's
+    `discounted` takes every argument by keyword and `basis` has no
+    default, so leaving it out is a `TypeError` (decision 4b); R's
+    `discounted_reserves()` stops with a message when `basis` is missing.
+    Exactly one of `rate` (a flat curve) and `curve` is given. The option
+    names are `basis` `"paid"` or `"incurred"`, `timing` `"mid"` (the
+    default) or `"end"`, `method` `"confidence"`, `"tvar"` or
+    `"cost_of_capital"` and `charge` `"end"` (the default) or `"start"`.
+    `paid_pattern` and `latest_paid` given under `"paid"`, or missing under
+    `"incurred"`, are an error before the fit is read. `p` is for the first
+    two methods, `rate` and `capital` for the third, and a stray one is an
+    error. Python's `segment_runoff(i)` counts from 0, R's from 1.
+21. **How the capital is given** (decided by the build, PR 2). Python: a
+    number is `Capital::Amount`, a pair `("var", q)`, `("tvar", q)` or
+    `("amount", k)` the variant it names. R: a number, or a named number
+    `c(var = q)`, `c(tvar = q)` or `c(amount = k)`. One spelling covers the
+    three variants without three arguments that exclude each other, and an
+    amount (the one-year capital of section 4) needs no wrapper.
+22. **The unsupported fits** (decided by the build, PR 2). Python's
+    `MackFit` and `HierarchicalBfFit` have the method and R's
+    `discounted_reserves()` takes them, so the user meets Rust's reason
+    (decision 13) as `NotSupportedError` or the `prospicio_not_supported`
+    condition, rather than a missing method. Python's and R's analytic Mack
+    fit holds Mack over segments; the first segment's fit is passed, whose
+    error is the same for every segment.
+23. **Where the binding code lives and what is bound** (decided by the
+    build, PR 2). Each language's module is `reserving_discount.rs`
+    (`crates/prospicio-python/src`, `crates/prospicio-r/src`) and
+    `R/prospicio/R/reserving_discount.R`. A pyo3 class has one
+    `#[pymethods]` block, so each fit's `discounted` method in
+    `reserving.rs` is a delegate to the module's generic helper. R has one
+    entry point that matches the fit's external pointer against each
+    supported fit, which needs those fits' `inner` fields `pub(crate)`. The
+    helpers are generic over `Discountable`, which binds the trait, so all
+    twelve items of the allow-list are bound and no entry remains. R's
+    curve is an S7 object of plain numbers checked by `DiscountCurve::spot`
+    when it is made, with `discount_curve_factor()` and
+    `discount_curve_rate()` to read it; R's result is the S7 class
+    `discounted_reserves` (`discounted_reserves_class`) and its risk
+    adjustment a list whose `segments` is a data frame.
+24. **The Solvency II capital from the one-year view** (decided by the
+    build, PR 2; the guide's section). Section 4's 99.5% VaR of the loss
+    is `-Q_0.005(CDR)`; the capital is the amount above the expected loss,
+    `-mean CDR`, so `mean CDR - Q_0.005(CDR)`, which is what the guide
+    brings to `capital=`. On the guide's triangle the Mack bootstrap's
+    mean CDR is -1.2, so the capital is 1.2 below the VaR.
+25. **A fit over one segment reports no segments** (decided by the build,
+    PR 2; a change to PR 1's Rust). The bindings hold the fit of a
+    triangle without keys as a `*Fits` of one segment (the bootstraps
+    always, the Bayesian and compartmental fits over segments when the
+    triangle has one), and PR 1 reported that segment, with an empty
+    label, beside the total in every risk adjustment, contrary to decision
+    15's "a fit of one segment reports no segments". Built: `segments`,
+    `segment_labels()` and the segments of a risk adjustment are reported
+    for a fit over two or more segments only; `segment_runoff(0)` still
+    gives the one segment's run-off. Unit test:
+    `a_fit_over_one_segment_reports_no_segments`.
