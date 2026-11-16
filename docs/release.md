@@ -139,7 +139,8 @@ at a sub-annual grain (#759, #763), #722 (#745), #577 (#749), #742 (closed
 with its PRs #784 to #796), #730 (#756) and #579 (closed with #750 to #755,
 #765 to #767, #793 and #794). #576 is parked (#787).
 
-Probability has no open item. Parked: #553 (IFRS 17, `P4`), claim-level
+Probability has no open item. Parked: #553 (IFRS 17, `P4`; the user took
+it up on 2026-11-14, `reserving-ifrs17.md`), claim-level
 reserving, the survival models and #576 (the WASM JavaScript package; the
 user's decision of 2026-11-07: the XLL already reaches Excel users, and a
 browser package needs more enterprise work to deploy, such as security

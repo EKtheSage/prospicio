@@ -466,6 +466,26 @@ pub struct CompartmentalLoo {
 }
 
 impl CompartmentalFit {
+    /// What [`discounted_reserves`](crate::discount::discounted_reserves)
+    /// times the paid cells by: whether the paid cells carry observation
+    /// noise (not under [`Fitted::IncurredOnly`], where they are the
+    /// expected paid), the development period in months, and each origin's
+    /// latest observed paid age in months (0 for an origin with no observed
+    /// paid, timed from its start).
+    pub(crate) fn paid_timing(&self) -> (bool, Lag, Vec<Lag>) {
+        let latest = self
+            .data
+            .latest_paid
+            .iter()
+            .map(|l| l.map_or(0, |(k, _)| self.data.age(k)))
+            .collect();
+        (
+            self.model.response.paid,
+            self.data.grain.development.months(),
+            latest,
+        )
+    }
+
     /// Posterior summary of each parameter: mean, sd, 5/50/95% quantiles,
     /// R-hat, bulk and tail ESS.
     pub fn summary(&self) -> Result<Vec<ParamSummary>> {
