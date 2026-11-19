@@ -42,6 +42,16 @@ sources:
   incurred regression only, so on MCL with incurred flat from 60 to 72
   months in 2001 and 2002 R keeps 20 paid and 18 incurred pairs and
   `lambda_paid` stays 0.636021.[^design][^test]
+* That zero is exact only by luck of the arithmetic in R. ChainLadder
+  takes the link ratio from `lm()`, and under OpenBLAS 0.3.32 (GitHub's
+  ubuntu-26.04 runners, from 2026-11) the ratio of the flat link is
+  1 + 2.2e-16, its sigma 2.2e-15 and the two 0/0 residuals round-off of
+  about -4.8 and -5.1, which stay in the regression: 20 incurred pairs
+  and a `lambda_incurred` of 0.7469 against 0.4140 under the reference
+  BLAS. prospicio's sigma there is exactly 0 on every platform. The R
+  test compares the incurred side with a live ChainLadder only when R's
+  sigma is exactly 0 and reports a skipped block otherwise
+  (`R/prospicio/tests/test-reserving-munich.R`, 2026-11-19).[^test]
 * The oldest age's rho (one origin) is extrapolated log-linearly by R
   whatever `est.sigma` says (0.1966 on MCL's paid), while
   chainladder-python fills it by the column's sigma interpolation (0.0311
