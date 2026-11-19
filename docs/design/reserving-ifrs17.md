@@ -1,6 +1,6 @@
 # Design note: discounted reserves and an IFRS 17 risk adjustment
 
-Status: **Accepted** (2026-11-14; issue #553, which the user took up on 2026-11-14, lifting its P4 parking). The user decided open decisions 1 to 4 on 2026-11-14 as recommended: (1a) spreading by each simulation's pattern, with `Compartmental`'s paid cells; (2a) both capital charges, end of year by default; (3a) mid-period payments by default; (4b) a stated basis. Decisions 5 to 8 are built as recommended unless the user decides otherwise. **PR 1 is built** (Rust, branch `claude/ifrs17-reserves`, 2026-11-14): `prospicio_reserving::discount`, with the decisions the build made recorded as open decisions 9 to 19, built as described there; on 2026-11-15 the user decided 17 (the running maximum kept) and 18 (the incurred basis discounts the whole unpaid, IBNR plus case reserves, built on the same branch). **PR 2 is built** (branch `claude/ifrs17-bindings`, 2026-11-16): the Python and R bindings, with the decisions the build made recorded as open decisions 20 to 25, and the section of `docs/guides/reserving-methods.md` (a Guides-lane file, edited with the user's go-ahead of 2026-11-16). Lane: Reserving (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on: `time-value.md` (Aggregate lane, read only: decisions 3, 4, 7 and 37(a))
+Status: **Accepted** (2026-11-14; issue #553, which the user took up on 2026-11-14, lifting its P4 parking). The user decided open decisions 1 to 4 on 2026-11-14 as recommended: (1a) spreading by each simulation's pattern, with `Compartmental`'s paid cells; (2a) both capital charges, end of year by default; (3a) mid-period payments by default; (4b) a stated basis. Decisions 5 to 8 are built as recommended unless the user decides otherwise. **PR 1 is built** (Rust, branch `claude/ifrs17-reserves`, 2026-11-14): `prospicio_reserving::discount`, with the decisions the build made recorded as open decisions 9 to 19, built as described there; on 2026-11-15 the user decided 17 (the running maximum kept) and 18 (the incurred basis discounts the whole unpaid, IBNR plus case reserves, built on the same branch). **PR 2 is built** (branch `claude/ifrs17-bindings`, 2026-11-16): the Python and R bindings, with the decisions the build made recorded as open decisions 20 to 25 and decided by the user on 2026-11-19 as built, and the section of `docs/guides/reserving-methods.md` (a Guides-lane file, edited with the user's go-ahead of 2026-11-16). Lane: Reserving (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on: `time-value.md` (Aggregate lane, read only: decisions 3, 4, 7 and 37(a))
 
 ## Goal
 
@@ -501,7 +501,7 @@ against the English text), currency, the LRC.
     by 0.07%, and process timing barely changes the spread. The test
     (`the_discounted_cells_and_the_spread_patterns_side_by_side`) asserts
     the means within 0.5% and the sds within 2%.
-20. **The bindings' arguments** (decided by the build, PR 2). Python's
+20. **The bindings' arguments** (decided by the build, PR 2, and by the user on 2026-11-19 as built). Python's
     `discounted` takes every argument by keyword and `basis` has no
     default, so leaving it out is a `TypeError` (decision 4b); R's
     `discounted_reserves()` stops with a message when `basis` is missing.
@@ -513,21 +513,20 @@ against the English text), currency, the LRC.
     `"incurred"`, are an error before the fit is read. `p` is for the first
     two methods, `rate` and `capital` for the third, and a stray one is an
     error. Python's `segment_runoff(i)` counts from 0, R's from 1.
-21. **How the capital is given** (decided by the build, PR 2). Python: a
+21. **How the capital is given** (decided by the build, PR 2, and by the user on 2026-11-19 as built). Python: a
     number is `Capital::Amount`, a pair `("var", q)`, `("tvar", q)` or
     `("amount", k)` the variant it names. R: a number, or a named number
     `c(var = q)`, `c(tvar = q)` or `c(amount = k)`. One spelling covers the
     three variants without three arguments that exclude each other, and an
     amount (the one-year capital of section 4) needs no wrapper.
-22. **The unsupported fits** (decided by the build, PR 2). Python's
+22. **The unsupported fits** (decided by the build, PR 2, and by the user on 2026-11-19 as built). Python's
     `MackFit` and `HierarchicalBfFit` have the method and R's
     `discounted_reserves()` takes them, so the user meets Rust's reason
     (decision 13) as `NotSupportedError` or the `prospicio_not_supported`
     condition, rather than a missing method. Python's and R's analytic Mack
     fit holds Mack over segments; the first segment's fit is passed, whose
     error is the same for every segment.
-23. **Where the binding code lives and what is bound** (decided by the
-    build, PR 2). Each language's module is `reserving_discount.rs`
+23. **Where the binding code lives and what is bound** (decided by the build, PR 2, and by the user on 2026-11-19 as built). Each language's module is `reserving_discount.rs`
     (`crates/prospicio-python/src`, `crates/prospicio-r/src`) and
     `R/prospicio/R/reserving_discount.R`. A pyo3 class has one
     `#[pymethods]` block, so each fit's `discounted` method in
@@ -541,14 +540,12 @@ against the English text), currency, the LRC.
     `discount_curve_rate()` to read it; R's result is the S7 class
     `discounted_reserves` (`discounted_reserves_class`) and its risk
     adjustment a list whose `segments` is a data frame.
-24. **The Solvency II capital from the one-year view** (decided by the
-    build, PR 2; the guide's section). Section 4's 99.5% VaR of the loss
+24. **The Solvency II capital from the one-year view** (decided by the build, PR 2, and by the user on 2026-11-19 as built; the guide's section). Section 4's 99.5% VaR of the loss
     is `-Q_0.005(CDR)`; the capital is the amount above the expected loss,
     `-mean CDR`, so `mean CDR - Q_0.005(CDR)`, which is what the guide
     brings to `capital=`. On the guide's triangle the Mack bootstrap's
     mean CDR is -1.2, so the capital is 1.2 below the VaR.
-25. **A fit over one segment reports no segments** (decided by the build,
-    PR 2; a change to PR 1's Rust). The bindings hold the fit of a
+25. **A fit over one segment reports no segments** (decided by the build, PR 2, and by the user on 2026-11-19 as built; a change to PR 1's Rust). The bindings hold the fit of a
     triangle without keys as a `*Fits` of one segment (the bootstraps
     always, the Bayesian and compartmental fits over segments when the
     triangle has one), and PR 1 reported that segment, with an empty
