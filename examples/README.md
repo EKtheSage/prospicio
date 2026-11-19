@@ -97,8 +97,8 @@ and later on Windows, macOS and Linux, so no Rust toolchain is needed. Then
 open the notebook in Jupyter.
 
 To run a notebook against unreleased changes in this repository, use the
-uv project in `python/` (needs Rust). The notebooks run against the released package
-(0.1.0 or later), so use this route only to try changes that are not
+uv project in `python/` (needs Rust). The notebooks run against the released
+package (0.1.0 or later), so use this route only to try changes that are not
 released yet. From the repository root:
 
 ```sh
