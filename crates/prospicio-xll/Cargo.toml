@@ -32,3 +32,6 @@ prospicio-math.workspace = true
 [[test]]
 name = "worksheet"
 path = "tests/worksheet.rs"
+
+[dev-dependencies]
+serde_json.workspace = true

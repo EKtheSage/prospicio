@@ -1375,6 +1375,21 @@ rm["B126"] = "=AND(A126=1,A127=1,A128=1,A129=0.98,A135=0.35)"
 rm["C126"] = ArrayFormula("C126:C128", "=PRO.REVERSE(A124:H124,3)")
 rm["D126"] = "=AND(C126=1,C127=0.98,C128=0.96)"
 
+# The AP pricing demo's four printed cumulative loss ratios (#806), on its
+# inputs (validation/data/ap_pricing_demo_inputs.json, a verbatim copy).
+import json
+with open(Path(__file__).resolve().parents[3] / "validation" / "data" / "ap_pricing_demo_inputs.json") as f:
+    ap = json.load(f)
+rm["A138"] = "The AP pricing demo's cumulative loss ratios: rows 1, 2, 3 and 14 against its printed values to 5e-13"; rm["A138"].font = bold
+for k, (lr, ep) in enumerate(zip(ap["loss_ratios"], ap["earned_premium"])):
+    rm.cell(row=139 + k, column=1, value=lr).fill = inp
+    rm.cell(row=139 + k, column=2, value=ep).fill = inp
+rm["C139"] = ArrayFormula("C139:C152", "=PRO.PRC.LR.CUMULATIVE(A139:A152,B139:B152)")
+rm["D139"] = (
+    "=AND(ABS(C139-0.61)<5E-13,ABS(C140-0.594705882353)<5E-13,"
+    "ABS(C141-0.63812066204)<5E-13,ABS(C152-0.637034303676)<5E-13)"
+)
+
 cr["A37"] = "Credibility-weighted estimate: Z 0.30 on 200 against 300 (Werner and Modlin, ch. 12: 270)"
 cr["F37"] = ArrayFormula("F37", "=PRO.PRC.CRED.WEIGHTED(200,0.3,300)")
 cr["G37"] = "=ROUND(F37,2)=270"

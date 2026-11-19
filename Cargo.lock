@@ -4199,6 +4199,7 @@ dependencies = [
  "prospicio-pricing",
  "prospicio-prob",
  "prospicio-reserving",
+ "serde_json",
 ]
 
 [[package]]
