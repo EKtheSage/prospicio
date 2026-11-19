@@ -131,6 +131,12 @@ day_hour_times_rust <- function(days, hours) .Call(wrap__day_hour_times_rust, da
 
 dglm_fit_design <- function(x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method) .Call(wrap__dglm_fit_design, x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method)
 
+discount_factor_rust <- function(maturities, rates, t) .Call(wrap__discount_factor_rust, maturities, rates, t)
+
+discount_rate_rust <- function(maturities, rates, t) .Call(wrap__discount_rate_rust, maturities, rates, t)
+
+discounted_reserves_rust <- function(fit, basis, maturities, rates, timing, paid_pattern, latest_paid) .Call(wrap__discounted_reserves_rust, fit, basis, maturities, rates, timing, paid_pattern, latest_paid)
+
 disposal_rust <- function(triangle, closed_counts, paid, ultimate, disposal_rates, severities, tail_severity_from, trend, base, factors) .Call(wrap__disposal_rust, triangle, closed_counts, paid, ultimate, disposal_rates, severities, tail_severity_from, trend, base, factors)
 
 dist_from_json_rust <- function(text) .Call(wrap__dist_from_json_rust, text)
@@ -2024,6 +2030,36 @@ DglmModel$std_errors <- function() .Call(wrap__DglmModel__std_errors, self)
 
 #' @export
 `[[.DglmModel` <- `$.DglmModel`
+
+DiscountedReserves <- new.env(parent = emptyenv())
+
+DiscountedReserves$best_estimate <- function() .Call(wrap__DiscountedReserves__best_estimate, self)
+
+DiscountedReserves$discount_factors <- function() .Call(wrap__DiscountedReserves__discount_factors, self)
+
+DiscountedReserves$discounted <- function() .Call(wrap__DiscountedReserves__discounted, self)
+
+DiscountedReserves$maturities <- function() .Call(wrap__DiscountedReserves__maturities, self)
+
+DiscountedReserves$rates <- function() .Call(wrap__DiscountedReserves__rates, self)
+
+DiscountedReserves$risk_adjustment <- function(method, p, rate, capital_kind, capital, charge) .Call(wrap__DiscountedReserves__risk_adjustment, self, method, p, rate, capital_kind, capital, charge)
+
+DiscountedReserves$runoff <- function() .Call(wrap__DiscountedReserves__runoff, self)
+
+DiscountedReserves$segment_labels <- function() .Call(wrap__DiscountedReserves__segment_labels, self)
+
+DiscountedReserves$segment_runoff <- function(i) .Call(wrap__DiscountedReserves__segment_runoff, self, i)
+
+DiscountedReserves$timing <- function() .Call(wrap__DiscountedReserves__timing, self)
+
+DiscountedReserves$unpaid <- function() .Call(wrap__DiscountedReserves__unpaid, self)
+
+#' @export
+`$.DiscountedReserves` <- function (self, name) { func <- DiscountedReserves[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.DiscountedReserves` <- `$.DiscountedReserves`
 
 DiscreteDist <- new.env(parent = emptyenv())
 

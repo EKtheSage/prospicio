@@ -41,6 +41,7 @@ mod ratemaking;
 mod reinsurance;
 mod reserving;
 mod reserving_counts;
+mod reserving_discount;
 mod reserving_expense;
 mod risk;
 
@@ -229,6 +230,10 @@ mod prospicio_native {
         PyFrequencySeverityFit, PyTrended, average_case, berquist_sherman_adjust,
         case_adequacy_adjust, case_development_factor, exponential_trend, pooled_trend,
         ratio_column, settlement_rate_adjust, trend_by_age,
+    };
+    #[pymodule_export]
+    use super::reserving_discount::{
+        PyDiscountCurve, PyDiscountedReserves, PyRiskAdjustmentResult, PySegmentRiskAdjustment,
     };
     #[pymodule_export]
     use super::reserving_expense::{

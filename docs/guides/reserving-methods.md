@@ -1098,14 +1098,14 @@ print(f"ADC pays on average {ceded.mean():.1f}, attaches in {1 - ceded.cdf(0.0):
 lpt = Tower([Layer.quota_share("LPT", 1.0)]).apply_aggregate(mb.reserves)
 print(f"gross 99.5% tail value at risk {mb.reserves.tvar(0.995):.0f}")
 print("LPT cedes", round(lpt.aggregate(["kind"]).marginal(("ceded",)).mean()))
-print(f"one-year capital, -cdr.quantile(0.005): {-mack_1y.cdr.quantile(0.005):.0f}")
+print(f"one-year 99.5% loss, -cdr.quantile(0.005): {-mack_1y.cdr.quantile(0.005):.0f}")
 ```
 
 ```text
 ADC pays on average 17.7, attaches in 18.7% of simulations
 gross 99.5% tail value at risk 2019
 LPT cedes 1541
-one-year capital, -cdr.quantile(0.005): 326
+one-year 99.5% loss, -cdr.quantile(0.005): 326
 ```
 
 ```python
@@ -1129,9 +1129,11 @@ net    1,523.7  1,700      176
 ```
 
 The ADC caps the net 99.5% at 1,700 and cuts the lifetime capital from 440 to
-176. The one-year capital of the same reserve is 326 (section 7). These figures
-exclude discounting and unallocated loss adjustment expenses; an IFRS 17 measure
-or the price of a cover adds them.
+176. Over one year the same reserve's 99.5% loss is 326 (section 7), and its
+one-year capital, that loss less the expected loss, is 325 (section 11). These
+figures are undiscounted and exclude unallocated loss adjustment expenses;
+section 11 discounts the reserve and adds an IFRS 17 risk adjustment, and the
+price of a cover discounts as below.
 
 The LPT cedes all 1,541 on average. Its price starts from that mean, adds a load
 for the risk and subtracts a discount for the time to pay. Use
@@ -1164,6 +1166,116 @@ To price the cover, add a load for the reinsurer's risk
 [`reinsurance-price.md`](reinsurance-price.md) shows the parts of a price). The
 expected loss of an ADC is sensitive to the tail of the reserve distribution:
 the bootstrap `tail` and the choice of Mack's or the ODP's process change it.
+
+## 11. Discounted reserves and the IFRS 17 risk adjustment
+
+Under IFRS 17 the liability for incurred claims is the present value of the
+unpaid claims plus a risk adjustment for non-financial risk, and an entity
+discloses the confidence level that its risk adjustment corresponds to (para.
+119, as the design note `docs/design/reserving-ifrs17.md` reads it; the
+paragraph texts have not been checked here against the standard). Every
+stochastic fit of section 6 has `discounted`, which discounts each simulation's
+unpaid claims from the valuation date along its own payment timing, by origin
+and in total.
+
+- **The basis is stated.** `basis="paid"` pays each simulation's reserve along
+  that simulation's own development pattern, so the fit must be on paid claims.
+  For a fit on incurred claims give `basis="incurred"` with `paid_pattern=` (the
+  cumulative paid share at each age) and `latest_paid=` (each origin's latest
+  paid): the amount discounted is then the IBNR plus each origin's case
+  reserve. There is no default, so an incurred fit is not discounted by its
+  reporting pattern by mistake.
+- **The curve.** `rate=` is a flat annual effective rate; `curve=DiscountCurve(
+  maturities, rates)` gives spot rates by maturity in years, linear between
+  them and flat outside.
+- **The timing.** Payments fall at the middle of each development period by
+  default (`timing="mid"`), or at its end (`timing="end"`).
+
+```python
+from prospicio.reserving import DiscountCurve
+
+flat = mb.discounted(basis="paid", rate=0.03)
+end = mb.discounted(basis="paid", rate=0.03, timing="end")
+spot = mb.discounted(basis="paid", curve=DiscountCurve([1.0, 5.0, 10.0], [0.02, 0.03, 0.035]))
+print(f"undiscounted mean {mb.reserves.mean():.0f}")
+for label, d in [("3% mid-period", flat), ("3% end of period", end), ("spot curve", spot)]:
+    print(f"{label:17} best estimate {d.best_estimate:.0f}  99.5% {d.discounted.quantile(0.995):.0f}")
+print("discount factor by origin:", [round(f, 3) for f in flat.discount_factors])
+```
+
+```text
+undiscounted mean 1541
+3% mid-period     best estimate 1472  99.5% 1882
+3% end of period  best estimate 1450  99.5% 1855
+spot curve        best estimate 1486  99.5% 1900
+discount factor by origin: [1.0, 0.985, 0.976, 0.969, 0.962, 0.956, 0.948]
+```
+
+Each simulation is discounted on its own timing and the origins are then
+summed, so the 99.5% of the discounted total is read from the discounted
+draws, not by scaling the undiscounted 99.5%. The oldest origins pay sooner
+and are discounted less. Payments at the end of each period are half a period
+later than at the middle, so they are discounted more.
+
+**The risk adjustment.** `risk_adjustment` reads it off the discounted total
+`X`, whose mean is the best estimate `BE`, by a confidence level (`Q_p(X) - BE`),
+by TVaR (`TVaR_p(X) - BE`) or by a cost of capital: a rate times the capital
+held in each future year, discounted, the capital running off with the best
+estimate (`flat.runoff`). Each result gives `implied_confidence`, the share of
+the discounted draws at or below `BE` plus the risk adjustment, which is the
+confidence level that para. 119 asks an entity to disclose. The cost of
+capital needs the capital at the valuation date (there is no default): a VaR
+or TVaR level of `X`, or an amount. It is charged at the end of each year by
+default, as Solvency II's risk margin is; `charge="start"` charges it at the
+start, as `price_over_payout` does.
+
+```python
+methods = [
+    ("75% confidence level", flat.risk_adjustment("confidence", 0.75)),
+    ("TVaR 75%", flat.risk_adjustment("tvar", 0.75)),
+    ("6% cost of capital, lifetime 99.5%", flat.risk_adjustment("cost_of_capital", rate=0.06, capital=("var", 0.995))),
+]
+for label, ra in methods:
+    print(f"{label:36} {ra.amount:5.0f}  implied confidence {ra.implied_confidence:.1%}")
+```
+
+```text
+75% confidence level                   111  implied confidence 75.0%
+TVaR 75%                               210  implied confidence 89.9%
+6% cost of capital, lifetime 99.5%      49  implied confidence 61.7%
+```
+
+**The one-year view as the capital.** Solvency II's reserve risk is the
+one-year view of section 7: the claims development result (CDR) is the
+opening ultimate less the ultimate a year later, so an adverse year is a
+negative CDR and the 99.5% loss is `-cdr.quantile(0.005)`. The capital above
+the expected loss is that less the expected loss, `-cdr.mean()`, so
+`cdr.mean() - cdr.quantile(0.005)`. It can be brought to the cost of capital as
+an amount, which is how a risk margin in the manner of Solvency II's is built
+on the lifetime run-off (an approximation in the spirit of EIOPA's
+proportional run-off simplification, not a full Solvency II calculation:
+it runs on the one segment's reserve risk alone, at this curve).
+
+```python
+one_year_capital = mack_1y.cdr.mean() - mack_1y.cdr.quantile(0.005)
+margin = flat.risk_adjustment("cost_of_capital", rate=0.06, capital=one_year_capital)
+print(f"one-year capital {one_year_capital:.0f}, cost-of-capital risk adjustment {margin.amount:.0f}")
+print(f"implied confidence {margin.implied_confidence:.1%}")
+```
+
+```text
+one-year capital 325, cost-of-capital risk adjustment 39
+implied confidence 59.3%
+```
+
+Which method and which level to use is the entity's choice under IFRS 17,
+which prescribes neither; state the method, the level and the implied
+confidence level together. Here the 75% confidence level adds 111 to the best
+estimate of 1,472, TVaR 75% adds 210 (an implied confidence level of 89.9%),
+and a 6% cost of capital on the lifetime 99.5% capital adds 49 (61.7%). On the
+one-year capital of 325 (the 326 of section 7 less the expected loss of 1.2)
+it adds 39, a 59.3% confidence level: the one-year capital is smaller than the
+lifetime one, so the margin is too.
 
 ## See also
 

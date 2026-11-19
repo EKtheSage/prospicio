@@ -15,6 +15,9 @@ sources:
   - id: timevalue
     resource: ../docs/design/time-value.md
     title: docs/design/time-value.md (decision 4, capital charged at the start of each year)
+  - id: guide
+    resource: ../docs/guides/reserving-methods.md
+    title: docs/guides/reserving-methods.md (section 11, the bindings on a synthetic triangle)
 ---
 
 # Finding
@@ -98,6 +101,33 @@ sources:
   stand-alone result is reported beside it and the total is not allocated.
   A capital given as an amount is the total's, so no stand-alone results
   are reported for it.[^note][^code]
+* **A fit over one segment.** The Python and R bindings hold the fit of a
+  triangle without keys as a fit over one segment (`OdpBootstrapFits`,
+  `MackBootstrapFits`); PR 1 reported that segment, with an empty label,
+  beside the total. Since PR 2 a fit over one segment reports no segments,
+  as a fit of one segment does (decision 25; unit test
+  `a_fit_over_one_segment_reports_no_segments`).[^note][^code]
+* **The one-year view as the capital.** The CDR is the opening ultimate
+  less the closing one, so the one-year 99.5% loss is `-Q_0.005(CDR)` and
+  the capital above the expected loss is `mean CDR - Q_0.005(CDR)`, not
+  `-Q_0.005(CDR) - mean CDR`. On the guide's synthetic triangle the Mack
+  bootstrap's mean CDR is -1.2 and the capital 325 against a 326 VaR;
+  brought to a 6% cost of capital on the 3% discounted lifetime run-off it
+  gives a risk adjustment of 39, a 59.3% implied confidence level
+  (`docs/guides/reserving-methods.md` section 11, checked by
+  `python/tests/test_guides.py`; decision 24).[^note][^guide]
+* **Names in Python and R.** Python: `fit.discounted(*, basis, rate=None,
+  curve=None, timing="mid", paid_pattern=None, latest_paid=None)` on every
+  supported fit (raising `NotSupportedError` on `MackFit` and
+  `HierarchicalBfFit`), `DiscountCurve(maturities, rates)` and
+  `DiscountCurve.flat(rate)`, and `DiscountedReserves.risk_adjustment(method,
+  p=None, *, rate=None, capital=None, charge="end")` with `capital` a number
+  or `("var" | "tvar" | "amount", value)`, returning a
+  `RiskAdjustmentResult` with `SegmentRiskAdjustment`s. R:
+  `discounted_reserves(fit, basis, rate, curve, timing, paid_pattern,
+  latest_paid)`, `risk_adjustment(d, method, p, rate, capital, charge)` with
+  `capital` a number or `c(var = q)`, and `discount_curve()`. The basis has
+  no default in either (decisions 20 to 23).[^note]
 * **Not built.** The Solvency II risk margin's lambda and floor proposed
   for 2027 (the note mentions Delegated Regulation 2026/269; its formula
   has not been verified and is not implemented), Meyers' chapter 11 risk
@@ -107,3 +137,4 @@ sources:
 [^note]: docs/design/reserving-ifrs17.md
 [^code]: crates/prospicio-reserving/src/discount.rs
 [^timevalue]: docs/design/time-value.md
+[^guide]: docs/guides/reserving-methods.md

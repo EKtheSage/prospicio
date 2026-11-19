@@ -419,6 +419,8 @@ reference:
       - munich_fit
       - calendar_year_test
       - development_correlation_test
+      - discount_curve
+      - discounted_reserves
       - tail_constant
       - tail_curve
       - tail_bondy

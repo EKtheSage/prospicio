@@ -309,8 +309,9 @@ pub enum Capital {
     Var(f64),
     /// `TVaR_q(X) - BE`.
     Tvar(f64),
-    /// A capital the caller brings, such as the one-year view's 99.5% VaR
-    /// of the claims development result.
+    /// A capital the caller brings, such as the one-year view's capital,
+    /// the mean claims development result less its 0.5% quantile (the
+    /// 99.5% loss less the expected loss).
     Amount(f64),
 }
 
@@ -407,7 +408,7 @@ pub struct DiscountedReserves {
     discounting: Discounting,
     /// Each segment's label (one empty label for a fit of one segment).
     segments: Vec<Vec<String>>,
-    /// Whether the fit is over segments.
+    /// Whether the fit is over two or more segments (decision 15).
     over_segments: bool,
     /// Each component's segment.
     component_segment: Vec<usize>,
@@ -679,7 +680,10 @@ fn over_segments<'a, T: ReserveFit>(
         spread_segment(s, fit.chain_ladder(), p, basis, &mut components)?;
         labels.push(label_parts(label));
     }
-    finish(reserves, labels, true, components)
+    // A fit over one segment (a triangle without keys) reports no segments,
+    // as a fit of one segment does (decision 15).
+    let several = labels.len() > 1;
+    finish(reserves, labels, several, components)
 }
 
 fn finish<'a>(
@@ -927,7 +931,8 @@ mod bayes_fits {
                 );
                 labels.push(label.parts().to_vec());
             }
-            finish(&self.reserves, labels, true, components)
+            let several = labels.len() > 1;
+            finish(&self.reserves, labels, several, components)
         }
     }
     impl Discountable for CompartmentalFits {}
@@ -2114,6 +2119,29 @@ mod tests {
             cumulative: true,
         })
         .unwrap()
+    }
+
+    /// Decision 15: a fit over one segment, as the bindings hold a fit of a
+    /// triangle without keys, reports no segments, as a fit of one segment.
+    #[test]
+    fn a_fit_over_one_segment_reports_no_segments() {
+        let fits = MackBootstrap {
+            n_sims: 200,
+            seed: 4,
+            ..Default::default()
+        }
+        .fit_segments(&raa(), "values")
+        .unwrap();
+        assert_eq!(fits.segments.len(), 1);
+        let mid = at(0.03, PaymentTiming::MidPeriod);
+        let d = discounted_reserves(&fits, &mid, &PaymentBasis::Paid).unwrap();
+        assert!(d.segment_labels().is_empty());
+        let r = d
+            .risk_adjustment(&RiskAdjustment::ConfidenceLevel(0.75))
+            .unwrap();
+        assert!(r.segments.is_empty());
+        let one = discounted_reserves(&mack_boot(200), &mid, &PaymentBasis::Paid).unwrap();
+        assert_eq!(one.discounted.n_components(), d.discounted.n_components());
     }
 
     #[test]

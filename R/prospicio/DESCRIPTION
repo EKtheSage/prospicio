@@ -40,5 +40,6 @@ Collate:
     'ratemaking.R'
     'reinsurance.R'
     'reserving_counts.R'
+    'reserving_discount.R'
     'reserving_expense.R'
     'risk.R'
