@@ -28,6 +28,9 @@ sources:
   - id: algebra-test
     resource: ../validation/tests/probability_stable_algebra.rs
     title: validation/tests/probability_stable_algebra.rs, stable_algebra_matches_aggregate, against validation/scripts/aggregate_stable_algebra.py
+  - id: xll-test
+    resource: ../crates/prospicio-xll/tests/chf.rs
+    title: crates/prospicio-xll/tests/chf.rs, the Excel functions PRO.CAP.CHF, PRO.CAP.STABLE and PRO.CAP.STABLE.PARETO against the same references
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, characteristic_function.py (AggregateCHF, invert_characteristic_function, window_edges) and utilities.py (round_bucket)
@@ -114,3 +117,11 @@ sources:
   `alpha = 1` unless `beta = 0`, since `X - loc` is not strictly stable
   there, and the compound Pareto limit's right tail constant equals
   `lambda theta^alpha` exactly by the reflection formula.[^algebra-test]
+* The Excel functions reach the same numbers: `PRO.CAP.CHF`, called
+  through the add-in's catalogue, meets all 13,323 cases of the five
+  reference files whose law has a sheet form (every one but the scaled
+  and shifted laws) at their tolerances, and `PRO.CAP.STABLE` and
+  `PRO.CAP.STABLE.PARETO` meet the `identity` and `compound_pareto`
+  cases. The Excel `"tweedie"` is `TweediePower` at every power, and it
+  meets `chf_aggregate.csv`'s compound Poisson gamma Tweedies, computed
+  there through `ChfLaw::Tweedie`, at the same tolerances.[^xll-test]

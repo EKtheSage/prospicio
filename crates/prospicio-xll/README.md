@@ -422,6 +422,30 @@ labelled in `companies`, with their premiums; chain its summary into
   Poisson). A mixing CV c gives `1 + c² × count_mean`. The grid is sized
   automatically unless you give `step` and `points`.
 
+### Laws from their characteristic function
+
+| Function | Returns |
+|---|---|
+| `PRO.CAP.CHF(law, params, [probabilities], [output], [log2], [step], [x_min], [tilt])` | A law's distribution on an FFT grid from its characteristic function: mean, SD, VaR, TVaR and the inversion's errors, or each grid point's mass |
+| `PRO.CAP.STABLE(alpha, beta, [scale], [loc], [parameterization])` | An alpha-stable law: its S1 parameters, S0 location, mean, tail constants and P(X > location) |
+| `PRO.CAP.STABLE.PARETO(frequency, alpha, theta, sev_mean)` | The stable limit of a Poisson compound with a Pareto tail, in the same layout |
+
+- `law` and its `params` (one row or column, in this order; the ones in
+  brackets default to 1 for a stable scale, 0 otherwise): `"normal"` mu,
+  sigma; `"gamma"` shape, scale; `"inverse_gaussian"` mean, shape;
+  `"tweedie"` power, mean, dispersion (any power outside (0, 1]);
+  `"stable"` alpha, beta, [scale], [loc] (S1), `"stable_s0"` the same with
+  loc in S0; `"normal_inverse_gaussian"` alpha, beta, delta, [mu];
+  `"variance_gamma"` sigma, nu, [theta], [mu]; `"tempered_stable"` C, G,
+  M, Y, [mu].
+- The grid has `2^log2` buckets (default 16; at most 20, or 19 for
+  `"masses"`), sized from the law's tails unless you give `step` (and
+  optionally `x_min`). A stable law's power tail is inverted along a tilted
+  line unless `tilt` is FALSE; a number fixes the tilt's e-folds. Check
+  "Truncated" and "Mass below" and "Mass above" in the summary.
+- The first four values of `PRO.CAP.STABLE` and `PRO.CAP.STABLE.PARETO`
+  are `PRO.CAP.CHF`'s `params` for `"stable"`.
+
 ### Risk measures, allocation and dependence
 
 | Function | Returns |
