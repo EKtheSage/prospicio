@@ -231,7 +231,11 @@ fn interpolate(x: &[f64], y: &[f64], origin: f64, at: f64, what: &str) -> Result
         )));
     }
     let k = x.partition_point(|&xi| xi < at);
-    if k < x.len() && x[k] <= at {
+    if k == x.len() {
+        // Past the last limit by no more than the tolerance: the last point.
+        return Ok(y[k - 1]);
+    }
+    if x[k] <= at {
         return Ok(y[k]);
     }
     let (x0, y0) = if k == 0 {
@@ -239,7 +243,7 @@ fn interpolate(x: &[f64], y: &[f64], origin: f64, at: f64, what: &str) -> Result
     } else {
         (x[k - 1], y[k - 1])
     };
-    let (x1, y1) = (x[k.min(x.len() - 1)], y[k.min(x.len() - 1)]);
+    let (x1, y1) = (x[k], y[k]);
     Ok(y0 + (y1 - y0) * (at - x0) / (x1 - x0))
 }
 
@@ -922,6 +926,30 @@ mod tests {
         assert_eq!(e.elf(f64::INFINITY).unwrap(), 0.0);
         assert!(e.elf(2e6).is_err());
         assert!(ElfTable::new(&[1e5], &[1.2]).is_err());
+    }
+
+    /// An amount a rounding error past the last limit (`0.2 + 0.4` is a float
+    /// just above `0.6`) is the last point, not `0 / 0` (#939).
+    #[test]
+    fn a_table_read_a_rounding_error_past_its_last_limit_is_the_last_value() {
+        let at = 0.2 + 0.4;
+        assert!(at > 0.6);
+        let t = IlfTable::new(&[0.1, 0.3, 0.6], &[1.0, 1.8, 2.4]).unwrap();
+        assert_eq!(t.ilf(at).unwrap(), 2.4);
+        let e = ElfTable::new(&[0.1, 0.3, 0.6], &[0.5, 0.3, 0.2]).unwrap();
+        assert_eq!(e.elf(at).unwrap(), 0.2);
+        // A policy whose top is that amount has finite factors.
+        let p = CasualtyProfile::new(
+            vec![CasualtyCurve::Ilf(t)],
+            vec![CasualtyPolicy::new(0.4, 1.0, 0.6).attachment(0.2)],
+        )
+        .unwrap();
+        let f = p
+            .exposure_factors(&layer(0.2, 0.2), Alae::InSeverity)
+            .unwrap();
+        assert!(f[0].is_finite() && f[0] > 0.0, "{f:?}");
+        let r = p.rate(&layer(0.2, 0.2), Alae::InSeverity).unwrap();
+        assert!(r.ceded().is_finite());
     }
 
     /// Clark's three liability formulas are the general factor's special
