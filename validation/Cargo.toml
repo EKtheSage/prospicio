@@ -12,21 +12,24 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-# io: the triangle readers' tests (reserving_io.rs), and with feature
-# unification the `io` unit tests of prospicio-reserving in `cargo test`.
-prospicio-reserving = { workspace = true, features = ["bayes", "io"] }
+prospicio-reserving.workspace = true
+# Optional, behind the features below (#967): Cargo compiles every
+# dev-dependency for every test binary and a dev-dependency cannot be
+# optional, so the heavy ones are optional dependencies here instead.
+# `bayes`: nuts-rs, through prospicio-bayes.
+prospicio-bayes = { workspace = true, optional = true }
+# `nn`: Burn, for the tabular networks (artifacts.rs and the freMTPL2 run,
+# fremtpl2.rs); without the ONNX import, which no test here reads.
+prospicio-nn = { path = "../crates/prospicio-nn", default-features = false, optional = true }
 
 [dev-dependencies]
 prospicio-aggregate.workspace = true
-prospicio-bayes.workspace = true
 prospicio-core.workspace = true
 prospicio-glm.workspace = true
 prospicio-math.workspace = true
 prospicio-models.workspace = true
-# The tabular networks' freMTPL2 run (fremtpl2.rs); without the ONNX import.
-prospicio-nn = { path = "../crates/prospicio-nn", default-features = false }
 prospicio-pricing.workspace = true
-prospicio-prob = { workspace = true, features = ["arrow"] }
+prospicio-prob.workspace = true
 rayon.workspace = true
 # The frozen artifacts' documents (artifacts.rs).
 serde_json.workspace = true
@@ -77,11 +80,28 @@ c = [
 unit-tests = "c"
 
 [features]
+# What each test binary needs and no more (#967). All three are on by
+# default, so `cargo test` and `cargo clippy --all-targets` build everything;
+# CI's release jobs turn the defaults off and name their own:
+#   bayes job:    --no-default-features --features slow-bayes  (no Burn, Arrow or calamine)
+#   fremtpl2 job: --no-default-features --features nn          (no nuts-rs, no Arrow)
+default = ["arrow", "bayes", "io", "nn"]
+# PredictiveDistribution's Arrow IPC reader (predictive.rs).
+arrow = ["prospicio-prob/arrow"]
+# The Bayesian reserving models (nuts-rs).
+bayes = ["dep:prospicio-bayes", "prospicio-reserving/bayes"]
+# The triangle readers' tests (reserving_io.rs), and with feature unification
+# the `io` unit tests of prospicio-reserving in `cargo test`.
+io = ["prospicio-reserving/io"]
+# The tabular networks on Burn.
+nn = ["dep:prospicio-nn"]
+
 # The Bayesian (NUTS) parity tests: about 220 s in a debug build and 17 s in
 # release when there were six files (thirteen now, with the one-year views'
 # refits, minutes in release), so a plain `cargo test` skips them and CI runs them in release
 # (the `bayes` job of .github/workflows/ci.yml). Run them locally with
 #   cargo test --release -p prospicio-validation --features slow-bayes --test bayes
+# (CI adds --no-default-features, which leaves Burn and Arrow out)
 # or one file with its module as a filter, `--test bayes reserving_meyers_cay::`.
 # A new Bayesian parity file gets a leg in [package.metadata.bayes-shards]
 # above, and nothing else: build.rs and the CI job read it.
@@ -94,7 +114,7 @@ unit-tests = "c"
 #   cargo test --release -p prospicio-reserving --features slow-tests --lib
 # `slow-bayes` turns that feature on too, so one flag covers every slow
 # Bayesian test.
-slow-bayes = ["prospicio-reserving/slow-tests"]
+slow-bayes = ["bayes", "prospicio-reserving/slow-tests"]
 
 # The test binaries (#825). `validation`: every file of tests/ that a plain
 # `cargo test` runs, each a module (build.rs finds them, so a new file needs
@@ -107,6 +127,7 @@ slow-bayes = ["prospicio-reserving/slow-tests"]
 [[test]]
 name = "validation"
 path = "tests/validation.rs"
+required-features = ["arrow", "bayes", "io", "nn"]
 
 [[test]]
 name = "bayes"
@@ -116,3 +137,4 @@ required-features = ["slow-bayes"]
 [[test]]
 name = "fremtpl2"
 path = "tests/fremtpl2.rs"
+required-features = ["nn"]

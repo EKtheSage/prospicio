@@ -5,7 +5,7 @@ description: By 2026-10-19 a pull request's CI took 27 to 32 minutes when it tou
 tags: [environment, ci, cargo, testing, cache]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-19T23:00:00Z }
-updated: { by: claude-code/cloud-session, at: 2026-11-11T00:00:00Z }
+updated: { by: claude-code/cloud-session, at: 2026-11-20T00:00:00Z }
 stale_after: 2027-04-19T00:00:00Z
 sources:
   - id: runs
@@ -20,6 +20,9 @@ sources:
   - id: legs
     resource: process:GitHub Actions runs 42951521128 (a pull request, the baseline) and 42992047374, 42994556570, 42998161759, 43000423587 (workflow_dispatch on claude/sharp-albattani-0mtilv), 2026-11-11
     title: Timings of the python, r and rust jobs before and after the test legs (#848 to #851)
+  - id: gating
+    resource: process:cloud session claude/cool-shannon-fqpoy8-ci-967, 2026-11-20 (4 cores, Rust 1.100)
+    title: Release builds of the bayes test binary with and without Burn and Arrow (#967)
   - id: rust-cache
     resource: https://github.com/Swatinem/rust-cache/blob/v2/src/restore.ts
     title: Swatinem/rust-cache v2, restore and save
@@ -145,6 +148,32 @@ minutes, 9.4 of them the R files one after another (564 s; the guides 99 s,
   303, 313 and 392 s on a warm cache against 483 s on the baseline pull
   request, after #825 had already cut 105 test binaries to three.[^legs]
 
+# What each release job compiles (#967, 2026-11-20)
+
+Cargo compiles every dev-dependency of a crate for each of its test
+binaries, so the `bayes` job built Burn 0.21 and Arrow 60 and the
+`fremtpl2` job built Arrow and nuts-rs, which neither reads. A
+dev-dependency cannot be optional, so `prospicio-bayes` and `prospicio-nn`
+are optional dependencies of `prospicio-validation` behind its features
+`bayes` and `nn`, with `arrow` (`prospicio-prob/arrow`) and `io`
+(`prospicio-reserving/io`); all four are on by default, so `cargo test`,
+clippy and the documented commands build what they built before. CI's
+release jobs turn the defaults off: `--no-default-features --features
+slow-bayes` (no Burn, Arrow or calamine in `cargo tree`) and
+`--no-default-features --features nn` (no nuts-rs or Arrow).[^ci]
+
+* A cold release build of the `bayes` test binary took 136 s with the
+  defaults off; turning them on again compiled for another 199 s, so the
+  job's cold build falls from about 335 s to 136 s on four cores.[^gating]
+* `required-features` on the `validation` test binary (all four) and on
+  `fremtpl2` (`nn`) make a build without them skip the binary instead of
+  failing to compile it.
+* The freMTPL2 job keeps `prospicio-nn` without its default `onnx`
+  feature, as before: the bindings build it with the ONNX import, but
+  each job has a cache of its own, so the second feature set costs
+  nothing and saves the job `onnx-ir`.
+
+[^gating]: Release builds of the bayes test binary with and without Burn and Arrow (#967)
 [^runs]: CI run and job timings
 [^local]: Local timings of cargo test, cargo nextest and the Bayesian release tests
 [^ci]: CI workflow
