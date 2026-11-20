@@ -291,8 +291,20 @@ fn bracket_beyond(
 }
 
 fn irr_checked(flows: &[f64], times: &[f64], options: &IrrOptions, grid: &[f64]) -> Irr {
-    let values: Vec<f64> = grid.iter().map(|&g| value(flows, times, g)).collect();
     let (at_minus_one, at_infinity) = limit_signs(flows, times);
+    // Flows that sum to 0 at every time are worth 0 at every rate: every
+    // rate is a root, so none is the rate of return.
+    if at_minus_one == 0.0 && at_infinity == 0.0 {
+        return Irr {
+            rate: f64::NAN,
+            found: false,
+            npv: f64::NAN,
+            sign_changes: 0,
+            root_above: false,
+            root_below: false,
+        };
+    }
+    let values: Vec<f64> = grid.iter().map(|&g| value(flows, times, g)).collect();
     let (v_lower, v_upper) = (values[0], values[values.len() - 1]);
     let root_above = v_upper != 0.0 && at_infinity != 0.0 && v_upper.signum() != at_infinity;
     let root_below = v_lower != 0.0 && at_minus_one != 0.0 && v_lower.signum() != at_minus_one;
@@ -381,7 +393,10 @@ fn irr_checked(flows: &[f64], times: &[f64], options: &IrrOptions, grid: &[f64])
 /// with no root in the searched range give `found = false` and NaN, with
 /// [`Irr::root_above`] or [`Irr::root_below`] set when a root lies outside
 /// it (flows of one sign have none anywhere); flows with several give the
-/// one nearest 0 and say how many the grid saw.
+/// one nearest 0 and say how many the grid saw. Flows that are all zero,
+/// or sum to 0 at every time, are worth 0 at every rate and have no rate
+/// of return: `found = false`, no sign changes and no root outside the
+/// range.
 ///
 /// ```
 /// use prospicio_pricing::returns::{IrrOptions, irr};
@@ -571,6 +586,24 @@ mod tests {
         let r = irr(&flows, &[0.0, 1.0, 2.0], &above).unwrap();
         assert!((r.rate - 0.2).abs() < 1e-12);
         assert_eq!(r.sign_changes, 1);
+    }
+
+    #[test]
+    fn flows_that_are_all_zero_have_no_root() {
+        let t = [0.0, 1.0, 2.0];
+        for flows in [[0.0; 3], [0.0, -0.0, 0.0]] {
+            let r = irr(&flows, &t, &IrrOptions::default()).unwrap();
+            assert!(!r.found && r.rate.is_nan() && r.npv.is_nan(), "{r:?}");
+            assert_eq!(r.sign_changes, 0);
+            assert!(!r.root_above && !r.root_below);
+        }
+        // Flows that cancel at every time are worth 0 at every rate too.
+        let r = irr(&[5.0, -5.0, 0.0], &[0.0, 0.0, 1.0], &IrrOptions::default()).unwrap();
+        assert!(!r.found && r.sign_changes == 0);
+        // A row among others is judged alone.
+        let rows = [0.0, 0.0, 0.0, -100.0, 121.0, 0.0];
+        let r = irr_rows(&rows, &t, &IrrOptions::default()).unwrap();
+        assert!(!r[0].found && r[1].found);
     }
 
     #[test]

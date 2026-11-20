@@ -2667,6 +2667,34 @@ mod tests {
     }
 
     #[test]
+    fn a_deal_that_has_run_off_has_no_forward_return() {
+        // A deal that has paid out and released everything has nothing left
+        // to value: its forward flows are all zero, and a row worth 0 at
+        // every rate has no rate of return.
+        let mut terms = CashflowTerms::new(
+            100.0,
+            3,
+            patterns(),
+            Requirement::new(vec![Term::new(Base::Reserve, 1.0)]),
+        )
+        .unwrap();
+        terms.premium_flow.collected_rate = 0.0;
+        let state = ActualState {
+            month: 2,
+            ..ActualState::default()
+        };
+        let val = terms.valuation(state).unwrap();
+        let f = val
+            .run(&[0.0], &[0.2], Conditioning::BornhuetterFerguson)
+            .unwrap();
+        assert!(f.forward_rows().iter().all(|&x| x == 0.0));
+        let irr = f.forward_irr(&IrrOptions::default()).unwrap();
+        assert_eq!(irr.len(), 1);
+        let r = irr[0];
+        assert!(!r.found && r.rate.is_nan() && r.sign_changes == 0, "{r:?}");
+    }
+
+    #[test]
     fn refuses_valuations_it_cannot_run() {
         let terms = full();
         let path = terms.trace(0.9, 0.2).unwrap();
