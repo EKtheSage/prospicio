@@ -181,7 +181,8 @@ Milestone 0.2.0.
 
 Status on 2026-11-20: the release PR sets 0.2.0, and every 0.2.0 item is
 done. #779 closed with #915 and #916 (and the inversion's TVaR, #964), #780
-with #917 to #920 and #781 with #921 (its Excel function, #922). Also in
+with #917 to #920 and #781 with #921 (its Excel function, #922); the
+engine's Excel functions came with #930. Also in
 the release: discounted reserves and the IFRS 17 risk adjustment (#553,
 #924 to #926), the AP pricing demo's cumulative loss ratios as a test
 (#806, #923, #929) and the fixes of the nightly run (#927). The codebase
