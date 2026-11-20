@@ -28,6 +28,9 @@ sources:
   - id: algebra-test
     resource: ../validation/tests/probability_stable_algebra.rs
     title: validation/tests/probability_stable_algebra.rs, stable_algebra_matches_aggregate, against validation/scripts/aggregate_stable_algebra.py
+  - id: xll-test
+    resource: ../crates/prospicio-xll/tests/chf.rs
+    title: crates/prospicio-xll/tests/chf.rs, the Excel functions PRO.CAP.CHF, PRO.CAP.STABLE and PRO.CAP.STABLE.PARETO against the same references
   - id: tvar-test
     resource: ../validation/tests/probability_chf_tvar.rs
     title: validation/tests/probability_chf_tvar.rs, chf_tvar_matches_aggregate, against validation/scripts/aggregate_chf_tvar.py
@@ -117,6 +120,16 @@ sources:
   `alpha = 1` unless `beta = 0`, since `X - loc` is not strictly stable
   there, and the compound Pareto limit's right tail constant equals
   `lambda theta^alpha` exactly by the reflection formula.[^algebra-test]
+* The Excel functions reach the same numbers: `PRO.CAP.CHF`, called
+  through the add-in's catalogue, meets all 13,323 cases of the five
+  reference files whose law has a sheet form (every one but the scaled
+  and shifted laws) at their tolerances, its TVaR (`ChfDistribution::tvar`)
+  the 72 TVaRs of `chf_tvar_aggregate.csv` at probabilities in (0, 1),
+  and `PRO.CAP.STABLE` and
+  `PRO.CAP.STABLE.PARETO` meet the `identity` and `compound_pareto`
+  cases. The Excel `"tweedie"` is `TweediePower` at every power, and it
+  meets `chf_aggregate.csv`'s compound Poisson gamma Tweedies, computed
+  there through `ChfLaw::Tweedie`, at the same tolerances.[^xll-test]
 * `AggregateCHF.tvar` is its `GridDistribution`'s kernel on the buckets of
   positive mass, cumulated as inverted (not renormalized): the mass the
   window misses at the top counts for nothing, and from the next-to-last

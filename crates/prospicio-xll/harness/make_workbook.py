@@ -1884,6 +1884,57 @@ for i, (name, cell, value, tol) in enumerate(checks):
 al.column_dimensions["D"].width = 14
 al.column_dimensions["O"].width = 34
 
+# Distributions from their characteristic function (decision 67, #779,
+# #780): laws against aggregate 2.1.0's references
+# (validation/reference/chf_*_aggregate.csv), and the stable figures.
+cf = wb.create_sheet("CHF")
+cf["A1"] = "prospicio XLL test: laws from their characteristic function (PRO.CAP.CHF, PRO.CAP.STABLE, PRO.CAP.STABLE.PARETO)"
+cf["A1"].font = Font(bold=True, size=13)
+cf["A2"] = "Each block against aggregate 2.1.0 (validation/reference/chf_*_aggregate.csv); TRUE where it matches."; cf["A2"].font = note
+
+
+def chf_ref(name, distribution, params):
+    with open(REF / "reference" / name) as f:
+        rows = [r for r in csv.DictReader(f) if r["distribution"] == distribution and r["params"] == params]
+    return {(r["quantity"], r["arg"]): float(r["expected"]) for r in rows}
+
+
+chf_cases = [
+    ("Tweedie p = 1.5, mean 100, dispersion 2", "tweedie", [1.5, 100, 2], 12, "",
+     chf_ref("chf_tweedie_aggregate.csv", "tweedie_power", "power=1.5;mean=100;dispersion=2;log2=12;bs=0")),
+    ("NIG alpha 2, beta 0.5, delta 1.5, mu 0.3", "normal_inverse_gaussian", [2, 0.5, 1.5, 0.3], 12, "",
+     chf_ref("chf_levy_aggregate.csv", "normal_inverse_gaussian", "alpha=2;beta=0.5;delta=1.5;mu=0.3;log2=12;bs=0")),
+    ("Stable S(1.5, 1, 1, 0), tilted", "stable", [1.5, 1, 1, 0], 12, "",
+     chf_ref("chf_tilt_aggregate.csv", "stable", "alpha=1.5;beta=1;scale=1;loc=0;parameterization=0;log2=12;bs=0;tilt=-1")),
+    ("Stable S(1.5, 0.5, 1, 0), split into halves", "stable", [1.5, 0.5, 1, 0], 12, "",
+     chf_ref("chf_split_aggregate.csv", "stable", "alpha=1.5;beta=0.5;scale=1;loc=0;parameterization=0;log2=12;bs=0;tilt=-1")),
+]
+for k, (title, law, params, log2, tilt, want) in enumerate(chf_cases):
+    top = 4 + 26 * k
+    cf.cell(row=top, column=1, value=title).font = bold
+    cf.cell(row=top + 1, column=1, value=law).fill = inp
+    for j, v in enumerate(params):
+        cf.cell(row=top + 1, column=2 + j, value=v).fill = inp
+    last_param = get_column_letter(1 + len(params))
+    cf.cell(row=top + 1, column=8, value=log2).fill = inp
+    cf.cell(row=top + 2, column=1).value = ArrayFormula(
+        f"A{top + 2}:B{top + 21}", f"=PRO.CAP.CHF(A{top + 1},B{top + 1}:{last_param}{top + 1},{{0.5,0.99}},,H{top + 1})"
+    )
+    # Rows: Mean, SD, VaR 50%, VaR 99%, TVaR 50%, TVaR 99%, Law mean, Law SD,
+    # Step, Left edge, ...
+    checks = [f"B{top + 10}={want[('step', '')]}", f"ABS(B{top + 11}-({want[('x_min', '')]}))<1E-9"]
+    for row, p in [(top + 4, "0.5"), (top + 5, "0.99")]:
+        if ("quantile", p) in want:
+            checks.append(f"ABS(B{row}-({want[('quantile', p)]}))<1E-9")
+    cf.cell(row=top + 2, column=4, value="Step, left edge and VaRs as aggregate's")
+    cf.cell(row=top + 3, column=4, value=f"=AND({','.join(checks)})")
+cf["F4"] = "Stable limit of 50 Pareto claims a year (alpha 1.6, theta 3, mean 12): its S1 location is the compound's mean, 600"; cf["F4"].font = bold
+cf["F5"] = ArrayFormula("F5:G13", "=PRO.CAP.STABLE.PARETO(50,1.6,3,12)")
+cf["I5"] = "=ABS(G8-600)<1E-9"
+cf["F16"] = "S(1.5, 0.4, 2, 1): tail constants and P(X > location) as aggregate's"; cf["F16"].font = bold
+cf["F17"] = ArrayFormula("F17:G25", '=PRO.CAP.STABLE(1.5,0.4,2,1,"S1")')
+cf["I17"] = "=AND(ABS(G21-0.2)<1E-12,ABS(G23-0.7898654169668589)<1E-12,ABS(G24-0.3385137501286538)<1E-12,ABS(G25-0.4192540389394377)<1E-12)"
+
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

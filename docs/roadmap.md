@@ -771,7 +771,11 @@ what it is aiming for by v1.0.
   simulations and MCMC fits asynchronous, one run per inputs and the last
   results kept (decision 48); trend factors from a calendar-year rate
   schedule, the running loss ratio and a row reversed (decision 59, #803,
-  #806).
+  #806); an event loss table's annual total on a grid (decision 66,
+  #781); laws from their characteristic function (normal, gamma, inverse
+  Gaussian, Tweedie at any power, stable, NIG, variance gamma, tempered
+  stable) and the stable law's figures and compound-Pareto limit
+  (decision 67, #779, #780).
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
      form (`xll.md`, parity plan): all nine groups done (the eighth,

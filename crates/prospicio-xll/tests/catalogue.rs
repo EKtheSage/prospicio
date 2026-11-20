@@ -105,6 +105,9 @@ fn every_function_has_a_group() {
 /// name in its table.
 const ADDED_AFTER_THE_RENAME: &[&str] = &[
     "PRO.CAP.ELT.AGG",
+    "PRO.CAP.CHF",
+    "PRO.CAP.STABLE",
+    "PRO.CAP.STABLE.PARETO",
     "PRO.RES.CURVE",
     "PRO.RES.DEV.EXHIBIT",
     "PRO.RES.SELECT",
