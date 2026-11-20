@@ -175,9 +175,23 @@ last with #909 to #912 (#834 and #843). The severity fits (#800, #802, #804,
 ratios wait for its inputs) and the Excel functions merged since 0.0.9 are
 in it too.
 
-**0.2.0** (planned): the characteristic-function engine, #779, the laws that
+**0.2.0**: the characteristic-function engine, #779, the laws that
 need it, #780, and an event loss table as a compound severity, #781.
 Milestone 0.2.0.
+
+Status on 2026-11-20: the release PR sets 0.2.0, and every 0.2.0 item is
+done. #779 closed with #915 and #916 (and the inversion's TVaR, #964), #780
+with #917 to #920 and #781 with #921 (its Excel function, #922); the
+engine's Excel functions came with #930. Also in
+the release: discounted reserves and the IFRS 17 risk adjustment (#553,
+#924 to #926), the AP pricing demo's cumulative loss ratios as a test
+(#806, #923, #929) and the fixes of the nightly run (#927). The codebase
+review of 2026-11-19 (#931, its sub-issues #932 to #983) is not part of
+0.2.0, except three of its findings, which the user held the tag for on
+2026-11-20: #937 (a two-sided stable law on a given step above the split's
+limit, #988), #938 (the Tsallis complement at a large order, #987) and
+#934 (a RustSec advisory that failed `cargo deny`, #986). The others wait
+for the user's decision on their release.
 
 ## Each release
 

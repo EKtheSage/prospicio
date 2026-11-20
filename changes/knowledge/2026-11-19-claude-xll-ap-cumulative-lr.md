@@ -1,1 +1,0 @@
-* **Update**: [The AP pricing demo's inputs](/datasets/ap-pricing-demo-inputs.md), from #806's Excel test (branch claude/xll-ap-cumulative-lr): `PRO.PRC.LR.CUMULATIVE` reproduces the demo's four printed cumulative loss ratios to 5e-13 on the same file, in `crates/prospicio-xll/tests/pricing_ap_cumulative_lr.rs` and on the test workbook's Ratemaking sheet.

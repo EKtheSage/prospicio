@@ -7,6 +7,132 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+## 0.2.0 (2026-11-20)
+
+### Distributions and probability
+
+- A law's distribution on a grid from its characteristic function,
+  `aggregate`'s `AggregateCHF` without tilting (`prospicio_prob::chf`:
+  `invert` on a normal, gamma, exponential, inverse Gaussian, Tweedie with
+  `1 < p < 2`, a scaled and shifted one of them, or your own
+  characteristic function on a given grid; the window sized from the
+  Chernoff edges and the bucket walked down past a truncation of 1e-6;
+  Python `invert_chf` and `ChfDistribution`, R `invert_chf()` and
+  `chf_to_grid()`), at parity with `aggregate` 2.1.0 (#779, #915).
+- Exponential tilting in the characteristic-function engine, with the
+  alpha-stable law (`prospicio_prob::Stable` in S1 or S0;
+  `ChfOptions::tilt`, automatic, off or a given number of e-folds): a
+  stable law with `beta` 1 or -1 is inverted along a tilted line that
+  damps its power tail, the bucket capped and the mass beyond the window
+  reported, at parity with `aggregate` 2.1.0 (Python `Stable` and
+  `invert_chf(tilt=)`, R `stable_distribution()` and `invert_chf(tilt =)`;
+  #779, #916).
+- The normal inverse Gaussian, variance gamma and CGMY tempered stable
+  laws in the characteristic-function engine (`prospicio_prob::levy`;
+  Python `NormalInverseGaussian`, `VarianceGamma`, `TemperedStable`, R
+  `normal_inverse_gaussian_distribution()`,
+  `variance_gamma_distribution()`, `tempered_stable_distribution()`),
+  computed on a grid by `invert_chf` at parity with `aggregate` 2.1.0
+  (#780, #917).
+- The Tweedie law at any power outside (0, 1] in the
+  characteristic-function engine: the extreme stable laws below `p = 0`,
+  the compound Poisson-gamma, the gamma, the inverse Gaussian and the
+  positive extreme stable laws above `p = 2`
+  (`prospicio_prob::levy::TweediePower`; Python `TweediePower`, R
+  `tweedie_power_distribution()`), at parity with `aggregate` 2.1.0
+  (#780, #918).
+- A stable law with two power tails (`|beta| < 1`) under the tilt in
+  `invert_chf`: split into its two totally skewed halves, each tilted
+  toward its light side, convolved and cropped to equal mass outside on
+  each side (`Stable::halves`), at parity with `aggregate` 2.1.0 (#780, #919).
+- The alpha-stable law's algebra: sums of laws with a common `alpha`,
+  shifts, scaling by any real number, `t` independent copies, `Pr(X >
+  loc)` and the stable limit of a Poisson compound with a Pareto tail
+  (`Stable::add`, `shift`, `scale_by`, `copies`, `prob_above_loc`,
+  `from_compound_pareto`; Python `+`, `-`, `*`, `/` and `@` on `Stable`,
+  R `stable_add()`, `stable_scale()`, `stable_copies()`,
+  `stable_from_compound_pareto()`), at parity with `aggregate` 2.1.0
+  (#780, #920).
+- The tail value at risk of a law inverted from its characteristic
+  function, as `aggregate`'s `AggregateCHF.tvar`
+  (`prospicio_prob::chf::ChfDistribution::tvar`; Python
+  `ChfDistribution.tvar`, R `TVaR()` on a `chf_distribution`), at parity
+  with `aggregate` 2.1.0 (#779, #780, #964).
+- Fixed: `invert_chf` on a stable law with two power tails (`|beta| < 1`)
+  and a given `step` above `pi scale / (104 ln 2)^(1/alpha)` returned
+  masses that were no distribution's (a sum of 21.2 at `alpha = 1.5`,
+  `beta = 0.5`, `step = 0.5`), with nothing flagged. It now refuses the
+  step and names the largest one the law can take; the automatic step is
+  unchanged (#937, #988).
+- Fixed: `Distortion::complement` (`1 - g(s)`) of a Tsallis distortion
+  lost every digit at orders above about 100 for `s` between 0.75 and 1
+  (0.0453 for 0.2362 at `alpha = 200`, `s = 0.76`), which moved the
+  natural allocation's capital per unit of margin under a thin Tsallis
+  margin. It is now accurate to 1e-13 for orders up to 1e6 (#938, #987).
+
+### Aggregate and reinsurance
+
+- An event loss table as the severity of a compound Poisson on a grid
+  (#781, #921): `EventLossTable::count`, `severity_grid` (aggregate's two
+  rules: the nearest node for a table with secondary uncertainty, the
+  mean-preserving linear scatter for its means alone) and `aggregate_grid`
+  by FFT, for `fft`, `panjer` and `Tower::on_grid`; parity with
+  `aggregate` 2.1.0. Python `EventLossTable.count`, `severity_grid` and
+  `aggregate_grid`; R `elt_severity_grid()` and `elt_aggregate_grid()`.
+
+### Reserving
+
+- Discounted reserves and an IFRS 17 risk adjustment (`prospicio_reserving::discount`, Rust; #553, #924):
+  `discounted_reserves` discounts each simulation of a bootstrap or Bayesian fit's reserves (and of
+  their fits over segments) on a `DiscountCurve` (flat or spot rates), spreading each reserve over
+  that simulation's pattern (`Compartmental`: its paid cells) at mid-period or end-of-period timing,
+  on a stated `PaymentBasis` (under `Incurred { paid_pattern, latest_paid }`, the whole unpaid, each
+  reserve plus its origin's case reserve, spread along the paid pattern, as `DiscountedReserves::unpaid`);
+  `DiscountedReserves::risk_adjustment` by a confidence level, TVaR or a
+  cost of capital (charged at the end or the start of each year), with the implied confidence level
+  and each segment's stand-alone result.
+- Discounted reserves and the IFRS 17 risk adjustment in Python and R
+  (#553, #925): `fit.discounted(basis=..., rate=... | curve=DiscountCurve(...))`
+  on the stochastic reserving fits and `DiscountedReserves.risk_adjustment`
+  by a confidence level, TVaR or a cost of capital, each with its implied
+  confidence level; R `discounted_reserves()`, `risk_adjustment()` and
+  `discount_curve()`. The basis (`"paid"` or `"incurred"`) is required.
+- A fit over one segment (a triangle without keys) no longer reports that
+  segment beside the total in `discounted_reserves`' segment labels and
+  risk adjustments (#553, #925).
+
+### Excel
+
+- `PRO.CAP.ELT.AGG`: an event loss table's annual total on an FFT grid
+  (a compound Poisson, as `aggregate` lowers `agg NAME elt`), ground up or
+  to an occurrence layer: mean, SD, CV, skewness, VaR and TVaR, with the
+  bucketing (nearest node with secondary uncertainty, the mean-preserving
+  linear rule without) and the grid's diagnostics (#781, #922).
+- `PRO.CAP.CHF`: a law's distribution on an FFT grid from its
+  characteristic function, as `aggregate`'s `AggregateCHF`: the normal,
+  gamma, inverse Gaussian, Tweedie at any power, alpha-stable (S1 or S0,
+  its power tail tilted, a two-sided one split into halves), normal
+  inverse Gaussian, variance gamma and CGMY tempered stable laws, with
+  the window's mean, SD, VaR and TVaR and the inversion's errors, or each
+  grid point's mass (#779, #780, #930).
+- `PRO.CAP.STABLE` and `PRO.CAP.STABLE.PARETO`: an alpha-stable law's
+  parameters in both parameterizations, mean, tail constants and
+  `P(X > loc)`, given directly or as the stable limit of a Poisson
+  compound with a Pareto tail (#780, #930).
+
+### Guides
+
+- `reserving-methods.md` section 11: the discounted reserve at a flat rate
+  and on a spot curve, the IFRS 17 risk adjustment and its implied
+  confidence level, and the one-year view's capital (its 99.5% loss less the
+  expected loss) as the capital of a cost-of-capital risk margin (#553, #925).
+
+### Packaging
+
+- The R package builds on Windows with Rust 1.100 and later: `Makevars.win`
+  links `-lsynchronization`, without which the install failed with
+  undefined references to `WakeByAddressSingle` (#927).
+
 ## 0.1.0 (2026-11-13)
 
 ### Breaking changes
