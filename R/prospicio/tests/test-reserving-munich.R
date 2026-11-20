@@ -78,9 +78,21 @@ if (with_package("ChainLadder")) {
   rz <- suppressWarnings(ChainLadder::MunichChainLadder(
     ChainLadder::MCLpaid, i, est.sigmaP = "Mack", est.sigmaI = "Mack"))
   near(z@lambda_paid, coef(rz$lambdaP)[1], 1e-12, abs = 1e-9)
-  near(z@lambda_incurred, coef(rz$lambdaI)[1], 1e-12, abs = 1e-9)
-  near(z@ultimate_paid, rz$MCLPaid[, 7], rel = 1e-10, abs = 1e-9)
-  near(z@ultimate_incurred, rz$MCLIncurred[, 7], rel = 1e-10, abs = 1e-9)
+  # R ChainLadder's incurred side rests on its sigma at 60 to 72 months
+  # being exactly 0. Its link ratio there comes from lm(), and under
+  # OpenBLAS (GitHub's ubuntu-26.04 runners) it is 1 + 2.2e-16, the sigma
+  # 2e-15 and the two 0/0 residuals round-off of about -5 that stay in the
+  # regression (nobs 20, lambda 0.75). Compare the incurred side only when
+  # R's own arithmetic was exact; the constants above pin it either way.
+  if (rz$MackIncurred$sigma[5] == 0) {
+    stopifnot(stats::nobs(rz$lambdaI) == 18L)
+    near(z@lambda_incurred, coef(rz$lambdaI)[1], 1e-12, abs = 1e-9)
+    near(z@ultimate_paid, rz$MCLPaid[, 7], rel = 1e-10, abs = 1e-9)
+    near(z@ultimate_incurred, rz$MCLIncurred[, 7], rel = 1e-10, abs = 1e-9)
+  } else {
+    stopifnot(rz$MackIncurred$sigma[5] < 1e-12, stats::nobs(rz$lambdaI) == 20L)
+    skip_block("ChainLadder's zero sigma is round-off under this BLAS")
+  }
 }
 
 # Frames, the separate fits and print.

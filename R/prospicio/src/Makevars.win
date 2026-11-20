@@ -18,8 +18,10 @@ LIBDIR = $(CARGO_WORKSPACE)/target/$(TARGET)/release
 STATLIB = $(LIBDIR)/libprospicio_r.a
 # System libraries the Rust standard library needs, from
 # `cargo rustc -p prospicio-r --target x86_64-pc-windows-gnu -- --print native-static-libs`.
-# R itself (-lR) is added by R's own link command.
-PKG_LIBS = -L$(LIBDIR) -lprospicio_r -lkernel32 -lntdll -luserenv -lws2_32 -ldbghelp
+# R itself (-lR) is added by R's own link command. Rerun it after a Rust
+# release: Rust 1.100 added -lsynchronization (WakeByAddressSingle and
+# WakeByAddressAll), and without it the link fails with undefined references.
+PKG_LIBS = -L$(LIBDIR) -lprospicio_r -lkernel32 -lntdll -luserenv -lws2_32 -ldbghelp -lsynchronization
 
 all: $(SHLIB)
 

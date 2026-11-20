@@ -9,12 +9,20 @@ with_package <- function(pkg) {
   if (requireNamespace(pkg, quietly = TRUE)) {
     return(TRUE)
   }
+  skip_block(sprintf("package %s is not installed", pkg))
+  FALSE
+}
+
+# skip_block(reason): says on a "SKIP" line that a block did not run and,
+# under the runner, records it for the runner's summary. For a comparison
+# that cannot hold on this machine for a reason the test has checked.
+skip_block <- function(reason) {
   file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
-  line <- sprintf("SKIP %s: package %s is not installed", basename(file), pkg)
+  line <- sprintf("SKIP %s: %s", basename(file), reason)
   cat(line, "\n", sep = "")
   log <- Sys.getenv("PROSPICIO_R_SKIP_LOG")
   if (nzchar(log)) cat(line, "\n", sep = "", file = log, append = TRUE)
-  FALSE
+  invisible(FALSE)
 }
 
 # near(a, b, rel, abs): every element within rel of b relatively or abs
