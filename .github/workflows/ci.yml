@@ -452,18 +452,19 @@ jobs:
           use-public-rspm: true
       # What each leg's files load, and no more (#966): lightgbm and xgboost
       # are optional engines for booster_fit() (test-boosting.R and
-      # test-models.R, in `tests`); ggplot2 and gt draw the R guides'
-      # figures and tables (test-guides.R). Through pak, with the library
+      # test-models.R, in `tests`, and a pricing guide's boosting chunks,
+      # in `guides`); ggplot2 and gt draw the R guides' figures and tables
+      # (test-guides.R). Through pak, with the library
       # cached between runs, hard dependencies only. The boosting tests
       # skip a missing engine, so check that each package loads.
       - if: env.TEST == 'true'
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          packages: ${{ matrix.part == 'tests' && 'any::S7, any::lightgbm, any::xgboost' || matrix.part == 'guides' && 'any::S7, any::ggplot2, any::gt' || 'any::S7' }}
+          packages: ${{ matrix.part == 'tests' && 'any::S7, any::lightgbm, any::xgboost' || matrix.part == 'guides' && 'any::S7, any::ggplot2, any::gt, any::lightgbm' || 'any::S7' }}
           dependencies: 'NA'
       - if: env.TEST == 'true'
         env:
-          PKGS: ${{ matrix.part == 'tests' && 'S7 lightgbm xgboost' || matrix.part == 'guides' && 'S7 ggplot2 gt' || 'S7' }}
+          PKGS: ${{ matrix.part == 'tests' && 'S7 lightgbm xgboost' || matrix.part == 'guides' && 'S7 ggplot2 gt lightgbm' || 'S7' }}
         run: Rscript -e "for (p in strsplit(Sys.getenv('PKGS'), ' ')[[1]]) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
       - if: env.TEST == 'true'
         uses: actions/download-artifact@v4

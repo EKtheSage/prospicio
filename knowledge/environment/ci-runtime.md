@@ -238,8 +238,9 @@ artifact with no Rust toolchain and no cache:[^ci]
 * R packages come through `r-lib/actions/setup-r-dependencies` (pak, the
   library cached) with `dependencies: 'NA'` (hard dependencies only: the
   default, `"all"`, adds the named packages' Suggests), and each `r` leg
-  installs what its files load: lightgbm and xgboost in `tests`, ggplot2
-  and gt in `guides`, S7 alone in `slow`.[^ci]
+  installs what its files load: lightgbm and xgboost in `tests`, lightgbm
+  with ggplot2 and gt in `guides` (a pricing guide fits boosters;
+  the leg failed without it), S7 alone in `slow`.[^ci]
 * The Excel add-in on a pull request: `cargo xtask xll --thin-lto` built
   in 135 s from nothing (18.3 MB); the fat-LTO build then took 194 s for
   its last crate and link alone, on the dependencies the thin build had
