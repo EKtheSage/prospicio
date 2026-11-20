@@ -123,7 +123,9 @@ sources:
 * The Excel functions reach the same numbers: `PRO.CAP.CHF`, called
   through the add-in's catalogue, meets all 13,323 cases of the five
   reference files whose law has a sheet form (every one but the scaled
-  and shifted laws) at their tolerances, and `PRO.CAP.STABLE` and
+  and shifted laws) at their tolerances, its TVaR (`ChfDistribution::tvar`)
+  the 72 TVaRs of `chf_tvar_aggregate.csv` at probabilities in (0, 1),
+  and `PRO.CAP.STABLE` and
   `PRO.CAP.STABLE.PARETO` meet the `identity` and `compound_pareto`
   cases. The Excel `"tweedie"` is `TweediePower` at every power, and it
   meets `chf_aggregate.csv`'s compound Poisson gamma Tweedies, computed

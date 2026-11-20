@@ -15,7 +15,6 @@
 
 use prospicio_prob::chf::{ChfDistribution, ChfLaw, ChfOptions, Tilt, invert};
 use prospicio_prob::levy::{NormalInverseGaussian, TemperedStable, TweediePower, VarianceGamma};
-use prospicio_prob::risk::tvar_weighted;
 use prospicio_prob::{
     Distribution, Gamma, InverseGaussian, Normal, Stable, StableParameterization,
 };
@@ -168,7 +167,6 @@ fn flag(label: &str, x: bool) -> Vec<Value> {
 /// The window's mean, SD, VaR and TVaR at each probability, then the
 /// inversion's report.
 fn summary(d: &ChfDistribution, ps: &[f64]) -> Result<Grid> {
-    let xs = d.xs();
     let r = d.report();
     let mut rows = vec![row("Mean", d.mean()), row("SD", d.std_dev())];
     for &p in ps {
@@ -180,7 +178,7 @@ fn summary(d: &ChfDistribution, ps: &[f64]) -> Result<Grid> {
     for &p in ps {
         rows.push(vec![
             Value::Text(format!("TVaR {}", percent(p))),
-            Value::number(tvar_weighted(&xs, d.masses(), p).map_err(err)?),
+            Value::number(d.tvar(p).map_err(err)?),
         ]);
     }
     rows.extend([

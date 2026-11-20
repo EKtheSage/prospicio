@@ -1843,10 +1843,11 @@ real Excel.
       0.99999.
     - **Output.** `"summary"` (the default), two columns: the window's
       mean and SD (`ChfDistribution`'s), VaR at each probability
-      (`quantile`) and TVaR (`risk::tvar_weighted` on the grid's points
-      and the masses as inverted, the same masses and cumulative sums the
-      VaR reads, with what the window misses at the top, as
-      `tvar_weighted` takes it), then the report: the law's mean and SD,
+      (`quantile`) and TVaR (`ChfDistribution::tvar`, `aggregate`'s
+      `AggregateCHF.tvar`, built in `prospicio-prob` for this function:
+      the user, 2026-11-20, "Excel is like python and R ... if TVaR for
+      this kind of distribution is not available in rust then let's
+      create it", decision 65), then the report: the law's mean and SD,
       step, left edge, points, whether the step was given, the truncation
       error and its flag, the mass below and above the window, the tilt
       on each side, the edge error (blank when NaN, for a law without a
@@ -1866,7 +1867,9 @@ real Excel.
       `validation/reference/chf_aggregate.csv`, `chf_levy_aggregate.csv`,
       `chf_tweedie_aggregate.csv`, `chf_tilt_aggregate.csv` and
       `chf_split_aggregate.csv` (`aggregate` 2.1.0, the Probability
-      lane's references) with a sheet form, at their tolerances: step,
+      lane's references) with a sheet form, and the TVaRs of
+      `chf_tvar_aggregate.csv` at probabilities in (0, 1), at their
+      tolerances: step,
       left edge, truncation error, mass outside each side, total mass,
       mean, SD, the quantiles, the tilts, the edge error and single
       masses; the `"chf_aggregate.csv"` Tweedies go through `"tweedie"`

@@ -2,7 +2,8 @@
 //! #780; `docs/design/xll.md`, decision 67), reached through the catalogue
 //! as Excel reaches them, against the `aggregate` 2.1.0 references the
 //! Probability lane's tests check `prospicio_prob::chf` with
-//! (`validation/reference/chf_*_aggregate.csv` and
+//! (`validation/reference/chf_*_aggregate.csv`, `chf_tvar_aggregate.csv`
+//! among them, and
 //! `stable_algebra_aggregate.csv`), at their tolerances.
 
 use std::collections::BTreeMap;
@@ -148,8 +149,10 @@ fn check_file(name: &str) {
         };
         let mut ps: Vec<f64> = cases
             .iter()
-            .filter(|c| c["quantity"] == "quantile")
+            .filter(|c| matches!(c["quantity"].as_str(), "quantile" | "tvar"))
             .map(|c| number(c, "arg"))
+            // The sheet's probabilities are in (0, 1).
+            .filter(|p| *p > 0.0 && *p < 1.0)
             .collect();
         ps.sort_by(f64::total_cmp);
         ps.dedup();
@@ -192,6 +195,8 @@ fn check_file(name: &str) {
                     value(&summary[&label])
                 }
                 "mass" => value(masses.get(number(c, "arg") as usize + 1, 1)),
+                "tvar" if !ps.contains(&number(c, "arg")) => continue,
+                "tvar" => value(&summary[&format!("TVaR {}", label_percent(number(c, "arg")))]),
                 other => panic!("{name}: no sheet value for {other}"),
             };
             checked += 1;
@@ -220,6 +225,11 @@ fn label_percent(p: f64) -> String {
 }
 
 #[test]
+fn tvar_matches_aggregate() {
+    check_file("chf_tvar_aggregate.csv");
+}
+
+#[test]
 fn light_laws_match_aggregate() {
     check_file("chf_aggregate.csv");
 }
@@ -245,7 +255,7 @@ fn split_stable_laws_match_aggregate() {
 }
 
 /// The summary is the core's: the masses, moments and quantiles of
-/// `invert` at the same options, the TVaR the masses' own, the report
+/// `invert` at the same options (the TVaR `ChfDistribution::tvar`), the report
 /// as it is.
 #[test]
 fn summary_and_masses_are_the_cores() {
@@ -269,8 +279,7 @@ fn summary_and_masses_are_the_cores() {
         value(&s["VaR 99%"]),
         prospicio_prob::Distribution::quantile(&d, 0.99).unwrap()
     );
-    let tvar = prospicio_prob::risk::tvar_weighted(&d.xs(), d.masses(), 0.99).unwrap();
-    assert_eq!(value(&s["TVaR 99%"]), tvar);
+    assert_eq!(value(&s["TVaR 99%"]), d.tvar(0.99).unwrap());
     assert!(value(&s["TVaR 99%"]) > value(&s["VaR 99%"]));
     assert!((value(&s["Law mean"]) - 100.0).abs() < 1e-12);
     assert_eq!(value(&s["Points"]), 4096.0);
