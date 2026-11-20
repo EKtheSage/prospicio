@@ -20,6 +20,9 @@
 //! - `xll`: build the 64-bit Excel add-in as `target/xll/prospicio.xll`
 //!   and, when a MinGW compiler (and off Windows, Wine) is found, run the
 //!   fake-Excel smoke test on it (docs/design/xll.md).
+//! - `wasm`: build the JavaScript package (`crates/prospicio-wasm`, with
+//!   `wasm-bindgen`) as `target/wasm/pkg` and run its tests under Node
+//!   (docs/design/wasm.md).
 //!
 //! `--check` fails if a build changed a generated file that is committed
 //! (the Python stub, R's `man/`, `NAMESPACE` and `R/extendr-wrappers.R`):
@@ -48,9 +51,11 @@ tasks:
            pkgdown's index, without rendering the sites
   xll      build the 64-bit Excel add-in as target/xll/prospicio.xll and
            smoke-test it in a fake Excel when MinGW (and Wine) are found
+  wasm     build the JavaScript package as target/wasm/pkg (wasm-bindgen)
+           and test it under Node
 
   --check     fail if the build changed a committed generated file
-  --no-tests  skip the Python and R test suites
+  --no-tests  skip the Python and R test suites, and the JavaScript tests
 ";
 
 /// Generated files that are committed, per binding: the build must leave
@@ -82,6 +87,7 @@ fn main() -> ExitCode {
         ["docs"] => docs(opts),
         ["generated"] => generated(opts),
         ["xll"] => xll(),
+        ["wasm"] => wasm(opts),
         [] | ["help"] | ["-h"] | ["--help"] => {
             print!("{USAGE}");
             return ExitCode::SUCCESS;
@@ -1276,6 +1282,156 @@ fn xll() -> Result {
         Command::new(&exe)
     };
     run(smoke.arg("prospicio.xll").current_dir(&out))
+}
+
+/// The npm package's name: `prospicio`, as on PyPI and crates.io (the
+/// user's decision of 2026-11-20, docs/design/wasm.md decision 10).
+const WASM_PACKAGE: &str = "prospicio";
+const WASM_TARGET: &str = "wasm32-unknown-unknown";
+
+/// The `wasm-bindgen` crate's exact version, read from the binding crate's
+/// manifest: the command-line tool must be the same version, or it refuses
+/// the module.
+fn wasm_bindgen_pin(root: &Path) -> Result<String> {
+    let manifest = root.join("crates/prospicio-wasm/Cargo.toml");
+    let text = fs::read_to_string(&manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
+    text.lines()
+        .find_map(|l| l.strip_prefix("wasm-bindgen = \"="))
+        .and_then(|rest| rest.split('"').next())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            format!(
+                "{}: no `wasm-bindgen = \"=x.y.z\"` line",
+                manifest.display()
+            )
+        })
+}
+
+/// The workspace version, which the npm package takes.
+fn workspace_version(root: &Path) -> Result<String> {
+    let manifest = root.join("Cargo.toml");
+    let text = fs::read_to_string(&manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
+    text.lines()
+        .skip_while(|l| l.trim() != "[workspace.package]")
+        .find_map(|l| l.strip_prefix("version = \""))
+        .and_then(|rest| rest.split('"').next())
+        .map(str::to_owned)
+        .ok_or_else(|| "Cargo.toml: no [workspace.package] version".to_owned())
+}
+
+fn wasm(opts: Options) -> Result {
+    let root = root();
+    let pin = wasm_bindgen_pin(&root)?;
+    let install = format!("cargo install wasm-bindgen-cli --version {pin} --locked");
+    let found = Command::new("wasm-bindgen")
+        .arg("--version")
+        .output()
+        .map_err(|_| format!("wasm-bindgen not found; install it with `{install}`"))?;
+    let found = String::from_utf8_lossy(&found.stdout).trim().to_owned();
+    if found.split_whitespace().nth(1) != Some(pin.as_str()) {
+        return Err(format!(
+            "found `{found}`, but crates/prospicio-wasm pins wasm-bindgen {pin}; run `{install}`"
+        ));
+    }
+
+    step(&format!("cargo build prospicio-wasm ({WASM_TARGET})"));
+    run(Command::new(cargo())
+        .current_dir(&root)
+        .args([
+            "build",
+            "--release",
+            "-p",
+            "prospicio-wasm",
+            "--target",
+            WASM_TARGET,
+        ])
+        // As for the Excel add-in: link-time optimization and one codegen
+        // unit drop the engines' unused code.
+        .args(["--config", "profile.release.lto=\"fat\""])
+        .args(["--config", "profile.release.codegen-units=1"]))?;
+    let module = root.join(format!("target/{WASM_TARGET}/release/prospicio_wasm.wasm"));
+
+    // One build of the module, three sets of JavaScript glue: for a
+    // bundler (webpack, Vite: the package's default), for Node and for a
+    // browser page with no bundler.
+    let pkg = root.join("target/wasm/pkg");
+    if pkg.exists() {
+        fs::remove_dir_all(&pkg).map_err(|e| format!("{}: {e}", pkg.display()))?;
+    }
+    for (target, dir) in [("bundler", "bundler"), ("nodejs", "node"), ("web", "web")] {
+        step(&format!("wasm-bindgen --target {target}"));
+        run(Command::new("wasm-bindgen")
+            .arg(&module)
+            .arg("--out-dir")
+            .arg(pkg.join(dir))
+            .args(["--target", target, "--out-name", "prospicio"]))?;
+    }
+    // Node's glue is CommonJS inside a package of ES modules.
+    let write = |path: PathBuf, text: &str| {
+        fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))
+    };
+    write(
+        pkg.join("node/package.json"),
+        "{ \"type\": \"commonjs\" }\n",
+    )?;
+    let version = workspace_version(&root)?;
+    write(
+        pkg.join("package.json"),
+        &format!(
+            r#"{{
+  "name": "{WASM_PACKAGE}",
+  "version": "{version}",
+  "description": "Actuarial reserving, aggregate loss, reinsurance and pricing in WebAssembly: the prospicio Rust core for the browser, Node and Office.js",
+  "license": "MIT OR Apache-2.0",
+  "repository": {{ "type": "git", "url": "git+https://github.com/EKtheSage/prospicio.git" }},
+  "homepage": "https://ekthesage.github.io/prospicio/",
+  "keywords": ["actuarial", "insurance", "reserving", "reinsurance", "wasm"],
+  "type": "module",
+  "main": "./node/prospicio.js",
+  "module": "./bundler/prospicio.js",
+  "types": "./bundler/prospicio.d.ts",
+  "exports": {{
+    ".": {{
+      "types": "./bundler/prospicio.d.ts",
+      "node": "./node/prospicio.js",
+      "default": "./bundler/prospicio.js"
+    }},
+    "./web": {{ "types": "./web/prospicio.d.ts", "default": "./web/prospicio.js" }}
+  }},
+  "sideEffects": ["./bundler/prospicio.js"],
+  "files": ["bundler", "node", "web", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+}}
+"#
+        ),
+    )?;
+    for (from, to) in [
+        ("crates/prospicio-wasm/README.md", "README.md"),
+        ("LICENSE-MIT", "LICENSE-MIT"),
+        ("LICENSE-APACHE", "LICENSE-APACHE"),
+    ] {
+        fs::copy(root.join(from), pkg.join(to)).map_err(|e| format!("copy {from}: {e}"))?;
+    }
+    for dir in ["bundler", "node", "web"] {
+        let path = pkg.join(dir).join("prospicio_bg.wasm");
+        let bytes = fs::metadata(&path)
+            .map_err(|e| format!("{}: {e}", path.display()))?
+            .len();
+        println!(
+            "{dir}/prospicio_bg.wasm: {:.2} MB",
+            bytes as f64 / 1_048_576.0
+        );
+    }
+    println!("built {}", pkg.display());
+
+    if !opts.tests {
+        return Ok(());
+    }
+    step("the package's tests under Node");
+    run(Command::new("node")
+        .current_dir(&root)
+        .arg("--test")
+        .arg("crates/prospicio-wasm/js/package.test.mjs")
+        .env("PROSPICIO_WASM_PKG", &pkg))
 }
 
 fn cargo() -> std::ffi::OsString {

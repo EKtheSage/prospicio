@@ -39,7 +39,7 @@ when from experience, and which pricing method fits which scenario.
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
 | v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust, Python and R, with each fit's sampler diagnostics), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), its twin with a normalised pattern and the prior on the ultimate (`BayesBfNormalised`, Rust, Python and R) and a hierarchical one pooling several programs (`HierarchicalBf`, with its one-year view over all programs, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R, also fitted to paid and incurred, or to paid or incurred alone, and on development finer than the origins) over segments (Rust, Python and R) and in the diagonal backtest with a held-out outstanding table (Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `BayesBfNormalised`, `HierarchicalBf`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default (reweighting only for `Compartmental` model 2) and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `BayesBfNormalised`, `HierarchicalBf`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. Kept parked on 2026-10-29, with the survival models, until the user has researched the approach. No lane works on it until the user picks it up |
-| v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R), ONNX import (`prospicio_nn::onnx`, Rust). Still to do: WASM |
+| v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Done: the boosting adapters (Python and R), ONNX import (`prospicio_nn::onnx`, Rust) and the JavaScript package over the WASM scope (`crates/prospicio-wasm`, `docs/design/wasm.md`, #576); publishing it to npm is open |
 | ◆ Gate | API review and deprecation pass | — |
 | v1.0: Stable core APIs | Semver for distributions, reserving, aggregate, reinsurance, risk, capital | — |
 
@@ -722,12 +722,22 @@ what it is aiming for by v1.0.
 - **Now:** every crate's API in both languages; docs generated from the
   doc comments (great-docs, pkgdown).
 - **Next:**
-  1. The WASM build (v0.9). The scope is decided (core, math, prob,
-     aggregate with reinsurance, pricing, reserving) and CI checks that
-     they build for `wasm32-unknown-unknown`. Next is a JavaScript API
-     over them (`wasm-bindgen`) for a browser page or an Excel add-in.
+  1. (Done, #576: the JavaScript package over the WASM scope, its own
+     section below.)
   2. (Done: the docs sites are published to GitHub Pages from `main`.)
 - **v1.0:** API review and deprecation pass, then semver.
+
+### `prospicio-wasm` (JavaScript lane)
+
+- **Now:** `crates/prospicio-wasm` (`wasm-bindgen`, `docs/design/wasm.md`,
+  #576): triangles, the chain ladder, Mack, Bornhuetter-Ferguson and the ODP
+  bootstrap; distributions and towers from their JSON documents; the FFT
+  aggregate, simulated events and the occurrence PML; distortions and the
+  price of a cover. `cargo xtask wasm` builds the npm package for bundlers,
+  Node and a plain browser page and tests it under Node; CI's `wasm` job
+  runs it.
+- **Next:** publishing the package to npm as `prospicio` from
+  `release.yml` (`wasm.md` O2), then further functions as the user asks.
 
 ### `prospicio-xll` (Excel lane)
 

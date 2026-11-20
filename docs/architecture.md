@@ -153,6 +153,7 @@ The fast path is a closed set of Rust-native objects; user-defined Python/R call
 - The core crates avoid OS-dependent dependencies so reserving, distributions and aggregate build for `wasm32`.
 - Target use: client-side calculation in browser tools and Office.js custom functions, removing the need for a hosted service for standard methods.
 - Rayon-parallel paths fall back to single-threaded under WASM.
+- The JavaScript API is `crates/prospicio-wasm` (`wasm-bindgen`), built into an npm package by `cargo xtask wasm`: thin wrappers, tables as objects of `Float64Array` columns, the same draws for a seed as the other front ends (`docs/design/wasm.md`).
 
 ## Workspace and crate plan
 
