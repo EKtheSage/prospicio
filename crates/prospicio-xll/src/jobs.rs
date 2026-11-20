@@ -66,6 +66,14 @@ struct Jobs {
 
 static JOBS: LazyLock<Mutex<Jobs>> = LazyLock::new(Mutex::default);
 
+/// Locks the table. A panic while it was held (a delivery callback that
+/// panics, say) poisons the mutex, but every update leaves the maps and
+/// counters consistent between statements, so the data is safe to keep
+/// using. Panicking here instead would take Excel down on every later call.
+fn lock_jobs() -> std::sync::MutexGuard<'static, Jobs> {
+    JOBS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// The key of a call: the symbol and every argument. `{:?}` writes each
 /// number exactly (shortest round trip), so two calls share a key only when
 /// their inputs are equal.
@@ -78,7 +86,7 @@ fn key(symbol: &str, args: &[Grid]) -> String {
 /// results, from a run of the same inputs already going, or from a new run.
 pub fn submit(symbol: &str, args: Vec<Grid>, deliver: Deliver) {
     let key = key(symbol, &args);
-    let mut jobs = JOBS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut jobs = lock_jobs();
     match jobs.states.get_mut(&key) {
         Some(State::Done(grid)) => {
             let grid = Arc::clone(grid);
@@ -102,7 +110,7 @@ pub fn submit(symbol: &str, args: Vec<Grid>, deliver: Deliver) {
 
 /// Keeps `grid` as the result of `key` and delivers it to everyone waiting.
 fn finish(key: String, grid: Arc<Grid>) {
-    let mut jobs = JOBS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut jobs = lock_jobs();
     let waiting = match jobs
         .states
         .insert(key.clone(), State::Done(Arc::clone(&grid)))
@@ -243,7 +251,7 @@ mod tests {
             submit_to(&tx, odp_args(100.0, 1000.0 + seed as f64));
             recv(&rx);
         }
-        let jobs = JOBS.lock().unwrap();
+        let jobs = lock_jobs();
         assert!(jobs.kept.len() <= KEPT_RESULTS);
         assert!(jobs.kept_cells <= KEPT_CELLS);
         let done = jobs
@@ -252,6 +260,22 @@ mod tests {
             .filter(|s| matches!(s, State::Done(_)))
             .count();
         assert_eq!(done, jobs.kept.len());
+    }
+
+    #[test]
+    fn a_poisoned_table_still_serves_calls() {
+        let _turn = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        // A thread that panics while it holds the table poisons the mutex.
+        let _ = std::thread::spawn(|| {
+            let _jobs = JOBS.lock().unwrap_or_else(|e| e.into_inner());
+            panic!("poison the jobs table");
+        })
+        .join();
+        assert!(JOBS.is_poisoned());
+        let (tx, rx) = mpsc::channel();
+        submit_to(&tx, odp_args(2000.0, 21.0));
+        let got = recv(&rx);
+        assert_eq!(*got, call("pro_res_odp", odp_args(2000.0, 21.0)));
     }
 
     #[test]

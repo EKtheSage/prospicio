@@ -1658,7 +1658,7 @@ impl PyRiskProfile {
                             moved.join(", ")
                         );
                         let cat = py.get_type::<pyo3::exceptions::PyUserWarning>();
-                        PyErr::warn(py, &cat, &std::ffi::CString::new(msg).unwrap(), 1)?;
+                        PyErr::warn(py, &cat, &nul_safe_cstring(&msg), 1)?;
                     }
                 }
                 bands
@@ -2788,5 +2788,28 @@ impl PyCatBondLosses {
             self.inner.annual().len(),
             self.inner.expected_loss()
         )
+    }
+}
+
+/// `msg` as a C string for `PyErr::warn`. An interior NUL, which a C string
+/// cannot hold, is replaced by U+FFFD so the conversion cannot fail or panic.
+fn nul_safe_cstring(msg: &str) -> std::ffi::CString {
+    std::ffi::CString::new(msg.replace('\0', "\u{FFFD}"))
+        .expect("no NUL is left after the replacement")
+}
+
+#[cfg(test)]
+mod nul_tests {
+    use super::nul_safe_cstring;
+
+    #[test]
+    fn a_message_with_a_nul_converts() {
+        let c = nul_safe_cstring("band 0\0 -> 5");
+        assert_eq!(c.to_str().unwrap(), "band 0\u{FFFD} -> 5");
+    }
+
+    #[test]
+    fn a_plain_message_is_unchanged() {
+        assert_eq!(nul_safe_cstring("plain").to_str().unwrap(), "plain");
     }
 }
