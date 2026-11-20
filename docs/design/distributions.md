@@ -725,6 +725,24 @@ R `stable_add()`, `stable_scale()`, `stable_copies()`,
 `validation/scripts/aggregate_stable_algebra.py`), and every operation's
 characteristic function equals the operands' to `1e-13`.
 
+**Built (the TVaR, for the Excel lane's `PRO.CAP.CHF`).** The user,
+2026-11-20: Excel is a front end like Python and R, so a TVaR its function
+needs is built here first. `ChfDistribution::tvar(p)` is `aggregate`'s
+`AggregateCHF.tvar`, its `GridDistribution` kernel: `risk::tvar_weighted`
+over the buckets of positive mass, their masses as inverted (not
+renormalized, so mass the window misses counts for nothing, as
+`quantile` reads them), the largest such point from the next-to-last
+cumulative mass on. At `p = 1` it is that largest point, where
+`aggregate` divides by `1 − p = 0` when round-off takes the masses' sum
+past 1 before the last bucket. Python `ChfDistribution.tvar`, R
+`TVaR()` on a `chf_distribution`. 84 values (twelve laws of every family,
+`p` from 0 to 0.999) match `aggregate` 2.1.0 to `1e-9` relative, the
+tilted stable laws to `1e-8` (the tilt's amplified round-off at the heavy
+end over `1 − p`; at most 4e-9 seen)
+(`validation/reference/chf_tvar_aggregate.csv`,
+`validation/scripts/aggregate_chf_tvar.py`), and on a gamma it is the
+tail mean of the quantiles to 1e-3 and the closed form to within a bucket.
+
 **Proposed for the user's acceptance:**
 
 - (a) *The engine lives in `prospicio-prob`*, not `prospicio-aggregate`,

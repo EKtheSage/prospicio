@@ -168,6 +168,29 @@ impl PyChfDistribution {
         self.inner.quantile(p).map_err(to_py)
     }
 
+    /// The tail value at risk at ``p``, as ``aggregate``'s
+    /// ``AggregateCHF.tvar``: over the buckets of positive mass, their masses
+    /// as inverted (not renormalized); the largest such point at ``p = 1``.
+    ///
+    /// Parameters
+    /// ----------
+    /// p : float
+    ///     In ``[0, 1]``.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Normal, invert_chf
+    /// >>> d = invert_chf(Normal(0.0, 1.0), log2=12)
+    /// >>> round(d.tvar(0.99), 3)
+    /// 2.665
+    fn tvar(&self, p: f64) -> PyResult<f64> {
+        self.inner.tvar(p).map_err(to_py)
+    }
+
     /// The masses as a ``Grid`` from 0, negative round-off set to 0 and the
     /// sum rescaled to 1, for the compound and risk-measure functions.
     ///
