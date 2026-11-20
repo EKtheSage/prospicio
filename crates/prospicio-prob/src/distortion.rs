@@ -1338,15 +1338,27 @@ fn tsallis_g(alpha: f64, s: f64) -> f64 {
     (s - t / beta).min(1.0)
 }
 
-/// `1 - g(s)` of the Tsallis distortion from `t = 1 - s`. With
-/// `s^alpha = Σ (-1)^k C(alpha, k) t^k`, `1 - g = Σ_{k>=2} c_k t^k` with
-/// `c_k = (-1)^k alpha (alpha - 2) ... (alpha - k + 1) / k!` (the factor
-/// `alpha - 1` cancels), which keeps its relative accuracy as `t → 0`,
-/// where `1 - g ≈ alpha t² / 2`. Away from 1, `1 - g(s)` itself.
+/// `1 - g(s)` of the Tsallis distortion from `t = 1 - s`, without the
+/// cancellation of `1 - g` near `s = 1`.
+///
+/// Where `alpha t <= 1`, the series: with `s^alpha = Σ (-1)^k C(alpha, k)
+/// t^k`, `1 - g = Σ_{k>=2} c_k t^k` with `c_k = (-1)^k alpha (alpha - 2)
+/// ... (alpha - k + 1) / k!` (the factor `alpha - 1` cancels), which keeps
+/// its relative accuracy as `t → 0`, where `1 - g ≈ alpha t² / 2`. Its
+/// terms shrink by `alpha t / 3` or faster there. Past `alpha t = 1` they
+/// grow to about `e^(alpha t)` before they shrink and the alternating sum
+/// loses every digit (#938), so there the closed form `1 - g = (s^alpha -
+/// 1 + alpha t) / (alpha - 1)`, with `s^alpha - 1 = expm1(alpha ln(1 -
+/// t))` in `(-1, -0.63)`, which loses under two bits against `alpha t >
+/// 1`. Away from 1 (`t >= 0.25`), `1 - g(s)` itself.
 fn tsallis_complement(alpha: f64, s: f64) -> f64 {
     let t = 1.0 - s;
     if t >= 0.25 {
         return 1.0 - tsallis_g(alpha, s);
+    }
+    if alpha * t > 1.0 {
+        // alpha > 4 here, so alpha - 1 is far from 0.
+        return (((alpha * (-t).ln_1p()).exp_m1() + alpha * t) / (alpha - 1.0)).clamp(0.0, 1.0);
     }
     // c_2 t^2 = alpha t^2 / 2; c_{k+1} = -c_k (alpha - k) t / (k + 1).
     let mut term = alpha * t * t / 2.0;
@@ -1395,6 +1407,92 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #938: past `alpha t = 1` the series of `1 - g` lost every digit
+    /// (0.0453 for 0.2362 at alpha 200, 9e25 at alpha 500). The values are
+    /// `((s^alpha - 1) + alpha (1 - s)) / (alpha - 1)` at the f64 `s` in
+    /// 60-digit decimal arithmetic (Python's `decimal`).
+    #[test]
+    fn tsallis_complement_is_accurate_at_every_order() {
+        let exact: [(f64, f64, f64); 56] = [
+            (0.3, 0.76, 0.010047116179193382),
+            (0.3, 0.8, 0.006787931681969531),
+            (0.3, 0.9, 0.0015911982896237623),
+            (0.3, 0.99, 1.5085578029281507e-05),
+            (0.3, 0.999, 1.5008505741749106e-07),
+            (0.3, 0.999999, 1.5000008500868408e-13),
+            (0.3, 0.99999999, 1.500000023574278e-17),
+            (2.5, 0.76, 0.06902667063854573),
+            (2.5, 0.8, 0.048288934826630756),
+            (2.5, 0.9, 0.012288980947277447),
+            (2.5, 0.99, 0.00012479140546547865),
+            (2.5, 0.999, 1.2497916406171864e-06),
+            (2.5, 0.999999, 1.2499997917385298e-12),
+            (2.5, 0.99999999, 1.2500000104785647e-16),
+            (40.0, 0.76, 0.22051325851783668),
+            (40.0, 0.8, 0.1794905877640917),
+            (40.0, 0.9, 0.07730207392157522),
+            (40.0, 0.99, 0.001768506629991811),
+            (40.0, 0.999, 1.974899322594396e-05),
+            (40.0, 0.999999, 1.9999746670160188e-11),
+            (40.0, 0.99999999, 1.9999997667657233e-15),
+            (100.0, 0.76, 0.2323232323232445),
+            (100.0, 0.8, 0.19191919192124948),
+            (100.0, 0.9, 0.09090935920604935),
+            (100.0, 0.99, 0.0036972963764972736),
+            (100.0, 0.999, 4.840552640110152e-05),
+            (100.0, 0.999999, 4.9998366709149664e-11),
+            (100.0, 0.99999999, 4.999998416914631e-15),
+            (200.0, 0.76, 0.23618090452261306),
+            (200.0, 0.8, 0.1959798994974874),
+            (200.0, 0.9, 0.09547738693821861),
+            (200.0, 0.99, 0.005698390325919414),
+            (200.0, 0.999, 9.371271094791828e-05),
+            (200.0, 0.999999, 9.999340033078783e-11),
+            (200.0, 0.99999999, 9.999993500498337e-15),
+            (500.0, 0.76, 0.23847695390781562),
+            (500.0, 0.8, 0.1983967935871743),
+            (500.0, 0.9, 0.09819639278557112),
+            (500.0, 0.99, 0.008029199364814468),
+            (500.0, 0.999, 0.00021318425823884805),
+            (500.0, 0.999999, 2.499585051702378e-10),
+            (500.0, 0.99999999, 2.49999587512889e-14),
+            (10000.0, 0.76, 0.23992399239923992),
+            (10000.0, 0.8, 0.19991999199919988),
+            (10000.0, 0.9, 0.09990999099909989),
+            (10000.0, 0.99, 0.00990099009900991),
+            (10000.0, 0.999, 0.0009000945267872774),
+            (10000.0, 0.999999, 4.9833782296687654e-09),
+            (10000.0, 0.99999999, 4.999833421076248e-13),
+            (1000000.0, 0.76, 0.23999923999924),
+            (1000000.0, 0.8, 0.19999919999919996),
+            (1000000.0, 0.9, 0.09999909999909998),
+            (1000000.0, 0.99, 0.009999009999010008),
+            (1000000.0, 0.999, 0.0009990009990009999),
+            (1000000.0, 0.999999, 3.678796251294473e-07),
+            (1000000.0, 0.99999999, 4.983374999928297e-11),
+        ];
+        for (a, s, want) in exact {
+            let d = Distortion::tsallis(a).unwrap();
+            let got = d.complement(s);
+            assert!((got / want - 1.0).abs() < 1e-13, "{a} {s}: {got} {want}");
+            // The issue's check: where g is not close to 1, the plain
+            // difference agrees.
+            if want > 0.01 {
+                assert!((got / (1.0 - d.g(s)) - 1.0).abs() < 1e-10, "{a} {s}");
+            }
+        }
+        // Continuous across alpha t = 1, where the series hands over.
+        for a in [5.0, 200.0, 1e6] {
+            let d = Distortion::tsallis(a).unwrap();
+            let t = 1.0 / a;
+            let (below, above) = (
+                d.complement(1.0 - t * (1.0 - 1e-9)),
+                d.complement(1.0 - t * (1.0 + 1e-9)),
+            );
+            assert!((above / below - 1.0).abs() < 1e-8, "{a}: {below} {above}");
+        }
+    }
 
     #[test]
     fn tsallis_is_continuous_in_alpha_and_keeps_its_complement() {
