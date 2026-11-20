@@ -777,6 +777,13 @@ tail mean of the quantiles to 1e-3 and the closed form to within a bucket.
 - (g) *`|β| < 1` under the tilt is split into its two totally skewed
   halves* (built in #780's third PR; until then it was an error); a fixed
   tilt on a law with no power tail is an error, as in `aggregate`.
+- (m) *A given step above the split's limit is an error* (#937, the
+  issue's proposed fix): the split moves a normal from the wide half to
+  the narrow one, which the wide half can give up only while `(πγ/h)^α >=
+  104 ln 2`, so `invert` refuses a given `step` above `πγ / (104 ln
+  2)^(1/α)` and names that step. The automatic bucket is capped below it
+  already. `aggregate` 2.1.0 does not check: at `α = 1.5`, `β = 0.5`,
+  `bs = 0.5` on `2^10` buckets its masses sum to 21.2, as prospicio's did.
 - (l) *The laws are `Distribution`s through the engine*: `invert(law,
   options)` returns a `ChfDistribution`, which implements `Distribution`
   (cdf, quantile, draws, moments of the masses), so `Stable`,

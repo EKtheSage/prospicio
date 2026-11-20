@@ -25,6 +25,9 @@ sources:
   - id: split-test
     resource: ../validation/tests/probability_chf_split.rs
     title: validation/tests/probability_chf_split.rs, chf_split_stable_matches_aggregate, against validation/scripts/aggregate_chf_split.py
+  - id: step-cap-test
+    resource: ../validation/tests/probability_chf_step_cap.rs
+    title: validation/tests/probability_chf_step_cap.rs, a given step above and below the split's limit (#937), and aggregate 2.1.0 run on the same cases on 2026-11-20
   - id: algebra-test
     resource: ../validation/tests/probability_stable_algebra.rs
     title: validation/tests/probability_stable_algebra.rs, stable_algebra_matches_aggregate, against validation/scripts/aggregate_stable_algebra.py
@@ -113,6 +116,16 @@ sources:
   mass below and above, so round-off picks one, and prospicio and
   aggregate picked different ones (x_min -128 against -127.9375); every
   other case's best crop is at least 15% below the next.[^split-test]
+* The split has a largest step, `π γ / (104 ln 2)^(1/α)` (0.181 at
+  `α = 1.5`, `γ = 1`): the normal moved onto the narrow half comes off the
+  wide one, which can give it up only while the whole law's truncation
+  `exp(−(πγ/h)^α)` is at most `2^−104`. `aggregate` 2.1.0 caps its
+  automatic bucket below that but takes any given `bs`: at `α = 1.5`,
+  `β = 0.5`, `bs = 0.5`, log2 10 its masses sum to 21.2, and at `α = 1.8`,
+  `β = 0` to −2.4e-5, with no warning. prospicio returned the same
+  numbers until #937 and now refuses a given step above the limit, naming
+  it; steps from the automatic cap up to the limit stay valid (totals
+  within 2e-5 of 1 on 2^16 buckets for `α` from 0.7 to 1.95).[^step-cap-test]
 * `aggregate`'s `Stable` algebra is exact in S1: the sum, `c X` (with
   `-(2/pi) beta gamma c ln|c|` at `alpha = 1`) and `t @ X` each have the
   operands' characteristic function to 1e-13, and its 330 parameter values
