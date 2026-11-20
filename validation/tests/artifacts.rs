@@ -19,6 +19,9 @@
 //!
 //! which writes only the files that do not exist yet. Never delete and
 //! rewrite an existing file: that would hide the change it exists to catch.
+//!
+//! The networks' files need the `nn` feature (on by default).
+#![cfg(feature = "nn")]
 
 use std::path::PathBuf;
 

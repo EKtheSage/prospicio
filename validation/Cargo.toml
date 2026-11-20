@@ -15,6 +15,11 @@ authors.workspace = true
 # io: the triangle readers' tests (reserving_io.rs), and with feature
 # unification the `io` unit tests of prospicio-reserving in `cargo test`.
 prospicio-reserving = { workspace = true, features = ["bayes", "io"] }
+# Feature `nn` (the tabular networks' tests: artifacts.rs, fremtpl2.rs), without
+# the ONNX import. A dev-dependency cannot be optional, so it is a dependency.
+prospicio-nn = { path = "../crates/prospicio-nn", default-features = false, optional = true }
+# Feature `arrow` turns on its Arrow IPC (predictive.rs).
+prospicio-prob.workspace = true
 
 [dev-dependencies]
 prospicio-aggregate.workspace = true
@@ -23,10 +28,7 @@ prospicio-core.workspace = true
 prospicio-glm.workspace = true
 prospicio-math.workspace = true
 prospicio-models.workspace = true
-# The tabular networks' freMTPL2 run (fremtpl2.rs); without the ONNX import.
-prospicio-nn = { path = "../crates/prospicio-nn", default-features = false }
 prospicio-pricing.workspace = true
-prospicio-prob = { workspace = true, features = ["arrow"] }
 rayon.workspace = true
 # The frozen artifacts' documents (artifacts.rs).
 serde_json.workspace = true
@@ -77,6 +79,16 @@ c = [
 unit-tests = "c"
 
 [features]
+# Burn (`nn`) and Arrow (`arrow`) are the heaviest dependencies and only a few
+# tests use them, so a job that builds one test target passes
+# `--no-default-features` and adds back what it needs, and does not compile
+# the rest (#967). Both are on by default, so a plain `cargo test` runs every
+# test. The files that need one gate themselves with `#![cfg(feature = ..)]`
+# (artifacts.rs: nn; predictive.rs: arrow), as does fremtpl2.rs's network test.
+default = ["nn", "arrow"]
+nn = ["dep:prospicio-nn"]
+arrow = ["prospicio-prob/arrow"]
+
 # The Bayesian (NUTS) parity tests: about 220 s in a debug build and 17 s in
 # release when there were six files (thirteen now, with the one-year views'
 # refits, minutes in release), so a plain `cargo test` skips them and CI runs them in release

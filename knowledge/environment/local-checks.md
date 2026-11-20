@@ -116,5 +116,13 @@ the code change.
   are correct.
 * The freMTPL2 parity runs only in release builds
   (`cargo test --release -p prospicio-validation --test fremtpl2`).
+* `prospicio-validation` has default features `nn` (Burn, for artifacts.rs
+  and the freMTPL2 network test) and `arrow` (for predictive.rs), so a plain
+  `cargo test` runs every test. CI's `bayes` job builds with
+  `--no-default-features --features slow-bayes` and its `fremtpl2` job with
+  `--no-default-features --features nn`, so neither compiles Arrow, and
+  `bayes` not Burn either (273 to 150 and 258 crates in `cargo tree`, #967).
+  A new test that needs one of them gates its file with
+  `#![cfg(feature = "nn")]` or `"arrow"`.
 
 [^agents]: AGENTS.md, Checks

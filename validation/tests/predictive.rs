@@ -1,6 +1,7 @@
 //! PredictiveDistribution Arrow IPC files, against a fixture written by
 //! pyarrow (`validation/scripts/predictive_ipc.py`) from the documented
 //! format rather than by the Rust writer.
+#![cfg(feature = "arrow")]
 
 use std::fs::File;
 use std::path::Path;

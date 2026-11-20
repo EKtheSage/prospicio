@@ -202,6 +202,7 @@ fn fremtpl2_gamma_severity_matches_statsmodels() {
 /// The network's features as Schelldorfer and Wüthrich (2019) feed them:
 /// VehPower a number, not the GLM's factor, beside the other columns, and
 /// the GLM's classes of VehAge and DrivAge.
+#[cfg(feature = "nn")]
 fn network_design(data: &[(String, Vec<String>)]) -> Design {
     let mut columns = Vec::new();
     for name in ["Area", "VehPower", "BonusMalus", "Density"] {
@@ -229,6 +230,7 @@ fn network_design(data: &[(String, Vec<String>)]) -> Design {
 /// two-dimensional embeddings, on a learning and a test sample of the
 /// portfolio (every fifth policy held out). Both start at the GLM fitted on
 /// the learning sample, so the comparison is of what each network adds.
+#[cfg(feature = "nn")]
 #[test]
 fn fremtpl2_embeddings_beat_the_one_hot_cann() {
     use prospicio_models::metrics::mean_deviance;

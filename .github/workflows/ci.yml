@@ -588,7 +588,7 @@ jobs:
         with:
           key: release
       - if: steps.changes.outputs.run == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
-        run: cargo test --release -p prospicio-validation --test fremtpl2 --no-run
+        run: cargo test --release -p prospicio-validation --no-default-features --features nn --test fremtpl2 --no-run
       - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
         uses: actions/cache@v4
         with:
@@ -599,7 +599,7 @@ jobs:
         run: |
           test -f validation/data/external/freMTPL2freq_glm.csv             && test -f validation/data/external/freMTPL2sev_glm.csv             || python3 validation/scripts/fetch_fremtpl2.py
       - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
-        run: cargo test --release -p prospicio-validation --test fremtpl2
+        run: cargo test --release -p prospicio-validation --no-default-features --features nn --test fremtpl2
         env:
           RISK_RS_REQUIRE_FREMTPL2: "1"
 
@@ -655,7 +655,7 @@ jobs:
       - if: steps.changes.outputs.run == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
         name: Build the Bayesian tests in release
         run: |
-          cargo test --release -p prospicio-validation --features slow-bayes --test bayes --no-run
+          cargo test --release -p prospicio-validation --no-default-features --features slow-bayes --test bayes --no-run
           if [ "${{ steps.changes.outputs.unit }}" = true ]; then
             cargo test --release -p prospicio-reserving --features slow-tests --lib --no-run
           fi
@@ -665,8 +665,8 @@ jobs:
           RISK_RS_FULL_BAYES: ${{ github.event_name != 'pull_request' && '1' || '' }}
         run: |
           echo "RISK_RS_FULL_BAYES=${RISK_RS_FULL_BAYES:-} (empty: the pull request's smoke run)"
-          echo "cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }}"
-          cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }}
+          echo "cargo test --release -p prospicio-validation --no-default-features --features slow-bayes ${{ steps.changes.outputs.tests }}"
+          cargo test --release -p prospicio-validation --no-default-features --features slow-bayes ${{ steps.changes.outputs.tests }}
       - if: steps.changes.outputs.run == 'true' && github.event_name != 'push' && steps.changes.outputs.unit == 'true'
         name: Run the NUTS unit tests in release
         run: cargo test --release -p prospicio-reserving --features slow-tests --lib

@@ -1,0 +1,1 @@
+* **Update**: [Local checks](/environment/local-checks.md): `prospicio-validation` gets default features `nn` and `arrow`, which CI's `bayes` and `fremtpl2` jobs turn off so they do not compile Burn or Arrow (branch ci-967-gate-validation-deps, #967).
