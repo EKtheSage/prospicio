@@ -460,7 +460,9 @@ pub(crate) fn push_moments(table: &mut FitTable, prefix: &str, draws: &[Sampled]
 
 /// Appends a column `name` to `table`, row by row `f` of its columns `a`
 /// and `b` (for example `ulr_mean`, `ultimate_mean` over the row's own
-/// exposure), so the new column is consistent with its own row.
+/// exposure), so the new column is consistent with its own row. Only the
+/// Bayesian fits' tables call it.
+#[cfg(feature = "bayes")]
 pub(crate) fn push_combined(
     table: &mut FitTable,
     name: &str,
