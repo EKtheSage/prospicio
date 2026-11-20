@@ -1,0 +1,1 @@
+* **Update**: [Publishing to PyPI and crates.io](/environment/publishing.md), from #576 (branch claude/wasm-publish): what npm's trusted publishing needs (npm 11.5.1, a package that already exists, a first publish within two days of adding the publisher), the name `prospicio` free on npm on 2026-11-20, and the package's packed size.
