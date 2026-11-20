@@ -23,6 +23,9 @@ sources:
   - id: gating
     resource: process:cloud session claude/cool-shannon-fqpoy8-ci-967, 2026-11-20 (4 cores, Rust 1.100)
     title: Release builds of the bayes test binary with and without Burn and Arrow (#967)
+  - id: build-once
+    resource: process:cloud session claude/cool-shannon-fqpoy8-ci-965, 2026-11-20 (4 cores, Rust 1.100, uv 0.11, R 4.3)
+    title: The wheel, the R binary package and the Bayesian test binaries built once and tested from the files (#965)
   - id: rust-cache
     resource: https://github.com/Swatinem/rust-cache/blob/v2/src/restore.ts
     title: Swatinem/rust-cache v2, restore and save
@@ -173,6 +176,45 @@ slow-bayes` (no Burn, Arrow or calamine in `cargo tree`) and
   each job has a cache of its own, so the second feature set costs
   nothing and saves the job `onnx-ir`.
 
+# Build once, test in legs (#965, 2026-11-20)
+
+After #848 to #850 every leg of `python` (four), `r` (three) and `bayes`
+(three) compiled the same crates in release, and on a push to `main` the
+three `bayes` legs each built and raced to save one cache key. Now a
+build job compiles once and the legs, which keep their names (`python`,
+`r`, `bayes`, so the checks' names are unchanged), install or run its
+artifact with no Rust toolchain and no cache:[^ci]
+
+* `python-build`: `uv build --wheel` (maturin through PEP 517, release,
+  into the workspace's `target/`) writes one abi3 wheel, 12.9 MB. A leg
+  runs `uv sync --no-install-project`, `uv pip install --no-deps` on the
+  wheel, and `uv run --no-sync pytest`, so uv never builds the project.
+  pytest and its xdist workers import the installed wheel although the
+  working directory holds the source package `prospicio/` without its
+  extension; `python -c "import prospicio"` there imports the source
+  package and fails, so a test that starts Python itself from `python/`
+  would need another directory.[^build-once]
+* `r-build`: `R CMD INSTALL --build` writes
+  `prospicio_<version>_R_x86_64-pc-linux-gnu.tar.gz` (22.8 MB; a `.zip` on
+  Windows), which `R CMD INSTALL` installs as a binary package in
+  seconds. The install-from-tarball check, which compiles the crates
+  again, stays in the build job.[^build-once]
+* `bayes-build`: the two test binaries (`bayes`, 10.5 MB, and
+  prospicio-reserving's unit tests, 14.9 MB), named by the `executable`
+  field of `cargo test --no-run --message-format=json`. A leg runs
+  `bayes-bin/parity <module>:: ...` from `validation/` and
+  `bayes-bin/unit` from `crates/prospicio-reserving/`: `cargo test` runs a
+  test binary in its package's directory, and the artifact does not keep
+  the executable bit (`chmod +x`). The paths compiled into the binary
+  (`env!("CARGO_MANIFEST_DIR")`) hold because every runner checks the
+  repository out at the same path.[^build-once]
+* nextest's archive and `--partition count:k/3`, which the issue
+  proposed, would run each test in a process of its own, and 15 of the 27
+  parity files share one fit between their tests through a `OnceLock`:
+  each test would refit. The legs therefore stay the hand-balanced module
+  lists of `[package.metadata.bayes-shards]`.
+
+[^build-once]: The wheel, the R binary package and the Bayesian test binaries built once and tested from the files (#965)
 [^gating]: Release builds of the bayes test binary with and without Burn and Arrow (#967)
 [^runs]: CI run and job timings
 [^local]: Local timings of cargo test, cargo nextest and the Bayesian release tests

@@ -5,11 +5,15 @@ The Bayesian parity files are modules of one test binary, `bayes`
 (validation/build.rs makes each name in validation/Cargo.toml's
 [package.metadata.bayes-shards] a module of it). This script checks that
 every name in a leg is a file of validation/tests/ and in one leg only, and
-that the legs are the ones ci.yml's `bayes` matrix runs, then prints the
-leg's lines for $GITHUB_OUTPUT:
+that the legs are the ones ci.yml's `bayes` matrix runs, then prints
+the leg's lines for $GITHUB_OUTPUT:
 
-    tests=--test bayes -- name_a:: name_b:: ...   (the leg's modules as filters)
-    unit=true|false        (prospicio-reserving's NUTS unit tests)
+    filters=name_a:: name_b:: ...   (the leg's modules as test filters)
+    unit=true|false                 (prospicio-reserving's NUTS unit tests)
+
+The legs run the test binary that the `bayes-build` job compiled once
+(#965), `bayes-bin/parity <filters>`; by hand, the same filters follow
+`cargo test ... --test bayes --`.
 
     python3 validation/scripts/bayes_shards.py a     # one leg
     python3 validation/scripts/bayes_shards.py       # check, print all legs
@@ -79,9 +83,8 @@ def main():
             print(f"error: no leg {leg!r}; the legs are {', '.join(named)}", file=sys.stderr)
             sys.exit(1)
         filters = " ".join(f"{n}::" for n in named[leg])
-        tests = f"--test bayes -- {filters}"
         if sys.argv[1:]:
-            print(f"tests={tests}")
+            print(f"filters={filters}")
             print(f"unit={'true' if leg == unit else 'false'}")
         else:
             extra = " and the reserving NUTS unit tests" if leg == unit else ""

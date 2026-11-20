@@ -12,7 +12,9 @@ name: CI
 # missing (the cache's key changes with Cargo.lock and the toolchain), so
 # that pull requests, which can read main's caches but not each other's,
 # start warm; the Pages build (pages.yml) keeps the docs job's cache warm
-# the same way. Tests that sample with NUTS stay out of the rust job's
+# the same way. The python, r and bayes jobs are test legs on what a build
+# job compiled once (python-build, r-build, bayes-build; #965), passed as an
+# artifact, so only the build jobs need Rust and a cache. Tests that sample with NUTS stay out of the rust job's
 # debug tests: the Bayesian parity files sit behind prospicio-validation's
 # `slow-bayes`, and prospicio-reserving's NUTS unit tests are ignored
 # without its `slow-tests`. Of the slowest Bayesian checks, the one-year
@@ -158,35 +160,21 @@ jobs:
       - if: steps.changes.outputs.run == 'true'
         run: cargo check --workspace --exclude prospicio-r --all-targets --features prospicio-validation/slow-bayes,prospicio-reserving/io,prospicio-prob/arrow
 
-  # Four legs, each on a runner of its own (#848, #850). Most of the
-  # suite's time is a dozen Bayesian and compartmental tests whose NUTS
-  # chains already use every core through rayon: four xdist workers on one
-  # runner made them three to five times slower (with one rayon thread each,
-  # or with the default), so they run serially with every thread, on
-  # runners of their own (`slow-1` and `slow-2`: PY_SLOW_1, PY_SLOW_2) or at
-  # the end of `tests` (PY_ALONE), whose other files run first on four
-  # workers with one rayon thread each. `guides` runs the guides and
-  # notebooks one at a time, since each guide must finish within 30 s
-  # (test_guides.py). The lists balance the legs at about four minutes of
-  # tests each (2026-11-11). Each leg builds the package itself; on a push
-  # to main only the tests leg builds, to fill the cache the others read.
-  python:
+  # The Python package, built once per platform (#965): a release wheel
+  # (abi3, as release.yml builds it), kept as an artifact for a day, that
+  # every leg of the python job installs. Before, each of the four legs compiled
+  # prospicio-python in release itself, Burn and nuts-rs included. Clippy on
+  # the bindings runs here, beside the build it shares its dependencies
+  # with. On a push to main the job builds only when its cache is not an
+  # exact match, to fill the cache pull requests read, and uploads nothing.
+  python-build:
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
-        part: [tests, slow-1, slow-2, guides]
     runs-on: ${{ matrix.os }}
-    env:
-      PY_SLOW_1: tests/test_reserving_compartmental.py
-      PY_SLOW_2: >-
-        tests/test_reserving_hierarchical_bf.py
-        tests/test_reserving_compartmental_backtest.py
-      PY_ALONE: >-
-        tests/test_reserving_compartmental_segments.py
-        tests/test_reserving_compartmental_one_year_segments.py
-        tests/test_reserving_pattern_draws.py
-        tests/test_boosting.py
+    outputs:
+      run: ${{ steps.changes.outputs.run }}
     defaults:
       run:
         shell: bash
@@ -203,7 +191,7 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Only docs, knowledge, change fragments or lane status changed; skipping the Python tests."
+            echo "Only docs, knowledge, change fragments or lane status changed; skipping the Python build and tests."
           fi
       - if: steps.changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
@@ -220,15 +208,75 @@ jobs:
           run=${{ steps.changes.outputs.run }}
           push=${{ github.event_name == 'push' }}
           hit=${{ steps.cache.outputs.cache-hit == 'true' }}
-          tests=${{ matrix.part == 'tests' }}
-          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && { [ "$hit" = true ] || [ "$tests" = false ]; }; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "test=$([ "$run" = true ] && [ "$push" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && [ "$hit" = true ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.plan.outputs.build == 'true'
         uses: astral-sh/setup-uv@v6
-      - if: steps.plan.outputs.build == 'true' && matrix.part == 'tests'
-        run: cargo clippy -p prospicio-python -- -D warnings
       - if: steps.plan.outputs.build == 'true'
-        run: uv sync
+        run: cargo clippy -p prospicio-python -- -D warnings
+      # maturin through PEP 517, in release, into the workspace's target/.
+      - if: steps.plan.outputs.build == 'true'
+        run: uv build --wheel --out-dir dist
+        working-directory: python
+      - if: steps.plan.outputs.build == 'true' && github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheel-${{ matrix.os }}
+          path: python/dist/*.whl
+          if-no-files-found: error
+          retention-days: 1
+
+  # Four legs, each on a runner of its own (#848, #850). Most of the
+  # suite's time is a dozen Bayesian and compartmental tests whose NUTS
+  # chains already use every core through rayon: four xdist workers on one
+  # runner made them three to five times slower (with one rayon thread each,
+  # or with the default), so they run serially with every thread, on
+  # runners of their own (`slow-1` and `slow-2`: PY_SLOW_1, PY_SLOW_2) or at
+  # the end of `tests` (PY_ALONE), whose other files run first on four
+  # workers with one rayon thread each. `guides` runs the guides and
+  # notebooks one at a time, since each guide must finish within 30 s
+  # (test_guides.py). The lists balance the legs at about four minutes of
+  # tests each (2026-11-11). Each leg installs python-build's wheel beside
+  # the locked test dependencies and needs no Rust toolchain (#965); on a
+  # push to main, and when python-build skipped the build, its steps are
+  # skipped.
+  python:
+    needs: python-build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+        part: [tests, slow-1, slow-2, guides]
+    runs-on: ${{ matrix.os }}
+    env:
+      TEST: ${{ needs.python-build.outputs.run == 'true' && github.event_name != 'push' }}
+      PY_SLOW_1: tests/test_reserving_compartmental.py
+      PY_SLOW_2: >-
+        tests/test_reserving_hierarchical_bf.py
+        tests/test_reserving_compartmental_backtest.py
+      PY_ALONE: >-
+        tests/test_reserving_compartmental_segments.py
+        tests/test_reserving_compartmental_one_year_segments.py
+        tests/test_reserving_pattern_draws.py
+        tests/test_boosting.py
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - if: env.TEST == 'true'
+        uses: astral-sh/setup-uv@v6
+      - if: env.TEST == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: python-wheel-${{ matrix.os }}
+          path: python/dist
+      # The locked test dependencies without the project, then the wheel:
+      # `uv run --no-sync` below keeps uv from building the project itself.
+      - if: env.TEST == 'true'
+        name: Install the wheel and the test dependencies
+        run: |
+          uv sync --no-install-project
+          uv pip install --no-deps dist/*.whl
         working-directory: python
       # tests: four workers (pytest-xdist), each file on one worker so its
       # module fixtures load once, one rayon thread per worker so four
@@ -237,36 +285,39 @@ jobs:
       # PY_ALONE serially, the NUTS fits and the boosting tests, whose
       # LightGBM and XGBoost threads also slow down beside other processes.
       # The slowest tests' times in the log (#826).
-      - if: steps.plan.outputs.test == 'true'
+      - if: env.TEST == 'true'
         name: Run the ${{ matrix.part }} leg
         run: |
           durations="--durations=25 --durations-min=5"
+          pytest="uv run --no-sync pytest"
           case "${{ matrix.part }}" in
             tests)
               ignore="--ignore=tests/test_guides.py --ignore=tests/test_examples.py"
               for f in $PY_SLOW_1 $PY_SLOW_2 $PY_ALONE; do ignore="$ignore --ignore=$f"; done
-              RAYON_NUM_THREADS=1 uv run pytest tests -n 4 --dist loadfile $ignore $durations
-              uv run pytest $PY_ALONE $durations ;;
-            slow-1) uv run pytest $PY_SLOW_1 $durations ;;
-            slow-2) uv run pytest $PY_SLOW_2 $durations ;;
-            guides) uv run pytest tests/test_guides.py tests/test_examples.py $durations ;;
+              RAYON_NUM_THREADS=1 $pytest tests -n 4 --dist loadfile $ignore $durations
+              $pytest $PY_ALONE $durations ;;
+            slow-1) $pytest $PY_SLOW_1 $durations ;;
+            slow-2) $pytest $PY_SLOW_2 $durations ;;
+            guides) $pytest tests/test_guides.py tests/test_examples.py $durations ;;
           esac
         working-directory: python
 
-  # Three legs, each on a runner of its own (#849, #850): `slow`, the
-  # compartmental file (about 220 s, the longest), alone; `guides`,
-  # tests/test-guides.R; and `tests`, the rest through
-  # validation/scripts/run_r_tests.py: four files at a time with one rayon
-  # thread each, then the Bayesian files and the boosting tests one at a
-  # time with every thread, since four processes on four cores made them
-  # three to eight times slower.
-  r:
+  # The R package, built once per platform (#965): `R CMD INSTALL --build`
+  # compiles prospicio-r in release and writes a binary package, kept as an
+  # artifact for a day, that every leg of the r job installs. Before, each of the
+  # three legs ran `R CMD INSTALL R/prospicio` and compiled the crates
+  # itself. Clippy on the bindings and the install-from-tarball check, which
+  # compiles the crates again, run here, where the Rust toolchain is. On a
+  # push to main the job builds only when its cache is not an exact match,
+  # and uploads nothing.
+  r-build:
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
-        part: [tests, slow, guides]
     runs-on: ${{ matrix.os }}
+    outputs:
+      run: ${{ steps.changes.outputs.run }}
     # PowerShell (the Windows default) aliases `R` to Invoke-History.
     defaults:
       run:
@@ -284,7 +335,7 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Only docs, knowledge, change fragments or lane status changed; skipping the R tests."
+            echo "Only docs, knowledge, change fragments or lane status changed; skipping the R build and tests."
           fi
       - if: steps.changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
@@ -302,64 +353,47 @@ jobs:
           run=${{ steps.changes.outputs.run }}
           push=${{ github.event_name == 'push' }}
           hit=${{ steps.cache.outputs.cache-hit == 'true' }}
-          tests=${{ matrix.part == 'tests' }}
-          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && { [ "$hit" = true ] || [ "$tests" = false ]; }; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && [ "$hit" = true ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "test=$([ "$run" = true ] && [ "$push" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.plan.outputs.build == 'true'
         uses: r-lib/actions/setup-r@v2  # installs Rtools on Windows
         with:
-          # Binary packages: lightgbm and xgboost take minutes to compile.
           use-public-rspm: true
-      - if: steps.plan.outputs.build == 'true' && matrix.part == 'tests'
+      - if: steps.plan.outputs.build == 'true'
         run: cargo clippy -p prospicio-r -- -D warnings
-      # lightgbm and xgboost are optional engines for booster_fit(). The
-      # boosting tests skip a missing engine and install.packages() only
-      # warns on failure, so check that each one loads. ggplot2 and gt draw
-      # the R guides' figures and tables, which tests/test-guides.R runs. On
-      # Windows R starts with no CRAN mirror set, so fall back to the cloud
-      # mirror when none is; Ubuntu keeps setup-r's RSPM binaries.
+      # S7 is the package's one import outside base R. On Windows R starts
+      # with no CRAN mirror set, so fall back to the cloud mirror when none
+      # is; Ubuntu keeps setup-r's RSPM binaries.
       - if: steps.plan.outputs.build == 'true'
         run: >-
           Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) };
-          pkgs <- c('S7', 'lightgbm', 'xgboost', 'ggplot2', 'gt'); install.packages(pkgs);
-          for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
+          install.packages('S7'); if (!requireNamespace('S7', quietly = TRUE)) stop('S7 did not install')"
+      # Installs the package and writes the binary package beside it
+      # (prospicio_<version>_R_<platform>.tar.gz; a .zip on Windows).
       - if: steps.plan.outputs.build == 'true'
-        run: R CMD INSTALL R/prospicio
-      # The optional parity packages (#845): their blocks skip on pull
-      # requests, with a SKIP line each in the runner's summary, and run on
-      # the nightly and manual runs. install.packages() only warns on
-      # failure, so a package that does not build there is skipped too.
-      - if: steps.plan.outputs.test == 'true' && matrix.part == 'tests' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        run: >-
-          Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) };
-          install.packages(c('actuar', 'glmnet', 'statmod', 'ChainLadder', 'dglm', 'posterior', 'loo'))"
-      # validation/scripts/run_r_tests.py runs every file it is given,
-      # prints each one's time and result as it finishes (#826), and ends
-      # with the log of every failed file, the skipped optional-package
-      # blocks and the slowest files (#845).
-      - name: Run the R ${{ matrix.part }} leg
-        if: steps.plan.outputs.test == 'true'
+        name: Build the binary package
         run: |
-          py=$([ "$RUNNER_OS" = Windows ] && echo python || echo python3)
-          case "${{ matrix.part }}" in
-            tests)
-              # The Bayesian and boosting files run alone after the rest
-              # (run_r_tests.py's ALONE).
-              $py validation/scripts/run_r_tests.py --jobs 4 \
-                --exclude test-guides.R --exclude test-reserving-compartmental.R ;;
-            slow) $py validation/scripts/run_r_tests.py test-reserving-compartmental.R ;;
-            guides) $py validation/scripts/run_r_tests.py test-guides.R ;;
-          esac
+          mkdir r-dist
+          cd r-dist
+          R CMD INSTALL --build ../R/prospicio
+          ls -l
+      - if: steps.plan.outputs.build == 'true' && github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: r-package-${{ matrix.os }}
+          path: r-dist/prospicio_*
+          if-no-files-found: error
+          retention-days: 1
       # remotes::install_github(subdir = "R/prospicio") and r-universe build
       # a tarball of R/prospicio alone, which carries its Rust sources only
       # because pkgbuild runs bootstrap.R first. Install from such a tarball,
       # into a library of its own, and run one test file against it: the
-      # full suite already ran on the checkout's install. It compiles the
+      # full suite runs on the binary package in the r job. It compiles the
       # crates again (a few minutes), so a PR runs it only when the
       # package's build inputs change; the nightly run always does.
       - name: Check whether the R build inputs changed
         id: rbuild
-        if: steps.plan.outputs.test == 'true' && matrix.part == 'tests'
+        if: steps.plan.outputs.test == 'true'
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -381,6 +415,83 @@ jobs:
           R_LIBS="$tmp/rlib" Rscript \
             -e "stopifnot(normalizePath(dirname(find.package('prospicio')), '/') == normalizePath('$tmp/rlib', '/'))" \
             -e "source('R/prospicio/tests/test-distributions.R')"
+
+  # Three legs, each on a runner of its own (#849, #850): `slow`, the
+  # compartmental file (about 220 s, the longest), alone; `guides`,
+  # tests/test-guides.R; and `tests`, the rest through
+  # validation/scripts/run_r_tests.py: four files at a time with one rayon
+  # thread each, then the Bayesian files and the boosting tests one at a
+  # time with every thread, since four processes on four cores made them
+  # three to eight times slower. Each leg installs r-build's binary package
+  # and needs no Rust toolchain (#965); on a push to main, and when r-build
+  # skipped the build, its steps are skipped.
+  r:
+    needs: r-build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+        part: [tests, slow, guides]
+    runs-on: ${{ matrix.os }}
+    env:
+      TEST: ${{ needs.r-build.outputs.run == 'true' && github.event_name != 'push' }}
+    # PowerShell (the Windows default) aliases `R` to Invoke-History.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - if: env.TEST == 'true'
+        uses: r-lib/actions/setup-r@v2
+        with:
+          # Binary packages: lightgbm and xgboost take minutes to compile.
+          use-public-rspm: true
+      # lightgbm and xgboost are optional engines for booster_fit(). The
+      # boosting tests skip a missing engine and install.packages() only
+      # warns on failure, so check that each one loads. ggplot2 and gt draw
+      # the R guides' figures and tables, which tests/test-guides.R runs. On
+      # Windows R starts with no CRAN mirror set, so fall back to the cloud
+      # mirror when none is; Ubuntu keeps setup-r's RSPM binaries.
+      - if: env.TEST == 'true'
+        run: >-
+          Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) };
+          pkgs <- c('S7', 'lightgbm', 'xgboost', 'ggplot2', 'gt'); install.packages(pkgs);
+          for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
+      - if: env.TEST == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: r-package-${{ matrix.os }}
+          path: r-dist
+      - if: env.TEST == 'true'
+        name: Install the binary package
+        run: |
+          R CMD INSTALL r-dist/prospicio_*
+          Rscript -e "library(prospicio); cat('prospicio', format(packageVersion('prospicio')), 'loads\n')"
+      # The optional parity packages (#845): their blocks skip on pull
+      # requests, with a SKIP line each in the runner's summary, and run on
+      # the nightly and manual runs. install.packages() only warns on
+      # failure, so a package that does not build there is skipped too.
+      - if: env.TEST == 'true' && matrix.part == 'tests' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: >-
+          Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) };
+          install.packages(c('actuar', 'glmnet', 'statmod', 'ChainLadder', 'dglm', 'posterior', 'loo'))"
+      # validation/scripts/run_r_tests.py runs every file it is given,
+      # prints each one's time and result as it finishes (#826), and ends
+      # with the log of every failed file, the skipped optional-package
+      # blocks and the slowest files (#845).
+      - name: Run the R ${{ matrix.part }} leg
+        if: env.TEST == 'true'
+        run: |
+          py=$([ "$RUNNER_OS" = Windows ] && echo python || echo python3)
+          case "${{ matrix.part }}" in
+            tests)
+              # The Bayesian and boosting files run alone after the rest
+              # (run_r_tests.py's ALONE).
+              $py validation/scripts/run_r_tests.py --jobs 4 \
+                --exclude test-guides.R --exclude test-reserving-compartmental.R ;;
+            slow) $py validation/scripts/run_r_tests.py test-reserving-compartmental.R ;;
+            guides) $py validation/scripts/run_r_tests.py test-guides.R ;;
+          esac
 
   # The R twins of the example notebooks (examples/one_year_view.qmd and
   # examples/reinsurance_pricing.qmd, #271), on the nightly and manual runs
@@ -609,24 +720,16 @@ jobs:
   # - prospicio-reserving's unit tests with its `slow-tests` feature, which
   #   un-ignores the ones that sample with NUTS (about 230 s single-threaded
   #   in debug; about 70 s in release on CI's runner).
-  # They are modules of one test binary, `bayes` (validation/build.rs, #825),
-  # run in three legs at once (#824), each with its modules as test filters:
-  # validation/Cargo.toml's [package.metadata.bayes-shards] names each file's
-  # leg, and the job fails when a name is no file, or is in two legs. The
-  # rust job's debug tests skip or ignore them. On a pull request
-  # this job runs only when their inputs change; otherwise its steps are
-  # skipped and it passes. A pull request runs the smoke version of the
-  # one-year conformance suite and of the Meyers and compartmental one-year
-  # validation; the nightly and manual runs set RISK_RS_FULL_BAYES and run
-  # all of it (prospicio_validation::full_bayes; the user's decisions of
-  # 2026-10-16 and 2026-10-19). On a push to main it only builds the
-  # tests, if its cache is missing.
-  bayes:
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [a, b, c]
+  # bayes-build compiles both test binaries once (#965) and keeps them as an
+  # artifact for a day; before, each of the three legs compiled them, and on
+  # a push to main the three raced to save one cache. The rust job's debug
+  # tests skip or ignore these tests. On a pull request the job builds only
+  # when their inputs change; otherwise its steps are skipped and it passes.
+  # On a push to main it only builds, if its cache is missing.
+  bayes-build:
     runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.changes.outputs.run }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -644,7 +747,6 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "No Bayesian inputs changed; skipping the Bayesian parity."
           fi
-          python3 validation/scripts/bayes_shards.py ${{ matrix.shard }} >> "$GITHUB_OUTPUT"
       - if: steps.changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
       - if: steps.changes.outputs.run == 'true'
@@ -652,24 +754,83 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: release
+      # Each binary is built, then named by a second, instant `--no-run`
+      # whose JSON messages give the executable's path.
       - if: steps.changes.outputs.run == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
         name: Build the Bayesian tests in release
+        shell: bash
         run: |
-          cargo test --release -p prospicio-validation --no-default-features --features slow-bayes --test bayes --no-run
-          if [ "${{ steps.changes.outputs.unit }}" = true ]; then
-            cargo test --release -p prospicio-reserving --features slow-tests --lib --no-run
-          fi
+          mkdir bayes-bin
+          build() {
+            out=$1; shift
+            cargo test --release "$@" --no-run
+            exe=$(cargo test --release "$@" --no-run --message-format=json 2>/dev/null \
+              | jq -r 'select(.reason == "compiler-artifact" and .profile.test and .executable != null) | .executable')
+            if [ "$(echo "$exe" | wc -l)" != 1 ] || [ ! -x "$exe" ]; then
+              echo "::error::expected one test executable for $out, found: $exe"
+              exit 1
+            fi
+            cp "$exe" "bayes-bin/$out"
+          }
+          build parity -p prospicio-validation --no-default-features --features slow-bayes --test bayes
+          build unit -p prospicio-reserving --features slow-tests --lib
+          ls -l bayes-bin
       - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bayes-tests
+          path: bayes-bin
+          if-no-files-found: error
+          retention-days: 1
+
+  # The Bayesian tests in three legs at once (#824), on bayes-build's
+  # binaries, with no Rust toolchain (#965). The parity files are modules of
+  # one test binary (validation/build.rs, #825), each leg running its
+  # modules as test filters: validation/Cargo.toml's
+  # [package.metadata.bayes-shards] names each file's leg, and
+  # bayes_shards.py fails when a name is no file, or is in two legs. A test
+  # binary run by hand needs what `cargo test` gives it: its package's
+  # directory as the working directory. A pull request runs the smoke
+  # version of the one-year conformance suite and of the Meyers and
+  # compartmental one-year validation; the nightly and manual runs set
+  # RISK_RS_FULL_BAYES and run all of it (prospicio_validation::full_bayes;
+  # the user's decisions of 2026-10-16 and 2026-10-19). On a push to main,
+  # and when bayes-build skipped the build, the steps are skipped.
+  bayes:
+    needs: bayes-build
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [a, b, c]
+    runs-on: ubuntu-latest
+    env:
+      TEST: ${{ needs.bayes-build.outputs.run == 'true' && github.event_name != 'push' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The leg's tests
+        id: leg
+        run: python3 validation/scripts/bayes_shards.py ${{ matrix.shard }} >> "$GITHUB_OUTPUT"
+      - if: env.TEST == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: bayes-tests
+          path: bayes-bin
+      # An artifact does not keep the executable bit.
+      - if: env.TEST == 'true'
+        run: chmod +x bayes-bin/*
+      - if: env.TEST == 'true'
         name: Run the Bayesian parity tests in release
+        working-directory: validation
         env:
           RISK_RS_FULL_BAYES: ${{ github.event_name != 'pull_request' && '1' || '' }}
         run: |
           echo "RISK_RS_FULL_BAYES=${RISK_RS_FULL_BAYES:-} (empty: the pull request's smoke run)"
-          echo "cargo test --release -p prospicio-validation --no-default-features --features slow-bayes ${{ steps.changes.outputs.tests }}"
-          cargo test --release -p prospicio-validation --no-default-features --features slow-bayes ${{ steps.changes.outputs.tests }}
-      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push' && steps.changes.outputs.unit == 'true'
+          echo "bayes ${{ steps.leg.outputs.filters }}"
+          ../bayes-bin/parity ${{ steps.leg.outputs.filters }}
+      - if: env.TEST == 'true' && steps.leg.outputs.unit == 'true'
         name: Run the NUTS unit tests in release
-        run: cargo test --release -p prospicio-reserving --features slow-tests --lib
+        working-directory: crates/prospicio-reserving
+        run: ../../bayes-bin/unit
 
   # Licences, RustSec advisories, duplicate versions and sources of the
   # dependency tree (deny.toml, #573). Pull requests run it when they touch
