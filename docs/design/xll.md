@@ -1814,6 +1814,74 @@ real Excel.
       through the C API, and the test workbook's Cat sheet gives
       Alder's total ground up and to `50 xs 50`, checking its mean.
 
+67. **Laws from their characteristic function** (#779, #780; the user,
+    2026-11-19: "add the chf Excel functions" for 0.2.0; the core is
+    `prospicio_prob::chf`, `levy` and `stable`, Probability lane, #915 to
+    #920). Three functions in the Capital group:
+    - `PRO.CAP.CHF(law, params, [probabilities], [output], [log2], [step],
+      [x_min], [tilt])` is `chf::invert` on a `ChfLaw` built from a name
+      and one row or column of parameters, in the order of the Python and
+      R constructors: `"normal"` (mu, sigma), `"gamma"` (shape, scale),
+      `"inverse_gaussian"` (mean, shape), `"tweedie"` (power, mean,
+      dispersion: `TweediePower`, any power outside (0, 1], so one name
+      for the compound Poisson gamma too), `"stable"` and `"stable_s0"`
+      (alpha, beta, [scale 1], [loc 0], loc in S1 or S0),
+      `"normal_inverse_gaussian"` (alpha, beta, delta, [mu 0]),
+      `"variance_gamma"` (sigma, nu, [theta 0], [mu 0]) and
+      `"tempered_stable"` (C, G, M, Y, [mu 0]). A blank trailing parameter
+      takes its default; a missing required one or one too many is an
+      error naming the law's list. The parameterization is in the law's
+      name, not a sixth parameter, so the params stay numbers. A scaled
+      and shifted law (`ChfLaw::Affine`) and a user's characteristic
+      function have no sheet form.
+    - **Options as `ChfOptions`.** `log2` 16 if omitted, at most 20 (the
+      add-in's `MAX_POINTS`), 19 for `"masses"` so the header row fits
+      Excel's 1,048,576 rows; `step` and `x_min` as given (the core
+      refuses `x_min` alone); `tilt` blank or TRUE `Tilt::Auto`, FALSE
+      `Tilt::Off`, a number from 0 `Tilt::Fixed` (aggregate's codes -1,
+      -2 and a positive tau). `bucket_sizing_p` stays at the core's
+      0.99999.
+    - **Output.** `"summary"` (the default), two columns: the window's
+      mean and SD (`ChfDistribution`'s), VaR at each probability
+      (`quantile`) and TVaR (`ChfDistribution::tvar`, `aggregate`'s
+      `AggregateCHF.tvar`, built in `prospicio-prob` for this function:
+      the user, 2026-11-20, "Excel is like python and R ... if TVaR for
+      this kind of distribution is not available in rust then let's
+      create it", decision 65), then the report: the law's mean and SD,
+      step, left edge, points, whether the step was given, the truncation
+      error and its flag, the mass below and above the window, the tilt
+      on each side, the edge error (blank when NaN, for a law without a
+      power tail) and the total mass. `"masses"`: a header row, then each
+      grid point and its mass, unrenormalized, round-off of either sign
+      kept, as `ChfDistribution::masses`.
+    - `PRO.CAP.STABLE(alpha, beta, [scale], [loc], [parameterization])`
+      is `Stable::new` and `PRO.CAP.STABLE.PARETO(frequency, alpha,
+      theta, sev_mean)` `Stable::from_compound_pareto`, both laid out as
+      alpha, beta, scale, the S1 location, the S0 location, the mean, the
+      right and left tail constants and `P(X > loc)`: the first four
+      values are `PRO.CAP.CHF`'s params for `"stable"`. The rest of the
+      stable algebra (`add`, `shift`, `scale_by`, `copies`) is a change
+      of parameters a sheet writes itself, so it has no function.
+    - **Parity.** `tests/chf.rs` drives the functions through the
+      catalogue against every case of
+      `validation/reference/chf_aggregate.csv`, `chf_levy_aggregate.csv`,
+      `chf_tweedie_aggregate.csv`, `chf_tilt_aggregate.csv` and
+      `chf_split_aggregate.csv` (`aggregate` 2.1.0, the Probability
+      lane's references) with a sheet form, and the TVaRs of
+      `chf_tvar_aggregate.csv` at probabilities in (0, 1), at their
+      tolerances: step,
+      left edge, truncation error, mass outside each side, total mass,
+      mean, SD, the quantiles, the tilts, the edge error and single
+      masses; the `"chf_aggregate.csv"` Tweedies go through `"tweedie"`
+      (`TweediePower`) and match `ChfLaw::Tweedie`'s references. The
+      summary equals `invert`'s statistics bit for bit, `"masses"`
+      equals `masses()`, and `PRO.CAP.STABLE` and `.PARETO` match
+      `stable_algebra_aggregate.csv`'s `identity` and `compound_pareto`
+      cases. The fake Excel checks `PRO.CAP.STABLE.PARETO`'s location,
+      and the test workbook's CHF sheet gives four laws (a Tweedie, a
+      NIG, a tilted stable and a split one) with their step, left edge
+      and two VaRs against aggregate's, and both stable functions.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and

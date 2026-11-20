@@ -626,6 +626,9 @@ mod exports {
     udf!(pro_cap_elt_stats, rates, means, sd_independent, sd_correlated, exposures);
     udf!(pro_cap_elt_oep, rates, means, sd_independent, sd_correlated, exposures, return_periods, amounts);
     udf!(pro_cap_elt_agg, rates, means, sd_independent, sd_correlated, exposures, limit, attachment, probabilities, bucketing, step, points);
+    udf!(pro_cap_chf, law, params, probabilities, output, log2, step, x_min, tilt);
+    udf!(pro_cap_stable, alpha, beta, scale, loc, parameterization);
+    udf!(pro_cap_stable_pareto, frequency, alpha, theta, sev_mean);
     udf!(pro_cap_allocate, draws, family, parameter, method, r0);
     udf!(pro_cap_allocate_total, draws, total, method, measure, level);
 }

@@ -246,7 +246,7 @@ pub fn ylt_stats(args: &[Grid]) -> Result<Grid> {
 }
 
 /// Probabilities in (0, 1), 0.99, 0.995 and 0.999 if omitted.
-fn probabilities(g: &Grid) -> Result<Vec<f64>> {
+pub(crate) fn probabilities(g: &Grid) -> Result<Vec<f64>> {
     let ps = if g.is_blank() {
         vec![0.99, 0.995, 0.999]
     } else {
