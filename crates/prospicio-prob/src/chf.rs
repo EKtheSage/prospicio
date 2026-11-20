@@ -634,6 +634,41 @@ impl ChfDistribution {
         &self.report
     }
 
+    /// The tail value at risk at `p`, `(1 / (1 − p)) ∫_p^1 VaR(u) du`, as
+    /// `aggregate`'s `AggregateCHF.tvar`: [`crate::risk::tvar_weighted`]
+    /// over the buckets of positive mass, their masses as inverted (not
+    /// renormalized, so mass the window misses counts for nothing); at or
+    /// beyond the next-to-last cumulative mass, and at `p = 1`, the largest
+    /// such point (where `aggregate` divides by `1 − p = 0` when the masses'
+    /// round-off takes their sum past 1 before the last).
+    ///
+    /// ```
+    /// use prospicio_prob::chf::{ChfLaw, ChfOptions, invert};
+    /// use prospicio_prob::{Distribution, Normal};
+    ///
+    /// let law = ChfLaw::Normal(Normal::new(0.0, 1.0).unwrap());
+    /// let d = invert(&law, &ChfOptions::with_log2(12)).unwrap();
+    /// // The normal's TVaR at 99% is φ(z) / 0.01 = 2.6652.
+    /// assert!((d.tvar(0.99).unwrap() - 2.6652).abs() < 1e-3);
+    /// assert!(d.tvar(0.99).unwrap() > d.quantile(0.99).unwrap());
+    /// ```
+    pub fn tvar(&self, p: f64) -> Result<f64> {
+        check_probability(p)?;
+        let (xs, ws): (Vec<f64>, Vec<f64>) = self
+            .masses
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| **m > 0.0)
+            .map(|(k, &m)| (self.x(k), m))
+            .unzip();
+        if p == 1.0 {
+            return xs.last().copied().ok_or_else(|| {
+                Error::Data("no bucket has positive mass: the TVaR is undefined".into())
+            });
+        }
+        crate::risk::tvar_weighted(&xs, &ws, p)
+    }
+
     /// The masses as a [`Grid`] on `0, step, …`, with negative round-off
     /// set to 0 and the sum rescaled to 1, for the compound engines and the
     /// risk measures on a grid. Fails when the window starts below 0 or

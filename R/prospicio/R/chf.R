@@ -59,11 +59,14 @@ NULL
 #'   `tilt_left` and `tilt_right` (the e-folds of damping on each side),
 #'   `edge_error` (the modelled worst relative error at the heavy end of a
 #'   law with one power tail, `NaN` otherwise), `total_mass`, `law_mean`
-#'   and `law_variance`).
+#'   and `law_variance`). [VaR()] and [TVaR()] read its masses as
+#'   inverted, as `aggregate`'s `AggregateCHF.q` and `.tvar`: the TVaR over
+#'   the buckets of positive mass, not renormalized.
 #' @export
 #' @examples
 #' d <- invert_chf(gamma_distribution(4, 25), log2 = 12)
 #' c(d@step, d@x_min, mean(d))
+#' c(VaR(d, 0.99), TVaR(d, 0.99))
 #' d@report$truncation_error
 #' own <- invert_chf(function(t) (1 - 25i * t)^-4, log2 = 12, step = 0.25, x_min = 0)
 #' max(abs(own@masses - d@masses))
@@ -141,6 +144,9 @@ S7::method(quantile, chf_distribution) <- function(x, probs, ...) {
 }
 S7::method(VaR, chf_distribution) <- function(dist, p, ...) {
   rust_result(dist@ptr$quantile(as.double(p)), s7_call())
+}
+S7::method(TVaR, chf_distribution) <- function(dist, p, ...) {
+  rust_result(dist@ptr$tvar(as.double(p)), s7_call())
 }
 S7::method(print, chf_distribution) <- function(x, ...) {
   cat(sprintf("<chf_distribution> x_min = %s, step = %s, %d buckets\n",

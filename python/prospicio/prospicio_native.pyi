@@ -7195,6 +7195,28 @@ class ChfDistribution:
         ``|phi(pi / step)|`` of the continuous part: the frequencies the
         inversion drops. Above 1e-6 the masses ring; lower the step.
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        The tail value at risk at ``p``, as ``aggregate``'s
+        ``AggregateCHF.tvar``: over the buckets of positive mass, their masses
+        as inverted (not renormalized); the largest such point at ``p = 1``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Normal, invert_chf
+        >>> d = invert_chf(Normal(0.0, 1.0), log2=12)
+        >>> round(d.tvar(0.99), 3)
+        2.665
+        """
     def variance(self, /) -> float:
         """
         The variance of the masses on the window.

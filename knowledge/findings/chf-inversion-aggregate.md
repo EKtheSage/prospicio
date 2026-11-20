@@ -28,6 +28,9 @@ sources:
   - id: algebra-test
     resource: ../validation/tests/probability_stable_algebra.rs
     title: validation/tests/probability_stable_algebra.rs, stable_algebra_matches_aggregate, against validation/scripts/aggregate_stable_algebra.py
+  - id: tvar-test
+    resource: ../validation/tests/probability_chf_tvar.rs
+    title: validation/tests/probability_chf_tvar.rs, chf_tvar_matches_aggregate, against validation/scripts/aggregate_chf_tvar.py
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, characteristic_function.py (AggregateCHF, invert_characteristic_function, window_edges) and utilities.py (round_bucket)
@@ -114,3 +117,12 @@ sources:
   `alpha = 1` unless `beta = 0`, since `X - loc` is not strictly stable
   there, and the compound Pareto limit's right tail constant equals
   `lambda theta^alpha` exactly by the reflection formula.[^algebra-test]
+* `AggregateCHF.tvar` is its `GridDistribution`'s kernel on the buckets of
+  positive mass, cumulated as inverted (not renormalized): the mass the
+  window misses at the top counts for nothing, and from the next-to-last
+  cumulative on it is the largest point; at `p = 1` it divides by zero
+  when round-off has taken the sum past 1 before the last bucket.
+  `ChfDistribution::tvar` matches 84 of its values on twelve laws to
+  1e-9 relative; on the tilted stable laws at 0.99 to 0.999 the two differ
+  by up to 4e-9 relative, the tilt's amplified round-off at the heavy end
+  divided by `1 - p`.[^tvar-test]

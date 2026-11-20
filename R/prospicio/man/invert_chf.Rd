@@ -56,7 +56,9 @@ which wraps in, or under a tilt the tail mass beyond the window),
 \code{tilt_left} and \code{tilt_right} (the e-folds of damping on each side),
 \code{edge_error} (the modelled worst relative error at the heavy end of a
 law with one power tail, \code{NaN} otherwise), \code{total_mass}, \code{law_mean}
-and \code{law_variance}).
+and \code{law_variance}). \code{\link[=VaR]{VaR()}} and \code{\link[=TVaR]{TVaR()}} read its masses as
+inverted, as \code{aggregate}'s \code{AggregateCHF.q} and \code{.tvar}: the TVaR over
+the buckets of positive mass, not renormalized.
 }
 \description{
 A law's bucket masses on a grid, by inverting its characteristic
@@ -88,6 +90,7 @@ reaches \code{p}); \code{\link[=chf_to_grid]{chf_to_grid()}} gives a \link{grid_
 \examples{
 d <- invert_chf(gamma_distribution(4, 25), log2 = 12)
 c(d@step, d@x_min, mean(d))
+c(VaR(d, 0.99), TVaR(d, 0.99))
 d@report$truncation_error
 own <- invert_chf(function(t) (1 - 25i * t)^-4, log2 = 12, step = 0.25, x_min = 0)
 max(abs(own@masses - d@masses))
