@@ -1560,9 +1560,11 @@ real Excel.
       1e-12; #806's reverse vectors (length 10, 3 and blank). The test
       workbook's Ratemaking sheet holds the same eight cases and the
       reverse vectors.
-    - **Not yet a test**: the demo's cumulative loss ratios (0.61,
-      0.594705882353, 0.638120662040, ..., 0.637034303676), whose inputs
-      are not in the repository.
+    - **The demo's printed loss ratios** (0.61, 0.594705882353,
+      0.638120662040 and 0.637034303676, rows 1, 2, 3 and 14) to 5e-13 on
+      its inputs (`validation/data/ap_pricing_demo_inputs.json`, added
+      with #923): `tests/pricing_ap_cumulative_lr.rs`, and the test
+      workbook's Ratemaking sheet from row 138.
 
 60. **`"compare"` ranks nine families by AIC from a `t`** (#802, the AP
     pricing demo's Severity sheet; after #800). `PRO.SEV.FIT` takes

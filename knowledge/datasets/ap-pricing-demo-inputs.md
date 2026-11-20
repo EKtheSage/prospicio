@@ -17,6 +17,9 @@ sources:
   - id: tests
     resource: ../validation/tests/pricing_ap_cumulative_lr.rs
     title: validation/tests/pricing_ap_cumulative_lr.rs and its Python and R twins
+  - id: xll
+    resource: ../crates/prospicio-xll/tests/pricing_ap_cumulative_lr.rs
+    title: crates/prospicio-xll/tests/pricing_ap_cumulative_lr.rs, PRO.PRC.LR.CUMULATIVE on the same file
 ---
 
 # Facts
@@ -28,7 +31,10 @@ sources:
   `loss_ratios` (0.55 to 0.74) are one value per accident year 2012 to
   2025; the running premium-weighted loss ratio on them is 0.61,
   0.594705882353, 0.638120662040, ..., 0.637034303676 in row 14, the
-  values #806 quotes from the demo, reproduced to 5e-13.[^tests]
+  values #806 quotes from the demo, reproduced to 5e-13.[^tests] The
+  Excel function `PRO.PRC.LR.CUMULATIVE` reproduces them to the same
+  tolerance, in its test and on the test workbook's Ratemaking sheet
+  (row 138).[^xll]
 * `trend_years` and `trend_rates` (2012 to 2027, 3.5% to 7%), the RAD
   treaty incepting 2026-01-01 and the `dev_pattern` (0.35 to 1.0, padded
   to `dev_target_length` 10) are the demo's trend and `REVERSE_TRANSPOSE`
@@ -38,3 +44,4 @@ sources:
   are not used by any prospicio test.
 
 [^tests]: validation/tests/pricing_ap_cumulative_lr.rs, run 2026-11-14.
+[^xll]: crates/prospicio-xll/tests/pricing_ap_cumulative_lr.rs, run 2026-11-19.
