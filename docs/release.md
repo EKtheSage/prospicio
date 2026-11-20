@@ -146,8 +146,9 @@ parked by the user's decision of 2026-11-07 (the XLL already reaches Excel
 users, and a browser package needs more enterprise work to deploy, such as
 security review and user groups on Azure) and taken up again on 2026-11-20
 for 0.2.1: the package is built and tested (`docs/design/wasm.md`), and
-publishing it to npm waits on the user's choice of its name; until then a
-release publishes nothing to npm. The crates stay WASM-compatible: the
+it will be published to npm as `prospicio` (the user's decision of
+2026-11-20); until the publish job is built a release publishes nothing to
+npm. The crates stay WASM-compatible: the
 `wasm32-unknown-unknown` check in `AGENTS.md` is unchanged.
 
 **0.1.0** (the user's decision of 2026-11-07, planned; the release after

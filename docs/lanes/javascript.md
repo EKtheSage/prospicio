@@ -10,6 +10,5 @@ Finished items are in [done/javascript.md](done/javascript.md), which agents rea
 
 ## Next
 
-- [wasm-npm-name] the npm name and scope are the user's to choose (`wasm.md` open decision O1); publishing waits on it
 - [wasm-publish] a `release.yml` job that builds the package and publishes it to npm on a version tag, with the registry setup in `docs/release.md` (`wasm.md` O2)
 - [wasm-more-functions] further functions as the user asks, each in its lane's module file (`wasm.md` O5)

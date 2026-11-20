@@ -9,4 +9,5 @@
   `Distortion.fromName`, `price` and `priceAtCostOfCapital`. Tables are
   objects of `Float64Array` columns under the core's column names, a core
   error is a thrown `Error`, and a seed gives the same draws as in Rust,
-  Python and R. Not yet published to npm.
+  Python and R. The npm package will be `prospicio`; it is not published
+  yet.

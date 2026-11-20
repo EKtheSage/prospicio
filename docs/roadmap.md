@@ -736,8 +736,8 @@ what it is aiming for by v1.0.
   price of a cover. `cargo xtask wasm` builds the npm package for bundlers,
   Node and a plain browser page and tests it under Node; CI's `wasm` job
   runs it.
-- **Next:** the npm name and publishing from `release.yml` (the user's
-  decisions O1 and O2), then further functions as the user asks.
+- **Next:** publishing the package to npm as `prospicio` from
+  `release.yml` (`wasm.md` O2), then further functions as the user asks.
 
 ### `prospicio-xll` (Excel lane)
 

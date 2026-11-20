@@ -6,7 +6,7 @@ Node or in an Office.js Excel add-in, with no server. Every number comes
 from the same Rust code as the Python and R packages and the Excel add-in.
 
 ```js
-import { Triangle, mack, odpBootstrap } from "@prospicio/wasm";
+import { Triangle, mack, odpBootstrap } from "prospicio";
 
 const tri = Triangle.fromLong({
   origin: [2020, 2020, 2020, 2021, 2021, 2022], // a year, or "YYYY-MM"
@@ -24,7 +24,7 @@ In a browser page with no bundler, import the `web` entry and wait for the
 module:
 
 ```js
-import init, { Dist } from "@prospicio/wasm/web";
+import init, { Dist } from "prospicio/web";
 await init();
 ```
 

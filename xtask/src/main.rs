@@ -1284,9 +1284,9 @@ fn xll() -> Result {
     run(smoke.arg("prospicio.xll").current_dir(&out))
 }
 
-/// The npm package's name. The scope is the user's to confirm before the
-/// first publish (docs/design/wasm.md, open decision 1).
-const WASM_PACKAGE: &str = "@prospicio/wasm";
+/// The npm package's name: `prospicio`, as on PyPI and crates.io (the
+/// user's decision of 2026-11-20, docs/design/wasm.md decision 10).
+const WASM_PACKAGE: &str = "prospicio";
 const WASM_TARGET: &str = "wasm32-unknown-unknown";
 
 /// The `wasm-bindgen` crate's exact version, read from the binding crate's

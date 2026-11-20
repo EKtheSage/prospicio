@@ -1,8 +1,8 @@
 # The JavaScript package (WebAssembly)
 
-**Status:** built, first version (#576; branch `claude/wasm-package`). Decisions 1 to 9 are as built and proposed for the user's acceptance; the open decisions are at the end.
+**Status:** built, first version (#576; branch `claude/wasm-package`). Decisions 1 to 9 are as built and proposed for the user's acceptance; decision 10 (the npm name) is the user's; the open decisions are at the end.
 
-**Lane:** JavaScript. **Crate:** `crates/prospicio-wasm`. **Package:** `@prospicio/wasm` (name open, decision O1).
+**Lane:** JavaScript. **Crate:** `crates/prospicio-wasm`. **Package:** `prospicio` on npm (decision 10).
 
 ## Purpose
 
@@ -22,7 +22,7 @@ One module file per lane, as in the Python and R bindings; `lib.rs` only registe
 | `pricing.rs` | `Distortion.fromName`, `g`, `apply`; `price`, `priceAtCostOfCapital` |
 | `predictive.rs` | `Predictive` (simulated reserves, a tower's cessions): `dims`, `components`, `nSims`, `draws`, `total`, `mean`, `standardDeviation`, `var`, `tvar`, `summary`, `aggregate` |
 
-`cargo xtask wasm` builds the release module once and writes three sets of glue with the `wasm-bindgen` command-line tool into `target/wasm/pkg`: `bundler/` (the package's default export, for webpack or Vite), `node/` (CommonJS, picked by Node through the `node` export condition) and `web/` (ES module with an `init()` for a page with no bundler, imported as `@prospicio/wasm/web`). The module is 1.53 MB (0.51 MB gzipped) with fat LTO and one codegen unit.
+`cargo xtask wasm` builds the release module once and writes three sets of glue with the `wasm-bindgen` command-line tool into `target/wasm/pkg`: `bundler/` (the package's default export, for webpack or Vite), `node/` (CommonJS, picked by Node through the `node` export condition) and `web/` (ES module with an `init()` for a page with no bundler, imported as `prospicio/web`). The module is 1.53 MB (0.51 MB gzipped) with fat LTO and one codegen unit.
 
 ## Decisions (as built)
 
@@ -35,6 +35,7 @@ One module file per lane, as in the Python and R bindings; `lib.rs` only registe
 7. **Reproducibility.** A simulation takes `seed` and gives the draws the other front ends give: the tests compare the ODP bootstrap's draw matrix and a tower's cessions with the core called directly, bit for bit. There are no threads in `wasm32-unknown-unknown`; Rayon's global pool runs on the calling thread there, so the result is the same and only slower. A seed is a JavaScript number, a whole number up to 2^53.
 8. **The tool is pinned.** The `wasm-bindgen` crate is pinned with `=` in the crate's manifest, and `cargo xtask wasm` and CI read that pin and refuse or install the command-line tool at another version: the two must match exactly or the tool rejects the module.
 9. **Tests in two layers.** `crates/prospicio-wasm/tests/*.rs` run under Node with `wasm-bindgen-test` (`cargo test -p prospicio-wasm --target wasm32-unknown-unknown`; the runner is set in `.cargo/config.toml`) and check numbers: GenIns chain ladder and Mack against the R ChainLadder rows, the lognormal's limited expected values against the mpmath rows, the FFT aggregate and the occurrence PML against the `aggregate` rows, each with the row's own tolerance (the reference files are read with `include_str!`, since a WASM test has no file system), and the bootstrap, Bornhuetter-Ferguson, a given grid and a tower against the core, exactly. `crates/prospicio-wasm/js/package.test.mjs` runs on the built package as a JavaScript program does (`node --test`, from `cargo xtask wasm`) and checks what only JavaScript sees: names, argument and result types, thrown errors, the package's entry points.
+10. **The npm package is `prospicio`.** Decided by the user on 2026-11-20: the same name as the PyPI package, the R package and the umbrella crate, unscoped, so it needs no organization on npm. The name was free on the registry that day (`npm view prospicio` returned 404). It is one constant in `xtask` (`WASM_PACKAGE`).
 
 ## Validation
 
@@ -48,8 +49,7 @@ One module file per lane, as in the Python and R bindings; `lib.rs` only registe
 
 ## Open decisions (the user's)
 
-- **O1. The npm name.** `@prospicio/wasm` needs the `prospicio` organization on npm; the unscoped `prospicio` or `prospicio-wasm` needs none. The name is one constant in `xtask` (`WASM_PACKAGE`).
-- **O2. Publishing.** Not built: a job in `release.yml` that runs `cargo xtask wasm` and `npm publish` on a version tag (npm trusted publishing, as PyPI and crates.io use), and the one-time registry setup in `docs/release.md`. It waits on O1.
+- **O2. Publishing.** Not built: a job in `release.yml` that runs `cargo xtask wasm` and `npm publish` on a version tag (npm trusted publishing, as PyPI and crates.io use), and the one-time registry setup in `docs/release.md`. The name is decided (decision 10), so this is next.
 - **O3. Size.** `wasm-opt -Oz` (Binaryen) usually takes 10% to 20% off a module; it is one more tool for CI to install. Shipping one `.wasm` for the three targets instead of three copies would cut the package from 4.6 MB to 1.6 MB unpacked, if the three glue files can share it.
 - **O4. TypeScript types of the options.** The generated `.d.ts` types every class and function, but an options object is `any`. Hand-written interfaces (`typescript_custom_section`) would give editors the field names.
 - **O5. What comes next in the API.** Candidates, by what a browser tool or an Office.js add-in would call: the expected-loss family beside Bornhuetter-Ferguson, selected patterns and averages on the chain ladder, the one-year view, `Tower.onGrid` with layer statistics and prices, exposure curves, and custom functions for Office.js (a manifest and `CustomFunctions.associate` over these exports).
