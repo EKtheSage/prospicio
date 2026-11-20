@@ -19,6 +19,11 @@ ignore = [
     # Unmaintained, no vulnerability: paste is a proc macro of burn-ndarray
     # and gemm (faer, under nuts-rs) and runs only at compile time.
     { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained, not vulnerable; a compile-time macro of burn-ndarray and gemm" },
+    # Unmaintained, no vulnerability: chrono comes only through arrow-array
+    # (arrow-ipc, under prospicio-prob's optional `arrow` feature), whose
+    # newest release, 60.1.0, still depends on it. Drop this entry when
+    # arrow moves off chrono (#934).
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained, not vulnerable; pulled in by arrow-array only, with no arrow release off it yet" },
 ]
 
 [licenses]
