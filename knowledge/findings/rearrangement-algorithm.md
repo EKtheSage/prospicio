@@ -34,3 +34,12 @@ sources:
   `Start::Rotated` reproduces the guide's numbers, so Python and R agree.
 * The worst VaR is about 45% above the comonotonic sum of the VaRs, 242.5:
   comonotonicity is not the worst case for VaR, which is not subadditive.
+* Speed: a sweep over `d` columns costs `O(d^2 n)` additions when each
+  column recomputes the row totals, plus a sort of `n` per column. Summing
+  the columns before the current one once per sweep and only the rest per
+  column, and sorting each column once, gives the same bits as the plain
+  version (same additions in the same order, same stable tie order) and ran
+  a seeded `d = 10`, `n = 10 000` problem (5 sweeps, release build) in 18 ms
+  against 44 ms; the sorts of the others' sums then dominate. Totals updated
+  incrementally (`total -= old; total += new`) would be faster but change the
+  rounding and so, through ties, possibly the arrangement; not done.
