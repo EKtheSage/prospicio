@@ -26,6 +26,12 @@ sources:
   - id: build-once
     resource: process:cloud session claude/cool-shannon-fqpoy8-ci-965, 2026-11-20 (4 cores, Rust 1.100, uv 0.11, R 4.3)
     title: The wheel, the R binary package and the Bayesian test binaries built once and tested from the files (#965)
+  - id: speedups
+    resource: process:cloud session claude/cool-shannon-fqpoy8-ci-966, 2026-11-20 (4 cores, Rust 1.100, uv 0.11)
+    title: What the build speedups of #966 measured, and which were already in effect
+  - id: setup-uv
+    resource: https://raw.githubusercontent.com/astral-sh/setup-uv/v6/action.yml
+    title: astral-sh/setup-uv v6, inputs and defaults
   - id: rust-cache
     resource: https://github.com/Swatinem/rust-cache/blob/v2/src/restore.ts
     title: Swatinem/rust-cache v2, restore and save
@@ -214,6 +220,51 @@ artifact with no Rust toolchain and no cache:[^ci]
   each test would refit. The legs therefore stay the hand-balanced module
   lists of `[package.metadata.bayes-shards]`.
 
+# The smaller speedups, and three that were already in effect (#966, 2026-11-20)
+
+* One `changes` job reads a pull request's diff (a clone with the history
+  but no file contents, `filter: blob:none`; the pack is 39 MB with them)
+  and the other jobs read its outputs. Before, thirteen jobs each cloned
+  the whole history to decide whether to skip themselves. A job that is no
+  matrix and feeds no other job (`rust`, `msrv`, `docs`, `deal-report`,
+  `fremtpl2`, `deny`) is skipped as a whole, which takes no runner and
+  counts as passed; the matrix jobs and the build jobs they need skip
+  their steps instead, so their checks keep the names
+  `python (ubuntu-latest, tests)` and the like.[^ci]
+* `docs` no longer runs for a pull request that changes only the bindings'
+  tests (`python/tests/`, `R/prospicio/tests/`), which no generated file
+  reads; `msrv` runs nightly, on manual runs and on a pull request that
+  touches a `Cargo.toml` or `Cargo.lock`.[^ci]
+* R packages come through `r-lib/actions/setup-r-dependencies` (pak, the
+  library cached) with `dependencies: 'NA'` (hard dependencies only: the
+  default, `"all"`, adds the named packages' Suggests), and each `r` leg
+  installs what its files load: lightgbm and xgboost in `tests`, ggplot2
+  and gt in `guides`, S7 alone in `slow`.[^ci]
+* The Excel add-in on a pull request: `cargo xtask xll --thin-lto` built
+  in 135 s from nothing (18.3 MB); the fat-LTO build then took 194 s for
+  its last crate and link alone, on the dependencies the thin build had
+  compiled (15.7 MB).[^speedups]
+* Already in effect, so nothing to gain: (1) `cargo xtask generated` did
+  not compile twice. `uv sync` builds the extension through PEP 517 and
+  `maturin develop --release` then finds it built (`Finished` in 0.26 s);
+  what `--no-install-project` saves is one wheel packed and installed, a
+  few seconds, and only with `UV_NO_SYNC=1` on the later `uv run` calls,
+  which would otherwise install the project themselves. (2) setup-uv v6
+  caches by default on GitHub's runners (`enable-cache: auto`) and prunes
+  the cache to wheels built from source, so the explicit `enable-cache`
+  and `cache-dependency-glob` only narrow the key.[^setup-uv] (3) Rust
+  links with lld by default on `x86_64-unknown-linux-gnu` since 1.90:
+  the link line of a build here on 1.100 names `gcc-ld/ld.lld`, so mold
+  or an lld override would change nothing on Linux.[^speedups]
+* Not done: sccache. Swatinem/rust-cache already restores each job's
+  dependencies; what sccache could add is the workspace's own crates, and
+  a pull request can read only `main`'s cache entries, which a push to
+  `main` writes only when a job's cache misses. It would also share the
+  10 GB cache quota with rust-cache. It needs a measurement on CI before
+  it is worth its moving parts.
+
+[^speedups]: What the build speedups of #966 measured, and which were already in effect
+[^setup-uv]: astral-sh/setup-uv v6, inputs and defaults
 [^build-once]: The wheel, the R binary package and the Bayesian test binaries built once and tested from the files (#965)
 [^gating]: Release builds of the bayes test binary with and without Burn and Arrow (#967)
 [^runs]: CI run and job timings

@@ -28,7 +28,12 @@ jobs:
         mode: [pinned, latest]
     steps:
       - uses: actions/checkout@v4
+      # The generators' environments come from their inline metadata, so
+      # the cache is keyed on the scripts.
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: validation/scripts/*.py
       - name: Rerun the weekly generators
         run: >-
           python3 validation/scripts/rerun_references.py

@@ -73,6 +73,9 @@ jobs:
           manylinux: auto
           args: --release --out dist
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
       # LightGBM's macOS wheel links OpenMP from Homebrew.
       - if: runner.os == 'macOS'
         run: brew install libomp
@@ -84,7 +87,24 @@ jobs:
           source .venv-wheel/bin/activate 2>/dev/null || source .venv-wheel/Scripts/activate
           uv pip install --group dev
           uv pip install prospicio --no-index --find-links dist
-          pytest tests
+          # As ci.yml's python job splits the suite (#848, #966): the light
+          # files on four workers with one rayon thread each, then the
+          # NUTS-heavy files, the boosting tests, the guides and the
+          # notebooks one at a time with every thread. A heavy file missing
+          # from this list still runs, only slower, in the first batch.
+          alone="tests/test_reserving_compartmental.py
+            tests/test_reserving_hierarchical_bf.py
+            tests/test_reserving_compartmental_backtest.py
+            tests/test_reserving_compartmental_segments.py
+            tests/test_reserving_compartmental_one_year_segments.py
+            tests/test_reserving_pattern_draws.py
+            tests/test_boosting.py
+            tests/test_guides.py
+            tests/test_examples.py"
+          ignore=""
+          for f in $alone; do ignore="$ignore --ignore=$f"; done
+          RAYON_NUM_THREADS=1 pytest tests -n 4 --dist loadfile $ignore --durations=25 --durations-min=5
+          pytest $alone --durations=25 --durations-min=5
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.target }}
