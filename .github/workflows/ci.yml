@@ -41,7 +41,7 @@ env:
   # Paths a pull request can change without running the python and r jobs:
   # nothing in them is built or read by the bindings' tests (the guides in
   # docs/guides and the notebooks in examples/ are).
-  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|test_check_lanes|check_bindings|test_check_bindings|fold_changes|bayes_shards)\.py$|validation/bindings-allowlist\.toml$|deny\.toml$)'
+  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|crates/prospicio-wasm/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|test_check_lanes|check_bindings|test_check_bindings|fold_changes|bayes_shards)\.py$|validation/bindings-allowlist\.toml$|deny\.toml$)'
 
 jobs:
   # The checks every pull request needs, a few seconds in all (#827): the
@@ -123,6 +123,68 @@ jobs:
       # decisions") build for the browser.
       - if: steps.changes.outputs.run == 'true'
         run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
+
+  # The JavaScript package (crates/prospicio-wasm, docs/design/wasm.md):
+  # clippy for the wasm32 target, the bindings' tests under Node
+  # (wasm-bindgen-test, against the parity rows) and the built npm package's
+  # own tests (`cargo xtask wasm`). A pull request runs it when it touches
+  # the binding crate, a crate in the WASM scope, the data the tests read,
+  # xtask, the manifests or this workflow.
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check whether the package's inputs changed
+        id: changes
+        shell: bash
+        run: |
+          inputs='^(crates/prospicio-(wasm|core|math|prob|aggregate|pricing|reserving)/|validation/(data|reference)/|xtask/|\.cargo/|Cargo\.(toml|lock)$|\.github/workflows/ci\.yml$)'
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE "$inputs"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing the JavaScript package is built from changed; skipping."
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - if: steps.changes.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+      - if: steps.changes.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The command-line tool must be the version of the wasm-bindgen crate
+      # that crates/prospicio-wasm pins; rust-cache keeps ~/.cargo/bin, so
+      # this compiles only when the pin moves.
+      - name: Install wasm-bindgen at the pinned version
+        if: steps.changes.outputs.run == 'true'
+        shell: bash
+        run: |
+          version=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' crates/prospicio-wasm/Cargo.toml)
+          if [ "$(wasm-bindgen --version 2>/dev/null)" != "wasm-bindgen $version" ]; then
+            cargo install wasm-bindgen-cli --version "$version" --locked --force
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo clippy -p prospicio-wasm --target wasm32-unknown-unknown --all-targets -- -D warnings
+      # The runner is set in .cargo/config.toml: Node runs the tests.
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo test -p prospicio-wasm --target wasm32-unknown-unknown
+      # The npm package, with its tests as a JavaScript program runs them.
+      - if: steps.changes.outputs.run == 'true'
+        run: cargo xtask wasm
+      - if: steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospicio-wasm-pkg
+          path: target/wasm/pkg
+          retention-days: 7
 
   # The workspace builds on the rust-version it declares (Cargo.toml,
   # 1.92), so the manifest cannot drift from the code again (#829). The R
