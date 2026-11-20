@@ -19,6 +19,7 @@ pub mod allocation;
 pub mod bayes;
 pub mod cashflow;
 pub mod cat;
+pub mod chf;
 pub mod copulas;
 pub mod counts;
 pub mod credibility;
@@ -3993,6 +3994,98 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: cat::elt_agg,
+    },
+    Function {
+        symbol: "pro_cap_chf",
+        name: "PRO.CAP.CHF",
+        help: "A law's distribution on an FFT grid from its characteristic function (stable, NIG, variance gamma, tempered stable, Tweedie at any power...): moments, VaR, TVaR and the inversion's errors.",
+        args: &[
+            Arg {
+                name: "law",
+                help: "\"normal\", \"gamma\", \"inverse_gaussian\", \"tweedie\", \"stable\", \"stable_s0\", \"normal_inverse_gaussian\", \"variance_gamma\" or \"tempered_stable\"",
+            },
+            Arg {
+                name: "params",
+                help: "The law's parameters as a row or column: mu, sigma; shape, scale; mean, shape; power, mean, dispersion; alpha, beta, [scale], [loc]; alpha, beta, delta, [mu]; sigma, nu, [theta], [mu]; C, G, M, Y, [mu]",
+            },
+            Arg {
+                name: "probabilities",
+                help: "Probabilities for VaR and TVaR; 0.99, 0.995, 0.999 if omitted",
+            },
+            Arg {
+                name: "output",
+                help: "\"summary\" (moments, VaR, TVaR and the inversion's report; the default) or \"masses\" (each grid point and its bucket mass)",
+            },
+            Arg {
+                name: "log2",
+                help: "The grid has 2^log2 buckets; 16 if omitted",
+            },
+            Arg {
+                name: "step",
+                help: "The bucket; sized from the law's tails if omitted",
+            },
+            Arg {
+                name: "x_min",
+                help: "The grid's left edge, with step; placed by the rule if omitted",
+            },
+            Arg {
+                name: "tilt",
+                help: "TRUE or omitted: tilt a power tail automatically; FALSE: never; a number: that many e-folds",
+            },
+        ],
+        run: chf::chf,
+    },
+    Function {
+        symbol: "pro_cap_stable",
+        name: "PRO.CAP.STABLE",
+        help: "An alpha-stable law: its parameters in S1, its S0 location, mean, right and left tail constants and P(X > location).",
+        args: &[
+            Arg {
+                name: "alpha",
+                help: "The index of stability, in (0, 2]",
+            },
+            Arg {
+                name: "beta",
+                help: "The skewness, in [-1, 1]",
+            },
+            Arg {
+                name: "scale",
+                help: "Positive; 1 if omitted",
+            },
+            Arg {
+                name: "loc",
+                help: "The location; 0 if omitted",
+            },
+            Arg {
+                name: "parameterization",
+                help: "\"S1\" (scipy's; the default) or \"S0\" (Nolan's), the one loc is read in",
+            },
+        ],
+        run: chf::stable,
+    },
+    Function {
+        symbol: "pro_cap_stable_pareto",
+        name: "PRO.CAP.STABLE.PARETO",
+        help: "The stable limit of a Poisson compound with a Pareto-tailed severity (the generalized central limit theorem), in PRO.CAP.STABLE's layout.",
+        args: &[
+            Arg {
+                name: "frequency",
+                help: "The expected claim count",
+            },
+            Arg {
+                name: "alpha",
+                help: "The severity's tail index, strictly between 1 and 2",
+            },
+            Arg {
+                name: "theta",
+                help: "The severity's tail scale: P(X > x) ~ (theta / x)^alpha",
+            },
+            Arg {
+                name: "sev_mean",
+                help: "The severity's mean",
+            },
+        ],
+        run: chf::stable_pareto,
     },
     Function {
         symbol: "pro_cap_allocate",

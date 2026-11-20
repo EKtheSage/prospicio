@@ -259,7 +259,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("one hundred and fifty functions registered", registered == 150);
+    check("one hundred and fifty-three functions registered", registered == 153);
     check("eleven of them asynchronous (xll.md, decision 48)", async_registered == 11);
     check("no old name is exported (xll.md, decision 47)", GetProcAddress(xll, "pro_mack") == NULL);
 
@@ -1280,6 +1280,22 @@ int main(int argc, char **argv) {
     check("PRO.CAP.ELT.AGG mean 50", (ea_run->xltype & 0xFFF) == xltypeMulti && ea_run->val.array.columns == 2 &&
                                          fabs(ea_run->val.array.lparray[1].val.num - 50) < 1e-12);
     free12(ea_run);
+
+    /* PRO.CAP.STABLE.PARETO: 50 claims a year, a Pareto tail of index 1.6
+     * and scale 3, a mean severity of 12: the stable limit's S1 location
+     * is the compound's mean, 600 (fourth row, second column). */
+    static XLOPER12 sp_freq, sp_alpha, sp_theta, sp_mean;
+    sp_freq.xltype = sp_alpha.xltype = sp_theta.xltype = sp_mean.xltype = xltypeNum;
+    sp_freq.val.num = 50;
+    sp_alpha.val.num = 1.6;
+    sp_theta.val.num = 3;
+    sp_mean.val.num = 12;
+    XLOPER12 *sp_run = ((Fn4)GetProcAddress(xll, "pro_cap_stable_pareto"))(&sp_freq, &sp_alpha, &sp_theta, &sp_mean);
+    print_result("PRO.CAP.STABLE.PARETO(50, 1.6, 3, 12)", sp_run);
+    check("PRO.CAP.STABLE.PARETO location 600", (sp_run->xltype & 0xFFF) == xltypeMulti &&
+                                                  sp_run->val.array.columns == 2 &&
+                                                  fabs(sp_run->val.array.lparray[3 * 2 + 1].val.num - 600) < 1e-9);
+    free12(sp_run);
 
     /* PRO.CAP.ALLOCATE: two lines over four simulations, totals 3, 5, 7, 9;
      * TVaR 50% of 8 by Euler gives the first line 2.5. */
