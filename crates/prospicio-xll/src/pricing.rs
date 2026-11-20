@@ -63,6 +63,62 @@ pub(crate) fn numbers(grid: &Grid, name: &str) -> Result<Vec<f64>> {
     Ok(out)
 }
 
+/// Parallel ranges that line up row by row, read together, one `Vec` per
+/// range. A position blank in every range is dropped (the empty end of a
+/// selected range); a position blank in some ranges and not in others is
+/// an error naming the range and the cell, since dropping each range's
+/// blanks on its own would pair the values with the wrong partners. The
+/// ranges must have as many cells as the first.
+pub(crate) fn paired(ranges: &[(&Grid, &str)]) -> Result<Vec<Vec<f64>>> {
+    let (first, first_name) = ranges[0];
+    for (g, name) in &ranges[1..] {
+        if g.cells.len() != first.cells.len() {
+            return Err(format!(
+                "{first_name} and {name} must have as many cells, got {} and {}",
+                first.cells.len(),
+                g.cells.len()
+            ));
+        }
+    }
+    let mut out = vec![Vec::with_capacity(first.cells.len()); ranges.len()];
+    for r in 0..first.rows {
+        for c in 0..first.columns {
+            let mut row = Vec::with_capacity(ranges.len());
+            for (g, name) in ranges {
+                row.push(match g.get(r, c) {
+                    Value::Number(x) => Some(*x),
+                    v if v.is_blank() => None,
+                    other => {
+                        return Err(format!(
+                            "{name} {} must be a number, got {other:?}",
+                            position(r, c)
+                        ));
+                    }
+                });
+            }
+            if row.iter().all(Option::is_none) {
+                continue;
+            }
+            if let Some(k) = row.iter().position(Option::is_none) {
+                let given = row.iter().position(Option::is_some).unwrap();
+                return Err(format!(
+                    "{} {} is blank but {} is not: give a value in both or leave both blank",
+                    ranges[k].1,
+                    position(r, c),
+                    ranges[given].1
+                ));
+            }
+            for (o, x) in out.iter_mut().zip(row) {
+                o.push(x.unwrap());
+            }
+        }
+    }
+    if out[0].is_empty() {
+        return Err(format!("{first_name} is required"));
+    }
+    Ok(out)
+}
+
 /// A piecewise Pareto's truncation: a point, or a point and its kind
 /// (`"lp"`, the last piece only, R's default, or `"wd"`, the whole
 /// distribution) in two cells.
@@ -193,9 +249,10 @@ pub(crate) fn severity(family: &Grid, p1: &Grid, p2: &Grid, p3: &Grid) -> Result
                 .into(),
         )?,
         "piecewise_pareto" => {
-            let p =
-                PiecewisePareto::new(numbers(p1, "p1 (thresholds)")?, numbers(p2, "p2 (alphas)")?)
-                    .map_err(e)?;
+            let [thresholds, alphas] =
+                <[_; 2]>::try_from(paired(&[(p1, "p1 (thresholds)"), (p2, "p2 (alphas)")])?)
+                    .unwrap();
+            let p = PiecewisePareto::new(thresholds, alphas).map_err(e)?;
             if p3.is_blank() {
                 p.into()
             } else {
@@ -547,4 +604,67 @@ pub fn pareto_alpha_frequencies(args: &[Grid]) -> Result<Grid> {
     )
     .map_err(|e| e.to_string())?;
     Ok(Grid::scalar(Value::number(alpha)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::paired;
+    use crate::sheet::{Grid, Value};
+
+    fn col(v: &[Option<f64>]) -> Grid {
+        Grid::from_rows(
+            v.iter()
+                .map(|x| vec![x.map_or(Value::Empty, Value::Number)])
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn paired_drops_rows_blank_in_every_range() {
+        let a = col(&[Some(1.0), None, Some(3.0), None]);
+        let b = col(&[Some(10.0), None, Some(30.0), None]);
+        let out = paired(&[(&a, "a"), (&b, "b")]).unwrap();
+        assert_eq!(out, vec![vec![1.0, 3.0], vec![10.0, 30.0]]);
+    }
+
+    #[test]
+    fn paired_refuses_a_row_blank_in_some_ranges() {
+        // One blank in each range, in different rows: the lengths agree
+        // after dropping them, the pairing does not.
+        let a = col(&[Some(1.0), None, Some(3.0), Some(4.0)]);
+        let b = col(&[Some(10.0), Some(20.0), Some(30.0), None]);
+        let e = paired(&[(&a, "a"), (&b, "b")]).unwrap_err();
+        assert_eq!(
+            e,
+            "a row 2, column 1 is blank but b is not: give a value in both or leave both blank"
+        );
+    }
+
+    #[test]
+    fn paired_refuses_ranges_of_different_lengths_and_empty_ones() {
+        let a = col(&[Some(1.0), Some(2.0)]);
+        let b = col(&[Some(1.0)]);
+        let e = paired(&[(&a, "a"), (&b, "b")]).unwrap_err();
+        assert!(
+            e.contains("a and b must have as many cells, got 2 and 1"),
+            "{e}"
+        );
+        let none = col(&[None, None]);
+        assert_eq!(
+            paired(&[(&none, "a"), (&none, "b")]).unwrap_err(),
+            "a is required"
+        );
+        let text = Grid::scalar(Value::from("x"));
+        let e = paired(&[(&text, "a"), (&b, "b")]).unwrap_err();
+        assert!(e.contains("a row 1, column 1 must be a number"), "{e}");
+    }
+
+    #[test]
+    fn paired_reads_three_ranges() {
+        let a = Grid::row(&[1.0, 2.0]);
+        let b = Grid::row(&[3.0, 4.0]);
+        let c = Grid::row(&[5.0, 6.0]);
+        let out = paired(&[(&a, "a"), (&b, "b"), (&c, "c")]).unwrap();
+        assert_eq!(out, vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]]);
+    }
 }

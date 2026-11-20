@@ -157,7 +157,7 @@ fn bad_terms_are_named() {
         vec![n(50.0), n(100.0), Grid::row(&[0.3, 0.2]), n(0.6)],
     );
     assert!(
-        text(&e).contains("2 commissions and 1 loss_ratios"),
+        text(&e).contains("commissions and loss_ratios must have as many cells, got 2 and 1"),
         "{}",
         text(&e)
     );

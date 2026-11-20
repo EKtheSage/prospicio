@@ -18,7 +18,7 @@ use prospicio_pricing::ratemaking::{
 };
 
 use crate::exposure::broadcast;
-use crate::pricing::{Result, numbers, scalar};
+use crate::pricing::{Result, numbers, paired, scalar};
 use crate::sheet::{Grid, Value, position};
 
 /// Serial numbers from here up are Excel dates, below it year fractions.
@@ -101,18 +101,10 @@ pub fn year_fraction_of(args: &[Grid]) -> Result<Grid> {
 /// The rate changes on the sheet: effective dates, the changes (or the
 /// cumulative levels when `given` is `"levels"`) and how each applies.
 fn history(effective: &Grid, changes: &Grid, applies: &Grid, given: &Grid) -> Result<RateHistory> {
-    let effective: Vec<f64> = numbers(effective, "effective")?
-        .into_iter()
-        .map(date)
-        .collect::<Result<_>>()?;
-    let values = numbers(changes, "changes")?;
+    let [effective, values] =
+        <[_; 2]>::try_from(paired(&[(effective, "effective"), (changes, "changes")])?).unwrap();
+    let effective: Vec<f64> = effective.into_iter().map(date).collect::<Result<_>>()?;
     let n = effective.len();
-    if values.len() != n {
-        return Err(format!(
-            "changes must have one value per effective date ({n}), got {}",
-            values.len()
-        ));
-    }
     let applies = if applies.is_blank() {
         vec![Applies::Written; n]
     } else {

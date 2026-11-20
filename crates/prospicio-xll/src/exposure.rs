@@ -12,7 +12,7 @@
 use prospicio_pricing::exposure::{ExposureCurve, Interpolation, Mbbefd, TabulatedCurve};
 use prospicio_pricing::profile::{Band, BandCurve, RiskProfile};
 
-use crate::pricing::{Result, amount, at, map1, numbers, scalar};
+use crate::pricing::{Result, amount, at, map1, numbers, paired, scalar};
 use crate::sheet::{Grid, Value};
 
 /// The curves `curve` names, and what `p1`, `p2` and `p3` are for each.
@@ -79,8 +79,7 @@ pub(crate) fn curves(
                 .collect()
         }
         "tabulated" => {
-            let x = numbers(p1, "p1 (x)")?;
-            let g = numbers(p2, "p2 (G(x))")?;
+            let [x, g] = <[_; 2]>::try_from(paired(&[(p1, "p1 (x)"), (p2, "p2 (G(x))")])?).unwrap();
             let how = match p3.as_scalar() {
                 Some(v) if v.is_blank() => Interpolation::Linear,
                 Some(Value::Text(s)) => match s.trim().to_ascii_lowercase().as_str() {
@@ -341,15 +340,12 @@ fn bounds(g: &Grid, name: &str, n: usize) -> Result<Vec<Option<f64>>> {
 /// `PRO.PRC.PROFILE(sums_insured, expected_losses, limit, attachment, curve,
 /// p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])`.
 pub fn profile(args: &[Grid]) -> Result<Grid> {
-    let si = numbers(&args[0], "sums_insured")?;
-    let el = numbers(&args[1], "expected_losses")?;
+    let [si, el] = <[_; 2]>::try_from(paired(&[
+        (&args[0], "sums_insured"),
+        (&args[1], "expected_losses"),
+    ])?)
+    .unwrap();
     let n = si.len();
-    if el.len() != n {
-        return Err(format!(
-            "expected_losses must have one value per band ({n}), got {}",
-            el.len()
-        ));
-    }
     let one = |g: &Grid, name: &str, unlimited: bool| -> Result<f64> {
         match g.as_scalar() {
             Some(v) => amount(v, name, 0, 0, unlimited)?.ok_or(format!("{name} is required")),

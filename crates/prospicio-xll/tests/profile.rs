@@ -146,7 +146,7 @@ fn errors_come_back_as_text() {
                 n(3.0)
             ]
         ))
-        .contains("one value per band")
+        .contains("as many cells")
     );
     assert!(
         e(profile(vec![
@@ -173,4 +173,58 @@ fn errors_come_back_as_text() {
         ]))
         .contains("both bounds")
     );
+}
+
+/// A column of ten bands, the listed rows (from 0) left blank.
+fn ten(blank: &[usize], scale: f64) -> Grid {
+    Grid::from_rows(
+        (0..10)
+            .map(|i| {
+                vec![if blank.contains(&i) {
+                    Value::Empty
+                } else {
+                    Value::Number(scale * (i + 1) as f64)
+                }]
+            })
+            .collect(),
+    )
+}
+
+fn ten_band(si: Grid, el: Grid) -> Vec<Grid> {
+    vec![si, el, n(5e6), n(2e6), t("swiss_re"), n(3.0)]
+}
+
+#[test]
+fn blanks_in_different_rows_are_an_error_naming_the_cell() {
+    // Band 3's sum insured and band 7's expected loss are blank: both
+    // columns compact to nine values, but bands 3 to 6 would be paired
+    // one row off.
+    let e = common::fails("pro_prc_profile", ten_band(ten(&[2], 1e6), ten(&[6], 1e5)));
+    assert!(
+        e.contains("sums_insured row 3, column 1 is blank but expected_losses is not"),
+        "{e}"
+    );
+    // The other way round names the other range.
+    let e = common::fails("pro_prc_profile", ten_band(ten(&[6], 1e6), ten(&[2], 1e5)));
+    assert!(
+        e.contains("expected_losses row 3, column 1 is blank but sums_insured is not"),
+        "{e}"
+    );
+}
+
+#[test]
+fn blanks_in_the_same_row_leave_nine_bands() {
+    let ex = common::ok("pro_prc_profile", ten_band(ten(&[2], 1e6), ten(&[2], 1e5)));
+    // A header, nine bands and a total row, the same as the nine bands given alone.
+    assert_eq!(ex.rows, 11, "{:?}", ex.as_scalar());
+    let drop = |scale: f64| {
+        Grid::from_rows(
+            (0..10)
+                .filter(|&i| i != 2)
+                .map(|i| vec![Value::Number(scale * (i + 1) as f64)])
+                .collect(),
+        )
+    };
+    let alone = common::ok("pro_prc_profile", ten_band(drop(1e6), drop(1e5)));
+    assert_eq!(ex, alone);
 }
