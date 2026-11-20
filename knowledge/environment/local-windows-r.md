@@ -16,6 +16,9 @@ sources:
   - id: nuts-toolchain
     resource: process:local-session, R twin of the Meyers Monograph 8 guide (branch guides/reserving-meyers-r)
     title: NUTS draws of the R and Python builds, 2026-10-17
+  - id: makevars
+    resource: ../R/prospicio/src/Makevars.win
+    title: The Windows link line, and the nightly CI run of 2026-11-17
 ---
 
 # Facts (2026-10-05)
@@ -59,6 +62,20 @@ sources:
 * A conda-forge R from pixi has no matching toolchain and cannot build the
   package; it can still run ChainLadder parity scripts.
 
+
+# The system libraries of the Windows link (2026-11-19)
+
+* `R/prospicio/src/Makevars.win` lists the system libraries Rust's standard
+  library needs, from `cargo rustc -p prospicio-r --release --lib --target
+  x86_64-pc-windows-gnu -- --print native-static-libs`. Rust 1.100
+  (2026-11-12) added `-lsynchronization`; without it `R CMD INSTALL` fails
+  on Windows with undefined references to `WakeByAddressSingle` and
+  `WakeByAddressAll`. No pull request builds R on Windows, so only the
+  nightly run shows it: rerun the command after a Rust release that breaks
+  the link. It also runs on Linux with `gcc-mingw-w64-x86-64` installed
+  (for `dlltool`).[^makevars]
+
 [^setup]: Local R build check
 [^r-libs]: R_LIBS with a Git Bash path
 [^nuts-toolchain]: NUTS draws of the R and Python builds
+[^makevars]: The Windows link line
