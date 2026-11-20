@@ -367,9 +367,11 @@ impl Fields for BootstrapOptions {
 /// The ODP bootstrap of the chain ladder on `column` of every segment.
 ///
 /// `options`: `{ nSims, seed }`, by default 10,000 simulations and seed 0.
-/// Returns `{ reserves, chainLadder }`: the simulated reserves as a
-/// [`Predictive`] with the key columns and `origin` as dimensions, and the
-/// chain ladder's tables. The same seed gives the same draws as in Rust,
+/// Returns `{ reserves, byOrigin, totals }`: the simulated reserves as a
+/// [`Predictive`] with the key columns and `origin` as dimensions (its
+/// `summary()` has each origin's simulated mean and standard deviation),
+/// and the chain ladder the bootstrap resamples, by origin and in total
+/// (`latest`, `ultimate`, `reserve`, and the ODP `scale` in `totals`). The same seed gives the same draws as in Rust,
 /// Python and R.
 #[wasm_bindgen(js_name = odpBootstrap)]
 pub fn odp_bootstrap(
@@ -385,10 +387,13 @@ pub fn odp_bootstrap(
         ..default
     };
     let fits = method.fit_segments(&triangle.inner, column).map_err(err)?;
-    let reserves = Predictive::from(fits.reserves.clone());
+    let (by_origin, totals) = (
+        table(&fits.segments.to_long()),
+        table(&fits.segments.totals()),
+    );
     Ok(Obj::new()
-        .set("reserves", reserves)
-        .set("byOrigin", table(&fits.segments.to_long()))
-        .set("totals", table(&fits.segments.totals()))
+        .set("reserves", Predictive::from(fits.reserves))
+        .set("byOrigin", by_origin)
+        .set("totals", totals)
         .done())
 }
