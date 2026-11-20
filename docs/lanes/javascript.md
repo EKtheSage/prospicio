@@ -10,5 +10,5 @@ Finished items are in [done/javascript.md](done/javascript.md), which agents rea
 
 ## Next
 
-- [wasm-publish] a `release.yml` job that builds the package and publishes it to npm on a version tag, with the registry setup in `docs/release.md` (`wasm.md` O2)
+- [wasm-npm-setup] the one-time npm setup is the user's: the first version published by hand, the trusted publisher added before the next release, then the repository variable `NPM_PUBLISH` set to `true` (`docs/release.md`, one-time setup, step 4)
 - [wasm-more-functions] further functions as the user asks, each in its lane's module file (`wasm.md` O5)
