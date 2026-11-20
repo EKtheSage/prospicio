@@ -5,4 +5,4 @@
   masses that were no distribution's (a sum of 21.2 at `alpha = 1.5`,
   `beta = 0.5`, `step = 0.5`), with nothing flagged. It now refuses the
   step and names the largest one the law can take; the automatic step is
-  unchanged (#937).
+  unchanged (#937, #988).
