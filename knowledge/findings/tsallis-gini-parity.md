@@ -28,6 +28,14 @@ sources:
   `t = 1 − s`; the series (the factor `α − 1` cancels from every term)
   keeps its relative accuracy where `1 − g(s)` itself loses all of it,
   which matters for the capital per unit of margin `(1 − g)/(g − S)`.
+* That series is safe only where `α t <= 1`: past it the terms grow to
+  about `e^(α t)` before they shrink, and the alternating sum lost every
+  digit above `α` of about 100 (0.0453 for 0.2362 at `α = 200`, `s =
+  0.76`; 9e25 at `α = 500`; #938). There `1 − g = (expm1(α ln(1 − t)) +
+  α t)/(α − 1)`, whose two terms cancel by under two bits. With the series
+  below `α t = 1` and this form above, the complement is within 1e-13 of
+  60-digit values for `α` from 0.3 to 1e6 and `t` from 1e-8 to 0.24
+  (2026-11-20).[^code]
 * The Gini index `2 ∫ g − 1` has a closed form for every one-parameter
   family (aggregate's `p_equiv`) and for the capped, beta, TVaR-mixture and
   convex families. The exponential family's `2(1 − m/k)/m − 1`, `m = 1 −

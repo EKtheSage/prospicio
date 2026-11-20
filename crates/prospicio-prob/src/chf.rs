@@ -745,8 +745,10 @@ impl Distribution for ChfDistribution {
 /// characteristic function.
 ///
 /// Fails when the options are out of range, when a user's function has no
-/// `step` and `x_min`, when `x_min` is given without `step`, or when the
-/// window cannot be sized from the law.
+/// `step` and `x_min`, when `x_min` is given without `step`, when the
+/// window cannot be sized from the law, or when a stable law with two
+/// power tails is given a `step` above `πγ / (104 ln 2)^(1/α)`, the
+/// largest its split into halves can take.
 pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
     if !(1..=28).contains(&options.log2) {
         return Err(Error::InvalidParameter {
@@ -1398,6 +1400,9 @@ fn convolve(a: &[f64], b: &[f64], len: usize) -> Vec<f64> {
 /// product is unchanged), the least that brings the narrow half's
 /// truncation to round-off. The plus half carries the bucket factor and
 /// the minus half none, so it is applied once.
+///
+/// A given `step` above `πγ / (104 ln 2)^(1/α)` is refused: the wide half
+/// cannot give up that much normal.
 fn two_sided(st: &Stable, n: usize, p: f64, step: Option<f64>, tilt: Tilt) -> Result<TwoSided> {
     let (a_tail, b_tail, alpha) = (st.tail_constant(), st.left_tail_constant(), st.alpha());
     let eps = 1.0 - p;
@@ -1415,6 +1420,20 @@ fn two_sided(st: &Stable, n: usize, p: f64, step: Option<f64>, tilt: Tilt) -> Re
     let e_minus = (pi * minus_r.body_scale() / h).powf(alpha);
     let narrow_minus = e_minus <= e_plus;
     let e_narrow = e_plus.min(e_minus);
+    // The wide half gives up the normal that brings the narrow one to
+    // round-off, and must itself end at round-off: `e_plus + e_minus =
+    // (πγ/h)^α >= 2 · 52 ln 2`. The automatic bucket is capped below that;
+    // a given step above it left the wide half a transform that grows
+    // with the frequency, and masses that are no law's (#937).
+    if e_plus + e_minus < 2.0 * roundoff * (1.0 - 1e-12) {
+        let largest = h * ((e_plus + e_minus) / (2.0 * roundoff)).powf(1.0 / alpha);
+        return Err(Error::Data(format!(
+            "step {h} is too large to invert this two-sided stable law (alpha {alpha}, scale \
+             {}) by its halves: the largest step is {largest:.6} (pi scale / (104 ln 2)^(1/alpha)); \
+             give a smaller step, or omit step",
+            st.body_scale()
+        )));
+    }
     let sigma2 = (roundoff - e_narrow).max(0.0) * 2.0 * h * h / (pi * pi);
     let sigma = sigma2.sqrt();
     // the narrow half gains the normal, the wide half loses it; s² is
