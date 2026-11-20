@@ -40,6 +40,17 @@ before any exception, found:
   warnings, not failures.
 - **Sources:** every crate comes from crates.io; no git dependencies.
 
+On 2026-11-20 (#934) a third unmaintained crate is ignored: `chrono`
+0.4.45 (RUSTSEC-2026-0543, dated 2026-09-14), pulled in only by
+`arrow-array` 60.1.0 (`arrow-ipc`, under `prospicio-prob`'s optional
+`arrow` feature), the newest arrow release; the entry goes when arrow
+moves off chrono. cargo-deny 0.22.0's default scope for unmaintained
+crates is the workspace's direct dependencies, so a local `cargo deny
+check` passes on a transitive one (and warns that the two older ignores
+were not encountered), while CI's action counts them all: to reproduce
+CI, run with a copy of `deny.toml` that sets `unmaintained = "all"`
+under `[advisories]` (`cargo deny --config <copy> check`).
+
 Installing the tool takes about four minutes in a cloud session
 (`cargo install cargo-deny --locked`); CI uses
 `EmbarkStudios/cargo-deny-action@v2` instead.
