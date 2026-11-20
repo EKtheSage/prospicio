@@ -1455,6 +1455,8 @@ ChfDist$step <- function() .Call(wrap__ChfDist__step, self)
 
 ChfDist$to_grid <- function() .Call(wrap__ChfDist__to_grid, self)
 
+ChfDist$tvar <- function(p) .Call(wrap__ChfDist__tvar, self, p)
+
 ChfDist$variance <- function() .Call(wrap__ChfDist__variance, self)
 
 ChfDist$x_min <- function() .Call(wrap__ChfDist__x_min, self)

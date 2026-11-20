@@ -158,6 +158,11 @@ generators = ["aggregate_chf_tilt.py"]
 sha256 = "3ddb353979137207bb13f14bd3f78b2eb4d23a64c2ff57428b47cc1ae5b4cf09"
 
 [[file]]
+path = "chf_tvar_aggregate.csv"
+generators = ["aggregate_chf_tvar.py"]
+sha256 = "0405110ad5bef7e617362414364649190248ef6936c032786ad2cb80070c6f3e"
+
+[[file]]
 path = "chf_tweedie_aggregate.csv"
 generators = ["aggregate_chf_tweedie.py"]
 sha256 = "ca16ff3d33a03b30f3d2f9b9b97f6166eee89936c231667d9ac35b25eed3f850"

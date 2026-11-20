@@ -380,6 +380,12 @@ impl ChfDist {
             .collect()
     }
 
+    fn tvar(&self, p: &[f64]) -> Result<Vec<f64>> {
+        p.iter()
+            .map(|&p| self.inner.tvar(p).map_err(to_r))
+            .collect()
+    }
+
     fn to_grid(&self) -> Result<Grid> {
         Ok(Grid::wrap(self.inner.to_grid().map_err(to_r)?))
     }
