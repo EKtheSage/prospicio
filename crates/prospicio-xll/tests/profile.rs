@@ -146,7 +146,7 @@ fn errors_come_back_as_text() {
                 n(3.0)
             ]
         ))
-        .contains("as many cells")
+        .contains("expected_losses has 3 cells, too few for sums_insured")
     );
     assert!(
         e(profile(vec![
@@ -227,4 +227,24 @@ fn blanks_in_the_same_row_leave_nine_bands() {
     };
     let alone = common::ok("pro_prc_profile", ten_band(drop(1e6), drop(1e5)));
     assert_eq!(ex, alone);
+}
+
+#[test]
+fn a_longer_range_with_a_blank_tail_is_accepted() {
+    // The sums insured range was selected two cells too far: both extra
+    // cells are blank, as 0.2.0 accepted.
+    let long = Grid::from_rows(
+        (0..12)
+            .map(|i| {
+                vec![if i < 10 {
+                    Value::Number(1e6 * (i + 1) as f64)
+                } else {
+                    Value::Empty
+                }]
+            })
+            .collect(),
+    );
+    let ex = common::ok("pro_prc_profile", ten_band(long, ten(&[], 1e5)));
+    let equal = common::ok("pro_prc_profile", ten_band(ten(&[], 1e6), ten(&[], 1e5)));
+    assert_eq!(ex, equal);
 }

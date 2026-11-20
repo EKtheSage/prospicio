@@ -67,50 +67,51 @@ pub(crate) fn numbers(grid: &Grid, name: &str) -> Result<Vec<f64>> {
 /// range. A position blank in every range is dropped (the empty end of a
 /// selected range); a position blank in some ranges and not in others is
 /// an error naming the range and the cell, since dropping each range's
-/// blanks on its own would pair the values with the wrong partners. The
-/// ranges must have as many cells as the first.
+/// blanks on its own would pair the values with the wrong partners. A
+/// range shorter than another counts as blank past its end, so a tail
+/// blank in every range is dropped as before, and a number past the end of
+/// a shorter range is an error.
 pub(crate) fn paired(ranges: &[(&Grid, &str)]) -> Result<Vec<Vec<f64>>> {
-    let (first, first_name) = ranges[0];
-    for (g, name) in &ranges[1..] {
-        if g.cells.len() != first.cells.len() {
-            return Err(format!(
-                "{first_name} and {name} must have as many cells, got {} and {}",
-                first.cells.len(),
-                g.cells.len()
-            ));
+    let first_name = ranges[0].1;
+    let longest = ranges.iter().map(|(g, _)| g.cells.len()).max().unwrap_or(0);
+    let mut out = vec![Vec::with_capacity(longest); ranges.len()];
+    for i in 0..longest {
+        let mut row = Vec::with_capacity(ranges.len());
+        for (g, name) in ranges {
+            row.push(match g.cells.get(i) {
+                None => None,
+                Some(Value::Number(x)) => Some(*x),
+                Some(v) if v.is_blank() => None,
+                Some(other) => {
+                    return Err(format!(
+                        "{name} {} must be a number, got {other:?}",
+                        position(i / g.columns, i % g.columns)
+                    ));
+                }
+            });
         }
-    }
-    let mut out = vec![Vec::with_capacity(first.cells.len()); ranges.len()];
-    for r in 0..first.rows {
-        for c in 0..first.columns {
-            let mut row = Vec::with_capacity(ranges.len());
-            for (g, name) in ranges {
-                row.push(match g.get(r, c) {
-                    Value::Number(x) => Some(*x),
-                    v if v.is_blank() => None,
-                    other => {
-                        return Err(format!(
-                            "{name} {} must be a number, got {other:?}",
-                            position(r, c)
-                        ));
-                    }
-                });
-            }
-            if row.iter().all(Option::is_none) {
-                continue;
-            }
-            if let Some(k) = row.iter().position(Option::is_none) {
-                let given = row.iter().position(Option::is_some).unwrap();
-                return Err(format!(
-                    "{} {} is blank but {} is not: give a value in both or leave both blank",
-                    ranges[k].1,
-                    position(r, c),
-                    ranges[given].1
-                ));
-            }
-            for (o, x) in out.iter_mut().zip(row) {
-                o.push(x.unwrap());
-            }
+        if row.iter().all(Option::is_none) {
+            continue;
+        }
+        if let Some(k) = row.iter().position(Option::is_none) {
+            let given = row.iter().position(Option::is_some).unwrap();
+            let (gk, name_k) = ranges[k];
+            let (gg, name_g) = ranges[given];
+            let at = position(i / gg.columns, i % gg.columns);
+            return Err(if i < gk.cells.len() {
+                format!(
+                    "{name_k} {} is blank but {name_g} is not: give a value in both or leave both blank",
+                    position(i / gk.columns, i % gk.columns)
+                )
+            } else {
+                format!(
+                    "{name_k} has {} cells, too few for {name_g} {at}: give one value per row",
+                    gk.cells.len()
+                )
+            });
+        }
+        for (o, x) in out.iter_mut().zip(row) {
+            o.push(x.unwrap());
         }
     }
     if out[0].is_empty() {
@@ -645,9 +646,21 @@ mod tests {
         let a = col(&[Some(1.0), Some(2.0)]);
         let b = col(&[Some(1.0)]);
         let e = paired(&[(&a, "a"), (&b, "b")]).unwrap_err();
-        assert!(
-            e.contains("a and b must have as many cells, got 2 and 1"),
-            "{e}"
+        assert_eq!(
+            e,
+            "b has 1 cells, too few for a row 2, column 1: give one value per row"
+        );
+        // Extra cells that are blank in the longer range are a blank tail.
+        let long = col(&[Some(1.0), Some(2.0), None, None]);
+        let short = col(&[Some(5.0), Some(6.0)]);
+        let equal = col(&[Some(5.0), Some(6.0), None, None]);
+        assert_eq!(
+            paired(&[(&long, "a"), (&short, "b")]).unwrap(),
+            paired(&[(&long, "a"), (&equal, "b")]).unwrap()
+        );
+        assert_eq!(
+            paired(&[(&short, "b"), (&long, "a")]).unwrap(),
+            vec![vec![5.0, 6.0], vec![1.0, 2.0]]
         );
         let none = col(&[None, None]);
         assert_eq!(

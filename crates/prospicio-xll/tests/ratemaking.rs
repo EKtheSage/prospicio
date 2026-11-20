@@ -291,7 +291,7 @@ fn errors_come_back_as_text() {
             "pro_prc_onlevel",
             vec![eff.clone(), column(&[0.1]), n(2011.0), n(2012.0)]
         )
-        .contains("effective and changes must have as many cells")
+        .contains("changes has 1 cells, too few for effective")
     );
     assert!(
         e(
