@@ -1,5 +1,36 @@
 # Bundle history
 
+## 2026-11-20
+
+* **Update**: [aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt](/findings/chf-inversion-aggregate.md), from the TVaR of a characteristic-function inversion (branch claude/chf-tvar): `AggregateCHF.tvar` is its grid kernel on the buckets of positive mass, not renormalized; `ChfDistribution::tvar` matches 84 of its values to 1e-9 relative, tilted stable laws at 0.99 to 0.999 to 4e-9.
+
+## 2026-11-19
+
+* **Update**: [The Munich chain ladder against R ChainLadder and chainladder-python](/findings/munich-chain-ladder-parity.md), from the nightly failure of `test-reserving-munich.R` (branch claude/cool-shannon-fqpoy8-nightly-fixes): R ChainLadder's zero sigma on a flat link is round-off under OpenBLAS (ubuntu-26.04 runners), which keeps two residuals of about -5 in the incurred regression and moves `lambda_incurred` from 0.4140 to 0.7469; prospicio's is exact.
+* **Update**: [R bindings and docs on the local Windows machine](/environment/local-windows-r.md), from the nightly failure of `R CMD INSTALL` on Windows (branch claude/cool-shannon-fqpoy8-nightly-fixes): Rust 1.100 needs `-lsynchronization` in `Makevars.win`.
+* **Update**: [The AP pricing demo's inputs](/datasets/ap-pricing-demo-inputs.md), from #806's Excel test (branch claude/xll-ap-cumulative-lr): `PRO.PRC.LR.CUMULATIVE` reproduces the demo's four printed cumulative loss ratios to 5e-13 on the same file, in `crates/prospicio-xll/tests/pricing_ap_cumulative_lr.rs` and on the test workbook's Ratemaking sheet.
+
+## 2026-11-16
+
+* **Update**: [The IFRS 17 risk adjustment and the Solvency II risk margin as prospicio builds them](/findings/ifrs17-risk-adjustment.md), from #553 PR 2 (branch claude/ifrs17-bindings): the Python and R names, a fit over one segment (as the bindings hold a triangle without keys) reporting no segments (decision 25), and the one-year capital as `mean CDR - Q_0.005(CDR)` (325 against a 326 VaR on the guide's triangle, a 39 risk adjustment at 6%, 59.3% implied confidence; decision 24).
+
+## 2026-11-14
+
+* **Creation**: [The AP pricing demo's inputs](/datasets/ap-pricing-demo-inputs.md), supplied by the user (branch claude/cool-shannon-fqpoy8-ap-lr-parity): the demo's inputs.json copied verbatim to validation/data, on which the running loss ratio's four printed values match to 5e-13.
+* **Update**: [Trend factors from a calendar-year rate schedule](/findings/schedule-trend.md) (same branch): the demo's printed cumulative loss ratios are now a test in Rust, Python and R.
+* **Update**: [aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt](/findings/chf-inversion-aggregate.md), from #780's fourth PR (branch claude/cool-shannon-fqpoy8-chf-distributions): aggregate's stable algebra is exact in S1 and matches to 1e-13, Pr(X > loc) is nan at alpha = 1 unless beta = 0, and the compound Pareto limit has the compound's right tail.
+* **Update**: [aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt](/findings/chf-inversion-aggregate.md), from #780's third PR (branch claude/cool-shannon-fqpoy8-chf-split): the two-sided stable split matched to 1e-10, and a symmetric law's crop, a tie between two windows that round-off decides.
+* **Creation**: [An event loss table on aggregate 2.1.0's FFT grid](/findings/elt-grid-aggregate.md), from #781 (branch claude/cool-shannon-fqpoy8-elt-grid): aggregate buckets an ELT6 by eltq's nearest-node survival method (an atom on a bucket edge split evenly) and a means-only table by the linear scatter; eltq's interpolation is within about 1e-8 of the exact buckets, and padding=2 is the buffer prospicio's fft returns.
+* **Creation**: [The IFRS 17 risk adjustment and the Solvency II risk margin as prospicio builds them](/findings/ifrs17-risk-adjustment.md), from #553 PR 1 (branch claude/ifrs17-reserves): the confidence level, TVaR and cost-of-capital conventions on the discounted total, the run-off and both capital charges, and the implied confidence level; the spreading by the running maximum of each simulation's pattern (a bootstrap's pattern that passes 1 and comes back made raw increments amplify the reserve, RAA's discounted total 0.05 to 1.92 times the undiscounted), the incurred basis discounting the whole unpaid, IBNR plus the case reserves from the latest paid the caller brings (decision 18, the user's of 2026-11-15), and `Compartmental`'s cells against spreading on company 337 (means 0.07% apart, sds 0.2%); paragraph references not checked against the standards.
+* **Update**: [An event loss table on aggregate 2.1.0's FFT grid](/findings/elt-grid-aggregate.md), from #781's Excel function (branch claude/xll-elt-grid): the nearest rule is not mean-preserving, so 4,096 buckets under Alder Mutual's largest exposure left the annual mean 0.5% low; 2^16 buckets, aggregate's default, bring the mean and SD within 1e-4.
+
+## 2026-11-13
+
+* **Creation**: [aggregate 2.1.0's characteristic-function engine, reproduced untilted](/findings/chf-inversion-aggregate.md), from #779's first PR (branch claude/cool-shannon-fqpoy8-chf-engine): the masses are bucket probabilities, rule A's bucket walks down the ladder past a truncation of 1e-6, and a tilt on a light law amplifies the truncation ringing by e^(theta x).
+* **Update**: [aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt](/findings/chf-inversion-aggregate.md), from #780's first PR (branch claude/cool-shannon-fqpoy8-chf-laws): the normal inverse Gaussian, variance gamma and CGMY tempered stable laws through the untilted rule A at the first PR's tolerances, and the truncation that a variance gamma with nu = 4 and a CGMY with Y = -0.5 keep.
+* **Update**: [aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt](/findings/chf-inversion-aggregate.md), from #779's second PR (branch claude/cool-shannon-fqpoy8-chf-tilting): the automatic tilt on a totally skewed stable law (tau* 9 to 15 e-folds, the bucket capped, the mass beyond the window left out) and the round-off it amplifies by up to 2.3e6 at the heavy end.
+* **Update**: [aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt](/findings/chf-inversion-aggregate.md), from #780's second PR (branch claude/cool-shannon-fqpoy8-chf-tweedie): the Tweedie at any power in Jorgensen's cumulant form, equal to the compound Poisson-gamma form at 1 < p < 2, and rule A's weak grid for a very skewed inverse Gaussian.
+
 ## 2026-11-12
 
 * **Creation**: [Rebuilding the parity references with uv](/environment/reference-generators.md), from #844 (branch claude/cool-shannon-fqpoy8-manifest-envs): every Python generator carries PEP 723 metadata, the weekly rerun reproduced all 61 of its generators once eltq and SciPy were added where they were missing, and the pseudo-BMA stacking weights, which move by 3e-12 between NumPy 2.4 and 2.5, carry a tolerance of 1e-11 by the user's decision.
