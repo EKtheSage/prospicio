@@ -58,6 +58,17 @@ under "Unreleased" until then.
   (`prospicio_prob::chf::ChfDistribution::tvar`; Python
   `ChfDistribution.tvar`, R `TVaR()` on a `chf_distribution`), at parity
   with `aggregate` 2.1.0 (#779, #780, #964).
+- Fixed: `invert_chf` on a stable law with two power tails (`|beta| < 1`)
+  and a given `step` above `pi scale / (104 ln 2)^(1/alpha)` returned
+  masses that were no distribution's (a sum of 21.2 at `alpha = 1.5`,
+  `beta = 0.5`, `step = 0.5`), with nothing flagged. It now refuses the
+  step and names the largest one the law can take; the automatic step is
+  unchanged (#937, #988).
+- Fixed: `Distortion::complement` (`1 - g(s)`) of a Tsallis distortion
+  lost every digit at orders above about 100 for `s` between 0.75 and 1
+  (0.0453 for 0.2362 at `alpha = 200`, `s = 0.76`), which moved the
+  natural allocation's capital per unit of margin under a thin Tsallis
+  margin. It is now accurate to 1e-13 for orders up to 1e6 (#938, #987).
 
 ### Aggregate and reinsurance
 

@@ -187,9 +187,11 @@ the release: discounted reserves and the IFRS 17 risk adjustment (#553,
 #924 to #926), the AP pricing demo's cumulative loss ratios as a test
 (#806, #923, #929) and the fixes of the nightly run (#927). The codebase
 review of 2026-11-19 (#931, its sub-issues #932 to #983) is not part of
-0.2.0: its items wait for the user's decision on their release, and #934
-(a RustSec advisory that fails `cargo deny`) is to be fixed or ignored
-with its reason before the tag ("Each release", step 2).
+0.2.0, except three of its findings, which the user held the tag for on
+2026-11-20: #937 (a two-sided stable law on a given step above the split's
+limit, #988), #938 (the Tsallis complement at a large order, #987) and
+#934 (a RustSec advisory that failed `cargo deny`, #986). The others wait
+for the user's decision on their release.
 
 ## Each release
 

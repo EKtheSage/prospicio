@@ -2,6 +2,9 @@
 
 ## 2026-11-20
 
+* **Update**: [The dependency tree under cargo deny](/environment/dependency-audit.md), from #934 (branch claude/cool-shannon-fqpoy8-deny-chrono): `cargo deny` failed on RUSTSEC-2026-0543 (chrono unmaintained, through arrow-array 60.1.0, the newest release) and `deny.toml` now ignores it with its reason; cargo-deny 0.22's default scope for unmaintained crates is the workspace's direct dependencies, so a local run passes where CI's action, which counts transitive ones, fails: reproduce CI with `unmaintained = "all"` under `[advisories]`.
+* **Update**: [aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt](/findings/chf-inversion-aggregate.md), from #937 (branch claude/cool-shannon-fqpoy8-stable-step-cap): the split of a two-sided stable law has a largest step, `pi gamma / (104 ln 2)^(1/alpha)`; above it `aggregate` 2.1.0 returns masses that sum to 21.2 or to -2.4e-5 with no warning, as prospicio did, and prospicio now refuses the step.
+* **Correction**: [The Tsallis distortion and the Gini index against aggregate 2.1.0](/findings/tsallis-gini-parity.md), from #938 (branch claude/cool-shannon-fqpoy8-tsallis-complement): the series of `1 - g(s)` is accurate only where `alpha (1 - s) <= 1`; past it the complement is the closed form `(expm1(alpha ln s) + alpha (1 - s)) / (alpha - 1)`, within 1e-13 of 60-digit values up to `alpha = 1e6`.
 * **Update**: [aggregate 2.1.0's characteristic-function engine, reproduced with and without the tilt](/findings/chf-inversion-aggregate.md), from the TVaR of a characteristic-function inversion (branch claude/chf-tvar): `AggregateCHF.tvar` is its grid kernel on the buckets of positive mass, not renormalized; `ChfDistribution::tvar` matches 84 of its values to 1e-9 relative, tilted stable laws at 0.99 to 0.999 to 4e-9.
 
 ## 2026-11-19
