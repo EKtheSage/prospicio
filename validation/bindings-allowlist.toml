@@ -458,7 +458,6 @@
 [r.prospicio_pricing]
 "book::Adequacy" = "a result type: the book's adequacy() returns its fields as a list"
 "ratemaking::ScheduleTrendRow" = "a result type: schedule_trend() returns its fields as a data frame"
-"ratemaking::PeriodKind" = "the name table the period argument is read through; R takes the name as a string (#956)"
 "book::BookCashflows" = "unbound on 2026-10-28 (seed); review"
 "book::DealContribution" = "unbound on 2026-10-28 (seed); review"
 "book::Distribution" = "unbound on 2026-10-28 (seed); review"
