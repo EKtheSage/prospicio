@@ -13,8 +13,9 @@ tree is the same afterwards:
   within `max(abs_tol, rel_tol * |committed|)` of the committed value; a row
   added or removed is a difference, and a changed `source` (a package that
   moved) is listed but is not one;
-- another CSV: the same rows and columns, numbers within 1e-9 relative, text
-  exact;
+- another CSV: the same rows and columns, numbers within 1e-9 relative (or
+  the file's own bound in `FILE_TOLERANCE`), text exact; a `source` column is
+  listed when it moves, as above, and not compared;
 - any other file: the same bytes, line endings as LF.
 
 Some generators also rewrite an input under `validation/data/` (the
@@ -89,6 +90,12 @@ WEEKLY = (
 )
 
 TOLERANCE_COLUMNS = {"expected", "abs_tol", "rel_tol", "source"}
+
+# Files without tolerance columns whose numbers are an optimiser's stopping
+# point, not a definition: (abs_tol, rel_tol). The Rust test that reads the
+# file applies its own, looser bound (#935). Any other such file is compared
+# to 1e-9 relative.
+FILE_TOLERANCE = {"hawkes_scipy.csv": (1e-9, 1e-6)}
 
 
 def outputs() -> dict[str, list[str]]:
@@ -178,7 +185,13 @@ def compare_tolerance_rows(header: list[str], old: list[list[str]], new: list[li
     return diffs, sorted(moved)
 
 
-def compare_plain_rows(old: list[list[str]], new: list[list[str]]) -> list[str]:
+def compare_plain_rows(
+    old: list[list[str]],
+    new: list[list[str]],
+    skip: int | None = None,
+    tol: tuple[float, float] = (1e-12, 1e-9),
+) -> list[str]:
+    """Differences between two tables; column `skip` (a source label) is not compared."""
     if len(old) != len(new):
         return [f"{len(old)} rows, now {len(new)}"]
     diffs = []
@@ -186,9 +199,11 @@ def compare_plain_rows(old: list[list[str]], new: list[list[str]]) -> list[str]:
         if len(o) != len(n):
             diffs.append(f"line {line}: {len(o)} columns, now {len(n)}")
             continue
-        for a, b in zip(o, n):
+        for i, (a, b) in enumerate(zip(o, n)):
+            if i == skip:
+                continue
             x, y = number(a), number(b)
-            ok = same(y, x, 1e-12, 1e-9) if x is not None and y is not None else a == b
+            ok = same(y, x, *tol) if x is not None and y is not None else a == b
             if not ok:
                 diffs.append(f"line {line}: {a} -> {b}")
     return diffs
@@ -219,7 +234,13 @@ def compare(path: str, old: bytes, new: bytes) -> tuple[list[str], list[str]]:
         return [f"header {h0} -> {h1}"], []
     if {"expected", "abs_tol", "rel_tol"} <= set(h0):
         return compare_tolerance_rows(h0, r0, r1)
-    return compare_plain_rows(r0, r1), []
+    # A `source` column (a package version label) moving is listed, not a difference.
+    skip = h0.index("source") if "source" in h0 else None
+    moved = set()
+    if skip is not None:
+        moved = {f"{o[skip]} -> {n[skip]}" for o, n in zip(r0, r1) if len(o) == len(n) and o[skip] != n[skip]}
+    tol = FILE_TOLERANCE.get(path, (1e-12, 1e-9))
+    return compare_plain_rows(r0, r1, skip, tol), sorted(moved)
 
 
 def run(script_name: str, files: list[str], latest: bool) -> dict:

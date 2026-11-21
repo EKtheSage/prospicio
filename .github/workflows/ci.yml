@@ -43,7 +43,7 @@ env:
   # Paths a pull request can change without running the python and r jobs:
   # nothing in them is built or read by the bindings' tests (the guides in
   # docs/guides and the notebooks in examples/ are).
-  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|test_check_lanes|check_bindings|test_check_bindings|fold_changes|bayes_shards)\.py$|validation/bindings-allowlist\.toml$|deny\.toml$)'
+  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|test_check_lanes|test_rerun_references|check_bindings|test_check_bindings|fold_changes|bayes_shards)\.py$|validation/bindings-allowlist\.toml$|deny\.toml$)'
 
 jobs:
   # The checks every pull request needs, a few seconds in all (#827): the
@@ -63,6 +63,8 @@ jobs:
       - run: python3 validation/scripts/fold_changes.py --self-test && python3 validation/scripts/fold_changes.py --check
       # Lane status files (docs/lanes/*.md) have ids and no resurrected bullets.
       - run: python3 validation/scripts/test_check_lanes.py && python3 validation/scripts/check_lanes.py
+      # The weekly rerun's comparison rules (#935).
+      - run: python3 validation/scripts/test_rerun_references.py
       # Public Rust items are bound in Python and R or on the allow-list
       # (validation/bindings-allowlist.toml); prints the coverage table.
       - run: python3 validation/scripts/test_check_bindings.py && python3 validation/scripts/check_bindings.py
