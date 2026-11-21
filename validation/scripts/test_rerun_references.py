@@ -60,7 +60,17 @@ def main():
     check(rr.compare("hawkes_scipy.csv", hawkes_ll, ll_noise), ([], ["SciPy 1.14.1 -> SciPy 1.18.1"]), "hawkes ll noise")
     # Another file keeps the 1e-9 comparison, and its list cells (the periods) are exact text.
     diffs, _ = rr.compare("other.csv", HAWKES_OLD, hawkes_new(b"1.5210145700988877", b"288.23212707844078"))
-    assert len(diffs) == 4 and diffs[0] == "line 2: 0.5|0.7;0.2 -> 0.5|0.7000000000000001;0.2", diffs
+    # It is not in SOURCE_LABELS, so its `source` column is compared too.
+    assert len(diffs) == 5 and diffs[0] == "line 2: 0.5|0.7;0.2 -> 0.5|0.7000000000000001;0.2", diffs
+    assert diffs[-1] == "line 2: SciPy 1.14.1 -> SciPy 1.18.1", diffs
+    # In the pnl_*_sources.csv files `source` is a data key the Rust tests filter rows on:
+    # a changed key is a difference, not a moved source.
+    builder = b"source,value,prob\nex3a,1.0,0.5\nex3a,3.0,0.5\nex5,2.0,1.0\n"
+    got = rr.compare("pnl_builder_sources.csv", builder, builder.replace(b"ex3a,3.0", b"ex9z,3.0", 1))
+    check(got, (["line 3: ex3a -> ex9z"], []), "pnl builder key")
+    occurrence = b"source,gross,ceded,prob\nex4,10.0,2.0,1.0\nex7,5.0,1.0,1.0\n"
+    got = rr.compare("pnl_occurrence_sources.csv", occurrence, occurrence.replace(b"ex4", b"zzz"))
+    check(got, (["line 2: ex4 -> zzz"], []), "pnl occurrence key")
     print("rerun_references self-test passed")
 
 

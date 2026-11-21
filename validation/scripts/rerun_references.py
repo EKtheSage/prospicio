@@ -15,8 +15,9 @@ tree is the same afterwards:
   moved) is listed but is not one;
 - another CSV: the same rows and columns, numbers within 1e-9 relative, text
   (a list of numbers in one cell included) exact; a file in `FILE_TOLERANCE`
-  uses its own bound per column and compares a list cell element by element; a `source`
-  column is listed when it moves, as above, and not compared;
+  uses its own bound per column and compares a list cell element by element; in a
+  file in `SOURCE_LABELS` the `source` column (a package version) is listed when
+  it moves, as above, and not compared, and in any other file it is data;
 - any other file: the same bytes, line endings as LF.
 
 Some generators also rewrite an input under `validation/data/` (the
@@ -112,6 +113,12 @@ FILE_TOLERANCE = {
         "log_likelihood": (1e-7, 0.0),
     }
 }
+
+# Files without tolerance columns whose `source` column is the package version
+# that wrote them: a moved label is listed, not compared. In any other such
+# file `source` is data (in pnl_*_sources.csv it is the key the Rust tests
+# filter rows on), and a changed value is a difference.
+SOURCE_LABELS = {"hawkes_scipy.csv", "sobol_scipy.csv"}
 
 
 def outputs() -> dict[str, list[str]]:
@@ -270,8 +277,9 @@ def compare(path: str, old: bytes, new: bytes) -> tuple[list[str], list[str]]:
         return [f"header {h0} -> {h1}"], []
     if {"expected", "abs_tol", "rel_tol"} <= set(h0):
         return compare_tolerance_rows(h0, r0, r1)
-    # A `source` column (a package version label) moving is listed, not a difference.
-    skip = h0.index("source") if "source" in h0 else None
+    # A `source` column that is a package version label (SOURCE_LABELS) moving
+    # is listed, not a difference; elsewhere `source` is data and compared.
+    skip = h0.index("source") if path in SOURCE_LABELS and "source" in h0 else None
     moved = set()
     if skip is not None:
         moved = {f"{o[skip]} -> {n[skip]}" for o, n in zip(r0, r1) if len(o) == len(n) and o[skip] != n[skip]}
