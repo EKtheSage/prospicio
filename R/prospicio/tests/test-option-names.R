@@ -158,4 +158,18 @@ local({
   expect_error_like(book_ledger(book, gross, NULL, "sideways"), "face must be")
 })
 
+# The rate-change rule and the period kind in Excel's spellings (Applies::NAMES and
+# PeriodKind::NAMES, #956).
+eff <- c(2010.5, 2011, 2011.5, 2012.25)
+chg <- c(0.05, 0.10, -0.05, -0.01)
+law <- function(a, period = "calendar") {
+  rate_level(eff, chg, start = 2011, end = 2012, term = 1, period = period,
+             applies = c("written", "written", a, "written"))$on_level_factor
+}
+for (a in c("inforce", "In-Force", "in force")) stopifnot(identical(law(a), law("in_force")))
+expect_error_like(law("sometimes"), "applies must be")
+stopifnot(identical(law("in_force", "accident"), law("in_force", "calendar")))
+stopifnot(law("in_force", "policy") != law("in_force", "calendar"))
+expect_error_like(law("in_force", "fiscal"), "should be one of")
+
 cat("option name tests passed\n")

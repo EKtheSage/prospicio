@@ -269,3 +269,20 @@ def test_book_face_spellings(name, canonical):
     assert got.sheet()["step"] == want.sheet()["step"]
     with pytest.raises(ValueError, match="face must be"):
         book.ledger(gross, None, "sideways")
+
+@pytest.mark.parametrize("name", ["in_force", "inforce", "In-Force", "in force"])
+def test_rate_change_applies_spellings(name):
+    # Excel's `inforce`, and its case and separator rules (Applies::NAMES, #956).
+    from prospicio.pricing import Period, RateHistory
+
+    effective = [2010.5, 2011.0, 2011.5, 2012.25]
+    changes = [0.05, 0.10, -0.05, -0.01]
+    period = Period.calendar(2011.0, 2012.0)
+    want = RateHistory(effective, changes, applies=["written", "written", "in_force", "written"])
+    got = RateHistory(effective, changes, applies=["written", "written", name, "written"])
+    assert (
+        got.rate_level(period, 1.0).on_level_factor == want.rate_level(period, 1.0).on_level_factor
+    )
+    assert got.rate_level(period, 1.0).in_force_changes == [0, 0, 1, 0, 1]
+    with pytest.raises(ValueError, match="applies must be"):
+        RateHistory([2011.0], [0.1], applies=["sometimes"])
