@@ -3706,6 +3706,11 @@ meyers_fit <- S7::new_class(
   }
 )
 
+# Meyers' model name in any case, as Python takes it (MeyersModel::from_name, #956).
+meyers_model_arg <- function(model) {
+  if (is.character(model) && length(model) == 1 && !is.na(model)) tolower(model) else model
+}
+
 #' @rdname meyers_fit
 #' @export
 meyers <- function(triangle, column, premium, model = c("crc", "csr", "cay"),
@@ -3720,7 +3725,7 @@ meyers <- function(triangle, column, premium, model = c("crc", "csr", "cay"),
       stop(sprintf("%s must be the name of a column", arg), call. = FALSE)
     }
   }
-  model <- match.arg(model)
+  model <- match.arg(meyers_model_arg(model), c("crc", "csr", "cay"))
   k <- meyers_settings(logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape,
                       chains, tune, draws, target_accept, max_depth)
   ptr <- reserving_result(triangle@ptr$meyers(
@@ -3862,7 +3867,7 @@ meyers_segments <- function(triangle, column, premium, model = c("crc", "csr", "
       stop(sprintf("%s must be the name of a column", arg), call. = FALSE)
     }
   }
-  model <- match.arg(model)
+  model <- match.arg(meyers_model_arg(model), c("crc", "csr", "cay"))
   dependence <- match.arg(dependence)
   ptr <- reserving_result(triangle@ptr$meyers_segments(
     column, premium, model, single_number(logelr_mean, "logelr_mean"),
@@ -3967,7 +3972,7 @@ meyers_one_year <- function(triangle, column, premium, model = c("crc", "csr", "
   s <- meyers_args(triangle, column, premium, logelr_mean, logelr_sd, origin_sd,
                    development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed,
                    target_accept, max_depth)
-  model <- match.arg(model)
+  model <- match.arg(meyers_model_arg(model), c("crc", "csr", "cay"))
   refit <- match.arg(refit)
   ptr <- reserving_result(triangle@ptr$meyers_one_year(
     column, premium, model, s$priors, s$run, single_number(k_threshold, "k_threshold"), refit,
@@ -3999,7 +4004,7 @@ meyers_one_year_segments <- function(triangle, column, premium, model = c("crc",
   s <- meyers_args(triangle, column, premium, logelr_mean, logelr_sd, origin_sd,
                    development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed,
                    target_accept, max_depth)
-  model <- match.arg(model)
+  model <- match.arg(meyers_model_arg(model), c("crc", "csr", "cay"))
   dependence <- match.arg(dependence)
   refit <- match.arg(refit)
   ptr <- reserving_result(triangle@ptr$meyers_one_year_segments(
@@ -8184,7 +8189,7 @@ meyers_spec <- S7::new_class(
                          origin_sd = 3.162, development_sd = 3.162, gamma_sd = 0.05,
                          rho_shape = 2, chains = 4, tune = 1000, draws = 2000,
                          target_accept = 0.95, max_depth = 10) {
-    model <- match.arg(model)
+    model <- match.arg(meyers_model_arg(model), c("crc", "csr", "cay"))
     k <- meyers_settings(logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape,
                          chains, tune, draws, target_accept, max_depth)
     S7::new_object(S7::S7_object(), model = model, logelr_mean = k$logelr_mean,

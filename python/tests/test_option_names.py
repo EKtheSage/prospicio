@@ -14,6 +14,7 @@ from prospicio.reserving import (
     BenchmarkCurve,
     ChainLadder,
     LatestDiagonal,
+    Meyers,
     Mack,
     MunichChainLadder,
     PaidIncurredChain,
@@ -167,6 +168,14 @@ def test_growth_curve_spellings(name):
     assert BenchmarkCurve(curve=name).fit(bench, "percent_developed").omega == want
     with pytest.raises(ValueError, match="growth curve must be"):
         BenchmarkCurve(curve="gompertz")
+
+
+@pytest.mark.parametrize("name", ["csr", "CSR", "Csr"])
+def test_meyers_model_in_any_case(name):
+    # Python took the model in any case; R now does too (#956).
+    assert Meyers(name).model == "csr"
+    with pytest.raises(ValueError, match="model must be"):
+        Meyers("ipi")
 
 
 @pytest.mark.parametrize("name", ["no_development", "none"])

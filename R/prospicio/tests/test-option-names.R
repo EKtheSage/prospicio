@@ -120,5 +120,11 @@ for (s in c("loglogistic", "log-logistic", "log_logistic")) {
 }
 expect_error_like(benchmark_curve(bench, curve = "gompertz"), "should be one of")
 
+# Meyers' model name in any case, as Python takes it (#956).
+for (s in c("CSR", "Csr")) {
+  stopifnot(identical(meyers_spec(model = s)@model, "csr"))
+}
+expect_error_like(meyers_spec(model = "ipi"), "should be one of")
+
 cat("option name tests passed\n")
 

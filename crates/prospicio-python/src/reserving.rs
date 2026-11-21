@@ -15792,14 +15792,8 @@ impl PyIndustryPrior {
 }
 
 fn meyers_model(name: &str) -> PyResult<MeyersModel> {
-    match name.to_ascii_lowercase().as_str() {
-        "crc" => Ok(MeyersModel::Crc),
-        "csr" => Ok(MeyersModel::Csr),
-        "cay" => Ok(MeyersModel::Cay),
-        _ => Err(PyValueError::new_err(format!(
-            "unknown Meyers model {name:?}; expected \"crc\", \"csr\" or \"cay\""
-        ))),
-    }
+    MeyersModel::from_name(name)
+        .ok_or_else(|| crate::unknown_name("model", name, MeyersModel::NAMES))
 }
 
 /// Meyers' (2019, CAS Monograph 8) log-normal models of a cumulative

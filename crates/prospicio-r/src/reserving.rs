@@ -4584,16 +4584,8 @@ fn meyers_settings(
     run: [f64; 7],
     dependence: SegmentDependence,
 ) -> Result<Meyers> {
-    let model = match model {
-        "crc" => MeyersModel::Crc,
-        "csr" => MeyersModel::Csr,
-        "cay" => MeyersModel::Cay,
-        _ => {
-            return Err(Error::Other(format!(
-                "model must be \"crc\", \"csr\" or \"cay\", got \"{model}\""
-            )));
-        }
-    };
+    let model = MeyersModel::from_name(model)
+        .ok_or_else(|| crate::unknown_name("model", model, MeyersModel::NAMES))?;
     let [
         logelr_mean,
         logelr_sd,
