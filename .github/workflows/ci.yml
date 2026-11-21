@@ -211,6 +211,9 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -226,6 +229,8 @@ jobs:
       - if: needs.changes.outputs.bindings == 'true'
         id: cache
         uses: Swatinem/rust-cache@v2
+      - if: needs.changes.outputs.bindings == 'true'
+        uses: mozilla-actions/sccache-action@v0.0.11
       - name: Plan
         id: plan
         run: |
@@ -251,6 +256,11 @@ jobs:
           path: python/dist/*.whl
           if-no-files-found: error
           retention-days: 1
+      - if: always()
+        name: sccache statistics
+        shell: bash
+        run: sccache --show-stats || true
+
 
   # Four legs, each on a runner of its own (#848, #850). Most of the
   # suite's time is a dozen Bayesian and compartmental tests whose NUTS
@@ -346,6 +356,9 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
     runs-on: ${{ matrix.os }}
     # PowerShell (the Windows default) aliases `R` to Invoke-History.
     defaults:
@@ -363,6 +376,8 @@ jobs:
       - if: needs.changes.outputs.bindings == 'true'
         id: cache
         uses: Swatinem/rust-cache@v2
+      - if: needs.changes.outputs.bindings == 'true'
+        uses: mozilla-actions/sccache-action@v0.0.11
       - name: Plan
         id: plan
         run: |
@@ -419,6 +434,11 @@ jobs:
           R_LIBS="$tmp/rlib" Rscript \
             -e "stopifnot(normalizePath(dirname(find.package('prospicio')), '/') == normalizePath('$tmp/rlib', '/'))" \
             -e "source('R/prospicio/tests/test-distributions.R')"
+      - if: always()
+        name: sccache statistics
+        shell: bash
+        run: sccache --show-stats || true
+
 
   # Three legs, each on a runner of its own (#849, #850): `slow`, the
   # compartmental file (about 220 s, the longest), alone; `guides`,
@@ -654,6 +674,9 @@ jobs:
   fremtpl2:
     needs: changes
     if: needs.changes.outputs.fremtpl2 == 'true'
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -662,6 +685,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: release
+      - uses: mozilla-actions/sccache-action@v0.0.11
       - if: github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true'
         run: cargo test --release -p prospicio-validation --no-default-features --features nn --test fremtpl2 --no-run
       - if: github.event_name != 'push'
@@ -677,6 +701,11 @@ jobs:
         run: cargo test --release -p prospicio-validation --no-default-features --features nn --test fremtpl2
         env:
           RISK_RS_REQUIRE_FREMTPL2: "1"
+      - if: always()
+        name: sccache statistics
+        shell: bash
+        run: sccache --show-stats || true
+
 
   # The Bayesian (NUTS) tests, in release:
   # - the parity tests, the files that validation/Cargo.toml's
@@ -692,6 +721,9 @@ jobs:
   # On a push to main it only builds, if its cache is missing.
   bayes-build:
     needs: changes
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -704,6 +736,8 @@ jobs:
           key: release
       # Each binary is built, then named by a second, instant `--no-run`
       # whose JSON messages give the executable's path.
+      - if: needs.changes.outputs.bayes == 'true'
+        uses: mozilla-actions/sccache-action@v0.0.11
       - if: needs.changes.outputs.bayes == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
         name: Build the Bayesian tests in release
         shell: bash
@@ -730,6 +764,11 @@ jobs:
           path: bayes-bin
           if-no-files-found: error
           retention-days: 1
+      - if: always()
+        name: sccache statistics
+        shell: bash
+        run: sccache --show-stats || true
+
 
   # The Bayesian tests in three legs at once (#824), on bayes-build's
   # binaries, with no Rust toolchain (#965). The parity files are modules of
