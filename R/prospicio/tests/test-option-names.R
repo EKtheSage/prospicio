@@ -141,4 +141,21 @@ for (p in list(c("lp", "lp"), c("last_piece", "lp"), c("wd", "wd"), c("whole_dis
 expect_error_like(piecewise_pareto(1, 1, truncation = 2, truncation_type = "nope"),
                   "truncation_type must be")
 
+# The P&L face in Excel's short names (Face::NAMES, #956).
+local({
+  gross <- list(c(2, 3, 4, 5, 6, 8), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
+  high <- with_ceding_commission(with_deposit_premium(aggregate_stop_loss("High", 3, 5), 1), 0.1)
+  low <- with_deposit_premium(aggregate_stop_loss("Low", 2, 3), 0.5)
+  book <- pnl_book("Ex6", 10, list(pnl_expense("premium", 0.1)))
+  tower <- reinsurance_tower(list(low, high))
+  for (p in list(c("top-down", "peel-top-down"), c("Top_Down", "peel-top-down"),
+                 c("bottom-up", "peel-bottom-up"), c("peel bottom up", "peel-bottom-up"))) {
+    want <- book_ledger(book, gross, tower, p[2])
+    got <- book_ledger(book, gross, tower, p[1])
+    stopifnot(identical(ledger_result(got), ledger_result(want)),
+              identical(ledger_sheet(got)$step, ledger_sheet(want)$step))
+  }
+  expect_error_like(book_ledger(book, gross, NULL, "sideways"), "face must be")
+})
+
 cat("option name tests passed\n")

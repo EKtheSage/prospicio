@@ -8,6 +8,23 @@ fn gross() -> Source {
     .unwrap()
 }
 
+/// Every spelling Python, R or Excel took before #956 still resolves, and
+/// the canonical name round-trips.
+#[test]
+fn face_names_cover_every_front_end() {
+    for name in ["peel-top-down", "top-down", "Top_Down", " peel top down "] {
+        assert_eq!(Face::from_name(name), Some(Face::PeelTopDown), "{name}");
+    }
+    for name in ["peel-bottom-up", "bottom-up", "BOTTOM UP"] {
+        assert_eq!(Face::from_name(name), Some(Face::PeelBottomUp), "{name}");
+    }
+    assert_eq!(Face::from_name("Walk"), Some(Face::Walk));
+    assert_eq!(Face::from_name("sideways"), None);
+    for &(_, f) in Face::NAMES {
+        assert_eq!(Face::from_name(f.name()), Some(f));
+    }
+}
+
 #[test]
 fn expense_names_follow_aggregate() {
     let book = Book::new("B", 10.0)

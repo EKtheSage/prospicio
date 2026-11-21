@@ -243,3 +243,29 @@ def test_truncation_type_spellings(name, canonical):
     assert got.survival(1500.0) == want.survival(1500.0)
     with pytest.raises(ValueError, match="truncation_type must be"):
         PiecewisePareto([1.0], [1.0], truncation=2.0, truncation_type="nope")
+
+@pytest.mark.parametrize(
+    "name, canonical",
+    [
+        ("top-down", "peel-top-down"),
+        ("Top_Down", "peel-top-down"),
+        ("peel top down", "peel-top-down"),
+        ("bottom-up", "peel-bottom-up"),
+        ("peel_bottom_up", "peel-bottom-up"),
+    ],
+)
+def test_book_face_spellings(name, canonical):
+    # Excel's short names for the peel faces (Face::NAMES, #956).
+    from prospicio.aggregate import Book, Expense
+    from prospicio.reinsurance import Layer, Tower
+
+    gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    high = Layer.stop_loss("High", 3.0, 5.0).with_deposit_premium(1.0).with_ceding_commission(0.1)
+    low = Layer.stop_loss("Low", 2.0, 3.0).with_deposit_premium(0.5)
+    book = Book("Ex6", 10.0, [Expense("premium", 0.1)])
+    want = book.ledger(gross, Tower([low, high]), canonical)
+    got = book.ledger(gross, Tower([low, high]), name)
+    assert got.result.mean() == want.result.mean()
+    assert got.sheet()["step"] == want.sheet()["step"]
+    with pytest.raises(ValueError, match="face must be"):
+        book.ledger(gross, None, "sideways")

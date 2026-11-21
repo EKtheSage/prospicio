@@ -1080,15 +1080,7 @@ impl PyBook {
 type JointColumns = (Vec<f64>, Vec<f64>, Vec<f64>);
 
 fn face_of(face: &str) -> PyResult<Face> {
-    match face {
-        "consolidated" => Ok(Face::Consolidated),
-        "walk" => Ok(Face::Walk),
-        "peel-top-down" => Ok(Face::PeelTopDown),
-        "peel-bottom-up" => Ok(Face::PeelBottomUp),
-        other => Err(PyValueError::new_err(format!(
-            "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
-        ))),
-    }
+    Face::from_name(face).ok_or_else(|| crate::unknown_name("face", face, Face::NAMES))
 }
 
 /// The joint source of the annual gross loss and the loss ceded by the
