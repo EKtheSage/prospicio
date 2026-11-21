@@ -226,8 +226,13 @@ impl DiscountCurve {
     }
 
     /// The spot rate at `t` years: the first rate up to the first maturity,
-    /// the last from the last maturity on, linear between.
+    /// the last from the last maturity on, linear between. A time before 0
+    /// takes the first rate (accumulation at the short rate), and a NaN time
+    /// gives NaN.
     pub fn rate(&self, t: f64) -> f64 {
+        if t.is_nan() {
+            return f64::NAN;
+        }
         let m = &self.maturities;
         let r = &self.rates;
         let last = m.len() - 1;
@@ -242,7 +247,8 @@ impl DiscountCurve {
         r[k - 1] + w * (r[k] - r[k - 1])
     }
 
-    /// The discount factor of a payment at `t` years, `(1 + r(t))^-t`.
+    /// The discount factor of a payment at `t` years, `(1 + r(t))^-t`; NaN
+    /// for a NaN `t`, above 1 for a negative one.
     pub fn factor(&self, t: f64) -> f64 {
         if t == 0.0 {
             return 1.0;
@@ -1464,6 +1470,18 @@ mod tests {
     use crate::{
         ChainLadder, DevelopmentColumn, Long, Mack, MackBootstrap, OdpBootstrap, Tail, Triangle,
     };
+
+    #[test]
+    fn nan_time_gives_nan_not_a_panic() {
+        let flat = DiscountCurve::flat(0.03).unwrap();
+        assert!(flat.rate(f64::NAN).is_nan());
+        assert!(flat.factor(f64::NAN).is_nan());
+        let curve = DiscountCurve::spot(&[1.0, 5.0], &[0.02, 0.04]).unwrap();
+        assert!(curve.rate(f64::NAN).is_nan());
+        assert!(curve.factor(f64::NAN).is_nan());
+        // A negative time accumulates at the short rate, as documented.
+        assert!((flat.factor(-1.0) - 1.03).abs() < 1e-12);
+    }
 
     fn at(rate: f64, timing: PaymentTiming) -> Discounting {
         Discounting {
