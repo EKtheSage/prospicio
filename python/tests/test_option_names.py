@@ -159,6 +159,16 @@ def test_distortion_family_spellings(name):
         calibrate("bitvar", x, premium)
 
 
+@pytest.mark.parametrize("name", ["loglogistic", "log-logistic", "log_logistic"])
+def test_growth_curve_spellings(name):
+    # Excel's spellings of the loglogistic growth curve (#956).
+    bench = {12: 0.18, 24: 0.47, 36: 0.66, 48: 0.78, 60: 0.855, 72: 0.90}
+    want = BenchmarkCurve().fit(bench, "percent_developed").omega
+    assert BenchmarkCurve(curve=name).fit(bench, "percent_developed").omega == want
+    with pytest.raises(ValueError, match="growth curve must be"):
+        BenchmarkCurve(curve="gompertz")
+
+
 @pytest.mark.parametrize("name", ["no_development", "none"])
 def test_past_pattern_end_spellings(name):
     # Excel's "none" for "no_development" (#956).

@@ -6579,20 +6579,12 @@ impl PyCapeCodFit {
 
 /// The growth curve named `name`.
 fn growth_curve(name: &str) -> PyResult<GrowthCurve> {
-    match name {
-        "loglogistic" => Ok(GrowthCurve::LogLogistic),
-        "weibull" => Ok(GrowthCurve::Weibull),
-        other => Err(PyValueError::new_err(format!(
-            "unknown growth curve {other:?}; expected \"loglogistic\" or \"weibull\""
-        ))),
-    }
+    GrowthCurve::from_name(name)
+        .ok_or_else(|| crate::unknown_name("growth curve", name, GrowthCurve::NAMES))
 }
 
 fn growth_curve_name(curve: GrowthCurve) -> &'static str {
-    match curve {
-        GrowthCurve::LogLogistic => "loglogistic",
-        GrowthCurve::Weibull => "weibull",
-    }
+    curve.name()
 }
 
 /// Clark's LDF method (Clark 2003), as R ChainLadder's ``ClarkLDF``: each

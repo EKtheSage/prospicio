@@ -623,20 +623,12 @@ fn months(years: &[i32], months: &[i32], arg: &str) -> Result<Vec<Month>> {
 }
 
 fn growth_curve(name: &str) -> Result<GrowthCurve> {
-    match name {
-        "loglogistic" => Ok(GrowthCurve::LogLogistic),
-        "weibull" => Ok(GrowthCurve::Weibull),
-        _ => Err(Error::Other(format!(
-            "curve must be \"loglogistic\" or \"weibull\", got \"{name}\""
-        ))),
-    }
+    GrowthCurve::from_name(name)
+        .ok_or_else(|| crate::unknown_name("curve", name, GrowthCurve::NAMES))
 }
 
 fn growth_curve_name(curve: GrowthCurve) -> &'static str {
-    match curve {
-        GrowthCurve::LogLogistic => "loglogistic",
-        GrowthCurve::Weibull => "weibull",
-    }
+    curve.name()
 }
 
 /// Clark's `max_age`: R passes `Inf` to develop to infinity.

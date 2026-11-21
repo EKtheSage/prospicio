@@ -110,5 +110,15 @@ for (s in c("no_development", "none")) {
 expect_error_like(as_latest_valuation(tri(), "paid", past_pattern_end = "hold"),
                   "past_pattern_end must be")
 
+# The loglogistic growth curve in Excel's spellings (#956).
+bench <- stats::setNames(c(0.18, 0.47, 0.66, 0.78, 0.855, 0.90, 0.93, 0.951, 0.965, 0.975),
+                         seq(12, 120, by = 12))
+want <- benchmark_curve(bench)
+for (s in c("loglogistic", "log-logistic", "log_logistic")) {
+  got <- benchmark_curve(bench, curve = s)
+  stopifnot(identical(got@omega, want@omega), identical(got@curve, "loglogistic"))
+}
+expect_error_like(benchmark_curve(bench, curve = "gompertz"), "should be one of")
+
 cat("option name tests passed\n")
 

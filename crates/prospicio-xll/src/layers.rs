@@ -193,13 +193,9 @@ pub fn benchmark_curve(args: &[Grid]) -> Result<Grid> {
         pattern_kind(&args[2])?
     };
     let curve = match text_option(&args[3], "curve")?.as_deref() {
-        None | Some("loglogistic" | "log-logistic" | "log_logistic") => GrowthCurve::LogLogistic,
-        Some("weibull") => GrowthCurve::Weibull,
-        Some(other) => {
-            return Err(format!(
-                "curve must be \"loglogistic\" or \"weibull\", got {other:?}"
-            ));
-        }
+        None => GrowthCurve::LogLogistic,
+        Some(name) => GrowthCurve::from_name(name)
+            .ok_or_else(|| crate::unknown_name("curve", name, GrowthCurve::NAMES))?,
     };
     let weights = if args[4].is_blank() {
         None

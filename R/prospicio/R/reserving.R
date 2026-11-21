@@ -5713,11 +5713,14 @@ clark_max_age <- function(max_age) {
   as.double(max_age)
 }
 
+# Excel's spellings of the loglogistic growth curve (GrowthCurve::NAMES, #956).
+growth_curve_aliases <- c("log-logistic" = "loglogistic", "log_logistic" = "loglogistic")
+
 #' @rdname clark_fit
 #' @export
-clark_ldf <- function(triangle, column = NULL, curve = c("loglogistic", "weibull"), max_age = Inf) {
+clark_ldf <-function(triangle, column = NULL, curve = c("loglogistic", "weibull"), max_age = Inf) {
   column <- fit_column(triangle, column)
-  curve <- match.arg(curve)
+  curve <- match.arg(option_alias(curve, growth_curve_aliases), c("loglogistic", "weibull"))
   clark_fit(ptr = reserving_result(triangle@ptr$clark_ldf(column, curve, clark_max_age(max_age))))
 }
 
@@ -5732,7 +5735,7 @@ clark_cape_cod <- function(triangle, column, exposure, curve = c("loglogistic", 
       stop(sprintf("%s must be the name of one column", arg), call. = FALSE)
     }
   }
-  curve <- match.arg(curve)
+  curve <- match.arg(option_alias(curve, growth_curve_aliases), c("loglogistic", "weibull"))
   ptr <- reserving_result(triangle@ptr$clark_cape_cod(column, exposure, curve, clark_max_age(max_age)))
   clark_fit(ptr = ptr)
 }
@@ -6245,7 +6248,7 @@ benchmark_curve <- function(pattern, kind = c("percent_developed", "cdf"),
                             curve = c("loglogistic", "weibull"), weights = NULL, max_age = Inf,
                             origin_width = NULL) {
   kind <- match.arg(option_alias(kind, pattern_kind_aliases), c("percent_developed", "cdf"))
-  curve <- match.arg(curve)
+  curve <- match.arg(option_alias(curve, growth_curve_aliases), c("loglogistic", "weibull"))
   if (!is.numeric(pattern) || is.null(names(pattern))) {
     stop("pattern must be a named numeric vector, the names ages in months", call. = FALSE)
   }
