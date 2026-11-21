@@ -6963,22 +6963,12 @@ impl CompartmentalFit {
 }
 
 fn past_pattern_end(name: &str) -> Result<PastPatternEnd> {
-    match name {
-        "reject" => Ok(PastPatternEnd::Reject),
-        "no_development" => Ok(PastPatternEnd::NoDevelopment),
-        "tail" => Ok(PastPatternEnd::Tail),
-        _ => Err(Error::Other(format!(
-            "past_pattern_end must be \"reject\", \"no_development\" or \"tail\", got \"{name}\""
-        ))),
-    }
+    PastPatternEnd::from_name(name)
+        .ok_or_else(|| crate::unknown_name("past_pattern_end", name, PastPatternEnd::NAMES))
 }
 
 fn past_pattern_end_name(rule: PastPatternEnd) -> &'static str {
-    match rule {
-        PastPatternEnd::Reject => "reject",
-        PastPatternEnd::NoDevelopment => "no_development",
-        PastPatternEnd::Tail => "tail",
-    }
+    rule.name()
 }
 
 fn grain_name(grain: Grain) -> &'static str {

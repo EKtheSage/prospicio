@@ -13,6 +13,7 @@ from prospicio.models import Design, ZeroInflated
 from prospicio.reserving import (
     BenchmarkCurve,
     ChainLadder,
+    LatestDiagonal,
     Mack,
     MunichChainLadder,
     PaidIncurredChain,
@@ -156,3 +157,12 @@ def test_distortion_family_spellings(name):
     assert math.isclose(d.measure(x), premium, rel_tol=1e-9)
     with pytest.raises(ValueError, match="unknown distortion family"):
         calibrate("bitvar", x, premium)
+
+
+@pytest.mark.parametrize("name", ["no_development", "none"])
+def test_past_pattern_end_spellings(name):
+    # Excel's "none" for "no_development" (#956).
+    d = LatestDiagonal([2023, 2024], [24, 12], [1.0, 2.0], past_pattern_end=name)
+    assert d.past_pattern_end == "no_development"
+    with pytest.raises(ValueError, match="past_pattern_end must be"):
+        LatestDiagonal([2023, 2024], [24, 12], [1.0, 2.0], past_pattern_end="hold")

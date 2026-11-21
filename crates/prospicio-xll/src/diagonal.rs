@@ -234,12 +234,9 @@ fn pattern(values: &Grid, ages_arg: &Grid, kind: &Grid) -> Result<SelectedPatter
 /// The `past_end` argument: "reject" (default), "none" or "tail".
 fn past_end(grid: &Grid) -> Result<PastPatternEnd> {
     match text_option(grid, "past_end")?.as_deref() {
-        None | Some("reject") => Ok(PastPatternEnd::Reject),
-        Some("none" | "no_development") => Ok(PastPatternEnd::NoDevelopment),
-        Some("tail") => Ok(PastPatternEnd::Tail),
-        Some(other) => Err(format!(
-            "past_end must be \"reject\", \"none\" or \"tail\", got {other:?}"
-        )),
+        None => Ok(PastPatternEnd::Reject),
+        Some(name) => PastPatternEnd::from_name(name)
+            .ok_or_else(|| crate::unknown_name("past_end", name, PastPatternEnd::NAMES)),
     }
 }
 

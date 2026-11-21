@@ -2254,6 +2254,7 @@ latest_valuation <- S7::new_class(
 past_pattern_end_arg <- function(rule) {
   rules <- c("reject", "no_development", "tail")
   if (identical(rule, rules)) return("reject")
+  rule <- option_alias(rule, c("none" = "no_development")) # Excel's spelling (#956)
   if (!is.character(rule) || length(rule) != 1 || !rule %in% rules) {
     stop(sprintf('past_pattern_end must be "reject", "no_development" or "tail", got %s',
                  paste(deparse(rule), collapse = " ")), call. = FALSE)

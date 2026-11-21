@@ -102,4 +102,13 @@ for (f in c("ph", "proportional_hazard", "Proportional Hazard", "proportional-ha
 }
 expect_error_like(calibrate_distortion("bitvar", x, premium), "unknown distortion family")
 
+# The rule past the pattern's end: Excel's "none" for "no_development" (#956).
+for (s in c("no_development", "none")) {
+  stopifnot(identical(as_latest_valuation(tri(), "paid", past_pattern_end = s)@past_pattern_end,
+                      "no_development"))
+}
+expect_error_like(as_latest_valuation(tri(), "paid", past_pattern_end = "hold"),
+                  "past_pattern_end must be")
+
 cat("option name tests passed\n")
+
