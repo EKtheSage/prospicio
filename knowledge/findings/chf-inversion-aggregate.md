@@ -37,6 +37,9 @@ sources:
   - id: tvar-test
     resource: ../validation/tests/probability_chf_tvar.rs
     title: validation/tests/probability_chf_tvar.rs, chf_tvar_matches_aggregate, against validation/scripts/aggregate_chf_tvar.py
+  - id: window-test
+    resource: ../crates/prospicio-prob/src/chf.rs
+    title: crates/prospicio-prob/src/chf.rs, the tests a_tilted_window_on_the_body_keeps_its_masses_a_probability, a_fixed_tilt_that_magnifies_the_light_side_is_refused, an_untilted_window_reports_the_mass_beyond_it_or_a_bound, a_fixed_tilt_keeps_a_light_edge_window_that_holds_the_body and a_small_fixed_tilt_reports_the_mass_beyond_the_window (#1010)
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, characteristic_function.py (AggregateCHF, invert_characteristic_function, window_edges) and utilities.py (round_bucket)
@@ -89,6 +92,28 @@ sources:
   agree to 1e-9 relative. Untilted, the same law's modelled edge error is
   11.9 (a relative error of order one near the right edge), tilted
   1.1e-5.
+* The light side's mass below a tilted window also wraps, onto the top
+  end, and the tilt magnifies it by `e^tau`. On the 1e-40 edge this is
+  below round-off, but a window that a given step puts on the body has
+  real mass below it: `Stable(1.5, 1)` with step 0.001 at log2 12 starts
+  at -2.048, and the tilt `tau* = 16.4` gave masses summing to 2.4e6 (1e107
+  at `alpha = 1.95`, log2 10). prospicio adds that mass, a Chernoff bound
+  `L`, to the model's `eps` as `L / (h sup f)`, which drives `tau*` to 0
+  there, and refuses a fixed tilt with `L e^tau` above 2^-52. Untilted, the
+  tail wraps onto the window and the masses sum to 1 whatever lies
+  outside, so 1 minus their sum says nothing of the mass beyond it; where
+  the tail series does not hold, the engine reports the bound
+  `P(X > delta_1)` (1 at or below the location) instead. A tilt `tau`
+  damps the wrapped tail by at least `e^-tau`, so under a tilt too small
+  to remove it the mass beyond is at most `r / (1 - e^-tau)`, `r` what the
+  masses leave of 1: on rule A's window at log2 8 with a fixed tilt of 3
+  this gives 0.0333 for `Stable(1.5, 1)` against 0.03309 from the full
+  tilt (0.0772 against 0.0771 at `alpha = 1.7`). Above `alpha = 1` the
+  asymptotic tail series is trusted while its smallest term is within
+  1e-3 of the sum: at that window's top edge it is 4.5e-5 for
+  `alpha = 1.5` (accurate), but 0.84 for `alpha = 1.7` and 1.06 for
+  `Stable(1.5, 1, 0.3, 2)`, where the series was 32% high and 13% low
+  (#945, #1010).[^window-test]
 * The normal inverse Gaussian, variance gamma and CGMY tempered stable
   laws (aggregate's `norminvgauss`, `variancegamma`, `temperedstable`) go
   through the same untilted rule A unchanged, since each has a finite

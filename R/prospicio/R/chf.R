@@ -40,15 +40,20 @@ NULL
 #' @param log2 The grid has `2^log2` buckets, 1 to 28.
 #' @param step The bucket; sized from the tails when `NULL`.
 #' @param x_min The grid's first point, with `step`; placed from the tails
-#'   when `NULL`.
+#'   when `NULL`. A given `x_min` fixes the grid, so it is inverted
+#'   untilted: `tilt = TRUE` falls back to no tilt (a heavy tail wraps onto
+#'   the window, and the report's tilt is 0), and a number `tilt` is an
+#'   error.
 #' @param bucket_sizing_p The mass the window covers when it is sized from
 #'   the tails.
 #' @param tilt `TRUE`: a law with one power tail (a [stable_distribution()]
 #'   with `beta` 1 or -1) at the automatic tilt, a stable law with two split
-#'   into its halves and each tilted, every other law untilted. `FALSE`:
-#'   never tilt (a heavy tail wraps onto the window). A number `tau >= 0`:
-#'   exactly `tau` e-folds of damping across the window, for a stable law
-#'   only.
+#'   into its halves and each tilted, every other law untilted; no tilt
+#'   when `x_min` is given. `FALSE`: never tilt (a heavy tail wraps onto
+#'   the window). A number `tau >= 0`: exactly `tau` e-folds of damping
+#'   across the window, for a stable law only, and an error with `x_min`
+#'   given or on a window (a `step` that puts it on the body) whose light
+#'   side below it the tilt would magnify past round-off.
 #' @param ptr Internal.
 #' @returns A `chf_distribution`, which inherits from [distribution], with
 #'   properties `xs`, `masses`, `step`, `x_min` and `report` (a list:
