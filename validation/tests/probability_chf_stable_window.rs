@@ -53,6 +53,12 @@ fn a_tilted_window_on_a_given_step_holds_the_body() {
             "{alpha} {beta}: window [{}, {top}] misses the mean {mean}",
             d.x_min()
         );
+        // and its masses are a probability: the tilt must not magnify the
+        // light side's mass below the window (#1010)
+        let r = d.report();
+        assert!(d.masses().iter().all(|&m| m >= -1e-9), "{alpha} {beta}");
+        assert!(r.total_mass <= 1.0 + 1e-6, "{alpha} {beta}: {r:?}");
+        assert!(r.total_mass + r.outside_above >= 1.0 - 1e-6, "{alpha} {beta}: {r:?}");
     }
 }
 

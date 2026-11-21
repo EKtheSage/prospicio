@@ -498,7 +498,10 @@ pub enum Tilt {
     /// Exactly `τ ≥ 0` e-folds, the cap applied, for a law with a power
     /// tail (a stable law with `β = ±1`, or with `|β| < 1` where each half
     /// gets the `τ`). Refused with `x_min` given: that grid is inverted
-    /// untilted.
+    /// untilted. Refused for a law with one power tail where the light
+    /// side's mass below the window, which wraps onto its top end magnified
+    /// by `e^τ`, would then exceed round-off: a window that a given `step`
+    /// puts on the body.
     Fixed(f64),
 }
 
@@ -560,19 +563,26 @@ pub struct ChfReport {
     /// The law's mass below the window: a Chernoff bound, which wraps onto
     /// the window's top end, or under a tilt the tail mass beyond a left
     /// power tail's window, which is added to the first bucket; 0 on a
-    /// grid whose left edge was given.
+    /// grid whose left edge was given. For a power tail where its series
+    /// does not hold (a window that ends near the body), what the masses
+    /// leave of 1 under a tilt that keeps the tail from wrapping, and
+    /// otherwise an upper bound (`P(X < δ₁)`, or 1): the wrapped tail is
+    /// then in the masses, and nothing is added to the first bucket.
     pub outside_below: f64,
     /// The law's mass above the window: a Chernoff bound, which wraps onto
     /// the window's bottom end, or the tail mass beyond a right power
-    /// tail's window, which a tilted grid leaves out.
+    /// tail's window, which a tilted grid leaves out. Where its series does
+    /// not hold, as for `outside_below`: what the masses leave of 1, or an
+    /// upper bound (`P(X > δ₁)`, or 1).
     pub outside_above: f64,
     /// `(left, right)`: the e-folds of damping across the window on each
     /// side, `(0, τ)` for a right power tail tilted, `(τ, 0)` for a left
     /// one, `(0, 0)` untilted.
     pub tilt: (f64, f64),
     /// The modelled worst relative error of a bucket at the heavy end of a
-    /// law with one power tail, `ρ e^(−τ) + ε κ e^τ`; NaN for any other
-    /// law.
+    /// law with one power tail, `ρ e^(−τ) + ε κ e^τ` (under a tilt `ε`
+    /// includes the light side's mass below the window, which wraps
+    /// magnified by `e^τ`); NaN for any other law.
     pub edge_error: f64,
     /// The law's mean (NaN for a user's function).
     pub law_mean: f64,
@@ -754,7 +764,8 @@ impl Distribution for ChfDistribution {
 /// window cannot be sized from the law, or when a stable law with two
 /// power tails is given a `step` above `πγ / (104 ln 2)^(1/α)`, the
 /// largest its split into halves can take, or when `Tilt::Fixed` is asked
-/// for on a grid whose `x_min` is given.
+/// for on a grid whose `x_min` is given, or on a window whose light side
+/// below it the tilt would magnify past round-off.
 pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
     if !(1..=28).contains(&options.log2) {
         return Err(Error::InvalidParameter {
@@ -849,7 +860,7 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                     _ => plain_window(law, n, p, options.step)?,
                 };
                 masses = invert_on(law, x0, h, n, 0.0, law.atom())?;
-                (below, above) = outside_at(law, h, x0, n, fixed_grid, masses.iter().sum())?;
+                (below, above) = outside_at(law, h, x0, n, fixed_grid, None)?;
                 edge_error = match law.tilt_family() {
                     Some(fam) if law.tilt_side() != Some(TiltSide::Both) => {
                         let y0 = if law.tilt_side() == Some(TiltSide::Right) {
@@ -865,19 +876,26 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                 tilt = (0.0, 0.0);
             }
             Some(fam) => {
-                let (hh, y0, tau) = one_sided_window(&fam, n, p, options.step, options.tilt);
+                let (hh, y0, tau) = one_sided_window(&fam, n, p, options.step, options.tilt)?;
                 h = hh;
                 let left = law.tilt_side() == Some(TiltSide::Left);
                 x0 = if left { -(y0 + (n - 1) as f64 * h) } else { y0 };
                 let w = n as f64 * h;
                 masses = invert_on(&ChfLaw::Stable(fam), y0, h, n, tau / w, None)?;
-                let (rho, eps, kappa) = edge_terms(&fam, y0, h, n);
+                let (rho, eps, kappa) = tilted_edge_terms(&fam, y0, h, n);
                 edge_error = edge_error_at(tau, rho, eps, kappa);
                 if left {
                     masses.reverse();
                 }
-                (below, above) = outside_at(law, h, x0, n, fixed_grid, masses.iter().sum())?;
-                masses[0] += below;
+                // Only a tilt that damps the wrapped tail leaves it out of
+                // the masses: then what they leave of 1 lies beyond the
+                // window, and a left tail's goes into the first bucket.
+                let unwrapped = tau >= TILT_UNWRAPPED;
+                let residual = unwrapped.then(|| 1.0 - masses.iter().sum::<f64>());
+                (below, above) = outside_at(law, h, x0, n, fixed_grid, residual)?;
+                if unwrapped {
+                    masses[0] += below;
+                }
                 tilt = if left { (tau, 0.0) } else { (0.0, tau) };
             }
         }
@@ -1255,7 +1273,8 @@ fn bucket_cap(fam: &Stable) -> f64 {
 /// the tilt damps, `ρ e^(−τ)`, with `ρ = q^(α+1) ζ(α+1, 1+q)`,
 /// `q = (x_R − δ₁)/W`; the amplified error `ε κ e^τ`, `ε = 2^(−52) +
 /// |φ(π/h)|`, `κ = sup f (x_R − δ₁)^(α+1) / (A α)`, both relative to the
-/// bucket mass at the right edge.
+/// bucket mass at the right edge. A tilted grid adds the light side below
+/// the window ([`tilted_edge_terms`]).
 fn edge_terms(fam: &Stable, x0: f64, h: f64, n: usize) -> (f64, f64, f64) {
     let (a, alpha) = (fam.tail_constant(), fam.alpha());
     let w = n as f64 * h;
@@ -1266,6 +1285,37 @@ fn edge_terms(fam: &Stable, x0: f64, h: f64, n: usize) -> (f64, f64, f64) {
     let kappa = fam.density_bound() * (x_r - fam.loc()).powf(alpha + 1.0) / (a * alpha);
     (rho, eps, kappa)
 }
+
+/// `(ρ, ε, κ)` of a tilted grid: [`edge_terms`] with `L/(h sup f)` added to
+/// `ε`. `L`, the light side's mass below the window, wraps onto its top end
+/// amplified by `e^τ`, as round-off does (#1010). On the window the rule
+/// places `L ≤ 1e-40` and the term is below round-off; on a window that a
+/// given step puts on the body it bounds the tilt.
+fn tilted_edge_terms(fam: &Stable, x0: f64, h: f64, n: usize) -> (f64, f64, f64) {
+    let (rho, eps, kappa) = edge_terms(fam, x0, h, n);
+    let light = light_mass_below(fam, x0) / (h * fam.density_bound());
+    (rho, eps + light, kappa)
+}
+
+/// The light side's mass below `x0` of a law with a right power tail: 0 at
+/// or below its support bound, else the Chernoff bound that places `x_l`.
+fn light_mass_below(fam: &Stable, x0: f64) -> f64 {
+    let (lo, _) = fam.support();
+    if x0 <= lo {
+        return 0.0;
+    }
+    let (s_minus, _) = fam.cgf_domain();
+    chernoff_tail(|u| fam.cgf(-u), -s_minus, -x0, fam.body_scale())
+}
+
+/// The largest mass the light side may leave below a tilted window, once
+/// amplified by `e^τ`: round-off on masses that sum to 1.
+const TILT_LIGHT_WRAP: f64 = f64::EPSILON;
+
+/// The tilt from which the masses of a one-sided law no longer hold the
+/// heavy tail that wraps onto them (it is damped by about `e^(−τ)`, here
+/// `10⁻³`), so that what they leave of 1 is the mass beyond the window.
+const TILT_UNWRAPPED: f64 = 6.907_755_278_982_137;
 
 /// `τ* = max(0, ½ ln(ρ / (ε κ)))`.
 fn tau_star(rho: f64, eps: f64, kappa: f64) -> f64 {
@@ -1287,7 +1337,7 @@ fn one_sided_window(
     p: f64,
     step: Option<f64>,
     tilt: Tilt,
-) -> (f64, f64, f64) {
+) -> Result<(f64, f64, f64)> {
     let eps = 1.0 - p;
     let (lo, _) = fam.support();
     let x_l = if lo.is_finite() {
@@ -1322,14 +1372,29 @@ fn one_sided_window(
         x_l
     };
     let x0 = h * (x_left / h + 1e-12).floor();
+    // On the body the light side has mass below the window, which the tilt
+    // amplifies by e^τ as it wraps onto the top end (#1010): the automatic
+    // tilt takes it into its balance (`tilted_edge_terms`), and a fixed one
+    // that would magnify it past round-off is refused.
     let tau = match tilt {
-        Tilt::Fixed(tau) => tau,
+        Tilt::Fixed(tau) => {
+            let light = light_mass_below(fam, x0);
+            if light * tau.exp() > TILT_LIGHT_WRAP {
+                return Err(Error::Data(format!(
+                    "a fixed tilt of {tau} e-folds on this window magnifies the light side's \
+                     mass below it (up to {light:.3e}) by e^{tau} as it wraps onto the top \
+                     end; use the automatic tilt, a smaller one, or a wider window (a larger \
+                     step or log2)"
+                )));
+            }
+            tau
+        }
         _ => {
-            let (rho, e, kappa) = edge_terms(fam, x0, h, n);
+            let (rho, e, kappa) = tilted_edge_terms(fam, x0, h, n);
             tau_star(rho, e, kappa)
         }
     };
-    (h, x0, tau)
+    Ok((h, x0, tau))
 }
 
 /// `(below, above)`: the law's mass outside `[x0, x0 + n h)`. A law with
@@ -1338,17 +1403,25 @@ fn one_sided_window(
 /// placed to balance them; any other law the Chernoff bounds, 0 on a grid
 /// whose left edge was given. Where the tail series is not valid (a window
 /// that ends within a few scales of the body, #945) the heavy side gets
-/// what the window's `inside` mass leaves of 1, not a number the series
-/// cannot vouch for.
+/// `residual`, what the masses leave of 1, when they hold no wrapped tail
+/// (a tilt of at least [`TILT_UNWRAPPED`]), and otherwise an upper bound:
+/// untilted, the tail wraps onto the window and the masses sum to about 1
+/// whatever lies outside (#1010).
 fn outside_at(
     law: &ChfLaw,
     h: f64,
     x0: f64,
     n: usize,
     fixed_grid: bool,
-    inside: f64,
+    residual: Option<f64>,
 ) -> Result<(f64, f64)> {
-    let residual = (1.0 - inside).clamp(0.0, 1.0);
+    let beyond = |fam: &Stable, edge: f64| {
+        fam.tail_mass_above(edge)
+            .unwrap_or_else(|_| match residual {
+                Some(r) => r.clamp(0.0, 1.0),
+                None => tail_mass_bound(fam, edge),
+            })
+    };
     match law.tilt_side() {
         Some(TiltSide::Both) => {
             let (a, b, alpha) = law
@@ -1362,17 +1435,26 @@ fn outside_at(
         Some(TiltSide::Right) => {
             let fam = law.tilt_family().expect("a right power tail");
             let edge = x0 + (n - 1) as f64 * h + h / 2.0;
-            Ok((0.0, fam.tail_mass_above(edge).unwrap_or(residual)))
+            Ok((0.0, beyond(&fam, edge)))
         }
         Some(TiltSide::Left) => {
             let fam = law.tilt_family().expect("a left power tail");
-            Ok((
-                fam.tail_mass_above(-(x0 - h / 2.0)).unwrap_or(residual),
-                0.0,
-            ))
+            Ok((beyond(&fam, -(x0 - h / 2.0)), 0.0))
         }
         None if fixed_grid => Ok((0.0, 0.0)),
         None => Ok(light_outside(law, h, x0, n)),
+    }
+}
+
+/// An upper bound on `P(X > x)` for a law with a right power tail, where
+/// its series is not valid: `P(X > δ₁)` above the location (1 where that is
+/// not defined, at `α = 1`), 1 at or below it.
+fn tail_mass_bound(fam: &Stable, x: f64) -> f64 {
+    let above_loc = fam.prob_above_loc();
+    if x > fam.loc() && above_loc.is_finite() {
+        above_loc.clamp(0.0, 1.0)
+    } else {
+        1.0
     }
 }
 
@@ -1833,5 +1915,86 @@ mod tests {
             ..ChfOptions::with_log2(10)
         };
         assert!(invert(&stable(1.5, 1.0, 1.0, 0.0), &bad).is_err());
+    }
+
+    fn on_step(log2: u32, step: f64, tilt: Tilt) -> ChfOptions {
+        ChfOptions {
+            log2,
+            step: Some(step),
+            tilt,
+            ..ChfOptions::default()
+        }
+    }
+
+    #[test]
+    fn a_tilted_window_on_the_body_keeps_its_masses_a_probability() {
+        // A narrow window on a given step sits on the body, where the light
+        // side still has mass below it; the tilt must not magnify its wrap
+        // (#945, #1010: the masses summed to 2e6 and up to 1e107).
+        for (alpha, beta, log2, step) in [
+            (1.5, 1.0, 12, 0.001),
+            (1.5, 1.0, 12, 0.002),
+            (1.2, 1.0, 12, 0.001),
+            (1.5, -1.0, 12, 0.001),
+            (1.5, 1.0, 10, 0.001),
+            (1.95, 1.0, 10, 0.001),
+            (1.1, 1.0, 10, 0.001),
+            (1.5, -1.0, 10, 0.001),
+        ] {
+            let d = invert(
+                &stable(alpha, beta, 1.0, 0.0),
+                &on_step(log2, step, Tilt::Auto),
+            )
+            .unwrap();
+            let r = d.report();
+            let case = format!("{alpha} {beta} 2^{log2} {step}: {r:?}");
+            let lowest = d.masses().iter().copied().fold(f64::INFINITY, f64::min);
+            assert!(lowest >= -1e-9, "{case}: a mass of {lowest}");
+            assert!(r.total_mass <= 1.0 + 1e-6, "{case}");
+            assert!(r.total_mass + r.outside_above >= 1.0 - 1e-6, "{case}");
+        }
+    }
+
+    #[test]
+    fn a_fixed_tilt_that_magnifies_the_light_side_is_refused() {
+        let err = invert(
+            &stable(1.5, 1.0, 1.0, 0.0),
+            &on_step(10, 0.001, Tilt::Fixed(3.0)),
+        )
+        .expect_err("the light side below the window would wrap, magnified by e^3")
+        .to_string();
+        assert!(err.contains("light side"), "{err}");
+        // The window the rule places keeps the light side at 1e-40.
+        assert!(
+            invert(
+                &stable(1.5, 1.0, 1.0, 0.0),
+                &on_step(10, 0.05, Tilt::Fixed(3.0))
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn an_untilted_window_reports_the_mass_beyond_it_or_a_bound() {
+        // Untilted, the tail wraps onto the window, so the masses sum to
+        // about 1 and say nothing of what lies outside (#1010).
+        let (a, b) = (
+            invert(&stable(1.5, 1.0, 1.0, 0.0), &on_step(10, 0.01, Tilt::Off)).unwrap(),
+            invert(&stable(1.1, 1.0, 1.0, 0.0), &on_step(14, 0.001, Tilt::Off)).unwrap(),
+        );
+        assert!(a.report().outside_above >= 0.03, "{:?}", a.report());
+        assert!(b.report().outside_above >= 0.03, "{:?}", b.report());
+        let left = invert(&stable(1.5, -1.0, 1.0, 0.0), &on_step(10, 0.01, Tilt::Off)).unwrap();
+        assert!(left.report().outside_below >= 0.03, "{:?}", left.report());
+        // A window wholly below the support [0, inf): all the mass is above.
+        let below_support = invert(
+            &stable(0.7, 1.0, 1.0, 0.0),
+            &ChfOptions {
+                x_min: Some(-20.0),
+                ..on_step(10, 0.001, Tilt::Auto)
+            },
+        )
+        .unwrap();
+        assert_eq!(below_support.report().outside_above, 1.0);
     }
 }
