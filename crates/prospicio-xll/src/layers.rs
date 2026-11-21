@@ -9,7 +9,7 @@ use prospicio_reserving::excess::{Basis, ExcessPattern, Layer, SeverityByMaturit
 use prospicio_reserving::{BenchmarkCurve, GrowthCurve, PatternKind};
 
 use crate::counts::measures;
-use crate::pricing::severity;
+use crate::pricing::{paired, severity};
 use crate::reserving::{COLUMN, number, number_or, pattern_kind, tail, text_option, triangle};
 use crate::sheet::{Grid, Value};
 
@@ -185,15 +185,8 @@ fn layer_of(attachment: &Grid, limit: &Grid) -> Result<Layer> {
 /// fitted percents developed at `at_ages` (the benchmark's ages if
 /// omitted), as a row; `"cdf"` the factors to ultimate there.
 pub fn benchmark_curve(args: &[Grid]) -> Result<Grid> {
-    let ages = numbers(&args[0], "ages")?;
-    let values = numbers(&args[1], "values")?;
-    if ages.len() != values.len() {
-        return Err(format!(
-            "ages and values must have as many cells, got {} and {}",
-            ages.len(),
-            values.len()
-        ));
-    }
+    let [ages, values] =
+        <[_; 2]>::try_from(paired(&[(&args[0], "ages"), (&args[1], "values")])?).unwrap();
     let kind = if args[2].is_blank() {
         PatternKind::PercentDeveloped
     } else {

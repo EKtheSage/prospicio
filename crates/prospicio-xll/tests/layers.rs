@@ -299,7 +299,7 @@ fn bad_inputs_are_errors() {
             none(),
         ],
     );
-    assert!(e.contains("as many cells"), "{e}");
+    assert!(e.contains("too few for"), "{e}");
     let e = fails(
         "pro_res_benchmark_curve",
         vec![
