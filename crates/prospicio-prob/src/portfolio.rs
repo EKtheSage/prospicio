@@ -219,7 +219,9 @@ impl PredictiveDistribution {
     /// joint structure, and the groups' totals take a rank correlation
     /// close to `correlation` (`G × G`, groups in order of first
     /// appearance; Spearman's rho near `(6/π) asin(r/2)`). Group `g > 0`
-    /// shuffles with stream `g` of `seed`.
+    /// shuffles with stream `g` of `seed`. Simulations whose totals tie
+    /// exactly in a group rank in their order: the earlier one takes the
+    /// lower rank.
     ///
     /// ```
     /// use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
@@ -373,7 +375,9 @@ impl PredictiveDistribution {
 
     /// Simulation `i` of the result takes, for group `g`, the row of rank
     /// `ranks[g][i]` (0-based, ascending) among the group's totals; also
-    /// returns that row's index, `index[g][i]`.
+    /// returns that row's index, `index[g][i]`. Rows whose totals tie
+    /// exactly rank in their order, the earlier row lower (the sort is
+    /// stable), so rows that differ behind equal totals have one answer.
     fn reorder_to_ranks(
         &self,
         group_of: &[usize],
@@ -594,6 +598,33 @@ impl PredictiveDistribution {
 mod tests {
     use super::*;
     use crate::Empirical;
+
+    #[test]
+    fn tied_totals_rank_in_their_order() {
+        // #959: two simulations with the total 5 and other rows. The
+        // earlier one has the lower rank, so the ranks [1, 0] take row 1
+        // then row 0, and [0, 1] leave the rows where they are.
+        let pd = PredictiveDistribution::from_draws(
+            vec!["seg".into(), "item".into()],
+            vec![
+                vec![KeyValue::Int(0), KeyValue::Int(0)],
+                vec![KeyValue::Int(0), KeyValue::Int(1)],
+            ],
+            vec![5.0, 0.0, 2.0, 3.0],
+            Provenance::new("ties"),
+        )
+        .unwrap();
+        let (r, index) = pd
+            .reorder_to_ranks(&[0, 0], &[vec![1, 0]], "ties".into())
+            .unwrap();
+        assert_eq!(index, [[1, 0]]);
+        assert_eq!(r.draw_matrix(), [2.0, 3.0, 5.0, 0.0]);
+        let (r, index) = pd
+            .reorder_to_ranks(&[0, 0], &[vec![0, 1]], "ties".into())
+            .unwrap();
+        assert_eq!(index, [[0, 1]]);
+        assert_eq!(r.draw_matrix(), pd.draw_matrix());
+    }
 
     fn part(
         dim: &str,
