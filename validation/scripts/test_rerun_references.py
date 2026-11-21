@@ -20,11 +20,11 @@ HAWKES_OLD = (
 )
 
 
-def hawkes_new(baseline, beta, label="SciPy 1.18.1"):
+def hawkes_new(baseline, beta, label="SciPy 1.18.1", ll=b"-3.5"):
     return (
         b"case,horizon,periods,baseline,alpha,beta,log_likelihood,source\n"
-        b"a,1.0,0.5|0.7000000000000001;0.2,%s,9.0735956889067779,%s,-3.5,%s\n"
-        % (baseline, beta, label.encode())
+        b"a,1.0,0.5|0.7000000000000001;0.2,%s,9.0735956889067779,%s,%s,%s\n"
+        % (baseline, beta, ll, label.encode())
     )
 
 
@@ -49,6 +49,15 @@ def main():
     # A real change (1e-4 relative) does not.
     diffs, _ = rr.compare("hawkes_scipy.csv", HAWKES_OLD, hawkes_new(b"1.5211668", b"288.23210269653163"))
     assert len(diffs) == 1, diffs
+    # The log-likelihood keeps the Rust test's absolute bound (1e-7, inside its 1e-6):
+    # a move of 1e-4 (1.5e-7 relative at 660, inside 1e-6 relative) is a difference.
+    hawkes_ll = HAWKES_OLD.replace(b",-3.5,", b",660.00505458772454,")
+    ll_moved = hawkes_new(b"1.5210145700988877", b"288.23212707844078", ll=b"660.00515458772454")
+    diffs, _ = rr.compare("hawkes_scipy.csv", hawkes_ll, ll_moved)
+    check(diffs, ["line 2: 660.00505458772454 -> 660.00515458772454"], "hawkes log-likelihood by 1e-4")
+    # The last-digit noise of a stable log-likelihood (1e-13) still passes.
+    ll_noise = hawkes_new(b"1.5210145700988877", b"288.23212707844078", ll=b"660.00505458772464")
+    check(rr.compare("hawkes_scipy.csv", hawkes_ll, ll_noise), ([], ["SciPy 1.14.1 -> SciPy 1.18.1"]), "hawkes ll noise")
     # Another file keeps the 1e-9 comparison, and its list cells (the periods) are exact text.
     diffs, _ = rr.compare("other.csv", HAWKES_OLD, hawkes_new(b"1.5210145700988877", b"288.23212707844078"))
     assert len(diffs) == 4 and diffs[0] == "line 2: 0.5|0.7;0.2 -> 0.5|0.7000000000000001;0.2", diffs

@@ -15,7 +15,7 @@ tree is the same afterwards:
   moved) is listed but is not one;
 - another CSV: the same rows and columns, numbers within 1e-9 relative, text
   (a list of numbers in one cell included) exact; a file in `FILE_TOLERANCE`
-  uses its own bound and compares a list cell element by element; a `source`
+  uses its own bound per column and compares a list cell element by element; a `source`
   column is listed when it moves, as above, and not compared;
 - any other file: the same bytes, line endings as LF.
 
@@ -92,13 +92,26 @@ WEEKLY = (
 
 TOLERANCE_COLUMNS = {"expected", "abs_tol", "rel_tol", "source"}
 
+PLAIN_TOLERANCE = (1e-12, 1e-9)
+
 # Files without tolerance columns whose numbers are an optimiser's stopping
-# point, not a definition: (abs_tol, rel_tol). The Rust test that reads the
-# file applies its own, looser bound (#935). Only these files have their list
-# cells (`;` and `|` separated) compared element by element; any other file
-# compares a lone number to 1e-9 relative and a list cell as exact text (the
-# Sobol points are exact integers that a relative bound would let move).
-FILE_TOLERANCE = {"hawkes_scipy.csv": (1e-9, 1e-6)}
+# point, not a definition: (abs_tol, rel_tol) per column, no looser than the
+# bound the Rust test that reads the file applies (#935); a column not listed
+# keeps PLAIN_TOLERANCE. hawkes_scipy.csv: the parameters at 1e-6 relative
+# (the test allows 1e-4), the log-likelihood at 1e-7 absolute (the test
+# allows 1e-6 absolute, and a relative bound on values of 290 to 660 would
+# not). Only these files have their list cells (`;` and `|` separated)
+# compared element by element; any other file compares a lone number to 1e-9
+# relative and a list cell as exact text (the Sobol points are exact integers
+# that a relative bound would let move).
+FILE_TOLERANCE = {
+    "hawkes_scipy.csv": {
+        "baseline": (1e-9, 1e-6),
+        "alpha": (1e-9, 1e-6),
+        "beta": (1e-9, 1e-6),
+        "log_likelihood": (1e-7, 0.0),
+    }
+}
 
 
 def outputs() -> dict[str, list[str]]:
@@ -210,11 +223,12 @@ def compare_plain_rows(
     old: list[list[str]],
     new: list[list[str]],
     skip: int | None = None,
-    tol: tuple[float, float] = (1e-12, 1e-9),
+    tols: list[tuple[float, float]] | None = None,
     lists: bool = False,
 ) -> list[str]:
     """Differences between two tables; column `skip` (a source label) is not
-    compared, and `lists` compares list cells element by element."""
+    compared, column `i` is compared within `tols[i]` (PLAIN_TOLERANCE when
+    `tols` is None), and `lists` compares list cells element by element."""
     if len(old) != len(new):
         return [f"{len(old)} rows, now {len(new)}"]
     diffs = []
@@ -225,6 +239,7 @@ def compare_plain_rows(
         for i, (a, b) in enumerate(zip(o, n)):
             if i == skip:
                 continue
+            tol = tols[i] if tols is not None else PLAIN_TOLERANCE
             if not same_cell(a, b, tol, lists):
                 diffs.append(f"line {line}: {a} -> {b}")
     return diffs
@@ -261,7 +276,8 @@ def compare(path: str, old: bytes, new: bytes) -> tuple[list[str], list[str]]:
     if skip is not None:
         moved = {f"{o[skip]} -> {n[skip]}" for o, n in zip(r0, r1) if len(o) == len(n) and o[skip] != n[skip]}
     if path in FILE_TOLERANCE:
-        return compare_plain_rows(r0, r1, skip, FILE_TOLERANCE[path], lists=True), sorted(moved)
+        tols = [FILE_TOLERANCE[path].get(column, PLAIN_TOLERANCE) for column in h0]
+        return compare_plain_rows(r0, r1, skip, tols, lists=True), sorted(moved)
     return compare_plain_rows(r0, r1, skip), sorted(moved)
 
 
