@@ -240,3 +240,61 @@ fn a_malformed_file_is_an_error_not_a_panic() {
         "{err}"
     );
 }
+
+/// A one-node MatMul model `y = x w` whose initializer `w` is the given
+/// protobuf body.
+fn matmul_with_initializer(initializer: &[u8]) -> Vec<u8> {
+    let node = [
+        field(1, b"x"),
+        field(1, b"w"),
+        field(2, b"y"),
+        field(4, b"MatMul"),
+    ]
+    .concat();
+    let graph = [
+        field(1, &node),
+        field(2, b"g"),
+        field(5, initializer),
+        field(11, &value_info("x", &[1, 2])),
+        field(12, &value_info("y", &[1, 2])),
+    ]
+    .concat();
+    let opset = [field(1, b""), int_field(2, 13)].concat();
+    [int_field(1, 8), field(7, &graph), field(8, &opset)].concat()
+}
+
+#[test]
+fn a_constant_whose_dims_overflow_is_an_error() {
+    // #952: dims [2^32, 2^32] and no data. The product of the dims overflows
+    // usize: a panic in a debug build, a wrap to 0 in a release build.
+    let initializer = [
+        int_field(1, 1 << 32),
+        int_field(1, 1 << 32),
+        int_field(2, 1),
+        field(8, b"w"),
+    ]
+    .concat();
+    let err = OnnxModel::from_bytes(&matmul_with_initializer(&initializer)).unwrap_err();
+    assert!(
+        err.to_string().contains("not a readable ONNX model"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_constant_whose_type_disagrees_with_its_data_is_an_error() {
+    // #952: data_type FLOAT (1) with the values in the int32_data field.
+    let initializer = [
+        int_field(1, 2),
+        int_field(1, 2),
+        int_field(2, 1),
+        field(5, &[1, 2, 3, 4]),
+        field(8, b"w"),
+    ]
+    .concat();
+    let err = OnnxModel::from_bytes(&matmul_with_initializer(&initializer)).unwrap_err();
+    assert!(
+        err.to_string().contains("not a readable ONNX model"),
+        "{err}"
+    );
+}

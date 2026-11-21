@@ -183,8 +183,12 @@ schedule_trend <- function(years, trend_years, trend_rates, inception,
   if (anyNA(years) || any(years != round(years))) {
     stop("years must be whole calendar years")
   }
+  years_int <- suppressWarnings(as.integer(years))
+  if (anyNA(years_int)) {
+    stop("years must be whole calendar years within the integer range")
+  }
   r <- rust_result(schedule_trend_rust(
-    as.integer(years), as.double(trend_years), as.double(trend_rates),
+    years_int, as.double(trend_years), as.double(trend_rates),
     as.double(inception), basis, kind, as.integer(cutoff), before
   ))
   data.frame(year = r$year, start = r$start, target = r$target, factor = r$factor)

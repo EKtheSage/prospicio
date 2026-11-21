@@ -37,28 +37,49 @@ pub const MAX_CHAINS: usize = 8;
 const KEPT: usize = 8;
 
 /// The last [`KEPT`] fits of one model, keyed on every input.
-type Kept<T> = Mutex<Vec<(String, Arc<T>)>>;
+/// Each entry is a slot that is empty while its fit runs: callers of the
+/// same key wait on the slot, so the fit runs once.
+type Slot<T> = Arc<Mutex<Option<Arc<T>>>>;
+type Kept<T> = Mutex<Vec<(String, Slot<T>)>>;
 
 static ODP_FITS: Kept<BayesOdpFit> = Mutex::new(Vec::new());
 static BF_FITS: Kept<BayesBfNormalisedFit> = Mutex::new(Vec::new());
 
 /// The fit kept under `key`, or `fit`'s, kept from now on.
 fn kept<T>(cache: &Kept<T>, key: String, fit: impl FnOnce() -> Result<T>) -> Result<Arc<T>> {
-    if let Some((_, f)) = cache
-        .lock()
-        .map_err(|_| "the fit cache is poisoned")?
-        .iter()
-        .find(|(k, _)| *k == key)
-    {
+    let slot = {
+        let mut kept = cache.lock().map_err(|_| "the fit cache is poisoned")?;
+        if let Some((_, slot)) = kept.iter().find(|(k, _)| *k == key) {
+            Arc::clone(slot)
+        } else {
+            if kept.len() == KEPT {
+                kept.remove(0);
+            }
+            let slot = Slot::default();
+            kept.push((key.clone(), Arc::clone(&slot)));
+            slot
+        }
+    };
+    // The cache lock is free here; the slot's lock is held through the fit.
+    let mut done = slot.lock().map_err(|_| "the fit cache is poisoned")?;
+    if let Some(f) = &*done {
         return Ok(Arc::clone(f));
     }
-    let f = Arc::new(fit()?);
-    let mut kept = cache.lock().map_err(|_| "the fit cache is poisoned")?;
-    if kept.len() == KEPT {
-        kept.remove(0);
+    match fit() {
+        Ok(f) => {
+            let f = Arc::new(f);
+            *done = Some(Arc::clone(&f));
+            Ok(f)
+        }
+        Err(e) => {
+            drop(done);
+            // Do not keep a failed fit: drop its slot so a retry refits.
+            if let Ok(mut kept) = cache.lock() {
+                kept.retain(|(k, s)| *k != key || !Arc::ptr_eq(s, &slot));
+            }
+            Err(e)
+        }
     }
-    kept.push((key, Arc::clone(&f)));
-    Ok(f)
 }
 
 /// The sampler's arguments, `draws`, `chains`, `seed` and `sims`, from
@@ -605,3 +626,43 @@ pub fn industry_prior(args: &[Grid]) -> Result<Grid> {
 }
 
 const PRIOR_OUTPUTS: &str = "output must be \"summary\", \"pattern\" or \"report\"";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    #[test]
+    fn concurrent_callers_of_one_key_share_one_fit() {
+        let cache: Kept<u32> = Mutex::new(Vec::new());
+        let fits = AtomicUsize::new(0);
+        let results: Vec<u32> = std::thread::scope(|s| {
+            let handles: Vec<_> = (0..3)
+                .map(|_| {
+                    s.spawn(|| {
+                        *kept(&cache, "one".to_owned(), || {
+                            fits.fetch_add(1, Ordering::SeqCst);
+                            std::thread::sleep(Duration::from_millis(300));
+                            Ok(7)
+                        })
+                        .unwrap()
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        assert_eq!(results, vec![7, 7, 7]);
+        assert_eq!(fits.load(Ordering::SeqCst), 1, "one sampler run");
+        assert_eq!(cache.lock().unwrap().len(), 1, "one cache entry");
+    }
+
+    #[test]
+    fn a_failed_fit_is_not_kept() {
+        let cache: Kept<u32> = Mutex::new(Vec::new());
+        assert!(kept(&cache, "k".to_owned(), || Err("no".into())).is_err());
+        assert_eq!(cache.lock().unwrap().len(), 0);
+        assert_eq!(*kept(&cache, "k".to_owned(), || Ok(3)).unwrap(), 3);
+        assert_eq!(cache.lock().unwrap().len(), 1);
+    }
+}

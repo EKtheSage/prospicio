@@ -1178,6 +1178,13 @@ real Excel.
       in the fake Excel, against 0.2 s for 20,000 ODP simulations). Each
       function is a pure function of its inputs and seed (decisions 14
       and 21), so a kept result is what a rerun gives: no number changes.
+      Runs share a pool of 2 to 8 threads (one per processor) and results
+      already kept are answered by two more, so a sheet of many cells
+      queues instead of starting a thread each (#953). A result over 4
+      million cells is returned and not kept, leaving the others; the least
+      recently used result goes first. `PRO.CAP.COPULA.SIM` and
+      `PRO.CAP.NESTED.SIM` refuse more than 10 million cells (rows times
+      columns) before they run, since an allocation that fails closes Excel.
       The Bayesian fits stay kept as well (decision 21), so a fit's three
       views still sample once between them.
     - **An interrupted recalculation loses nothing.** Typing while Excel

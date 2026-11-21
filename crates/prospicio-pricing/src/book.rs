@@ -1051,7 +1051,8 @@ impl DealBook {
     /// "year"]`: `written_premium`, `earned_premium` and `paid_loss` from
     /// each deal's patterns (the premium and loss of each simulation spread
     /// by the month-by-month increments, placed at the deal's inception
-    /// plus the month), and `investor_flow` when every deal has flows; the
+    /// plus the month), and `investor_flow` only when every deal has flows (a
+    /// book where only some deals have flows has no such item); the
     /// deals in order, then `"total"`; the years from `start_year`, book
     /// month `m` in year `start_year + m / 12`.
     ///
@@ -1076,7 +1077,11 @@ impl DealBook {
             .iter()
             .zip(&patterns)
             .map(|(d, p)| {
-                let f = d.flows.as_ref().map_or(0, |f| f.months);
+                let f = d
+                    .flows
+                    .as_ref()
+                    .filter(|_| with_flows)
+                    .map_or(0, |f| f.months);
                 d.inception + p.written.len().max(f)
             })
             .max()
@@ -1108,7 +1113,7 @@ impl DealBook {
             place(0, &p.written, &d.premium);
             place(1, &p.earned, &d.premium);
             place(2, &p.paid, &d.loss);
-            if let Some(f) = &d.flows {
+            if let Some(f) = d.flows.as_ref().filter(|_| with_flows) {
                 for (j, row) in f.flows.chunks(f.months).enumerate() {
                     for (t, &v) in row.iter().enumerate() {
                         let y = (d.inception + t) / 12;
@@ -1598,6 +1603,26 @@ mod tests {
         let mean_total: f64 = cf.mean_by_deal.iter().flatten().sum();
         let all: f64 = cf.flows.iter().sum::<f64>() / 6.0;
         assert!(close(mean_total, all, 1e-12));
+    }
+
+    #[test]
+    fn a_calendar_of_a_book_with_some_flows_has_no_investor_flow_item() {
+        let with = run("a", 1.0);
+        let without = DealRun::new("b", vec![100.0; 6], vec![50.0; 6])
+            .unwrap()
+            .patterns(terms().patterns.clone());
+        let book = DealBook::new(vec![with, without]).unwrap();
+        let cal = book.calendar(2026).unwrap();
+        let has = |item: &str| {
+            cal.marginal(&vec![
+                KeyValue::from(item),
+                KeyValue::from("a"),
+                KeyValue::from(2026_i64),
+            ])
+            .is_some()
+        };
+        assert!(has("written_premium"));
+        assert!(!has("investor_flow"));
     }
 
     #[test]

@@ -1,0 +1,1 @@
+* **Update**: [Where CI's time went, and what cut it](/environment/ci-runtime.md), sccache measured and left out (branch claude/cool-shannon-fqpoy8-sccache-finding, draft pull request #1005): with a full cache the R, Bayesian and freMTPL2 builds were about a minute, a minute and 23 s shorter and `python-build` no shorter, and only for a change that touches no library crate.
