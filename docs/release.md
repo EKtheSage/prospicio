@@ -69,7 +69,11 @@ Do these once, before the first release.
 After 0.0.9 comes 0.1.0, then 0.2.0, and so on up to 0.9.0. The 0.9 line is
 the release candidates: 0.9.0, then 0.9.1 and later patches as needed. Then
 1.0. Before 1.0 a minor bump may break the API; a patch bump stays
-compatible. The scope of each version is the user's decision (see below).
+compatible. A patch may add to the API (a new function, an option alias, a
+new package) as well as fix bugs (the user's decision of 2026-11-20), but
+it does not change the numbers a seeded run gives, since results must be
+reproducible from a seed (`docs/architecture.md`). The scope of each
+version is the user's decision (see below).
 
 ## Scope of the next release
 
@@ -175,7 +179,7 @@ last with #909 to #912 (#834 and #843). The severity fits (#800, #802, #804,
 ratios wait for its inputs) and the Excel functions merged since 0.0.9 are
 in it too.
 
-**0.2.0**: the characteristic-function engine, #779, the laws that
+**0.2.0** was released on 2026-11-20: the characteristic-function engine, #779, the laws that
 need it, #780, and an event loss table as a compound severity, #781.
 Milestone 0.2.0.
 
@@ -192,6 +196,34 @@ review of 2026-11-19 (#931, its sub-issues #932 to #983) is not part of
 limit, #988), #938 (the Tsallis complement at a large order, #987) and
 #934 (a RustSec advisory that failed `cargo deny`, #986). The others wait
 for the user's decision on their release.
+
+**0.2.1** (the user's decision of 2026-11-20): the fixes the codebase review
+of 2026-11-19 found, the additive items that are ready, and the CI work.
+The milestone tracks all of it, including work that does not change a
+package.
+
+| Kind | Items |
+|---|---|
+| Bugs (P1) | #939, #940, #941, #942, #943, #975 (GIL releases and FFI panics in the Python bindings and the Excel add-in) |
+| Bugs (P2) | #935, #944 to #954 |
+| Bugs (P3) | #955, #958, #959, #960 |
+| Additive | #956 (option names made the same in Python, R and Excel, with the old names kept as deprecated aliases), #576 (the WASM JavaScript package, #985 and #989) |
+| Numerics with unchanged results | #971 (one LU factorization in `linalg::inverse`, the rearrangement algorithm's sweeps) |
+| CI and tooling | #936, #962, #965, #966, #967, #968 |
+| Docs | #961 |
+
+**0.3.0** (the user's decision of 2026-11-20, planned): the performance
+work that changes how simulations draw or sum (so a seeded run's numbers
+change, noted under "Breaking changes"), the refactors of the bindings, and
+two actuarial tracks.
+
+| Kind | Items |
+|---|---|
+| Performance (each starts with a benchmark) | #969, #970, #972 |
+| Bindings and refactors | #957, #963 (with small `macro_rules!` helpers for the repeated glue), #976, #977, #978, #990, #991 |
+| Actuarial | #979 (calendar-year and superimposed inflation), #980 (reinsurer default risk on towers) |
+
+#973, #974, #761 and #981 to #983 have no milestone yet.
 
 ## Each release
 
