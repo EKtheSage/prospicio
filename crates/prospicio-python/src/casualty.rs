@@ -536,11 +536,17 @@ impl PyParetoAnchor {
     ///     Where a loss was closed at its policy limit; none by default.
     #[staticmethod]
     #[pyo3(signature = (threshold, losses, censored = None))]
-    fn fit(threshold: f64, losses: Vec<f64>, censored: Option<Vec<bool>>) -> PyResult<Self> {
+    fn fit(
+        py: Python<'_>,
+        threshold: f64,
+        losses: Vec<f64>,
+        censored: Option<Vec<bool>>,
+    ) -> PyResult<Self> {
         let censored = censored.unwrap_or_else(|| vec![false; losses.len()]);
-        Ok(Self {
-            inner: ParetoAnchor::fit(threshold, &losses, &censored).map_err(to_py)?,
-        })
+        let inner = py
+            .detach(|| ParetoAnchor::fit(threshold, &losses, &censored))
+            .map_err(to_py)?;
+        Ok(Self { inner })
     }
 
     /// The Pareto's threshold.

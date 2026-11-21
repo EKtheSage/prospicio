@@ -2695,7 +2695,8 @@ pub(crate) fn fit_curves<'py>(
     let kept: Vec<f64> = losses.into_iter().filter(|&y| y >= threshold).collect();
     let n = kept.len();
     let data = large_losses(kept, Some(vec![threshold; n]), None, None)?;
-    let c = prospicio_prob::severity_fit::fit_curves(&data, threshold, &families, points)
+    let c = py
+        .detach(|| prospicio_prob::severity_fit::fit_curves(&data, threshold, &families, points))
         .map_err(to_py)?;
     let d = pyo3::types::PyDict::new(py);
     d.set_item("loss", c.losses)?;
