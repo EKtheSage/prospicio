@@ -28,7 +28,7 @@
 //! ladder while that lowers the larger of the truncation and the mass the
 //! shortened window leaves outside.
 //!
-//! **An atom** (the Tweedie's point mass at 0) is taken out of `φ` before
+//! **An atom** (the Tweedie's point mass at 0, a CGMY law's at `mu` for `Y < 0`) is taken out of `φ` before
 //! inversion and added back to its bucket, so frequency truncation does
 //! not ring around it.
 //!
@@ -362,6 +362,7 @@ impl ChfLaw {
         match self {
             Self::Tweedie(t) => Some((0.0, (-t.lambda()).exp())),
             Self::TweediePower(d) => d.atom(),
+            Self::TemperedStable(d) => d.atom(),
             Self::Affine { base, scale, shift } => base.atom().map(|(x, w)| (scale * x + shift, w)),
             _ => None,
         }
@@ -1633,6 +1634,39 @@ mod tests {
         let cont = t.cdf(d.step() / 2.0) - p0;
         assert!((d.masses()[0] - p0 - cont).abs() < 1e-7);
         assert!((d.mean() - 100.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_cgmy_law_with_negative_y_has_its_atom_taken_out() {
+        // Y < 0: finite Levy measure, compound Poisson, an atom of mass
+        // exp(-C Gamma(-Y) (M^Y + G^Y)) at mu (#944).
+        let ts = TemperedStable::new(2.0, 3.0, 4.0, -0.5, 0.0).unwrap();
+        let w = (-2.0 * 1.772_453_850_905_516 * (4f64.powf(-0.5) + 3f64.powf(-0.5))).exp();
+        let law = ChfLaw::TemperedStable(ts);
+        let (xa, wa) = law.atom().expect("an atom for Y < 0");
+        assert_eq!(xa, 0.0);
+        assert!((wa - w).abs() < 1e-12, "{wa} {w}");
+        let d = invert(&law, &ChfOptions::default()).unwrap();
+        // The continuous part has a density singular at mu (like |x|^(-0.5)), so
+        // its phi decays slowly and stays above the flag at any practical
+        // step; with the atom out it is the continuous size only.
+        let tr = d.report().truncation_error;
+        assert!(tr < 1e-3, "{tr}");
+        let total: f64 = d.masses().iter().sum();
+        assert!((total - 1.0).abs() < 1e-6, "{total}");
+        // The bucket at mu holds the atom plus the continuous mass in it,
+        // and the neighbours hold only continuous mass (small).
+        let k = ((0.0 - d.x_min()) / d.step()).round() as usize;
+        assert!(d.masses()[k] >= w - 1e-9, "{} {w}", d.masses()[k]);
+        // Its continuous part is about w times the Levy mass within h/2 of mu,
+        // 2 C 2 sqrt(h/2) there (C = 2).
+        let cont = d.masses()[k] - w;
+        let approx = w * 8.0 * (d.step() / 2.0).sqrt();
+        assert!((cont / approx - 1.0).abs() < 0.2, "{cont} {approx}");
+        assert!(d.masses()[k - 1] < 1e-3 && d.masses()[k + 1] < 1e-3);
+        // Y > 0 has no atom.
+        let no = TemperedStable::new(2.0, 3.0, 4.0, 0.5, 0.0).unwrap();
+        assert!(ChfLaw::TemperedStable(no).atom().is_none());
     }
 
     #[test]
