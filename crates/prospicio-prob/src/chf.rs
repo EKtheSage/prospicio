@@ -28,9 +28,11 @@
 //! ladder while that lowers the larger of the truncation and the mass the
 //! shortened window leaves outside.
 //!
-//! **An atom** (the Tweedie's point mass at 0) is taken out of `φ` before
-//! inversion and added back to its bucket, so frequency truncation does
-//! not ring around it.
+//! **An atom** (the Tweedie's point mass at 0, a CGMY law's at `mu` for
+//! `Y < 0`) is taken out of `φ` before inversion and added back to its
+//! bucket, so frequency truncation does not ring around it. A grid that
+//! does not hold the atom (one the user gives, or an automatic window that
+//! leaves out a negligible atom) leaves it in `φ`.
 //!
 //! **Tilting.** The kernel inverts along the line `Im s = θ`, where the
 //! integrand decays like the damped law `e^{−θx} f(x)`: the discretized
@@ -362,6 +364,7 @@ impl ChfLaw {
         match self {
             Self::Tweedie(t) => Some((0.0, (-t.lambda()).exp())),
             Self::TweediePower(d) => d.atom(),
+            Self::TemperedStable(d) => d.atom(),
             Self::Affine { base, scale, shift } => base.atom().map(|(x, w)| (scale * x + shift, w)),
             _ => None,
         }
@@ -419,9 +422,14 @@ impl ChfLaw {
     /// inversion transforms, the atom taken out (`aggregate`'s
     /// `truncation_at`).
     pub fn truncation_at(&self, h: f64) -> Result<f64> {
+        self.truncation_with(h, self.atom())
+    }
+
+    /// [`Self::truncation_at`] with `atom` taken out, or nothing.
+    fn truncation_with(&self, h: f64, atom: Option<(f64, f64)>) -> Result<f64> {
         let s = Complex64::new(std::f64::consts::PI / h, 0.0);
         let mut c = self.chf(&[s])?[0];
-        if let Some((x, w)) = self.atom() {
+        if let Some((x, w)) = atom {
             c -= w * Complex64::new(0.0, std::f64::consts::PI * x / h).exp();
         }
         Ok(c.norm())
@@ -819,6 +827,8 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
     let tilting = options.tilt != Tilt::Off && !fixed_grid;
     let tilt_family = if tilting { law.tilt_family() } else { None };
     let (h, x0, tilt, edge_error, mut masses, below, above);
+    // The atom taken out of `φ`, for the masses and the truncation report.
+    let mut atom = law.atom();
     let split = match law {
         ChfLaw::Stable(st) if tilting && law.tilt_side() == Some(TiltSide::Both) => Some(*st),
         _ => None,
@@ -834,7 +844,13 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                     (Some(h), Some(x)) => (h, x),
                     _ => plain_window(law, n, p, options.step)?,
                 };
-                masses = invert_on(law, x0, h, n, 0.0, law.atom())?;
+                // A grid may not hold the atom: one the user gives can put it
+                // off the grid or outside the window, and the automatic
+                // window from the quantiles can leave out a negligible atom
+                // when the jumps go mostly one way. Then it stays in `φ`, as
+                // it did before a CGMY law's atom was taken out (#944).
+                atom = atom.filter(|&(xa, _)| atom_bucket(xa, x0, h, n).is_some());
+                masses = invert_on(law, x0, h, n, 0.0, atom)?;
                 (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
                 edge_error = match law.tilt_family() {
                     Some(fam) if law.tilt_side() != Some(TiltSide::Both) => {
@@ -880,7 +896,7 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
         step: h,
         x_min: x0,
         step_given: options.step.is_some(),
-        truncation_error: law.truncation_at(h)?,
+        truncation_error: law.truncation_with(h, atom)?,
         outside_below: below,
         outside_above: above,
         tilt,
@@ -984,16 +1000,21 @@ fn invert_fn(
         })
         .collect();
     if let Some((xa, wa)) = atom {
-        let kf = ((xa - x0) / h).round();
-        let k = kf as isize;
-        if k < 0 || k as usize >= n || (x0 + kf * h - xa).abs() > 1e-9 * h.max(1.0) {
-            return Err(Error::Data(format!(
+        let k = atom_bucket(xa, x0, h, n).ok_or_else(|| {
+            Error::Data(format!(
                 "the atom at {xa} is not a grid point of x_min = {x0}, step = {h}, {n} buckets"
-            )));
-        }
-        p[k as usize] += wa;
+            ))
+        })?;
+        p[k] += wa;
     }
     Ok(p)
+}
+
+/// The bucket `k < n` whose grid point `x0 + h · k` is `xa`, if any.
+fn atom_bucket(xa: f64, x0: f64, h: f64, n: usize) -> Option<usize> {
+    let kf = ((xa - x0) / h).round();
+    let on_grid = kf >= 0.0 && kf < n as f64 && (x0 + kf * h - xa).abs() <= 1e-9 * h.max(1.0);
+    on_grid.then_some(kf as usize)
 }
 
 /// The smallest "nice" bucket at or above `bs`: `{1, 2, 4, 5, 8} · 10^k`
@@ -1633,6 +1654,108 @@ mod tests {
         let cont = t.cdf(d.step() / 2.0) - p0;
         assert!((d.masses()[0] - p0 - cont).abs() < 1e-7);
         assert!((d.mean() - 100.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_cgmy_law_with_negative_y_has_its_atom_taken_out() {
+        // Y < 0: finite Levy measure, compound Poisson, an atom of mass
+        // exp(-C Gamma(-Y) (M^Y + G^Y)) at mu (#944).
+        let ts = TemperedStable::new(2.0, 3.0, 4.0, -0.5, 0.0).unwrap();
+        let w = (-2.0 * 1.772_453_850_905_516 * (4f64.powf(-0.5) + 3f64.powf(-0.5))).exp();
+        let law = ChfLaw::TemperedStable(ts);
+        let (xa, wa) = law.atom().expect("an atom for Y < 0");
+        assert_eq!(xa, 0.0);
+        assert!((wa - w).abs() < 1e-12, "{wa} {w}");
+        let d = invert(&law, &ChfOptions::default()).unwrap();
+        // The continuous part has a density singular at mu (like |x|^(-0.5)), so
+        // its phi decays slowly and stays above the flag at any practical
+        // step; with the atom out it is the continuous size only.
+        let tr = d.report().truncation_error;
+        assert!(tr < 1e-3, "{tr}");
+        let total: f64 = d.masses().iter().sum();
+        assert!((total - 1.0).abs() < 1e-6, "{total}");
+        // The bucket at mu holds the atom plus the continuous mass in it,
+        // and the neighbours hold only continuous mass (small).
+        let k = ((0.0 - d.x_min()) / d.step()).round() as usize;
+        assert!(d.masses()[k] >= w - 1e-9, "{} {w}", d.masses()[k]);
+        // Its continuous part is about w times the Levy mass within h/2 of mu,
+        // 2 C 2 sqrt(h/2) there (C = 2).
+        let cont = d.masses()[k] - w;
+        let approx = w * 8.0 * (d.step() / 2.0).sqrt();
+        assert!((cont / approx - 1.0).abs() < 0.2, "{cont} {approx}");
+        assert!(d.masses()[k - 1] < 1e-3 && d.masses()[k + 1] < 1e-3);
+        // Y > 0 has no atom.
+        let no = TemperedStable::new(2.0, 3.0, 4.0, 0.5, 0.0).unwrap();
+        assert!(ChfLaw::TemperedStable(no).atom().is_none());
+    }
+
+    #[test]
+    fn a_given_grid_without_the_atom_inverts_with_the_atom_left_in() {
+        // A grid the user gives that does not hold mu (off the grid, or
+        // outside the window) inverts as before the atom was taken out,
+        // with the atom left in phi (#944).
+        let ts = TemperedStable::new(2.0, 3.0, 4.0, -0.5, 0.05).unwrap();
+        let law = ChfLaw::TemperedStable(ts);
+        for x_min in [-20.0, 5.0] {
+            let opts = ChfOptions {
+                log2: 10,
+                step: Some(0.1),
+                x_min: Some(x_min),
+                ..ChfOptions::default()
+            };
+            let d = invert(&law, &opts).unwrap();
+            let plain = invert_on(&law, x_min, 0.1, 1 << 10, 0.0, None).unwrap();
+            assert_eq!(d.masses(), &plain[..], "x_min = {x_min}");
+            // The report's truncation is of phi with the atom in.
+            let s = Complex64::new(std::f64::consts::PI / 0.1, 0.0);
+            let full = law.chf(&[s]).unwrap()[0].norm();
+            assert_eq!(d.report().truncation_error, full, "x_min = {x_min}");
+            assert!(full > law.truncation_at(0.1).unwrap());
+        }
+        // The same for a Tweedie's atom at 0, off a given grid or outside it.
+        let tw = ChfLaw::Tweedie(Tweedie::new(100.0, 2.0, 1.5).unwrap());
+        for x_min in [-0.5, 0.5] {
+            let opts = ChfOptions {
+                log2: 10,
+                step: Some(1.0),
+                x_min: Some(x_min),
+                ..ChfOptions::default()
+            };
+            let d = invert(&tw, &opts).unwrap();
+            let plain = invert_on(&tw, x_min, 1.0, 1 << 10, 0.0, None).unwrap();
+            assert_eq!(d.masses(), &plain[..], "x_min = {x_min}");
+        }
+        // A given grid that holds mu still takes the atom out.
+        let opts = ChfOptions {
+            log2: 10,
+            step: Some(0.05),
+            x_min: Some(-20.0),
+            ..ChfOptions::default()
+        };
+        let d = invert(&law, &opts).unwrap();
+        let plain = invert_on(&law, -20.0, 0.05, 1 << 10, 0.0, None).unwrap();
+        assert_ne!(d.masses(), &plain[..]);
+    }
+
+    #[test]
+    fn an_automatic_window_without_the_atom_inverts_with_the_atom_left_in() {
+        // Jumps mostly one way and a negligible atom (mass about 1.5e-159):
+        // the window from the quantiles does not hold mu, so the atom stays
+        // in phi instead of failing (#944).
+        let ts = TemperedStable::new(200.0, 1000.0, 1.0, -0.5, 0.0).unwrap();
+        let law = ChfLaw::TemperedStable(ts);
+        let d = invert(&law, &ChfOptions::default()).unwrap();
+        assert!(d.x_min() > 0.0, "{}", d.x_min());
+        let n = d.masses().len();
+        let plain = invert_on(&law, d.x_min(), d.step(), n, 0.0, None).unwrap();
+        assert_eq!(d.masses(), &plain[..]);
+        let s = Complex64::new(std::f64::consts::PI / d.step(), 0.0);
+        let full = law.chf(&[s]).unwrap()[0].norm();
+        assert_eq!(d.report().truncation_error, full);
+        // Wrapped in an affine map, the same.
+        let moved = ChfLaw::affine(law, 2.0, 1.0).unwrap();
+        let d = invert(&moved, &ChfOptions::default()).unwrap();
+        assert!(d.x_min() > 1.0, "{}", d.x_min());
     }
 
     #[test]

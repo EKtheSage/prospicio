@@ -6,7 +6,8 @@
 //! Each law gives its characteristic function on the closed upper half
 //! plane, its cumulant generating function `K` and the open interval where
 //! `K` is finite, and its first three moments. All three have light tails
-//! on both sides.
+//! on both sides. A CGMY law with `Y < 0` is compound Poisson and has an atom
+//! at `mu`, which the engine takes out of `φ` before inversion.
 
 use prospicio_core::{Error, Result};
 use prospicio_math::special::ln_gamma;
@@ -344,9 +345,21 @@ impl TemperedStable {
         self.k(Complex64::new(s, 0.0)).re
     }
 
-    /// `(−G, M)`.
+    /// `(-G, M)`.
     pub fn cgf_domain(&self) -> (f64, f64) {
         (-self.g, self.m)
+    }
+
+    /// `(mu, exp(-C Γ(-Y) (M^Y + G^Y)))` for `Y < 0`, where the Lévy measure
+    /// is finite and the law is compound Poisson with a point mass at `mu`;
+    /// `None` for `Y > 0`, where the law has a density.
+    pub fn atom(&self) -> Option<(f64, f64)> {
+        if self.y < 0.0 {
+            let rate = self.c * gamma_fn(-self.y) * (self.m.powf(self.y) + self.g.powf(self.y));
+            Some((self.mu, (-rate).exp()))
+        } else {
+            None
+        }
     }
 
     /// The `n`-th cumulant, `CΓ(n − Y)(M^(Y−n) + (−1)^n G^(Y−n))`.
