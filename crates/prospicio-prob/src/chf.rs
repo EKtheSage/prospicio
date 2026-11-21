@@ -495,8 +495,10 @@ pub enum Tilt {
     Auto,
     /// Never tilt and never cap: a heavy tail wraps onto the window.
     Off,
-    /// Exactly `τ ≥ 0` e-folds, the cap applied; only for a law with one
-    /// power tail.
+    /// Exactly `τ ≥ 0` e-folds, the cap applied, for a law with a power
+    /// tail (a stable law with `β = ±1`, or with `|β| < 1` where each half
+    /// gets the `τ`). Refused with `x_min` given: that grid is inverted
+    /// untilted.
     Fixed(f64),
 }
 
@@ -508,7 +510,10 @@ pub struct ChfOptions {
     /// The bucket. `None` sizes it by rule A from the tails.
     pub step: Option<f64>,
     /// The grid's left edge, with `step` given. `None` places it by the
-    /// rule. Required, with `step`, for a user's function.
+    /// rule. Required, with `step`, for a user's function. A given
+    /// `x_min` fixes the grid, so it is inverted untilted: `Tilt::Auto`
+    /// falls back to no tilt (a heavy tail wraps onto the window, and
+    /// `report.tilt` is `(0, 0)`), and `Tilt::Fixed` is refused.
     pub x_min: Option<f64>,
     /// The mass rule A's window covers, in `(0, 1)`.
     pub bucket_sizing_p: f64,
@@ -748,7 +753,8 @@ impl Distribution for ChfDistribution {
 /// `step` and `x_min`, when `x_min` is given without `step`, when the
 /// window cannot be sized from the law, or when a stable law with two
 /// power tails is given a `step` above `πγ / (104 ln 2)^(1/α)`, the
-/// largest its split into halves can take.
+/// largest its split into halves can take, or when `Tilt::Fixed` is asked
+/// for on a grid whose `x_min` is given.
 pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
     if !(1..=28).contains(&options.log2) {
         return Err(Error::InvalidParameter {
@@ -816,6 +822,14 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
             ));
         }
     }
+    if fixed_grid && matches!(options.tilt, Tilt::Fixed(_)) {
+        return Err(Error::Data(
+            "a fixed tilt needs the window the rule places: a grid whose left edge is \
+             given (x_min) is inverted untilted, so the tilt would be ignored; omit x_min, \
+             or use tilt off or auto"
+                .into(),
+        ));
+    }
     let tilting = options.tilt != Tilt::Off && !fixed_grid;
     let tilt_family = if tilting { law.tilt_family() } else { None };
     let (h, x0, tilt, edge_error, mut masses, below, above);
@@ -835,7 +849,7 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                     _ => plain_window(law, n, p, options.step)?,
                 };
                 masses = invert_on(law, x0, h, n, 0.0, law.atom())?;
-                (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
+                (below, above) = outside_at(law, h, x0, n, fixed_grid, masses.iter().sum())?;
                 edge_error = match law.tilt_family() {
                     Some(fam) if law.tilt_side() != Some(TiltSide::Both) => {
                         let y0 = if law.tilt_side() == Some(TiltSide::Right) {
@@ -862,7 +876,7 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                 if left {
                     masses.reverse();
                 }
-                (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
+                (below, above) = outside_at(law, h, x0, n, fixed_grid, masses.iter().sum())?;
                 masses[0] += below;
                 tilt = if left { (tau, 0.0) } else { (0.0, tau) };
             }
@@ -1292,7 +1306,22 @@ fn one_sided_window(
         Some(h) => h,
         None => round_bucket((x_r - x_l) / n as f64).min(bucket_cap(fam)),
     };
-    let x0 = h * (x_l / h + 1e-12).floor();
+    // A given step may make the window narrower than the span from the
+    // light edge to the right edge: it then sits on the body, as the untilted
+    // window does (the mean, or the location when the mean is infinite),
+    // with the light edge only as its left bound (#945).
+    let width = n as f64 * h;
+    let x_left = if step.is_some() && width < x_r - x_l {
+        let centre = if fam.mean().is_finite() {
+            fam.mean()
+        } else {
+            fam.loc()
+        };
+        (centre - width / 2.0).max(x_l).min(x_r - width)
+    } else {
+        x_l
+    };
+    let x0 = h * (x_left / h + 1e-12).floor();
     let tau = match tilt {
         Tilt::Fixed(tau) => tau,
         _ => {
@@ -1307,8 +1336,19 @@ fn one_sided_window(
 /// one power tail gives the tail mass beyond its window (on the heavy
 /// side); two power tails an estimate from the leading terms on a window
 /// placed to balance them; any other law the Chernoff bounds, 0 on a grid
-/// whose left edge was given.
-fn outside_at(law: &ChfLaw, h: f64, x0: f64, n: usize, fixed_grid: bool) -> Result<(f64, f64)> {
+/// whose left edge was given. Where the tail series is not valid (a window
+/// that ends within a few scales of the body, #945) the heavy side gets
+/// what the window's `inside` mass leaves of 1, not a number the series
+/// cannot vouch for.
+fn outside_at(
+    law: &ChfLaw,
+    h: f64,
+    x0: f64,
+    n: usize,
+    fixed_grid: bool,
+    inside: f64,
+) -> Result<(f64, f64)> {
+    let residual = (1.0 - inside).clamp(0.0, 1.0);
     match law.tilt_side() {
         Some(TiltSide::Both) => {
             let (a, b, alpha) = law
@@ -1321,11 +1361,15 @@ fn outside_at(law: &ChfLaw, h: f64, x0: f64, n: usize, fixed_grid: bool) -> Resu
         }
         Some(TiltSide::Right) => {
             let fam = law.tilt_family().expect("a right power tail");
-            Ok((0.0, fam.tail_mass_above(x0 + (n - 1) as f64 * h + h / 2.0)?))
+            let edge = x0 + (n - 1) as f64 * h + h / 2.0;
+            Ok((0.0, fam.tail_mass_above(edge).unwrap_or(residual)))
         }
         Some(TiltSide::Left) => {
             let fam = law.tilt_family().expect("a left power tail");
-            Ok((fam.tail_mass_above(-(x0 - h / 2.0))?, 0.0))
+            Ok((
+                fam.tail_mass_above(-(x0 - h / 2.0)).unwrap_or(residual),
+                0.0,
+            ))
         }
         None if fixed_grid => Ok((0.0, 0.0)),
         None => Ok(light_outside(law, h, x0, n)),
@@ -1490,8 +1534,14 @@ fn two_sided(st: &Stable, n: usize, p: f64, step: Option<f64>, tilt: Tilt) -> Re
     let m0 = -(z0_minus + (m - 1) as f64 * h);
     let full = convolve(&p_plus, &p_minus, 2 * m);
     let start = y0_plus + m0;
-    let tail_plus = plus.tail_mass_above(y0_plus + (m - 1) as f64 * h + h / 2.0)?;
-    let tail_minus = minus_r.tail_mass_above(z0_minus + (m - 1) as f64 * h + h / 2.0)?;
+    // beyond each half's window; where its series is not valid, what the
+    // window's masses leave of 1 (#945)
+    let tail_plus = plus
+        .tail_mass_above(y0_plus + (m - 1) as f64 * h + h / 2.0)
+        .unwrap_or_else(|_| (1.0 - p_plus.iter().sum::<f64>()).clamp(0.0, 1.0));
+    let tail_minus = minus_r
+        .tail_mass_above(z0_minus + (m - 1) as f64 * h + h / 2.0)
+        .unwrap_or_else(|_| (1.0 - p_minus.iter().sum::<f64>()).clamp(0.0, 1.0));
     let mut cum = Vec::with_capacity(full.len() + 1);
     cum.push(0.0);
     let mut acc = 0.0;

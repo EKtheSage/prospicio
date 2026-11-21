@@ -450,19 +450,34 @@ impl Stable {
     /// asymptotic; at `α = 1` its first two terms in `v = (u − (2γ/π) ln γ)
     /// / γ`, `a/v + a²(ln v + γ_E − 1)/v²`, `a = 2/π` (`aggregate`'s
     /// `tail_mass_above`).
+    ///
+    /// The series is a tail expansion, not the whole function. Where it is
+    /// not valid the call returns an error and never a number that is not a
+    /// probability: at or below the location (`u ≤ 0`), where `α > 1` and
+    /// the smallest term of the asymptotic series is above `10⁻⁶` of the
+    /// sum, where `α < 1` and the 400 terms have not converged or cancel
+    /// more than `10⁷`-fold, where `α = 1` and `v < 20`, and where the sum is
+    /// outside `[0, 1]`. `α = 2` is the normal law, exact everywhere.
     pub fn tail_mass_above(&self, x: f64) -> Result<f64> {
         let (a, g) = (self.alpha, self.scale);
         let u = x - self.loc;
-        if u <= 0.0 {
-            return Ok(1.0);
-        }
         if a == 2.0 {
             return Ok(prospicio_math::special::norm_cdf(-u / (2f64.sqrt() * g)));
         }
+        let outside = |why: &str| {
+            Error::Data(format!(
+                "the stable tail series is not valid at {x} (location {}): {why}; \
+                 it holds far above the location",
+                self.loc
+            ))
+        };
+        if u <= 0.0 {
+            return Err(outside("at or below the location"));
+        }
         if a == 1.0 {
             let v = (u - 2.0 * g / PI * g.ln()) / g;
-            if v <= 0.0 {
-                return Ok(1.0);
+            if v < 20.0 {
+                return Err(outside("too close for the two-term expansion at alpha 1"));
             }
             const EULER_GAMMA: f64 = 0.577_215_664_901_532_9;
             let c = 2.0 / PI;
@@ -471,8 +486,10 @@ impl Stable {
         let s_signed = g.powf(a) / (PI * a / 2.0).cos();
         let log_s = s_signed.abs().ln();
         let sign_s: f64 = if s_signed > 0.0 { 1.0 } else { -1.0 };
-        let mut total = 0.0;
+        let mut total: f64 = 0.0;
         let mut last = f64::INFINITY;
+        let mut largest: f64 = 0.0;
+        let mut settled = false;
         for k in 1..400 {
             let kf = k as f64;
             let log_mag = ln_gamma(kf * a) - ln_gamma(kf + 1.0) + kf * (log_s - a * u.ln());
@@ -484,15 +501,27 @@ impl Stable {
             }
             let mag = log_mag.exp();
             if a > 1.0 && mag > last {
+                settled = last <= 1e-6 * total.abs();
                 break;
             }
             last = mag;
+            largest = largest.max(mag);
             let parity = if k % 2 == 0 { 1.0 } else { -1.0 };
             let term = -parity * (kf * PI * a).sin() * mag * sign_s.powi(k) / PI;
             total += term;
             if mag < 1e-18 * total.abs().max(1e-300) {
+                settled = true;
                 break;
             }
+        }
+        if !settled {
+            return Err(outside("the series has not reached its accuracy"));
+        }
+        if a < 1.0 && largest > 1e7 * total.abs() {
+            return Err(outside("the terms cancel too much"));
+        }
+        if !(0.0..=1.0).contains(&total) {
+            return Err(outside("the sum is not a probability"));
         }
         Ok(total)
     }
