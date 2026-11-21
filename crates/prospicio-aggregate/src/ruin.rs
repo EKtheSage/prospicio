@@ -320,6 +320,10 @@ pub struct RenewalRuin {
 /// grid's own. `ψ` at the last point shows how much of `M` the grid
 /// misses: `aggregate` warns above `1e-6`.
 ///
+/// Fails when the steps `X − cW` all sit on a sub-lattice of the grid
+/// (claims on every second point, say, and a wait that rounds to one of
+/// them): put the severity on that coarser step.
+///
 /// ```
 /// use prospicio_aggregate::ruin::wiener_hopf;
 /// use prospicio_prob::{Gamma, Grid};
@@ -406,7 +410,7 @@ pub fn wiener_hopf(
             mean_y * h
         )));
     }
-    let maximum = ruin_cepstral(&fy, mean_y, &mut planner);
+    let maximum = ruin_cepstral(&fy, mean_y, &mut planner)?;
     let mut psi = Vec::with_capacity(n);
     let mut cum = 0.0;
     for &p in &maximum[..n] {
@@ -428,7 +432,12 @@ pub fn wiener_hopf(
 /// step probabilities `fy` (lag `−k` at `m − k`) and mean step `mean_y`
 /// (in steps, negative), by the cepstral Wiener–Hopf factorization;
 /// `aggregate`'s `ruin_cepstral`.
-fn ruin_cepstral(fy: &[f64], mean_y: f64, planner: &mut FftPlanner<f64>) -> Vec<f64> {
+///
+/// Fails when `1 − φ_Y` has a zero away from `z = 1`, which is when every
+/// step is a multiple of some `d > 1` grid points (a severity on a
+/// sub-lattice and a wait that rounds to one point of it): its logarithm
+/// is then `−∞` and every probability would be NaN (#960).
+fn ruin_cepstral(fy: &[f64], mean_y: f64, planner: &mut FftPlanner<f64>) -> Result<Vec<f64>> {
     let m = fy.len();
     let fft = planner.plan_fft_forward(m);
     let ifft = planner.plan_fft_inverse(m);
@@ -449,6 +458,15 @@ fn ruin_cepstral(fy: &[f64], mean_y: f64, planner: &mut FftPlanner<f64>) -> Vec<
             }
         })
         .collect();
+    // φ_Y is exact to rounding, so a zero shows as a norm near 1e-16.
+    if gt.iter().any(|z| z.norm().is_nan() || z.norm() <= 1e-12) {
+        return Err(Error::Data(
+            "the step X − cW sits on a sub-lattice of the grid (every claim and the rounded \
+             wait are multiples of the same number of points), which the factorization \
+             cannot take; put the severity on that coarser step"
+                .into(),
+        ));
+    }
     let phase = unwrap(&gt.iter().map(|z| z.arg()).collect::<Vec<_>>());
     for (z, ph) in gt.iter_mut().zip(phase) {
         *z = Complex64::new(z.norm().ln(), ph);
@@ -465,7 +483,7 @@ fn ruin_cepstral(fy: &[f64], mean_y: f64, planner: &mut FftPlanner<f64>) -> Vec<
         .map(|z| (Complex64::new(total, 0.0) - z).exp())
         .collect();
     ifft.process(&mut phi_m);
-    phi_m.iter().map(|z| z.re * scale).collect()
+    Ok(phi_m.iter().map(|z| z.re * scale).collect())
 }
 
 /// The phase unwrapped as `numpy.unwrap`: each jump of more than `π`
@@ -858,6 +876,22 @@ mod tests {
         let wait = Gamma::new(1.0, 1.0).unwrap();
         assert!(wiener_hopf(&sev, &wait, 0.0, 64).is_err());
         assert!(wiener_hopf(&sev, &wait, 0.1, 1).is_err());
+    }
+
+    #[test]
+    fn wiener_hopf_refuses_a_step_on_a_sub_lattice() {
+        // Claims on {2h, 4h} and a wait that rounds to one even point put
+        // X - cW on the even points: 1 - phi_Y is 0 at k = m / 2 (#960).
+        use prospicio_prob::Discrete;
+        let sev = Grid::new(1.0, vec![0.0, 0.0, 0.5, 0.0, 0.5]).unwrap();
+        // c = (1 + 1/3) * 3 / 1 = 4, so cW = 4 exactly.
+        let wait = Discrete::new(vec![1.0], vec![1.0]).unwrap();
+        let err = wiener_hopf(&sev, &wait, 1.0 / 3.0, 64).unwrap_err();
+        assert!(err.to_string().contains("sub-lattice"), "{err}");
+        // On the odd points next to it the walk is fine.
+        let sev = Grid::new(1.0, vec![0.0, 0.5, 0.0, 0.0, 0.0, 0.5]).unwrap();
+        let wh = wiener_hopf(&sev, &wait, 1.0 / 3.0, 64).unwrap();
+        assert!(wh.psi().iter().all(|p| p.is_finite()));
     }
 
     #[test]

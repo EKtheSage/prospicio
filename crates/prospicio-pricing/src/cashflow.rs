@@ -1151,6 +1151,7 @@ impl CashflowTerms {
         let arrears = start.map_or(0.0, |s| s.arrears);
         if let Some(tr) = trace.as_deref_mut() {
             tr.opening_balance = start.map_or(0.0, |s| s.collateral + s.operating);
+            tr.first_month = v;
         }
 
         for t in v..t_n {
@@ -1559,6 +1560,9 @@ pub struct Trace {
     /// The trust and operating balances the trace starts from: 0 from
     /// inception, the actual balances from a valuation month.
     pub opening_balance: f64,
+    /// The month of the deal the trace's first entry is: 0 from inception,
+    /// the valuation month `v` from a valuation.
+    pub first_month: usize,
     /// The commutation requirement paid to the cedant.
     pub commutation_paid: f64,
     /// The performance fee.
@@ -1584,6 +1588,7 @@ impl Trace {
             investor: z(),
             funding_reference: z(),
             opening_balance: 0.0,
+            first_month: 0,
             commutation_paid: 0.0,
             fee: 0.0,
         }
@@ -1730,9 +1735,11 @@ pub struct ActualState {
 impl ActualState {
     /// The state of a simulated deal at the start of month `month`, from
     /// its [`trace`](CashflowTerms::trace) from inception: to value one
-    /// path of a simulation as if it had happened.
+    /// path of a simulation as if it had happened. Fails for
+    /// a trace from a valuation ([`Trace::first_month`] above 0), whose
+    /// entries are not months `0..`.
     pub fn from_trace(trace: &Trace, month: usize) -> Result<Self> {
-        if trace.opening_balance != 0.0 {
+        if trace.first_month != 0 || trace.opening_balance != 0.0 {
             return Err(Error::Data(
                 "the trace starts from a valuation; an actual state needs one from inception"
                     .into(),
@@ -2749,6 +2756,20 @@ mod tests {
             .trace(0.9, 0.2, Conditioning::BornhuetterFerguson)
             .unwrap();
         assert!(ActualState::from_trace(&tr, 3).is_err());
+        // Nor is one whose balances were both 0 at the valuation (#960).
+        let empty = ActualState {
+            month: 6,
+            funding_reference: Some(0.0),
+            ..ActualState::default()
+        };
+        let tr = terms
+            .valuation(empty)
+            .unwrap()
+            .trace(0.9, 0.2, Conditioning::BornhuetterFerguson)
+            .unwrap();
+        assert_eq!((tr.opening_balance, tr.first_month), (0.0, 6));
+        assert!(ActualState::from_trace(&tr, 3).is_err());
+        assert_eq!(path.first_month, 0);
         assert!(
             condition_on_paid(&[0.5], 0.0, 1.0, 0.5, Conditioning::BornhuetterFerguson).is_err()
         );
