@@ -74,9 +74,12 @@ fn the_tail_mass_is_a_probability_or_an_error() {
         acc += m;
         cum.push(acc);
     }
+    // Bucket k holds the mass on [x0 + (k - 1/2) h, x0 + (k + 1/2) h): take
+    // the part of the bucket holding x that lies above it.
     let reference = |x: f64| {
-        let k = ((x - x0) / h).floor() as usize;
-        1.0 - cum[k]
+        let k = ((x - x0) / h).round() as usize;
+        let above_in_bucket = (x0 + (k as f64 + 0.5) * h - x) / h;
+        1.0 - cum[k] + above_in_bucket * wide.masses()[k]
     };
     let mut answered = 0;
     for u in [-1.0, 0.0, 0.5, 1.0, 2.0, 5.0, 20.0, 100.0, 1000.0] {

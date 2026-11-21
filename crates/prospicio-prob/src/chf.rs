@@ -911,7 +911,7 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                 // first bucket gets no more than they leave of 1.
                 let inside: f64 = masses.iter().sum();
                 let unwrapped = tau >= TILT_UNWRAPPED;
-                let residual = unwrapped.then_some(1.0 - inside);
+                let residual = (tau > 0.0).then_some((1.0 - inside, tau));
                 (below, above) = outside_at(law, h, x0, n, fixed_grid, residual)?;
                 masses[0] += if unwrapped {
                     below
@@ -1383,17 +1383,18 @@ fn one_sided_window(
         Some(h) => h,
         None => round_bucket((x_r - x_l) / n as f64).min(bucket_cap(fam)),
     };
-    // A given step may make the window narrower than the span from the
-    // light edge to the right edge: it then sits on the body, as the untilted
-    // window does (the mean, or the location when the mean is infinite),
-    // with the light edge only as its left bound (#945).
+    // A given step may make the window too narrow to reach from the light
+    // edge to the body: it then sits on the body, as the untilted window
+    // does (the mean, or the location when the mean is infinite), with the
+    // light edge only as its left bound (#945). A window from the light edge
+    // that already holds the centre stays where it is.
     let width = n as f64 * h;
-    let x_left = if step.is_some() && width < x_r - x_l {
-        let centre = if fam.mean().is_finite() {
-            fam.mean()
-        } else {
-            fam.loc()
-        };
+    let centre = if fam.mean().is_finite() {
+        fam.mean()
+    } else {
+        fam.loc()
+    };
+    let x_left = if step.is_some() && x_l + width < centre {
         (centre - width / 2.0).max(x_l).min(x_r - width)
     } else {
         x_l
@@ -1430,22 +1431,25 @@ fn one_sided_window(
 /// placed to balance them; any other law the Chernoff bounds, 0 on a grid
 /// whose left edge was given. Where the tail series is not valid (a window
 /// that ends within a few scales of the body, #945) the heavy side gets
-/// `residual`, what the masses leave of 1, when they hold no wrapped tail
-/// (a tilt of at least [`TILT_UNWRAPPED`]), and otherwise an upper bound:
-/// untilted, the tail wraps onto the window and the masses sum to about 1
-/// whatever lies outside (#1010).
+/// what the masses leave of 1, `r` in `residual = (r, τ)`, when they hold no
+/// wrapped tail (a tilt of at least [`TILT_UNWRAPPED`]), and otherwise an
+/// upper bound. A tilt `τ` damps the tail that wraps onto the window by at
+/// least `e^(−τ)`, so the mass beyond is at most `r / (1 − e^(−τ))`;
+/// untilted, the tail wraps onto the window whole and the masses sum to
+/// about 1 whatever lies outside (#1010), so only the crude bound is left.
 fn outside_at(
     law: &ChfLaw,
     h: f64,
     x0: f64,
     n: usize,
     fixed_grid: bool,
-    residual: Option<f64>,
+    residual: Option<(f64, f64)>,
 ) -> Result<(f64, f64)> {
     let beyond = |fam: &Stable, edge: f64| {
         fam.tail_mass_above(edge)
             .unwrap_or_else(|_| match residual {
-                Some(r) => r.clamp(0.0, 1.0),
+                Some((r, tau)) if tau >= TILT_UNWRAPPED => r.clamp(0.0, 1.0),
+                Some((r, tau)) => (r.max(0.0) / -(-tau).exp_m1()).min(tail_mass_bound(fam, edge)),
                 None => tail_mass_bound(fam, edge),
             })
     };
@@ -2070,8 +2074,8 @@ mod tests {
             (1.1, 1.0, 10, 0.001),
             (1.5, -1.0, 10, 0.001),
             // a tilt between none and the full one
-            (1.5, 1.0, 12, 0.003),
-            (1.5, -1.0, 12, 0.003),
+            (1.9, 1.0, 12, 0.004),
+            (1.9, -1.0, 12, 0.004),
         ] {
             let d = invert(
                 &stable(alpha, beta, 1.0, 0.0),
@@ -2095,7 +2099,7 @@ mod tests {
                 assert!(r.total_mass <= 1.0 + 1e-6, "{case}");
             }
         }
-        let partial = invert(&stable(1.5, 1.0, 1.0, 0.0), &on_step(12, 0.003, Tilt::Auto)).unwrap();
+        let partial = invert(&stable(1.9, 1.0, 1.0, 0.0), &on_step(12, 0.004, Tilt::Auto)).unwrap();
         let tau = partial.report().tilt.1;
         assert!(0.0 < tau && tau < TILT_UNWRAPPED, "{tau}");
     }
@@ -2167,5 +2171,94 @@ mod tests {
         )
         .unwrap();
         assert_eq!(below_support.report().outside_above, 1.0);
+    }
+
+    #[test]
+    fn a_fixed_tilt_keeps_a_light_edge_window_that_holds_the_body() {
+        // The window from the light edge already holds the mean: it stays
+        // there, as before #945, and the light side's negligible mass below
+        // it is no reason to refuse the tilt.
+        for (alpha, beta, scale, loc, log2, step, tau) in [
+            (1.1, 1.0, 1.0, 0.0, 11, 0.01, 8.0),
+            (1.1, -1.0, 1.0, 0.0, 11, 0.01, 8.0),
+            (1.9, 1.0, 1.0, 0.0, 11, 0.01, 8.0),
+            (1.9, -1.0, 1.0, 0.0, 11, 0.01, 8.0),
+            (1.3, 1.0, 4.0, -1.0, 8, 0.2, 3.0),
+            (1.3, -1.0, 4.0, -1.0, 8, 0.2, 3.0),
+        ] {
+            let st =
+                Stable::new(alpha, beta, scale, loc, crate::StableParameterization::S1).unwrap();
+            let d = invert(&ChfLaw::Stable(st), &on_step(log2, step, Tilt::Fixed(tau)))
+                .unwrap_or_else(|e| panic!("{alpha} {beta} {scale} {loc}: {e}"));
+            let r = d.report();
+            let top = d.x_min() + (1u64 << log2) as f64 * d.step();
+            assert!(
+                d.x_min() <= st.mean() && st.mean() <= top,
+                "{alpha} {beta}: {r:?}"
+            );
+            // The masses are a probability, and with the mass beyond (a left
+            // tail's is in the first bucket; a right one's may be a bound
+            // under a small tilt) they leave nothing of 1.
+            assert!(r.total_mass <= 1.0 + 1e-4, "{alpha} {beta}: {r:?}");
+            let sum = r.total_mass + r.outside_above;
+            assert!(sum >= 1.0 - 1e-4, "{alpha} {beta}: {r:?}");
+            assert!(r.outside_above <= 0.1, "{alpha} {beta}: {r:?}");
+        }
+        // The light-edge window of Stable(1.1, 1, 1, 0) is [-11.05, 9.43].
+        let d = invert(
+            &stable(1.1, 1.0, 1.0, 0.0),
+            &on_step(11, 0.01, Tilt::Fixed(8.0)),
+        )
+        .unwrap();
+        assert!(d.x_min() < -11.0, "{:?}", d.report());
+        // A window that does not hold the body still moves onto it, and a
+        // fixed tilt that magnifies the light side's mass there is refused.
+        assert!(
+            invert(
+                &stable(1.5, 1.0, 1.0, 0.0),
+                &on_step(12, 0.001, Tilt::Fixed(8.0))
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn a_small_fixed_tilt_reports_the_mass_beyond_the_window() {
+        // On the default window the tail series or the wrapped masses give
+        // the mass beyond the window to a few parts in a hundred at worst,
+        // not the crude bound P(X > loc) (#945 review).
+        for (alpha, beta, scale, loc) in [
+            (1.5, 1.0, 1.0, 0.0),
+            (1.5, 1.0, 0.3, 2.0),
+            (1.5, 1.0, 4.0, -1.0),
+            (1.7, 1.0, 1.0, 0.0),
+            (1.3, 1.0, 0.3, 2.0),
+            (1.0, 1.0, 1.0, 0.0),
+            (1.0, -1.0, 1.0, 0.0),
+            (1.5, -1.0, 1.0, 0.0),
+        ] {
+            let law = stable(alpha, beta, scale, loc);
+            let fixed = ChfOptions {
+                log2: 8,
+                tilt: Tilt::Fixed(3.0),
+                ..ChfOptions::default()
+            };
+            let (f, a) = (
+                invert(&law, &fixed).unwrap().report().clone(),
+                invert(&law, &ChfOptions::with_log2(8))
+                    .unwrap()
+                    .report()
+                    .clone(),
+            );
+            let (got, want) = if beta > 0.0 {
+                (f.outside_above, a.outside_above)
+            } else {
+                (f.outside_below, a.outside_below)
+            };
+            assert!(
+                got >= want * (1.0 - 1e-3) && got <= want * 1.05,
+                "{alpha} {beta} {scale} {loc}: {got} against {want}"
+            );
+        }
     }
 }

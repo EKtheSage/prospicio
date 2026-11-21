@@ -32,17 +32,22 @@ vector. Your own function needs \code{step} and \code{x_min}.}
 \item{step}{The bucket; sized from the tails when \code{NULL}.}
 
 \item{x_min}{The grid's first point, with \code{step}; placed from the tails
-when \code{NULL}.}
+when \code{NULL}. A given \code{x_min} fixes the grid, so it is inverted
+untilted: \code{tilt = TRUE} falls back to no tilt (a heavy tail wraps onto
+the window, and the report's tilt is 0), and a number \code{tilt} is an
+error.}
 
 \item{bucket_sizing_p}{The mass the window covers when it is sized from
 the tails.}
 
 \item{tilt}{\code{TRUE}: a law with one power tail (a \code{\link[=stable_distribution]{stable_distribution()}}
 with \code{beta} 1 or -1) at the automatic tilt, a stable law with two split
-into its halves and each tilted, every other law untilted. \code{FALSE}:
-never tilt (a heavy tail wraps onto the window). A number \code{tau >= 0}:
-exactly \code{tau} e-folds of damping across the window, for a stable law
-only.}
+into its halves and each tilted, every other law untilted; no tilt
+when \code{x_min} is given. \code{FALSE}: never tilt (a heavy tail wraps onto
+the window). A number \code{tau >= 0}: exactly \code{tau} e-folds of damping
+across the window, for a stable law only, and an error with \code{x_min}
+given or on a window (a \code{step} that puts it on the body) whose light
+side below it the tilt would magnify past round-off.}
 
 \item{ptr}{Internal.}
 }

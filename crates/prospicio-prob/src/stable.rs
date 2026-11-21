@@ -8,6 +8,10 @@ use rustfft::num_complex::Complex64;
 
 use std::f64::consts::PI;
 
+/// Above `α = 1` the tail series is asymptotic: its error is about its
+/// smallest term, which must be at most this fraction of the sum.
+const TAIL_SERIES_TOL: f64 = 1e-3;
+
 /// How a stable law's location is read (Nolan 2020, Def. 1.3 to 1.7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StableParameterization {
@@ -454,7 +458,7 @@ impl Stable {
     /// The series is a tail expansion, not the whole function. Where it is
     /// not valid the call returns an error and never a number that is not a
     /// probability: at or below the location (`u ≤ 0`), where `α > 1` and
-    /// the smallest term of the asymptotic series is above `10⁻⁶` of the
+    /// the smallest term of the asymptotic series is above `10⁻³` of the
     /// sum, where `α < 1` and the 400 terms have not converged or cancel
     /// more than `10⁷`-fold, where `α = 1` and `v < 20`, and where the sum is
     /// outside `[0, 1]`. `α = 2` is the normal law, exact everywhere.
@@ -501,7 +505,7 @@ impl Stable {
             }
             let mag = log_mag.exp();
             if a > 1.0 && mag > last {
-                settled = last <= 1e-6 * total.abs();
+                settled = last <= TAIL_SERIES_TOL * total.abs();
                 break;
             }
             last = mag;

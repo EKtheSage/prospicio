@@ -39,7 +39,7 @@ sources:
     title: validation/tests/probability_chf_tvar.rs, chf_tvar_matches_aggregate, against validation/scripts/aggregate_chf_tvar.py
   - id: window-test
     resource: ../crates/prospicio-prob/src/chf.rs
-    title: crates/prospicio-prob/src/chf.rs, the tests a_tilted_window_on_the_body_keeps_its_masses_a_probability, a_fixed_tilt_that_magnifies_the_light_side_is_refused and an_untilted_window_reports_the_mass_beyond_it_or_a_bound (#1010)
+    title: crates/prospicio-prob/src/chf.rs, the tests a_tilted_window_on_the_body_keeps_its_masses_a_probability, a_fixed_tilt_that_magnifies_the_light_side_is_refused, an_untilted_window_reports_the_mass_beyond_it_or_a_bound, a_fixed_tilt_keeps_a_light_edge_window_that_holds_the_body and a_small_fixed_tilt_reports_the_mass_beyond_the_window (#1010)
   - id: aggregate
     resource: https://pypi.org/project/aggregate/2.1.0/
     title: aggregate 2.1.0, characteristic_function.py (AggregateCHF, invert_characteristic_function, window_edges) and utilities.py (round_bucket)
@@ -103,8 +103,17 @@ sources:
   tail wraps onto the window and the masses sum to 1 whatever lies
   outside, so 1 minus their sum says nothing of the mass beyond it; where
   the tail series does not hold, the engine reports the bound
-  `P(X > delta_1)` (1 at or below the location) instead (#945,
-  #1010).[^window-test]
+  `P(X > delta_1)` (1 at or below the location) instead. A tilt `tau`
+  damps the wrapped tail by at least `e^-tau`, so under a tilt too small
+  to remove it the mass beyond is at most `r / (1 - e^-tau)`, `r` what the
+  masses leave of 1: on rule A's window at log2 8 with a fixed tilt of 3
+  this gives 0.0333 for `Stable(1.5, 1)` against 0.03309 from the full
+  tilt (0.0772 against 0.0771 at `alpha = 1.7`). Above `alpha = 1` the
+  asymptotic tail series is trusted while its smallest term is within
+  1e-3 of the sum: at that window's top edge it is 4.5e-5 for
+  `alpha = 1.5` (accurate), but 0.84 for `alpha = 1.7` and 1.06 for
+  `Stable(1.5, 1, 0.3, 2)`, where the series was 32% high and 13% low
+  (#945, #1010).[^window-test]
 * The normal inverse Gaussian, variance gamma and CGMY tempered stable
   laws (aggregate's `norminvgauss`, `variancegamma`, `temperedstable`) go
   through the same untilted rule A unchanged, since each has a finite

@@ -39975,15 +39975,19 @@ def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: flo
         The bucket; sized from the tails when left out.
     x_min : float, optional
         The grid's first point, with ``step``; placed from the tails when
-        left out.
+        left out. A given ``x_min`` fixes the grid, so it is inverted
+        untilted: ``tilt=True`` falls back to no tilt (a heavy tail wraps
+        onto the window, and the report's tilt is 0), and a number ``tilt``
+        is refused.
     bucket_sizing_p : float, default 0.99999
         The mass the window covers when it is sized from the tails.
     tilt : bool or float, default True
         ``True``: a law with one power tail at the automatic tilt, a
         stable law with two split into its halves and each tilted, every
-        other law untilted. ``False``: never tilt (a heavy tail wraps). A
-        number ``tau >= 0``: exactly ``tau`` e-folds of damping across the
-        window, for a stable law only.
+        other law untilted; no tilt when ``x_min`` is given. ``False``:
+        never tilt (a heavy tail wraps). A number ``tau >= 0``: exactly
+        ``tau`` e-folds of damping across the window, for a stable law
+        only, and not with ``x_min``.
     
     Returns
     -------
@@ -39994,7 +39998,10 @@ def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: flo
     ValueError
         If an option is out of range, ``x_min`` is given without ``step``,
         your own function is given without both, or it returns a value that
-        is not finite; a number ``tilt`` on a law with no power tail.
+        is not finite; a number ``tilt`` on a law with no power tail, with
+        ``x_min`` given, or on a window (a ``step`` that puts it on the
+        body) whose light side below it the tilt would magnify past
+        round-off.
     
     Examples
     --------
