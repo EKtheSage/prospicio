@@ -28,9 +28,10 @@
 //! ladder while that lowers the larger of the truncation and the mass the
 //! shortened window leaves outside.
 //!
-//! **An atom** (the Tweedie's point mass at 0, a CGMY law's at `mu` for `Y < 0`) is taken out of `φ` before
-//! inversion and added back to its bucket, so frequency truncation does
-//! not ring around it.
+//! **An atom** (the Tweedie's point mass at 0, a CGMY law's at `mu` for
+//! `Y < 0`) is taken out of `φ` before inversion and added back to its
+//! bucket, so frequency truncation does not ring around it. A grid the user
+//! gives (`step` and `x_min`) that does not hold the atom leaves it in `φ`.
 //!
 //! **Tilting.** The kernel inverts along the line `Im s = θ`, where the
 //! integrand decays like the damped law `e^{−θx} f(x)`: the discretized
@@ -835,7 +836,13 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                     (Some(h), Some(x)) => (h, x),
                     _ => plain_window(law, n, p, options.step)?,
                 };
-                masses = invert_on(law, x0, h, n, 0.0, law.atom())?;
+                // A grid the user gives may not hold the atom (off the grid
+                // or outside the window): then it stays in `φ`, as it did
+                // before a CGMY law's atom was taken out (#944).
+                let atom = law
+                    .atom()
+                    .filter(|&(xa, _)| !fixed_grid || atom_bucket(xa, x0, h, n).is_some());
+                masses = invert_on(law, x0, h, n, 0.0, atom)?;
                 (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
                 edge_error = match law.tilt_family() {
                     Some(fam) if law.tilt_side() != Some(TiltSide::Both) => {
@@ -985,16 +992,21 @@ fn invert_fn(
         })
         .collect();
     if let Some((xa, wa)) = atom {
-        let kf = ((xa - x0) / h).round();
-        let k = kf as isize;
-        if k < 0 || k as usize >= n || (x0 + kf * h - xa).abs() > 1e-9 * h.max(1.0) {
-            return Err(Error::Data(format!(
+        let k = atom_bucket(xa, x0, h, n).ok_or_else(|| {
+            Error::Data(format!(
                 "the atom at {xa} is not a grid point of x_min = {x0}, step = {h}, {n} buckets"
-            )));
-        }
-        p[k as usize] += wa;
+            ))
+        })?;
+        p[k] += wa;
     }
     Ok(p)
+}
+
+/// The bucket `k < n` whose grid point `x0 + h · k` is `xa`, if any.
+fn atom_bucket(xa: f64, x0: f64, h: f64, n: usize) -> Option<usize> {
+    let kf = ((xa - x0) / h).round();
+    let on_grid = kf >= 0.0 && kf < n as f64 && (x0 + kf * h - xa).abs() <= 1e-9 * h.max(1.0);
+    on_grid.then_some(kf as usize)
 }
 
 /// The smallest "nice" bucket at or above `bs`: `{1, 2, 4, 5, 8} · 10^k`
@@ -1667,6 +1679,36 @@ mod tests {
         // Y > 0 has no atom.
         let no = TemperedStable::new(2.0, 3.0, 4.0, 0.5, 0.0).unwrap();
         assert!(ChfLaw::TemperedStable(no).atom().is_none());
+    }
+
+    #[test]
+    fn a_given_grid_without_the_atom_inverts_with_the_atom_left_in() {
+        // A grid the user gives that does not hold mu (off the grid, or
+        // outside the window) inverts as before the atom was taken out,
+        // with the atom left in phi (#944).
+        let ts = TemperedStable::new(2.0, 3.0, 4.0, -0.5, 0.05).unwrap();
+        let law = ChfLaw::TemperedStable(ts);
+        for x_min in [-20.0, 5.0] {
+            let opts = ChfOptions {
+                log2: 10,
+                step: Some(0.1),
+                x_min: Some(x_min),
+                ..ChfOptions::default()
+            };
+            let d = invert(&law, &opts).unwrap();
+            let plain = invert_on(&law, x_min, 0.1, 1 << 10, 0.0, None).unwrap();
+            assert_eq!(d.masses(), &plain[..], "x_min = {x_min}");
+        }
+        // A given grid that holds mu still takes the atom out.
+        let opts = ChfOptions {
+            log2: 10,
+            step: Some(0.05),
+            x_min: Some(-20.0),
+            ..ChfOptions::default()
+        };
+        let d = invert(&law, &opts).unwrap();
+        let plain = invert_on(&law, -20.0, 0.05, 1 << 10, 0.0, None).unwrap();
+        assert_ne!(d.masses(), &plain[..]);
     }
 
     #[test]
