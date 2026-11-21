@@ -87,26 +87,49 @@ pub fn rearrange(columns: &[Vec<f64>], start: Start, tolerance: f64) -> Result<R
         .collect();
     let mut best = f64::NEG_INFINITY;
     let mut iterations = 0;
+    // A column's multiset never changes, so its descending order is sorted
+    // once (equal values under `total_cmp` have equal bits, so this is the
+    // sequence a re-sort every sweep gives).
+    let sorted: Vec<Vec<f64>> = x
+        .iter()
+        .map(|c| {
+            let mut s = c.clone();
+            s.sort_by(|a, b| b.total_cmp(a));
+            s
+        })
+        .collect();
+    let d = x.len();
     let mut order: Vec<usize> = (0..n).collect();
-    let mut sorted = vec![0.0; n];
+    // `prefix` holds the sums of the columns before `j` in this sweep, in
+    // column order; adding the columns from `j` on in order gives each
+    // row's total with the same rounding as summing all `d` columns from
+    // scratch, at about half the work.
+    let mut prefix = vec![-0.0; n];
+    let mut rest = vec![0.0; n];
     loop {
         iterations += 1;
-        for j in 0..x.len() {
-            let total: Vec<f64> = (0..n)
-                .map(|i| x.iter().map(|c| c[i]).sum::<f64>())
-                .collect();
-            let rest: Vec<f64> = (0..n).map(|i| total[i] - x[j][i]).collect();
+        prefix.fill(-0.0);
+        for j in 0..d {
+            rest.copy_from_slice(&prefix);
+            for c in &x[j..] {
+                for (r, v) in rest.iter_mut().zip(c) {
+                    *r += v;
+                }
+            }
+            for (r, v) in rest.iter_mut().zip(&x[j]) {
+                *r -= v;
+            }
             order.iter_mut().enumerate().for_each(|(i, o)| *o = i);
             order.sort_by(|&a, &b| rest[a].total_cmp(&rest[b]));
-            sorted.copy_from_slice(&x[j]);
-            sorted.sort_by(|a, b| b.total_cmp(a));
             for (k, &row) in order.iter().enumerate() {
-                x[j][row] = sorted[k];
+                x[j][row] = sorted[j][k];
+            }
+            for (p, v) in prefix.iter_mut().zip(&x[j]) {
+                *p += v;
             }
         }
-        let low = (0..n)
-            .map(|i| x.iter().map(|c| c[i]).sum::<f64>())
-            .fold(f64::INFINITY, f64::min);
+        // After the last column `prefix` holds every row's sum.
+        let low = prefix.iter().copied().fold(f64::INFINITY, f64::min);
         if low - best < tolerance {
             return Ok(Rearrangement {
                 value: low,
@@ -182,5 +205,129 @@ mod tests {
             assert!(r.value > 2.0 && r.value <= 8.0, "{start:?}: {}", r.value);
         }
         assert!(rearrange(&[vec![1.0], vec![1.0, 2.0]], Start::AsGiven, 1e-9).is_err());
+    }
+
+    /// The previous algorithm: totals recomputed from scratch and the
+    /// column re-sorted for every column of every sweep.
+    fn rearrange_reference(columns: &[Vec<f64>], start: Start, tolerance: f64) -> Rearrangement {
+        let n = columns[0].len();
+        let mut x: Vec<Vec<f64>> = columns
+            .iter()
+            .enumerate()
+            .map(|(j, c)| match start {
+                Start::AsGiven => c.clone(),
+                Start::Rotated(shift) => {
+                    let s = (shift * j) % n;
+                    (0..n).map(|i| c[(i + n - s) % n]).collect()
+                }
+                Start::Shuffled(seed) => {
+                    let mut c = c.clone();
+                    StreamRng::new(seed, j as u64).shuffle(&mut c);
+                    c
+                }
+            })
+            .collect();
+        let mut best = f64::NEG_INFINITY;
+        let mut iterations = 0;
+        let mut order: Vec<usize> = (0..n).collect();
+        let mut sorted = vec![0.0; n];
+        loop {
+            iterations += 1;
+            for j in 0..x.len() {
+                let total: Vec<f64> = (0..n)
+                    .map(|i| x.iter().map(|c| c[i]).sum::<f64>())
+                    .collect();
+                let rest: Vec<f64> = (0..n).map(|i| total[i] - x[j][i]).collect();
+                order.iter_mut().enumerate().for_each(|(i, o)| *o = i);
+                order.sort_by(|&a, &b| rest[a].total_cmp(&rest[b]));
+                sorted.copy_from_slice(&x[j]);
+                sorted.sort_by(|a, b| b.total_cmp(a));
+                for (k, &row) in order.iter().enumerate() {
+                    x[j][row] = sorted[k];
+                }
+            }
+            let low = (0..n)
+                .map(|i| x.iter().map(|c| c[i]).sum::<f64>())
+                .fold(f64::INFINITY, f64::min);
+            if low - best < tolerance {
+                return Rearrangement {
+                    value: low,
+                    columns: x,
+                    iterations,
+                };
+            }
+            best = low;
+        }
+    }
+
+    /// `d` columns of `n` values from a seeded stream; with `ties` the
+    /// values are drawn from a few levels so many rows and sums tie.
+    fn test_columns(d: usize, n: usize, seed: u64, ties: bool) -> Vec<Vec<f64>> {
+        (0..d)
+            .map(|j| {
+                let mut rng = StreamRng::new(seed, 100 + j as u64);
+                (0..n)
+                    .map(|_| {
+                        let u = rng.next_open01();
+                        if ties {
+                            (u * 4.0).floor() * 0.1
+                        } else {
+                            -(1.0 - u).ln() * (1.0 + j as f64)
+                        }
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_result_is_the_old_algorithms_bit_for_bit() {
+        let mut cases = vec![
+            // Identical columns of repeated values: ties in every sum.
+            vec![vec![1.0, 1.0, 2.0, 2.0, 3.0]; 3],
+            vec![vec![0.0; 6]; 2],
+            vec![
+                vec![1.0, 2.0, 3.0, 4.0, 5.0],
+                vec![1.0, 2.0, 3.0, 4.0, 5.0],
+                vec![0.0, 0.0, 0.0, 0.0, 10.0],
+            ],
+            // A single column and a single row.
+            vec![vec![3.0, 1.0, 2.0]],
+            vec![vec![2.0], vec![5.0], vec![1.0]],
+        ];
+        for (d, n, ties) in [
+            (2, 50, false),
+            (4, 200, false),
+            (3, 100, true),
+            (7, 64, true),
+        ] {
+            cases.push(test_columns(d, n, d as u64 * 31 + n as u64, ties));
+        }
+        for c in &cases {
+            for start in [Start::AsGiven, Start::Rotated(3), Start::Shuffled(9)] {
+                let new = rearrange(c, start, 1e-12).unwrap();
+                let old = rearrange_reference(c, start, 1e-12);
+                assert_eq!(new, old, "{start:?} on {} columns", c.len());
+            }
+        }
+    }
+
+    /// Timing at d = 10, n = 10 000:
+    /// `cargo test -p prospicio-prob --release --lib -- --ignored --nocapture rearrangement_timing`.
+    #[test]
+    #[ignore = "timing, run by hand"]
+    fn rearrangement_timing() {
+        let c = test_columns(10, 10_000, 3, false);
+        let t = std::time::Instant::now();
+        let new = rearrange(&c, Start::Shuffled(1), 1e-9).unwrap();
+        let new_time = t.elapsed();
+        let t = std::time::Instant::now();
+        let old = rearrange_reference(&c, Start::Shuffled(1), 1e-9);
+        let old_time = t.elapsed();
+        assert_eq!(new, old);
+        println!(
+            "rearrange d=10 n=10000 ({} sweeps): new {new_time:?}, old {old_time:?}",
+            new.iterations
+        );
     }
 }
