@@ -185,6 +185,23 @@ def compare_tolerance_rows(header: list[str], old: list[list[str]], new: list[li
     return diffs, sorted(moved)
 
 
+def same_cell(a: str, b: str, tol: tuple[float, float]) -> bool:
+    """One cell: a number within `tol`; a list of numbers (`;` and `|` separated,
+    as the Hawkes periods are) element by element; any other text exact."""
+    x, y = number(a), number(b)
+    if x is not None and y is not None:
+        return same(y, x, *tol)
+    if a == b:
+        return True
+    ta, tb = re.split(r"[;|]", a), re.split(r"[;|]", b)
+    if len(ta) < 2 or a.count(";") != b.count(";") or a.count("|") != b.count("|"):
+        return False
+    return all(
+        s == t or (number(s) is not None and number(t) is not None and same(number(t), number(s), *tol))
+        for s, t in zip(ta, tb)
+    )
+
+
 def compare_plain_rows(
     old: list[list[str]],
     new: list[list[str]],
@@ -202,9 +219,7 @@ def compare_plain_rows(
         for i, (a, b) in enumerate(zip(o, n)):
             if i == skip:
                 continue
-            x, y = number(a), number(b)
-            ok = same(y, x, *tol) if x is not None and y is not None else a == b
-            if not ok:
+            if not same_cell(a, b, tol):
                 diffs.append(f"line {line}: {a} -> {b}")
     return diffs
 

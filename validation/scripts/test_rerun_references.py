@@ -23,7 +23,7 @@ HAWKES_OLD = (
 def hawkes_new(baseline, beta, label="SciPy 1.18.1"):
     return (
         b"case,horizon,periods,baseline,alpha,beta,log_likelihood,source\n"
-        b"a,1.0,0.5|0.7;0.2,%s,9.0735956889067779,%s,-3.5,%s\n"
+        b"a,1.0,0.5|0.7000000000000001;0.2,%s,9.0735956889067779,%s,-3.5,%s\n"
         % (baseline, beta, label.encode())
     )
 
@@ -39,7 +39,7 @@ def main():
     changed = SOBOL_NEW.replace(b"0;1;3", b"0;1;4")
     diffs, moved = rr.compare("sobol_scipy.csv", SOBOL_OLD, changed)
     assert len(diffs) == 1 and moved == ["SciPy 1.14.1 -> SciPy 1.18.1"], (diffs, moved)
-    # An optimiser's last digits (3e-8 to 9e-8 relative) pass for hawkes_scipy.csv.
+    # Event times that moved in the last ulp and an optimiser's last digits (3e-8 to 9e-8 relative) pass for hawkes_scipy.csv.
     got = rr.compare("hawkes_scipy.csv", HAWKES_OLD, hawkes_new(b"1.5210145700988877", b"288.23212707844078"))
     check(got, ([], ["SciPy 1.14.1 -> SciPy 1.18.1"]), "hawkes drift")
     # A real change (1e-4 relative) does not.
