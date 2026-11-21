@@ -285,7 +285,7 @@ fn bad_inputs_are_named() {
         "pro_cap_distortion_price",
         vec![Grid::column(&X), Grid::column(&[0.5, 0.5]), t("ph"), n(0.5)],
     );
-    assert!(text(&e).contains("7 values and 2 probs"), "{}", text(&e));
+    assert!(text(&e).contains("probs has 2 cells, too few for values"), "{}", text(&e));
     // A premium above the largest outcome is out of reach for every family.
     let out = call(
         "pro_cap_distortion_calibrate",

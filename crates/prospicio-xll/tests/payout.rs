@@ -125,7 +125,7 @@ fn bad_patterns_are_named() {
         "pro_prc_payout_stats",
         vec![row(&[1.0]), row(&[1.0, 0.0]), n(0.05)],
     );
-    assert!(text(&e).contains("1 times and 2 values"), "{}", text(&e));
+    assert!(text(&e).contains("times has 1 cells, too few for values"), "{}", text(&e));
     let e = call(
         "pro_prc_payout_stats",
         vec![row(&[1.0]), row(&[1.0]), n(-2.0)],

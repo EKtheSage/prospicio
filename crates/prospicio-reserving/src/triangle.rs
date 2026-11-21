@@ -463,7 +463,7 @@ impl Triangle {
             .zip(&values)
             .map(|(c, v)| (*c, v.as_slice()))
             .collect();
-        Triangle::from_long(&Long {
+        let mut stacked = Triangle::from_long(&Long {
             keys: &[(key, &names)],
             origin: &origin,
             development: DevelopmentColumn::Age(&development),
@@ -471,7 +471,38 @@ impl Triangle {
             origin_grain: first.origin_grain(),
             development_grain: first.development_grain(),
             cumulative: first.is_cumulative(),
-        })
+        })?;
+        if !first.is_cumulative() {
+            // `from_long` fills every unobserved incremental up to the
+            // latest valuation of all programs with an observed zero. A
+            // program valued earlier, or missing a cell of its own, never
+            // observed those cells (#942): give each back its own mask.
+            for &(name, t) in triangles {
+                let i = stacked
+                    .index
+                    .binary_search(&Label::new([name]))
+                    .expect("every program is a segment");
+                for (c, col) in cols.iter().enumerate() {
+                    let tc = t.column_position(col).expect("checked above");
+                    for (o, start) in stacked.origins.iter().enumerate() {
+                        let to = t.origins.iter().position(|s| s == start);
+                        for (d, age) in stacked.development.iter().enumerate() {
+                            let td = t.development.iter().position(|a| a == age);
+                            let seen = match (to, td) {
+                                (Some(to), Some(td)) => t.mask[t.offset(0, tc, to, td)],
+                                _ => false,
+                            };
+                            if !seen {
+                                let at = stacked.offset(i, c, o, d);
+                                stacked.mask[at] = false;
+                                stacked.values[at] = 0.0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(stacked)
     }
 
     /// The triangle as a long table: one row per (segment, origin, age) with
@@ -1596,6 +1627,48 @@ pub(crate) mod tests {
 
     fn m(year: i32, month: u8) -> Month {
         Month::new(year, month).unwrap()
+    }
+
+    #[test]
+    fn stacking_incremental_programs_keeps_each_ones_own_missing_cells() {
+        // #942: B is valued a year before A; its 24-month cell was never
+        // observed and must not become an observed zero.
+        let one = |origin: &[Month], age: &[Lag], v: &[f64]| {
+            Triangle::from_long(&Long {
+                keys: &[],
+                origin,
+                development: DevelopmentColumn::Age(age),
+                values: &[("paid", v)],
+                origin_grain: Grain::Year,
+                development_grain: Grain::Year,
+                cumulative: false,
+            })
+            .unwrap()
+        };
+        let a = one(
+            &[m(2020, 1), m(2020, 1), m(2021, 1)],
+            &[12, 24, 12],
+            &[100.0, 40.0, 90.0],
+        );
+        let b = one(&[m(2020, 1)], &[12], &[80.0]);
+        assert_eq!((a.valuation(), b.valuation()), (m(2021, 12), m(2020, 12)));
+        let st = Triangle::stack(&[("A", &a), ("B", &b)], "program", &["paid"]).unwrap();
+        assert_eq!(st.shape(), [2, 1, 2, 2]);
+        assert!(!st.is_cumulative());
+        assert_eq!(st.get(1, 0, 0, 0), Some(80.0));
+        assert_eq!(st.get(1, 0, 0, 1), None);
+        assert_eq!(st.get(1, 0, 1, 0), None);
+        // The programs' own cells are untouched.
+        assert_eq!(st.get(0, 0, 0, 1), Some(40.0));
+        assert_eq!(st.get(0, 0, 1, 0), Some(90.0));
+        let back = st.segments("paid").unwrap();
+        for (seg, tri) in back.iter().zip([&a, &b]) {
+            let own = tri.segment("paid").unwrap();
+            assert_eq!(seg.cells, own.cells);
+            assert_eq!((seg.n_origins, seg.n_dev), (own.n_origins, own.n_dev));
+            assert_eq!(seg.origins, own.origins);
+            assert_eq!(seg.ages, own.ages);
+        }
     }
 
     #[test]

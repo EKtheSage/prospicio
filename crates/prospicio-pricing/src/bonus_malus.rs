@@ -387,11 +387,55 @@ impl BonusMalus {
         self.matrix(&dp)
     }
 
+    /// The number of closed communicating classes of the level graph (an
+    /// edge from each level to every level a claim count can lead to). For
+    /// any `lambda > 0` every row entry has positive probability, so this
+    /// does not depend on `lambda`.
+    fn closed_classes(&self) -> usize {
+        let s = self.levels();
+        let mut reach = vec![false; s * s];
+        for (i, row) in self.table.iter().enumerate() {
+            reach[i * s + i] = true;
+            for &j in row {
+                reach[i * s + j] = true;
+            }
+        }
+        for k in 0..s {
+            for i in 0..s {
+                if reach[i * s + k] {
+                    for j in 0..s {
+                        if reach[k * s + j] {
+                            reach[i * s + j] = true;
+                        }
+                    }
+                }
+            }
+        }
+        // A level is in a closed class when everything it reaches reaches
+        // it back; count each class once, at its smallest level.
+        (0..s)
+            .filter(|&i| {
+                (0..s).all(|j| !reach[i * s + j] || reach[j * s + i])
+                    && (0..i).all(|j| !(reach[i * s + j] && reach[j * s + i]))
+            })
+            .count()
+    }
+
     /// Solve `x (P - I) = -rhs` with `Σ x = total`: the stationary
     /// distribution for `rhs = 0`, `total = 1`, and its derivative for
     /// `rhs = π P'`, `total = 0`.
     fn solve_left(&self, m: &[f64], rhs: &[f64], total: f64) -> Result<Vec<f64>> {
         let s = self.levels();
+        // Uniqueness is a property of the table, not of round-off in the
+        // solve: with two closed classes the system is singular, but the
+        // pivot is rarely exactly zero.
+        if self.closed_classes() > 1 {
+            return Err(Error::Data(
+                "the scale has no unique stationary distribution: it has more than one closed \
+                 class of levels"
+                    .into(),
+            ));
+        }
         // (P - I)^T, its last row replaced by ones.
         let mut a = vec![0.0; s * s];
         for i in 0..s {
@@ -657,6 +701,32 @@ mod tests {
         // distribution.
         let stuck = BonusMalus::table(0, vec![vec![0, 0], vec![1, 1]]).unwrap();
         assert!(stuck.stationary_at(0.1).is_err());
+    }
+
+    #[test]
+    fn a_table_with_two_closed_classes_has_no_stationary_distribution() {
+        // Closed classes {0, 1} and {4, 5}; a newcomer starts at level 0.
+        let rows = vec![
+            vec![0, 1, 1],
+            vec![0, 1, 1],
+            vec![1, 3, 4],
+            vec![2, 4, 5],
+            vec![4, 5, 5],
+            vec![4, 5, 5],
+        ];
+        let bm = BonusMalus::table(0, rows).unwrap();
+        for lambda in [0.1, 0.37, 1.3] {
+            assert!(bm.stationary_at(lambda).is_err(), "lambda = {lambda}");
+            let rel = vec![1.0; 6];
+            assert!(bm.mean_relativity(lambda, &rel).is_err());
+            assert!(bm.efficiency(lambda, &rel).is_err());
+        }
+        // The transient view is still defined.
+        assert!(bm.distribution_after(0.37, 5).is_ok());
+        // One closed class {2} with transient levels still works.
+        let one = BonusMalus::table(0, vec![vec![1, 2], vec![2, 2], vec![2, 2]]).unwrap();
+        let pi = one.stationary_at(0.5).unwrap();
+        assert!((pi[2] - 1.0).abs() < 1e-12);
     }
 
     #[test]

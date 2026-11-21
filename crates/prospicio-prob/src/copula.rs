@@ -1083,10 +1083,16 @@ fn correlation_factor(r: &[f64], dim: usize) -> Result<Vec<f64>> {
 /// Fills `out` with `L z` for standard normals `z` drawn in order by
 /// inverse transform.
 fn correlated_normals(chol: &[f64], rng: &mut StreamRng, out: &mut [f64]) {
-    let z: Vec<f64> = (0..out.len())
-        .map(|_| norm_quantile(rng.next_open01()))
-        .collect();
-    lower_mul(chol, &z, out);
+    for o in out.iter_mut() {
+        *o = norm_quantile(rng.next_open01());
+    }
+    // `L z` in place, rows from the last: row `i` reads only `z[0..=i]`, which
+    // later (smaller) rows have not yet overwritten. Same sums, same order
+    // as `lower_mul`.
+    let n = out.len();
+    for i in (0..n).rev() {
+        out[i] = (0..=i).map(|k| chol[i * n + k] * out[k]).sum();
+    }
 }
 
 fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
@@ -1101,6 +1107,21 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
 mod tests {
     use super::*;
     use std::f64::consts::PI;
+
+    #[test]
+    fn correlated_normals_in_place_match_a_separate_buffer() {
+        let r = [1.0, 0.5, 0.2, 0.5, 1.0, -0.3, 0.2, -0.3, 1.0];
+        let chol = cholesky(&r, 3).unwrap();
+        for seed in 0..5 {
+            let mut got = [0.0; 3];
+            correlated_normals(&chol, &mut StreamRng::new(seed, 0), &mut got);
+            let mut rng = StreamRng::new(seed, 0);
+            let z: Vec<f64> = (0..3).map(|_| norm_quantile(rng.next_open01())).collect();
+            let mut want = [0.0; 3];
+            lower_mul(&chol, &z, &mut want);
+            assert_eq!(got, want);
+        }
+    }
 
     fn draws(c: &dyn Copula, n: usize, seed: u64) -> Vec<Vec<f64>> {
         (0..n)

@@ -10,7 +10,7 @@
 
 use prospicio_aggregate::{Layer, LossSensitivePremium};
 
-use crate::pricing::{map1, numbers, scalar};
+use crate::pricing::{map1, paired, scalar};
 use crate::reserving::text_option;
 use crate::sheet::{Grid, Value, position};
 
@@ -31,15 +31,11 @@ fn optional(grid: &Grid, name: &str) -> Result<Option<f64>> {
 /// A sliding scale's `(commission, loss_ratio)` anchors from two ranges
 /// of equal length, in increasing loss ratio.
 pub(crate) fn anchors(commissions: &Grid, loss_ratios: &Grid) -> Result<Vec<(f64, f64)>> {
-    let c = numbers(commissions, "commissions")?;
-    let lr = numbers(loss_ratios, "loss_ratios")?;
-    if c.len() != lr.len() {
-        return Err(format!(
-            "{} commissions and {} loss_ratios: give one loss ratio per commission",
-            c.len(),
-            lr.len()
-        ));
-    }
+    let [c, lr] = <[_; 2]>::try_from(paired(&[
+        (commissions, "commissions"),
+        (loss_ratios, "loss_ratios"),
+    ])?)
+    .unwrap();
     Ok(c.into_iter().zip(lr).collect())
 }
 

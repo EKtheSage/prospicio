@@ -343,7 +343,7 @@ fn errors() {
     let (x, p) = source("ex3a");
     let run = |args: Vec<Grid>| text(&call("pro_cap_pnl", args)).to_owned();
     assert!(
-        run(vec![x.clone(), Grid::column(&[0.5]), n(10.0)]).contains("one probability per value")
+        run(vec![x.clone(), Grid::column(&[0.5]), n(10.0)]).contains("too few for values")
     );
     assert!(run(vec![x.clone(), p.clone()]).contains("premium is required"));
     let bad = rows(vec![vec![s("limit"), s("retention")], vec![v(1.0), v(2.0)]]);
