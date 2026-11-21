@@ -359,7 +359,9 @@ fn check_used_range<RS: std::io::Read + std::io::Seek>(
     let span = u64::from(rows.1 - rows.0 + 1) * u64::from(cols.1 - cols.0 + 1);
     if span > MAX_SHEET_CELLS && span / 1000 > filled {
         return Err(fail(format!(
-            "the used range, rows {} to {} and columns {} to {}, spans {span} cells for {filled} \n             filled; a stray cell far from the table spreads it this far. Clear the cells outside \n             the table, or copy the table to a new sheet",
+            "the used range, rows {} to {} and columns {} to {}, spans {span} cells for {filled} \
+             filled; a stray cell far from the table spreads it this far. Clear the cells outside \
+             the table, or copy the table to a new sheet",
             rows.0 + 1,
             rows.1 + 1,
             column_letters(cols.0),
@@ -1323,6 +1325,7 @@ company,ay,dy,paid,incurred
         std::fs::write(&path, tiny_xlsx(&[("A1", 1.0), ("XFD1048576", 2.0)])).unwrap();
         let e = file_error(Triangle::read_excel(&path, None, &layout));
         assert!(e.contains("stray.xlsx") && e.contains("used range"), "{e}");
+        assert!(!e.contains('\n') && !e.contains("  "), "{e:?}");
         // The same reader goes on to read a small, dense sheet.
         let path = dir.join("small.xlsx");
         std::fs::write(&path, tiny_xlsx(&[("A1", 1.0), ("B2", 2.0)])).unwrap();
