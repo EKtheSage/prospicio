@@ -108,13 +108,8 @@ fn bounded_above(data: LargeLosses, upper: &[f64]) -> Result<LargeLosses> {
 }
 
 fn truncation_kind(kind: &str) -> Result<Truncation> {
-    match kind {
-        "lp" => Ok(Truncation::LastPiece),
-        "wd" => Ok(Truncation::WholeDistribution),
-        _ => Err(Error::Other(
-            "truncation_type must be \"lp\" (last piece) or \"wd\" (whole distribution)".into(),
-        )),
-    }
+    Truncation::from_name(kind)
+        .ok_or_else(|| crate::unknown_name("truncation_type", kind, Truncation::NAMES))
 }
 
 /// Single-parameter Pareto, optionally truncated.
@@ -206,10 +201,10 @@ severity_class!(PiecewisePareto {
     }
 
     fn truncation_type(&self) -> &'static str {
-        match self.inner.truncation() {
-            Some((_, Truncation::WholeDistribution)) => "wd",
-            _ => "lp",
-        }
+        self.inner
+            .truncation()
+            .map_or(Truncation::LastPiece, |(_, kind)| kind)
+            .name()
     }
 });
 

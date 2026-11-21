@@ -132,4 +132,13 @@ stopifnot(identical(
 expect_error_like(cashflow_terms(100, 30, ramp(12), ramp(24), ramp(36),
                                  cashflow_requirement(c(nope = 1))), "base must be")
 
+# The piecewise Pareto's truncation kind in Excel's spellings (Truncation::NAMES, #956).
+for (p in list(c("lp", "lp"), c("last_piece", "lp"), c("wd", "wd"), c("whole_distribution", "wd"))) {
+  got <- piecewise_pareto(c(1000, 2000), c(1, 2), truncation = 5000, truncation_type = p[1])
+  want <- piecewise_pareto(c(1000, 2000), c(1, 2), truncation = 5000, truncation_type = p[2])
+  stopifnot(got@truncation_type == p[2], survival(got, 1500) == survival(want, 1500))
+}
+expect_error_like(piecewise_pareto(1, 1, truncation = 2, truncation_type = "nope"),
+                  "truncation_type must be")
+
 cat("option name tests passed\n")

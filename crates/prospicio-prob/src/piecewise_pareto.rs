@@ -19,6 +19,33 @@ pub enum Truncation {
     WholeDistribution,
 }
 
+impl Truncation {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// kind, the canonical name of each first, R Pareto's (#956).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("lp", Self::LastPiece),
+        ("last_piece", Self::LastPiece),
+        ("wd", Self::WholeDistribution),
+        ("whole_distribution", Self::WholeDistribution),
+    ];
+
+    /// The kind named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, k)| k)
+    }
+
+    /// The canonical name, `"lp"` or `"wd"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::LastPiece => "lp",
+            Self::WholeDistribution => "wd",
+        }
+    }
+}
+
 /// Piecewise Pareto distribution with thresholds `t_1 < … < t_n` and
 /// alphas `α_1, …, α_n`: `P(X > x) = 1` below `t_1`, and on
 /// `[t_k, t_{k+1})`
@@ -352,6 +379,28 @@ impl Severity for PiecewisePareto {
 mod tests {
     use super::*;
     use crate::Pareto;
+
+    /// Every spelling Python, R or Excel took before #956 still resolves
+    /// (Excel's `last_piece` and `whole_distribution`), and the canonical
+    /// name, R Pareto's, round-trips.
+    #[test]
+    fn truncation_names_cover_every_front_end() {
+        for name in ["lp", "last_piece"] {
+            assert_eq!(Truncation::from_name(name), Some(Truncation::LastPiece));
+        }
+        for name in ["wd", "whole_distribution"] {
+            assert_eq!(
+                Truncation::from_name(name),
+                Some(Truncation::WholeDistribution)
+            );
+        }
+        assert_eq!(Truncation::from_name("nope"), None);
+        for &(_, k) in Truncation::NAMES {
+            assert_eq!(Truncation::from_name(k.name()), Some(k));
+        }
+        assert_eq!(Truncation::LastPiece.name(), "lp");
+        assert_eq!(Truncation::WholeDistribution.name(), "wd");
+    }
 
     fn close(a: f64, b: f64, rel: f64) -> bool {
         (a - b).abs() <= rel * b.abs().max(1e-300)

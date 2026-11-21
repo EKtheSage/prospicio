@@ -162,7 +162,7 @@ fn layer_variance_closed_form_and_errors() {
             alphas.clone(),
             Grid::from_rows(vec![vec![Value::Number(5000.0), Value::from("xx")]])
         )
-        .contains("\"lp\" or \"wd\"")
+        .contains("the truncation kind must be \"lp\"")
     );
     assert!(pp(ts, alphas, n(1500.0)).contains("truncation"));
     assert!(
@@ -171,5 +171,38 @@ fn layer_variance_closed_form_and_errors() {
             vec![n(1.0), t("gen_pareto"), n(1000.0), n(2.0)]
         ))
         .contains("alpha_tail")
+    );
+}
+
+/// The truncation kind in every spelling Python, R or Excel takes, from
+/// `Truncation::NAMES` (#956): `lp` and `last_piece`, `wd` and
+/// `whole_distribution` give the same severity, and the two kinds differ.
+#[test]
+fn truncation_kind_spellings() {
+    let cdf = |kind: &str| {
+        let out = call(
+            "pro_sev_cdf",
+            vec![
+                n(3000.0),
+                t("piecewise_pareto"),
+                Grid::from_rows(vec![vec![Value::Number(1000.0), Value::Number(2000.0)]]),
+                Grid::from_rows(vec![vec![Value::Number(1.0)], vec![Value::Number(2.0)]]),
+                Grid::from_rows(vec![vec![Value::Number(5000.0), Value::from(kind)]]),
+            ],
+        );
+        match out.as_scalar() {
+            Some(v @ Value::Number(_)) => Ok(num(v)),
+            _ => Err(text(&out).to_string()),
+        }
+    };
+    let (lp, wd) = (cdf("lp").unwrap(), cdf("wd").unwrap());
+    assert!(lp != wd);
+    assert_eq!(cdf("last_piece"), Ok(lp));
+    assert_eq!(cdf(" LP "), Ok(lp));
+    assert_eq!(cdf("whole_distribution"), Ok(wd));
+    let err = cdf("nope").unwrap_err();
+    assert!(
+        err.contains("the truncation kind must be \"lp\"") && err.contains("got \"nope\""),
+        "{err}"
     );
 }

@@ -228,3 +228,18 @@ def test_cashflow_option_spellings():
         CollateralRequirement({"nope": 1.0})
     with pytest.raises(ValueError, match="fee basis must be"):
         flows("fixed", "ultimate", "shortfall", "previous-date", "investor", "average", "nope", "monthly")
+
+@pytest.mark.parametrize(
+    "name, canonical",
+    [("lp", "lp"), ("last_piece", "lp"), ("wd", "wd"), ("whole_distribution", "wd")],
+)
+def test_truncation_type_spellings(name, canonical):
+    # Excel's `last_piece` and `whole_distribution` (Truncation::NAMES, #956).
+    from prospicio.distributions import PiecewisePareto
+
+    want = PiecewisePareto([1000.0, 2000.0], [1.0, 2.0], truncation=5000.0, truncation_type=canonical)
+    got = PiecewisePareto([1000.0, 2000.0], [1.0, 2.0], truncation=5000.0, truncation_type=name)
+    assert got.truncation_type == canonical
+    assert got.survival(1500.0) == want.survival(1500.0)
+    with pytest.raises(ValueError, match="truncation_type must be"):
+        PiecewisePareto([1.0], [1.0], truncation=2.0, truncation_type="nope")
