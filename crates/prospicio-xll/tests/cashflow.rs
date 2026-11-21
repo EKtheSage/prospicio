@@ -413,3 +413,78 @@ fn errors() {
         .contains("one rate or one per loss ratio")
     );
 }
+
+/// `u` and the per-simulation `commission` range are read together: a blank
+/// in one and not the other is an error naming the cell (#1004), where each
+/// range dropped its blanks on its own and paired the rest one row off.
+#[test]
+fn commissions_pair_with_u_row_by_row() {
+    let terms = rows(vec![
+        label("premium", &[nv(100.0)]),
+        label("Commutation month", &[nv(3.0)]),
+    ]);
+    let patterns = pattern_grid(
+        &[1.0; 3],
+        &[1.0 / 3.0, 2.0 / 3.0, 1.0],
+        &[1.0 / 3.0, 2.0 / 3.0, 1.0],
+    );
+    let requirement = rows(vec![label("reserve", &[nv(1.0)])]);
+    let commutation = rows(vec![label("outstanding", &[nv(1.0)])]);
+    let run = |u: Grid, commission: Grid| {
+        call(
+            "pro_cap_cashflow",
+            vec![
+                u,
+                terms.clone(),
+                patterns.clone(),
+                requirement.clone(),
+                commission,
+                none(),
+                none(),
+                commutation.clone(),
+            ],
+        )
+    };
+    let col = |v: &[Option<f64>]| {
+        Grid::from_rows(
+            v.iter()
+                .map(|x| vec![x.map_or(Value::Empty, Value::Number)])
+                .collect(),
+        )
+    };
+    let compact = run(
+        Grid::column(&[0.6, 1.5, 0.9]),
+        Grid::column(&[0.1, 0.2, 0.3]),
+    );
+    assert_eq!(compact.rows, 4, "{compact:?}");
+
+    // Blanks at different rows: an error naming the cell.
+    let msg = text(&run(
+        col(&[Some(0.6), Some(1.5), None, Some(0.9), Some(0.8)]),
+        col(&[Some(0.1), Some(0.2), Some(0.3), Some(0.4), None]),
+    ))
+    .to_owned();
+    assert!(msg.contains("u row 3, column 1 is blank but commission is not"), "{msg}");
+
+    // Blank at the same row: dropped, the result of the compact ranges.
+    let same = run(
+        col(&[Some(0.6), None, Some(1.5), Some(0.9)]),
+        col(&[Some(0.1), None, Some(0.2), Some(0.3)]),
+    );
+    assert_eq!(same, compact);
+
+    // A blank tail in both: accepted.
+    let tail = run(
+        col(&[Some(0.6), Some(1.5), Some(0.9), None, None]),
+        col(&[Some(0.1), Some(0.2), Some(0.3), None]),
+    );
+    assert_eq!(tail, compact);
+
+    // One commission for all, with blanks in u: accepted.
+    let single = run(
+        col(&[Some(0.6), None, Some(1.5), Some(0.9)]),
+        Grid::column(&[0.2]),
+    );
+    let all = run(Grid::column(&[0.6, 1.5, 0.9]), Grid::column(&[0.2, 0.2, 0.2]));
+    assert_eq!(single, all);
+}

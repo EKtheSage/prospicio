@@ -18,7 +18,7 @@ use prospicio_pricing::cashflow::{
 };
 use prospicio_pricing::returns::{self, IrrOptions, TieredFee};
 
-use crate::pricing::numbers;
+use crate::pricing::{numbers, paired};
 use crate::reserving::text_option;
 use crate::sheet::{Grid, Value, position};
 
@@ -515,16 +515,23 @@ fn deal(
     Ok((t, options))
 }
 
-/// Each simulation's commission rate: omitted (0), one rate for all, or
-/// one per simulation.
-fn commissions(grid: &Grid, n: usize) -> Result<Vec<f64>> {
-    if grid.is_blank() {
-        return Ok(vec![0.0; n]);
+/// The loss ratios and each simulation's commission rate: the rate
+/// omitted (0), one rate for all, or one per simulation. A per-simulation
+/// range is read together with `u`, so a blank in one and not in the other
+/// is an error naming the cell, not a pairing one row off.
+fn loss_ratios_and_commissions(u: &Grid, commission: &Grid) -> Result<(Vec<f64>, Vec<f64>)> {
+    let values = numbers(u, "u")?;
+    let n = values.len();
+    if commission.is_blank() {
+        return Ok((values, vec![0.0; n]));
     }
-    let c = numbers(grid, "commission")?;
+    let c = numbers(commission, "commission")?;
     match c.len() {
-        1 => Ok(vec![c[0]; n]),
-        m if m == n => Ok(c),
+        1 => Ok((values, vec![c[0]; n])),
+        m if m == n => {
+            let mut read = paired(&[(u, "u"), (commission, "commission")])?.into_iter();
+            Ok((read.next().unwrap(), read.next().unwrap()))
+        }
         m => Err(format!(
             "commission has {m} rates for {n} loss ratios: give one rate or one per loss ratio"
         )),
@@ -611,12 +618,11 @@ fn trace_table(t: &Trace) -> Grid {
 /// month, one row a simulation) or `"trace"` (every account line of the
 /// first simulation, month by month).
 pub fn cashflow(args: &[Grid]) -> Result<Grid> {
-    let u = numbers(&args[0], "u")?;
+    let (u, commission) = loss_ratios_and_commissions(&args[0], &args[4])?;
     if u.len() > MAX_SIMS {
         return Err(format!("u has more than {MAX_SIMS} loss ratios"));
     }
     let (terms, options) = deal(&args[1], &args[2], &args[3], &args[7])?;
-    let commission = commissions(&args[4], u.len())?;
     let output = text_option(&args[5], "output")?;
     let rate = if args[6].is_blank() {
         None
