@@ -7,4 +7,4 @@
   light edge. `Stable::tail_mass_above` returns an error where its series is
   not valid (at or below the location, near the body) instead of a value above
   1; `chf::invert` then takes the mass beyond the window from what the window
-  leaves of 1.
+  leaves of 1 (#945, #1010).
