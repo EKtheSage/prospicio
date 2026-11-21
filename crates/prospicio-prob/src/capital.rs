@@ -54,6 +54,41 @@ pub enum AllocationMethod {
     Shapley,
 }
 
+impl AllocationMethod {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// method, the canonical name of each first (#956). `natural` is
+    /// Excel's name for [`Euler`](Self::Euler).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("euler", Self::Euler),
+        ("natural", Self::Euler),
+        ("covariance", Self::Covariance),
+        ("covariance_margin", Self::CovarianceMargin),
+        ("proportional", Self::Proportional),
+        ("marginal", Self::Marginal),
+        ("shapley", Self::Shapley),
+    ];
+
+    /// The method named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, m)| m)
+    }
+
+    /// The canonical name, such as `"euler"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Euler => "euler",
+            Self::Covariance => "covariance",
+            Self::CovarianceMargin => "covariance_margin",
+            Self::Proportional => "proportional",
+            Self::Marginal => "marginal",
+            Self::Shapley => "shapley",
+        }
+    }
+}
+
 /// The result of [`PredictiveDistribution::capital`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Allocation {
@@ -539,6 +574,28 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
 mod tests {
     use super::*;
     use crate::{GaussianCopula, KeyValue, Lognormal, Provenance, copula};
+
+    /// Every spelling Python, R or Excel took before #956 still resolves
+    /// (Excel's `natural` is the Euler allocation), and the canonical
+    /// name round-trips.
+    #[test]
+    fn method_names_cover_every_front_end() {
+        for name in ["euler", "natural"] {
+            assert_eq!(
+                AllocationMethod::from_name(name),
+                Some(AllocationMethod::Euler)
+            );
+        }
+        assert_eq!(
+            AllocationMethod::from_name("covariance_margin"),
+            Some(AllocationMethod::CovarianceMargin)
+        );
+        assert_eq!(AllocationMethod::from_name("nope"), None);
+        for &(_, m) in AllocationMethod::NAMES {
+            assert_eq!(AllocationMethod::from_name(m.name()), Some(m));
+        }
+        assert_eq!(AllocationMethod::NAMES.len(), 7);
+    }
 
     fn three_lines() -> PredictiveDistribution {
         let marginals = [

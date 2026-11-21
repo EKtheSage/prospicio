@@ -8,7 +8,7 @@ import math
 
 import pytest
 
-from prospicio.distributions import Count, Sampled
+from prospicio.distributions import Count, PredictiveDistribution, Sampled
 from prospicio.models import Design, ZeroInflated
 from prospicio.reserving import (
     BenchmarkCurve,
@@ -18,7 +18,7 @@ from prospicio.reserving import (
     PaidIncurredChain,
     Triangle,
 )
-from prospicio.risk import calibrate
+from prospicio.risk import Distortion, calibrate, capital
 
 ROWS = [
     [110.0, 290.0, 370.0, 420.0, 440.0, 452.0],
@@ -156,3 +156,19 @@ def test_distortion_family_spellings(name):
     assert math.isclose(d.measure(x), premium, rel_tol=1e-9)
     with pytest.raises(ValueError, match="unknown distortion family"):
         calibrate("bitvar", x, premium)
+
+
+@pytest.mark.parametrize("name", ["euler", "natural"])
+def test_allocation_method_spellings(name):
+    # Excel's `natural` is the Euler allocation (AllocationMethod::NAMES, #956).
+    pd = PredictiveDistribution(
+        ["lob"],
+        [("motor",), ("property",)],
+        [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]],
+    )
+    want = capital(pd, Distortion.tvar(0.5), "euler").allocated
+    got = capital(pd, Distortion.tvar(0.5), name)
+    assert got.allocated == want
+    assert got.method == "euler"
+    with pytest.raises(ValueError, match="method must be"):
+        capital(pd, Distortion.tvar(0.5), "nope")

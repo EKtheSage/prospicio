@@ -102,4 +102,12 @@ for (f in c("ph", "proportional_hazard", "Proportional Hazard", "proportional-ha
 }
 expect_error_like(calibrate_distortion("bitvar", x, premium), "unknown distortion family")
 
+# The allocation method in Excel's spelling (AllocationMethod::NAMES, #956).
+pd <- predictive_distribution(matrix(c(1, 4, 2, 3, 2, 1, 5, 6), ncol = 2),
+                              data.frame(lob = c("motor", "property")))
+want <- capital_allocation(pd, distortion("tvar", 0.5), "euler")$by_component$allocated
+stopifnot(identical(capital_allocation(pd, distortion("tvar", 0.5), "natural")$by_component$allocated,
+                    want))
+expect_error_like(capital_allocation(pd, distortion("tvar", 0.5), "nope"), "should be one of")
+
 cat("option name tests passed\n")
