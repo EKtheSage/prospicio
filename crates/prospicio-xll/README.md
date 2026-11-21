@@ -455,10 +455,10 @@ labelled in `companies`, with their premiums; chain its summary into
 | `PRO.CAP.DISTORTION.CALIBRATE(values, [probs], premium, [families], [r0])` | Each family's parameter that gives a target premium |
 | `PRO.CAP.ALLOCATE(draws, family, parameter, [method], [r0])` | A distortion risk measure allocated to units (Euler, covariance, Shapley and others) |
 | `PRO.CAP.ALLOCATE.TOTAL(draws, total, [method], [measure], [level])` | A premium or capital allocated by the haircut or equal-risk rule |
-| `PRO.CAP.COPULA.SIM(family, parameter, [sims], [dim], [seed], [nu])` | Uniforms simulated from a copula, one row per simulation |
+| `PRO.CAP.COPULA.SIM(family, parameter, [sims], [dim], [seed], [nu])` | Uniforms simulated from a copula, one row per simulation; at most 10,000,000 cells (sims times dim), above that an error text |
 | `PRO.CAP.COPULA.CDF(points, family, parameter, [nu])` | A copula's distribution function at each point |
 | `PRO.CAP.NESTED.CDF(points, family, nodes, members)` | A nested Archimedean copula's distribution function at each point |
-| `PRO.CAP.NESTED.SIM(family, nodes, members, [sims], [seed])` | Uniforms simulated from a nested Archimedean copula |
+| `PRO.CAP.NESTED.SIM(family, nodes, members, [sims], [seed])` | Uniforms simulated from a nested Archimedean copula; at most 10,000,000 cells (sims times columns) |
 | `PRO.CAP.IMAN.CONOVER(draws, correlation, [seed], [dof], [shuffle])` | Simulated columns reordered to a rank correlation |
 
 - Distortion families use `aggregate`'s names: `ccoc` (r), `ph` (rho),
