@@ -39,15 +39,19 @@ def main():
     changed = SOBOL_NEW.replace(b"0;1;3", b"0;1;4")
     diffs, moved = rr.compare("sobol_scipy.csv", SOBOL_OLD, changed)
     assert len(diffs) == 1 and moved == ["SciPy 1.14.1 -> SciPy 1.18.1"], (diffs, moved)
+    # Sobol points are exact 32-bit integers: one moved by 1 (well inside 1e-9 relative) is a difference.
+    big = b"dim,coord,points,source\n1,0,0;2147483648;4026531840,SciPy 1.14.1\n"
+    diffs, _ = rr.compare("sobol_scipy.csv", big, big.replace(b"2147483648", b"2147483649"))
+    check(diffs, ["line 2: 0;2147483648;4026531840 -> 0;2147483649;4026531840"], "sobol point by 1")
     # Event times that moved in the last ulp and an optimiser's last digits (3e-8 to 9e-8 relative) pass for hawkes_scipy.csv.
     got = rr.compare("hawkes_scipy.csv", HAWKES_OLD, hawkes_new(b"1.5210145700988877", b"288.23212707844078"))
     check(got, ([], ["SciPy 1.14.1 -> SciPy 1.18.1"]), "hawkes drift")
     # A real change (1e-4 relative) does not.
     diffs, _ = rr.compare("hawkes_scipy.csv", HAWKES_OLD, hawkes_new(b"1.5211668", b"288.23210269653163"))
     assert len(diffs) == 1, diffs
-    # Another file keeps the exact 1e-9 comparison.
+    # Another file keeps the 1e-9 comparison, and its list cells (the periods) are exact text.
     diffs, _ = rr.compare("other.csv", HAWKES_OLD, hawkes_new(b"1.5210145700988877", b"288.23212707844078"))
-    assert len(diffs) == 3, diffs
+    assert len(diffs) == 4 and diffs[0] == "line 2: 0.5|0.7;0.2 -> 0.5|0.7000000000000001;0.2", diffs
     print("rerun_references self-test passed")
 
 

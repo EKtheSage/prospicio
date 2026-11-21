@@ -13,9 +13,10 @@ tree is the same afterwards:
   within `max(abs_tol, rel_tol * |committed|)` of the committed value; a row
   added or removed is a difference, and a changed `source` (a package that
   moved) is listed but is not one;
-- another CSV: the same rows and columns, numbers within 1e-9 relative (or
-  the file's own bound in `FILE_TOLERANCE`), text exact; a `source` column is
-  listed when it moves, as above, and not compared;
+- another CSV: the same rows and columns, numbers within 1e-9 relative, text
+  (a list of numbers in one cell included) exact; a file in `FILE_TOLERANCE`
+  uses its own bound and compares a list cell element by element; a `source`
+  column is listed when it moves, as above, and not compared;
 - any other file: the same bytes, line endings as LF.
 
 Some generators also rewrite an input under `validation/data/` (the
@@ -93,8 +94,10 @@ TOLERANCE_COLUMNS = {"expected", "abs_tol", "rel_tol", "source"}
 
 # Files without tolerance columns whose numbers are an optimiser's stopping
 # point, not a definition: (abs_tol, rel_tol). The Rust test that reads the
-# file applies its own, looser bound (#935). Any other such file is compared
-# to 1e-9 relative.
+# file applies its own, looser bound (#935). Only these files have their list
+# cells (`;` and `|` separated) compared element by element; any other file
+# compares a lone number to 1e-9 relative and a list cell as exact text (the
+# Sobol points are exact integers that a relative bound would let move).
 FILE_TOLERANCE = {"hawkes_scipy.csv": (1e-9, 1e-6)}
 
 
@@ -185,14 +188,15 @@ def compare_tolerance_rows(header: list[str], old: list[list[str]], new: list[li
     return diffs, sorted(moved)
 
 
-def same_cell(a: str, b: str, tol: tuple[float, float]) -> bool:
-    """One cell: a number within `tol`; a list of numbers (`;` and `|` separated,
-    as the Hawkes periods are) element by element; any other text exact."""
+def same_cell(a: str, b: str, tol: tuple[float, float], lists: bool = False) -> bool:
+    """One cell: a number within `tol`; with `lists`, a list of numbers (`;` and
+    `|` separated, as the Hawkes periods are) element by element; any other
+    text exact."""
     x, y = number(a), number(b)
     if x is not None and y is not None:
         return same(y, x, *tol)
-    if a == b:
-        return True
+    if a == b or not lists:
+        return a == b
     ta, tb = re.split(r"[;|]", a), re.split(r"[;|]", b)
     if len(ta) < 2 or a.count(";") != b.count(";") or a.count("|") != b.count("|"):
         return False
@@ -207,8 +211,10 @@ def compare_plain_rows(
     new: list[list[str]],
     skip: int | None = None,
     tol: tuple[float, float] = (1e-12, 1e-9),
+    lists: bool = False,
 ) -> list[str]:
-    """Differences between two tables; column `skip` (a source label) is not compared."""
+    """Differences between two tables; column `skip` (a source label) is not
+    compared, and `lists` compares list cells element by element."""
     if len(old) != len(new):
         return [f"{len(old)} rows, now {len(new)}"]
     diffs = []
@@ -219,7 +225,7 @@ def compare_plain_rows(
         for i, (a, b) in enumerate(zip(o, n)):
             if i == skip:
                 continue
-            if not same_cell(a, b, tol):
+            if not same_cell(a, b, tol, lists):
                 diffs.append(f"line {line}: {a} -> {b}")
     return diffs
 
@@ -254,8 +260,9 @@ def compare(path: str, old: bytes, new: bytes) -> tuple[list[str], list[str]]:
     moved = set()
     if skip is not None:
         moved = {f"{o[skip]} -> {n[skip]}" for o, n in zip(r0, r1) if len(o) == len(n) and o[skip] != n[skip]}
-    tol = FILE_TOLERANCE.get(path, (1e-12, 1e-9))
-    return compare_plain_rows(r0, r1, skip, tol), sorted(moved)
+    if path in FILE_TOLERANCE:
+        return compare_plain_rows(r0, r1, skip, FILE_TOLERANCE[path], lists=True), sorted(moved)
+    return compare_plain_rows(r0, r1, skip), sorted(moved)
 
 
 def run(script_name: str, files: list[str], latest: bool) -> dict:
