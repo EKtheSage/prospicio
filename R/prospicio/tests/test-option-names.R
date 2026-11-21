@@ -110,4 +110,26 @@ stopifnot(identical(capital_allocation(pd, distortion("tvar", 0.5), "natural")$b
                     want))
 expect_error_like(capital_allocation(pd, distortion("tvar", 0.5), "nope"), "should be one of")
 
+# A cash-flow option in any case, with "_", "-" or a space between the words
+# (prospicio_pricing::cashflow::option_key, #956).
+ramp <- function(m) pmin((1:36) / m, 1)
+flows_of <- function(base, adjustment, rule, reference, source, interest, fee, release) {
+  req <- cashflow_requirement(setNames(c(1, 0.2), c(base, "reserve")))
+  terms <- cashflow_terms(100, 30, ramp(12), ramp(24), ramp(36), req,
+                          adjustments = list(cashflow_adjustment(18, 0.1, base = adjustment)),
+                          funding_rule = rule, reference = reference, funding_source = source,
+                          annual_yield = 0.04, interest_basis = interest,
+                          fee = list(c(0, 100), c(0.1, 0.2)), fee_basis = fee,
+                          equity_release = release)
+  cashflow_run(terms, c(0.6, 1.5))$flows
+}
+want <- flows_of("unearned-premium", "to-date", "obligation-increase", "running-max",
+                 "operating-first", "opening", "profit-over-premium", "at-commutation")
+stopifnot(identical(
+  flows_of("Unearned_Premium", "TO DATE", "Obligation Increase", "running_max", " Operating-First ",
+           "OPENING", "profit_over_premium", "At Commutation"),
+  want))
+expect_error_like(cashflow_terms(100, 30, ramp(12), ramp(24), ramp(36),
+                                 cashflow_requirement(c(nope = 1))), "base must be")
+
 cat("option name tests passed\n")

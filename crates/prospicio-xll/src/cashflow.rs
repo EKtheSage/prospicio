@@ -201,19 +201,11 @@ impl Row<'_> {
 }
 
 fn base(name: &str, place: &str) -> Result<Base> {
-    Ok(match key(name, '-').as_str() {
-        "unearned-premium" => Base::UnearnedPremium,
-        "reserve" => Base::Reserve,
-        "outstanding" => Base::Outstanding,
-        "written" => Base::Written,
-        "earned" => Base::Earned,
-        "fixed" => Base::Fixed,
-        other => {
-            return Err(format!(
-                "{place}: unknown base {other:?}; use unearned-premium, reserve, outstanding, \
-                 written, earned or fixed, or a floor or limit row"
-            ));
-        }
+    Base::from_name(name).ok_or_else(|| {
+        format!(
+            "{place}: unknown base {name:?}; use unearned-premium, reserve, outstanding, \
+             written, earned or fixed, or a floor or limit row"
+        )
     })
 }
 
@@ -385,11 +377,7 @@ fn deal(
         };
         let base = match values.get(3) {
             None => AdjustmentBase::Ultimate,
-            Some(Value::Text(s)) => match key(s, '-').as_str() {
-                "ultimate" => AdjustmentBase::Ultimate,
-                "to-date" => AdjustmentBase::ToDate,
-                _ => return Err(bad()),
-            },
+            Some(Value::Text(s)) => AdjustmentBase::from_name(s).ok_or_else(bad)?,
             Some(_) => return Err(bad()),
         };
         if values.len() > 4 {
@@ -407,16 +395,11 @@ fn deal(
         "shortfall" => FundingRule::Shortfall,
         "obligation-increase" => FundingRule::ObligationIncrease {
             premium_offset: number("premium_offset", 1.0)?,
-            reference: match text("reference", "previous-date")?.as_str() {
-                "previous-date" => ObligationReference::PreviousDate,
-                "running-max" => ObligationReference::RunningMax,
-                other => {
-                    return Err(choice(
-                        "reference",
-                        other.into(),
-                        "previous-date or running-max",
-                    ));
-                }
+            reference: {
+                let name = text("reference", "previous-date")?;
+                ObligationReference::from_name(&name).ok_or_else(|| {
+                    crate::unknown_name("reference", &name, ObligationReference::NAMES)
+                })?
             },
         },
         other => {
@@ -437,16 +420,10 @@ fn deal(
     t.funding = Funding {
         dates,
         rule,
-        source: match text("funding_source", "investor")?.as_str() {
-            "investor" => FundingSource::Investor,
-            "operating-first" => FundingSource::OperatingFirst,
-            other => {
-                return Err(choice(
-                    "funding_source",
-                    other.into(),
-                    "investor or operating-first",
-                ));
-            }
+        source: {
+            let name = text("funding_source", "investor")?;
+            FundingSource::from_name(&name)
+                .ok_or_else(|| crate::unknown_name("funding source", &name, FundingSource::NAMES))?
         },
     };
     if let Some(r) = row("collateral_release")? {
@@ -454,17 +431,10 @@ fn deal(
     }
     t.interest = Interest {
         annual_yield: number("annual_yield", 0.0)?,
-        basis: match text("interest_basis", "average")?.as_str() {
-            "average" => InterestBasis::Average,
-            "opening" => InterestBasis::Opening,
-            "closing" => InterestBasis::Closing,
-            other => {
-                return Err(choice(
-                    "interest_basis",
-                    other.into(),
-                    "average, opening or closing",
-                ));
-            }
+        basis: {
+            let name = text("interest_basis", "average")?;
+            InterestBasis::from_name(&name)
+                .ok_or_else(|| crate::unknown_name("interest basis", &name, InterestBasis::NAMES))?
         },
     };
     t.operating.opening_fixed = number("opening_fixed", 0.0)?;
@@ -488,17 +458,10 @@ fn deal(
         }
         (Some(b), Some(s)) => Some(PerformanceFee {
             tiers: TieredFee::new(b.numbers()?, s.numbers()?).map_err(err)?,
-            basis: match text("fee_basis", "profit")?.as_str() {
-                "profit" => FeeBasis::Profit,
-                "profit-over-premium" => FeeBasis::ProfitOverPremium,
-                "profit-over-capital" => FeeBasis::ProfitOverCapital,
-                other => {
-                    return Err(choice(
-                        "fee_basis",
-                        other.into(),
-                        "profit, profit-over-premium or profit-over-capital",
-                    ));
-                }
+            basis: {
+                let name = text("fee_basis", "profit")?;
+                FeeBasis::from_name(&name)
+                    .ok_or_else(|| crate::unknown_name("fee basis", &name, FeeBasis::NAMES))?
             },
         }),
         _ => return Err("terms needs both fee_breakpoints and fee_slopes rows, or neither".into()),

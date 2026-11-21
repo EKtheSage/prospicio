@@ -172,3 +172,59 @@ def test_allocation_method_spellings(name):
     assert got.method == "euler"
     with pytest.raises(ValueError, match="method must be"):
         capital(pd, Distortion.tvar(0.5), "nope")
+
+
+def test_cashflow_option_spellings():
+    # Excel reads a cash-flow option in any case, with `_`, `-` or a space between
+    # the words; Python and R do too (prospicio_pricing::cashflow::option_key, #956).
+    from prospicio.pricing import CashflowTerms, CollateralRequirement, PremiumAdjustment
+
+    def ramp(m):
+        return [min((t + 1) / m, 1.0) for t in range(36)]
+
+    def flows(base, adjustment, rule, reference, source, interest, fee, release):
+        terms = CashflowTerms(
+            100.0,
+            30,
+            ramp(12),
+            ramp(24),
+            ramp(36),
+            CollateralRequirement({base: 1.0, "reserve": 0.2}),
+            adjustments=[PremiumAdjustment(18, 0.1, base=adjustment)],
+            funding_rule=rule,
+            reference=reference,
+            funding_source=source,
+            annual_yield=0.04,
+            interest_basis=interest,
+            fee=([0.0, 100.0], [0.1, 0.2]),
+            fee_basis=fee,
+            equity_release=release,
+        )
+        return terms.run([0.6, 1.5]).flows
+
+    want = flows(
+        "unearned-premium",
+        "to-date",
+        "obligation-increase",
+        "running-max",
+        "operating-first",
+        "opening",
+        "profit-over-premium",
+        "at-commutation",
+    )
+    got = flows(
+        "Unearned_Premium",
+        "TO DATE",
+        "Obligation Increase",
+        "running_max",
+        " Operating-First ",
+        "OPENING",
+        "profit_over_premium",
+        "At Commutation",
+    )
+    assert got == want
+    assert CollateralRequirement({"Unearned Premium": 0.3}).terms == [("unearned-premium", 0.3)]
+    with pytest.raises(ValueError, match="base must be"):
+        CollateralRequirement({"nope": 1.0})
+    with pytest.raises(ValueError, match="fee basis must be"):
+        flows("fixed", "ultimate", "shortfall", "previous-date", "investor", "average", "nope", "monthly")
