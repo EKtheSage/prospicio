@@ -5,7 +5,7 @@ description: By 2026-10-19 a pull request's CI took 27 to 32 minutes when it tou
 tags: [environment, ci, cargo, testing, cache]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-19T23:00:00Z }
-updated: { by: claude-code/cloud-session, at: 2026-11-20T00:00:00Z }
+updated: { by: claude-code/cloud-session, at: 2026-11-21T00:00:00Z }
 stale_after: 2027-04-19T00:00:00Z
 sources:
   - id: runs
@@ -29,6 +29,9 @@ sources:
   - id: speedups
     resource: process:cloud session claude/cool-shannon-fqpoy8-ci-966, 2026-11-20 (4 cores, Rust 1.100, uv 0.11)
     title: What the build speedups of #966 measured, and which were already in effect
+  - id: sccache
+    resource: process:GitHub Actions runs 44872163763 (no sccache), 44873271096 (filling the cache) and 44874438556 (a full cache) of draft pull request #1005, 2026-11-21, and a local `cargo build --release -p prospicio-python --timings` on 4 cores
+    title: "The sccache experiment: three runs of pull request #1005"
   - id: setup-uv
     resource: https://raw.githubusercontent.com/astral-sh/setup-uv/v6/action.yml
     title: astral-sh/setup-uv v6, inputs and defaults
@@ -257,13 +260,33 @@ artifact with no Rust toolchain and no cache:[^ci]
   links with lld by default on `x86_64-unknown-linux-gnu` since 1.90:
   the link line of a build here on 1.100 names `gcc-ld/ld.lld`, so mold
   or an lld override would change nothing on Linux.[^speedups]
-* Not done: sccache. Swatinem/rust-cache already restores each job's
-  dependencies; what sccache could add is the workspace's own crates, and
-  a pull request can read only `main`'s cache entries, which a push to
-  `main` writes only when a job's cache misses. It would also share the
-  10 GB cache quota with rust-cache. It needs a measurement on CI before
-  it is worth its moving parts.
+* sccache, measured and left out (2026-11-21, draft pull request #1005,
+  closed unmerged). With `mozilla-actions/sccache-action` on the four
+  release build jobs (`SCCACHE_GHA_ENABLED`, `RUSTC_WRAPPER=sccache`)
+  beside rust-cache, three runs: a comment-only change to the binding
+  crates without sccache, the run that filled the cache, and the same
+  kind of change again, where every library crate of the workspace came
+  from the cache (12 hits of 12 in `python-build`, 10 of 10 in
+  `bayes-build`). The build steps, without and with a full cache: the
+  R binary package 143 s and 79 s; the two Bayesian test binaries 153 s
+  and 97 s; the freMTPL2 test 60 s and 37 s; the wheel 129 s and 107 s,
+  but clippy on the Python bindings 47 s and 74 s, so `python-build` as
+  a whole took 196 s and 197 s. One run each, on runners that vary by a
+  quarter.[^sccache]
+* Why that best case is rare: sccache cannot cache the crates that end
+  each build (the `cdylib` of the bindings, 98 of the 180 s of a local
+  release build on warm dependencies, and the test binaries: "crate-type
+  (cdylib)", "crate-type (bin)" in its statistics), and a library
+  crate's key includes the crates it depends on, so a change to
+  `prospicio-prob` or `prospicio-core` misses everything above it. The
+  saving of about a minute in three jobs holds only for a pull request
+  that changes no library crate, and only if every push to `main` built
+  every job to fill the cache, where it now builds on a cache miss.
+  The run that filled the cache was slower: setting `RUSTC_WRAPPER`
+  changes rust-cache's key, so the dependencies compiled again
+  (`python-build` 501 s, `r-build` 843 s).[^sccache]
 
+[^sccache]: The sccache experiment: three runs of pull request #1005
 [^speedups]: What the build speedups of #966 measured, and which were already in effect
 [^setup-uv]: astral-sh/setup-uv v6, inputs and defaults
 [^build-once]: The wheel, the R binary package and the Bayesian test binaries built once and tested from the files (#965)
