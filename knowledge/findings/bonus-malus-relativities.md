@@ -53,3 +53,15 @@ Lemaire's (1995) and Denuit, Maréchal, Pitrebois and Walhin's (2007)
 printed tables were not available (no copy in `knowledge/references/`, and
 the session could not reach the publisher), so the reference is a second
 implementation of the same formulas, not a published source.
+
+## A very dispersed gamma (#960)
+
+For a gamma `Θ` with a cv above about 4.6 (shape below 0.05) the quantile
+at `1e-15` is below the smallest floats, and the mass below any `θ` a float
+can hold is not negligible: at cv 6 the gamma has `4e-9` of its mass below
+`θ = 1e-300`. A quadrature on `ln θ` that starts at the smallest float
+loses that mass, so `π_0` at cv 6 and `λ = 0.1` came out `1.0e-9` short of
+`(a/(a+λ))^a`, with no error. The panels now start at `θ = 1e-300` and the
+mass below counts as an atom there, where `π(λθ)` no longer moves; the
+closed forms hold to `1e-11` at cv 4, 5, 6 and 10
+(`a_very_dispersed_gamma_is_integrated`).
