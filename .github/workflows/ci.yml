@@ -72,10 +72,79 @@ jobs:
       # leg is one its matrix runs (#824).
       - run: python3 validation/scripts/bayes_shards.py
 
+  # What a pull request's diff asks for, decided once (#966): before, every
+  # job cloned the whole history to decide whether to skip itself. The other
+  # jobs read these outputs; one that is not a matrix and feeds no other job
+  # is skipped as a whole, without a runner, and a skipped job passes. Every
+  # output is true on the other events (msrv: not on a push), where each job
+  # has rules of its own. The clone has the history but no file contents
+  # (`blob:none`): the diff needs names only.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      msrv: ${{ steps.filter.outputs.msrv }}
+      bindings: ${{ steps.filter.outputs.bindings }}
+      rbuild: ${{ steps.filter.outputs.rbuild }}
+      docs: ${{ steps.filter.outputs.docs }}
+      render: ${{ steps.filter.outputs.render }}
+      report: ${{ steps.filter.outputs.report }}
+      fremtpl2: ${{ steps.filter.outputs.fremtpl2 }}
+      bayes: ${{ steps.filter.outputs.bayes }}
+      deny: ${{ steps.filter.outputs.deny }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: Decide what runs
+        id: filter
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          out() { echo "$1=$2" | tee -a "$GITHUB_OUTPUT"; }
+          if [ "$EVENT" != pull_request ]; then
+            for k in rust bindings rbuild docs render report fremtpl2 bayes deny; do out "$k" true; done
+            out msrv "$([ "$EVENT" = push ] && echo false || echo true)"
+            exit 0
+          fi
+          changed="$RUNNER_TEMP/changed.txt"
+          git diff --name-only "origin/$BASE...HEAD" > "$changed"
+          echo "$(wc -l < "$changed") files changed"
+          # any RE: a changed file matches. other RE: one does not.
+          any() { grep -qE "$1" "$changed" && echo true || echo false; }
+          other() { grep -qvE "$1" "$changed" && echo true || echo false; }
+          # rust: anything but docs, knowledge, change fragments and lane
+          # status; the Excel add-in and xtask are Rust (#827).
+          rust_free="${DOCS_ONLY//crates\/prospicio-xll\/|/}"
+          rust_free="${rust_free//xtask\/|/}"
+          out rust "$(other "$rust_free")"
+          # msrv: the manifests and the lock file (the nightly run checks
+          # the code against the declared rust-version).
+          out msrv "$(any '(^|/)Cargo\.(toml|lock)$|^\.github/workflows/ci\.yml$')"
+          # bindings: the python and r jobs.
+          out bindings "$(other "$DOCS_ONLY")"
+          # rbuild: the R package's install-from-tarball check.
+          out rbuild "$(any '^(R/prospicio/(bootstrap\.R|DESCRIPTION|\.Rbuildignore|src/)|Cargo\.(toml|lock)|crates/[^/]+/Cargo\.toml|\.github/workflows/ci\.yml)')"
+          # docs: the generated files' inputs (the bindings' sources, the
+          # Python package and the R package's code and documentation, not
+          # their tests); render: the sites' configuration.
+          out docs "$(any '^(crates/prospicio-python/|crates/prospicio-r/|python/(prospicio/|pyproject\.toml|uv\.lock|great-docs\.yml|docs-site\.css)|R/prospicio/(R/|DESCRIPTION|NAMESPACE|man/|_pkgdown\.yml|pkgdown/|src/)|xtask/|\.github/workflows/ci\.yml)')"
+          out render "$(any '^(xtask/|python/(great-docs\.yml|docs-site\.css)|R/prospicio/(_pkgdown\.yml|pkgdown/))')"
+          out report "$(any '^(examples/templates/|examples/data/deal_report/|docs/guides/submission-schema\.md|\.github/workflows/ci\.yml)')"
+          out fremtpl2 "$(any '^(crates/prospicio-glm/|crates/prospicio-models/|crates/prospicio-math/|crates/prospicio-nn/|validation/(Cargo\.toml|build\.rs)|validation/(tests|scripts|reference)/.*fremtpl2|\.github/workflows/ci\.yml)')"
+          out bayes "$(any '^(crates/prospicio-(reserving|bayes|prob|core|math|glm|models)/|Cargo\.(toml|lock)|validation/(Cargo\.toml|build\.rs|src/|data/|scripts/stan/)|validation/(tests|scripts|reference)/.*(bayes|meyers|compartmental)|\.github/workflows/ci\.yml)')"
+          out deny "$(any '(^|/)Cargo\.(toml|lock)$|^deny\.toml$|^\.github/workflows/ci\.yml$')"
+
   # Clippy, the debug tests, rustdoc and the WASM check. A pull request that
   # touches only docs, knowledge, change fragments or lane status skips them
   # (DOCS_ONLY, except the Excel add-in and xtask, which are Rust; #827).
   rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     # Line tables only in the test binaries (#851): panics still name the
     # file and line, and there is less debug information to write and link.
@@ -84,81 +153,50 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check whether any Rust input changed
-        id: changes
-        shell: bash
-        run: |
-          rust_free="${DOCS_ONLY//crates\/prospicio-xll\/|/}"
-          rust_free="${rust_free//xtask\/|/}"
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE "$rust_free"; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Only docs, knowledge, change fragments or lane status changed; skipping the Rust checks."
-          fi
-      - if: steps.changes.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
           targets: wasm32-unknown-unknown
-      - if: steps.changes.outputs.run == 'true'
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
       # Default members: pure-Rust crates and the parity suite. The feature
       # lints the Bayesian parity tests too, and turns on
       # prospicio-reserving/slow-tests; `cargo test` skips the parity files
       # and ignores the NUTS unit tests (the bayes job runs both in
       # release). The dev profile is optimized (Cargo.toml), which took the
       # debug tests from about 7 minutes to about 1.
-      - if: steps.changes.outputs.run == 'true'
-        run: cargo clippy --all-targets --features prospicio-validation/slow-bayes -- -D warnings
-      - if: steps.changes.outputs.run == 'true'
-        run: cargo test
+      - run: cargo clippy --all-targets --features prospicio-validation/slow-bayes -- -D warnings
+      - run: cargo test
       # Rustdoc with warnings denied, as the docs job runs it (cargo xtask rust),
       # but on every PR: a crate-only PR does not trigger the docs job.
-      - if: steps.changes.outputs.run == 'true'
-        run: cargo xtask rust
+      - run: cargo xtask rust
       # The crates in the WASM scope (docs/architecture.md, "Open
       # decisions") build for the browser.
-      - if: steps.changes.outputs.run == 'true'
-        run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
+      - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
 
   # The workspace builds on the rust-version it declares (Cargo.toml,
   # 1.92), so the manifest cannot drift from the code again (#829). The R
   # bindings need R installed, so they are checked by the r job instead.
+  # Nightly and on manual runs; a pull request runs it only when it touches
+  # a manifest or the lock file (#966), since a dependency's new
+  # rust-version is what moved the minimum before, so code that needs a
+  # newer compiler than the manifest declares shows within a day.
   msrv:
+    needs: changes
+    if: needs.changes.outputs.msrv == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check whether any Rust input changed
-        id: changes
+      - name: The declared rust-version
+        id: msrv
         shell: bash
-        run: |
-          rust_free="${DOCS_ONLY//crates\/prospicio-xll\/|/}"
-          rust_free="${rust_free//xtask\/|/}"
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE "$rust_free"; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          fi
-          echo "version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
-      - if: steps.changes.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@master
+        run: echo "version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ steps.changes.outputs.version }}
-      - if: steps.changes.outputs.run == 'true'
-        uses: Swatinem/rust-cache@v2
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@v2
         with:
           key: msrv
-      - if: steps.changes.outputs.run == 'true'
-        run: cargo check --workspace --exclude prospicio-r --all-targets --features prospicio-validation/slow-bayes,prospicio-reserving/io,prospicio-prob/arrow
+      - run: cargo check --workspace --exclude prospicio-r --all-targets --features prospicio-validation/slow-bayes,prospicio-reserving/io,prospicio-prob/arrow
 
   # The Python package, built once per platform (#965): a release wheel
   # (abi3, as release.yml builds it), kept as an artifact for a day, that
@@ -168,49 +206,38 @@ jobs:
   # with. On a push to main the job builds only when its cache is not an
   # exact match, to fill the cache pull requests read, and uploads nothing.
   python-build:
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
-    outputs:
-      run: ${{ steps.changes.outputs.run }}
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check whether the bindings' inputs changed
-        id: changes
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE "$DOCS_ONLY"; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Only docs, knowledge, change fragments or lane status changed; skipping the Python build and tests."
-          fi
-      - if: steps.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.bindings == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       # On a push to main, build only if the restore was not an exact match
       # (the post step then saves the cache).
-      - if: steps.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.bindings == 'true'
         id: cache
         uses: Swatinem/rust-cache@v2
       - name: Plan
         id: plan
         run: |
-          run=${{ steps.changes.outputs.run }}
+          run=${{ needs.changes.outputs.bindings }}
           push=${{ github.event_name == 'push' }}
           hit=${{ steps.cache.outputs.cache-hit == 'true' }}
           echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && [ "$hit" = true ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - if: steps.plan.outputs.build == 'true'
         uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
       - if: steps.plan.outputs.build == 'true'
         run: cargo clippy -p prospicio-python -- -D warnings
       # maturin through PEP 517, in release, into the workspace's target/.
@@ -237,10 +264,10 @@ jobs:
   # (test_guides.py). The lists balance the legs at about four minutes of
   # tests each (2026-11-11). Each leg installs python-build's wheel beside
   # the locked test dependencies and needs no Rust toolchain (#965); on a
-  # push to main, and when python-build skipped the build, its steps are
-  # skipped.
+  # push to main, and when the pull request touches none of the bindings'
+  # inputs, its steps are skipped.
   python:
-    needs: python-build
+    needs: [changes, python-build]
     strategy:
       fail-fast: false
       matrix:
@@ -248,7 +275,7 @@ jobs:
         part: [tests, slow-1, slow-2, guides]
     runs-on: ${{ matrix.os }}
     env:
-      TEST: ${{ needs.python-build.outputs.run == 'true' && github.event_name != 'push' }}
+      TEST: ${{ needs.changes.outputs.bindings == 'true' && github.event_name != 'push' }}
       PY_SLOW_1: tests/test_reserving_compartmental.py
       PY_SLOW_2: >-
         tests/test_reserving_hierarchical_bf.py
@@ -265,6 +292,9 @@ jobs:
       - uses: actions/checkout@v4
       - if: env.TEST == 'true'
         uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
       - if: env.TEST == 'true'
         uses: actions/download-artifact@v4
         with:
@@ -311,46 +341,32 @@ jobs:
   # push to main the job builds only when its cache is not an exact match,
   # and uploads nothing.
   r-build:
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
-    outputs:
-      run: ${{ steps.changes.outputs.run }}
     # PowerShell (the Windows default) aliases `R` to Invoke-History.
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check whether the bindings' inputs changed
-        id: changes
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE "$DOCS_ONLY"; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Only docs, knowledge, change fragments or lane status changed; skipping the R build and tests."
-          fi
-      - if: steps.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.bindings == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
           targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-gnu' || '' }}
       # On a push to main, build only if the restore was not an exact match
       # (the post step then saves the cache).
-      - if: steps.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.bindings == 'true'
         id: cache
         uses: Swatinem/rust-cache@v2
       - name: Plan
         id: plan
         run: |
-          run=${{ steps.changes.outputs.run }}
+          run=${{ needs.changes.outputs.bindings }}
           push=${{ github.event_name == 'push' }}
           hit=${{ steps.cache.outputs.cache-hit == 'true' }}
           echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && [ "$hit" = true ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
@@ -361,13 +377,13 @@ jobs:
           use-public-rspm: true
       - if: steps.plan.outputs.build == 'true'
         run: cargo clippy -p prospicio-r -- -D warnings
-      # S7 is the package's one import outside base R. On Windows R starts
-      # with no CRAN mirror set, so fall back to the cloud mirror when none
-      # is; Ubuntu keeps setup-r's RSPM binaries.
+      # S7 is the package's one import outside base R. Through pak, with the
+      # library cached between runs (#966); hard dependencies only.
       - if: steps.plan.outputs.build == 'true'
-        run: >-
-          Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) };
-          install.packages('S7'); if (!requireNamespace('S7', quietly = TRUE)) stop('S7 did not install')"
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: any::S7
+          dependencies: 'NA'
       # Installs the package and writes the binary package beside it
       # (prospicio_<version>_R_<platform>.tar.gz; a .zip on Windows).
       - if: steps.plan.outputs.build == 'true'
@@ -391,20 +407,8 @@ jobs:
       # full suite runs on the binary package in the r job. It compiles the
       # crates again (a few minutes), so a PR runs it only when the
       # package's build inputs change; the nightly run always does.
-      - name: Check whether the R build inputs changed
-        id: rbuild
-        if: steps.plan.outputs.test == 'true'
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(R/prospicio/(bootstrap\.R|DESCRIPTION|\.Rbuildignore|src/)|Cargo\.(toml|lock)|crates/[^/]+/Cargo\.toml|\.github/workflows/ci\.yml)'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: Install as install_github does, and run a test file on it
-        if: steps.rbuild.outputs.run == 'true'
+        if: steps.plan.outputs.test == 'true' && needs.changes.outputs.rbuild == 'true'
         run: |
           # Forward slashes: R reads the paths inside string literals.
           tmp=$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
@@ -423,10 +427,10 @@ jobs:
   # thread each, then the Bayesian files and the boosting tests one at a
   # time with every thread, since four processes on four cores made them
   # three to eight times slower. Each leg installs r-build's binary package
-  # and needs no Rust toolchain (#965); on a push to main, and when r-build
-  # skipped the build, its steps are skipped.
+  # and needs no Rust toolchain (#965); on a push to main, and when the
+  # pull request touches none of the bindings' inputs, its steps are skipped.
   r:
-    needs: r-build
+    needs: [changes, r-build]
     strategy:
       fail-fast: false
       matrix:
@@ -434,7 +438,7 @@ jobs:
         part: [tests, slow, guides]
     runs-on: ${{ matrix.os }}
     env:
-      TEST: ${{ needs.r-build.outputs.run == 'true' && github.event_name != 'push' }}
+      TEST: ${{ needs.changes.outputs.bindings == 'true' && github.event_name != 'push' }}
     # PowerShell (the Windows default) aliases `R` to Invoke-History.
     defaults:
       run:
@@ -446,17 +450,22 @@ jobs:
         with:
           # Binary packages: lightgbm and xgboost take minutes to compile.
           use-public-rspm: true
-      # lightgbm and xgboost are optional engines for booster_fit(). The
-      # boosting tests skip a missing engine and install.packages() only
-      # warns on failure, so check that each one loads. ggplot2 and gt draw
-      # the R guides' figures and tables, which tests/test-guides.R runs. On
-      # Windows R starts with no CRAN mirror set, so fall back to the cloud
-      # mirror when none is; Ubuntu keeps setup-r's RSPM binaries.
+      # What each leg's files load, and no more (#966): lightgbm and xgboost
+      # are optional engines for booster_fit() (test-boosting.R and
+      # test-models.R, in `tests`, and a pricing guide's boosting chunks,
+      # in `guides`); ggplot2 and gt draw the R guides' figures and tables
+      # (test-guides.R). Through pak, with the library
+      # cached between runs, hard dependencies only. The boosting tests
+      # skip a missing engine, so check that each package loads.
       - if: env.TEST == 'true'
-        run: >-
-          Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) };
-          pkgs <- c('S7', 'lightgbm', 'xgboost', 'ggplot2', 'gt'); install.packages(pkgs);
-          for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: ${{ matrix.part == 'tests' && 'any::S7, any::lightgbm, any::xgboost' || matrix.part == 'guides' && 'any::S7, any::ggplot2, any::gt, any::lightgbm' || 'any::S7' }}
+          dependencies: 'NA'
+      - if: env.TEST == 'true'
+        env:
+          PKGS: ${{ matrix.part == 'tests' && 'S7 lightgbm xgboost' || matrix.part == 'guides' && 'S7 ggplot2 gt lightgbm' || 'S7' }}
+        run: Rscript -e "for (p in strsplit(Sys.getenv('PKGS'), ' ')[[1]]) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
       - if: env.TEST == 'true'
         uses: actions/download-artifact@v4
         with:
@@ -513,9 +522,11 @@ jobs:
         with:
           use-public-rspm: true
       - uses: quarto-dev/quarto-actions/setup@v2
-      - run: >-
-          Rscript -e "pkgs <- c('S7', 'ggplot2', 'knitr', 'rmarkdown'); install.packages(pkgs);
-          for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: any::S7, any::ggplot2, any::knitr, any::rmarkdown
+          dependencies: 'NA'
+      - run: Rscript -e "for (p in c('S7', 'ggplot2', 'knitr', 'rmarkdown')) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
       - run: R CMD INSTALL R/prospicio
       - name: Render the R twins
         run: |
@@ -524,6 +535,9 @@ jobs:
             quarto render "examples/$f.qmd" --to gfm --output-dir "$RUNNER_TEMP/r-twins"
           done
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
       - run: uv sync
         working-directory: python
       - name: Compare the R twins with the notebooks
@@ -552,60 +566,39 @@ jobs:
   # a break that only the render shows is found there. Neither mode runs the
   # test suites.
   #
-  # On a pull request it runs only when the PR touches the bindings, their
-  # docs config or xtask; otherwise its steps are skipped and it passes.
+  # On a pull request it runs only when the PR touches the bindings' Rust
+  # sources, the Python package, the R package's code, documentation or
+  # build files, the sites' configuration or xtask (the `docs` output of the
+  # changes job); a PR that changes only the bindings' tests skips it
+  # (#966), since no generated file reads them.
   docs:
-    if: github.event_name != 'push'
+    needs: changes
+    if: github.event_name != 'push' && needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check whether the docs inputs changed
-        id: changes
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "docs=true" >> "$GITHUB_OUTPUT"
-            echo "render=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
-          if echo "$changed" | grep -qE '^(crates/prospicio-python/|crates/prospicio-r/|python/|R/|xtask/|\.github/workflows/ci\.yml)'; then
-            echo "docs=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "docs=false" >> "$GITHUB_OUTPUT"
-            echo "No bindings or docs inputs changed; skipping the docs build."
-          fi
-          if echo "$changed" | grep -qE '^(xtask/|python/(great-docs\.yml|docs-site\.css)|R/prospicio/(_pkgdown\.yml|pkgdown/))'; then
-            echo "render=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "render=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.changes.outputs.docs == 'true'
-        uses: dtolnay/rust-toolchain@stable
-      - if: steps.changes.outputs.docs == 'true'
-        uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
           shared-key: docs-site
-      - if: steps.changes.outputs.docs == 'true'
-        uses: astral-sh/setup-uv@v6
-      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render == 'true'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+      - if: needs.changes.outputs.render == 'true'
         uses: quarto-dev/quarto-actions/setup@v2
-      - if: steps.changes.outputs.docs == 'true'
-        uses: r-lib/actions/setup-r@v2
+      - uses: r-lib/actions/setup-r@v2
         with:
           use-public-rspm: true
-      - if: steps.changes.outputs.docs == 'true'
-        uses: r-lib/actions/setup-r-dependencies@v2
+      - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           working-directory: R/prospicio
           extra-packages: any::roxygen2, any::pkgload, any::pkgdown
-      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render != 'true'
+      - if: needs.changes.outputs.render != 'true'
         run: cargo xtask generated --check
-      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render == 'true'
+      - if: needs.changes.outputs.render == 'true'
         run: cargo xtask docs --check --no-tests
-      - if: steps.changes.outputs.docs == 'true' && steps.changes.outputs.render == 'true'
+      - if: needs.changes.outputs.render == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: docs-site
@@ -620,39 +613,25 @@ jobs:
   # On a pull request it runs only when the templates, the sample tables,
   # their guide or this file change.
   deal-report:
-    if: github.event_name != 'push'
+    needs: changes
+    if: github.event_name != 'push' && needs.changes.outputs.report == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check whether the report's inputs changed
-        id: changes
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "report=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(examples/templates/|examples/data/deal_report/|docs/guides/submission-schema\.md|\.github/workflows/ci\.yml)'; then
-            echo "report=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "report=false" >> "$GITHUB_OUTPUT"
-            echo "No report template inputs changed; skipping the render."
-          fi
-      - if: steps.changes.outputs.report == 'true'
-        uses: quarto-dev/quarto-actions/setup@v2
-      - if: steps.changes.outputs.report == 'true'
-        uses: r-lib/actions/setup-r@v2
+      - uses: quarto-dev/quarto-actions/setup@v2
+      - uses: r-lib/actions/setup-r@v2
         with:
           use-public-rspm: true
-      - if: steps.changes.outputs.report == 'true'
-        run: >-
-          Rscript -e "pkgs <- c('knitr', 'rmarkdown'); install.packages(pkgs);
-          for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
-      - if: steps.changes.outputs.report == 'true'
-        uses: astral-sh/setup-uv@v6
-      - if: steps.changes.outputs.report == 'true'
-        name: Render both templates on the sample tables
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: any::knitr, any::rmarkdown
+          dependencies: 'NA'
+      - run: Rscript -e "for (p in c('knitr', 'rmarkdown')) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+      - name: Render both templates on the sample tables
         working-directory: examples/templates
         run: |
           out="$RUNNER_TEMP/deal-report"
@@ -670,46 +649,31 @@ jobs:
   # a one-hot CANN, in a release build (about 90 s; several minutes
   # unoptimized). The data is downloaded from OpenML once and cached. On a
   # pull request it runs only when the GLM or network code or the freMTPL2
-  # parity files change; otherwise its steps are skipped. On a
+  # parity files change; otherwise it is skipped. On a
   # push to main it only builds the test, if its cache is missing.
   fremtpl2:
+    needs: changes
+    if: needs.changes.outputs.fremtpl2 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check whether the GLM inputs changed
-        id: changes
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(crates/prospicio-glm/|crates/prospicio-models/|crates/prospicio-math/|crates/prospicio-nn/|validation/(Cargo\.toml|build\.rs)|validation/(tests|scripts|reference)/.*fremtpl2|\.github/workflows/ci\.yml)'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No GLM inputs changed; skipping the freMTPL2 parity."
-          fi
-      - if: steps.changes.outputs.run == 'true'
-        uses: dtolnay/rust-toolchain@stable
-      - if: steps.changes.outputs.run == 'true'
-        id: cache
+      - uses: dtolnay/rust-toolchain@stable
+      - id: cache
         uses: Swatinem/rust-cache@v2
         with:
           key: release
-      - if: steps.changes.outputs.run == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
+      - if: github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true'
         run: cargo test --release -p prospicio-validation --no-default-features --features nn --test fremtpl2 --no-run
-      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
+      - if: github.event_name != 'push'
         uses: actions/cache@v4
         with:
           path: validation/data/external
           key: fremtpl2-${{ hashFiles('validation/scripts/fetch_fremtpl2.py') }}
-      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
+      - if: github.event_name != 'push'
         name: Fetch freMTPL2freq and freMTPL2sev
         run: |
           test -f validation/data/external/freMTPL2freq_glm.csv             && test -f validation/data/external/freMTPL2sev_glm.csv             || python3 validation/scripts/fetch_fremtpl2.py
-      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
+      - if: github.event_name != 'push'
         run: cargo test --release -p prospicio-validation --no-default-features --features nn --test fremtpl2
         env:
           RISK_RS_REQUIRE_FREMTPL2: "1"
@@ -727,36 +691,20 @@ jobs:
   # when their inputs change; otherwise its steps are skipped and it passes.
   # On a push to main it only builds, if its cache is missing.
   bayes-build:
+    needs: changes
     runs-on: ubuntu-latest
-    outputs:
-      run: ${{ steps.changes.outputs.run }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check whether the Bayesian inputs changed
-        id: changes
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '^(crates/prospicio-(reserving|bayes|prob|core|math|glm|models)/|Cargo\.(toml|lock)|validation/(Cargo\.toml|build\.rs|src/|data/|scripts/stan/)|validation/(tests|scripts|reference)/.*(bayes|meyers|compartmental)|\.github/workflows/ci\.yml)'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No Bayesian inputs changed; skipping the Bayesian parity."
-          fi
-      - if: steps.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.bayes == 'true'
         uses: dtolnay/rust-toolchain@stable
-      - if: steps.changes.outputs.run == 'true'
+      - if: needs.changes.outputs.bayes == 'true'
         id: cache
         uses: Swatinem/rust-cache@v2
         with:
           key: release
       # Each binary is built, then named by a second, instant `--no-run`
       # whose JSON messages give the executable's path.
-      - if: steps.changes.outputs.run == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
+      - if: needs.changes.outputs.bayes == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
         name: Build the Bayesian tests in release
         shell: bash
         run: |
@@ -775,7 +723,7 @@ jobs:
           build parity -p prospicio-validation --no-default-features --features slow-bayes --test bayes
           build unit -p prospicio-reserving --features slow-tests --lib
           ls -l bayes-bin
-      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
+      - if: needs.changes.outputs.bayes == 'true' && github.event_name != 'push'
         uses: actions/upload-artifact@v4
         with:
           name: bayes-tests
@@ -795,16 +743,17 @@ jobs:
   # compartmental one-year validation; the nightly and manual runs set
   # RISK_RS_FULL_BAYES and run all of it (prospicio_validation::full_bayes;
   # the user's decisions of 2026-10-16 and 2026-10-19). On a push to main,
-  # and when bayes-build skipped the build, the steps are skipped.
+  # and when the pull request touches none of their inputs, the steps are
+  # skipped.
   bayes:
-    needs: bayes-build
+    needs: [changes, bayes-build]
     strategy:
       fail-fast: false
       matrix:
         shard: [a, b, c]
     runs-on: ubuntu-latest
     env:
-      TEST: ${{ needs.bayes-build.outputs.run == 'true' && github.event_name != 'push' }}
+      TEST: ${{ needs.changes.outputs.bayes == 'true' && github.event_name != 'push' }}
     steps:
       - uses: actions/checkout@v4
       - name: The leg's tests
@@ -837,26 +786,11 @@ jobs:
   # the dependencies or the rules; the nightly and manual runs always do, so
   # a new advisory on an unchanged lock file still shows up.
   deny:
-    if: github.event_name != 'push'
+    needs: changes
+    if: github.event_name != 'push' && needs.changes.outputs.deny == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check whether the dependencies changed
-        id: changes
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep -qE '(^|/)Cargo\.(toml|lock)$|^deny\.toml$|^\.github/workflows/ci\.yml$'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No dependency changes; skipping cargo deny."
-          fi
-      - if: steps.changes.outputs.run == 'true'
-        uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check

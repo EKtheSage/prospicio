@@ -1046,7 +1046,11 @@ real Excel.
     and one codegen unit, which drops unused code across crates: 16.3 MB
     to 14.0 MB on the GNU target (2026-11-05, with the old names; 16.2
     MB without LTO and without them), for a few more minutes of release
-    build.
+    build. A pull request's CI build passes `--thin-lto` instead (#966,
+    2026-11-20): thin LTO on the default codegen units, 135 s for the
+    whole build on four cores against 194 s for the fat step alone, and
+    18.3 MB against 15.7 MB; pushes to `main`, tags and manual runs keep
+    the fat build, so every add-in a person installs is built that way.
     The wrappers are 5% of the code; the rest is the engines
     (`rustfft`'s scalar, SSE and AVX kernels 16%, the Bayesian stack with
     the GLMs and the thread pool about 17%, `prospicio-reserving` 12%).
