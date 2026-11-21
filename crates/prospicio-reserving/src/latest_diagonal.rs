@@ -19,7 +19,7 @@ use prospicio_core::{Grain, Lag, Month, Period};
 use crate::expected_loss::origin_exposure;
 use crate::pattern::{check_factors, grid, on_ages, own_cdf, span_end, tail_on_own_ages};
 use crate::segments::{collect_labelled, find_segment, labelled};
-use crate::triangle::Segment;
+use crate::triangle::{MAX_DENSE_CELLS, Segment};
 use crate::{
     Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit, Development,
     Error, ExpectedLoss, ExpectedLossFit, Label, PatternKind, PatternWeight, Result, SegmentFits,
@@ -441,6 +441,22 @@ impl LatestDiagonal {
             }
         };
         let gridded = self.on_grid(development, pattern, tail)?;
+        // The grid runs from the earliest to the latest origin, so one
+        // mistyped origin spreads it (#951).
+        let step = i64::from(self.origin_grain.months());
+        let first = self.origins.iter().min().expect("a diagonal has an origin");
+        let last = self.origins.iter().max().expect("a diagonal has an origin");
+        let n_origins = (last.months_since(*first) / step + 1) as usize;
+        let cells = n_origins.saturating_mul(gridded.ages.len());
+        if cells > MAX_DENSE_CELLS && cells / 1000 > self.origins.len() {
+            return Err(Error::TooLarge(format!(
+                "origins from {first} to {last} ({n_origins} periods) and {} ages make {cells} \
+                 cells for {} rows; check the earliest and latest origin, since one far from \
+                 the others spreads the grid this far",
+                gridded.ages.len(),
+                self.origins.len(),
+            )));
+        }
         let segment = self.segment(&gridded, &self.latest);
         let exposure = exposure.map(|e| self.segment(&gridded, e));
         Ok(Prepared {
@@ -1580,6 +1596,26 @@ mod tests {
             two.with_exposure(&[10.0, 20.0, -1.0]),
             Err(Error::InSegment { label, .. }) if label == "b"
         ));
+    }
+
+    #[test]
+    fn a_mistyped_origin_is_refused_before_the_grid_is_allocated() {
+        // #951: one monthly origin typed 9999 among the 2000s spreads the
+        // grid over 96,000 origins; with 200 monthly ages it is 1.9e7 cells
+        // for two rows.
+        let origins = [Month::january(2000), Month::january(9999)];
+        let rows = LatestDiagonal::new(Grain::Month, &origins, &[1, 1], &[100.0, 100.0]).unwrap();
+        let ages: Vec<(Lag, f64)> = (1..=200).map(|a| (a, 1.0)).collect();
+        let chain_ladder = ChainLadder {
+            development: Development {
+                pattern: Some(SelectedPattern::new(PatternKind::AgeToUltimate, ages)),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let err = chain_ladder.fit_diagonal(&rows).map(|_| ()).unwrap_err();
+        assert!(matches!(err, Error::TooLarge(_)), "{err}");
+        assert!(err.to_string().contains("9999"), "{err}");
     }
 
     #[test]

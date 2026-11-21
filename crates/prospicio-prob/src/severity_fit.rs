@@ -1254,6 +1254,16 @@ pub fn ks_bootstrap(
             "ks_bootstrap draws each weight as that many losses: weight {w} is not a whole number"
         )));
     }
+    // Each replicate holds four vectors with a slot for every unit of weight,
+    // in every thread (#951).
+    const MAX_BOOTSTRAP_WEIGHT: f64 = (1u64 << 24) as f64;
+    let total_weight: f64 = data.rows().map(|r| r.3).sum();
+    if total_weight > MAX_BOOTSTRAP_WEIGHT {
+        return Err(Error::Data(format!(
+            "ks_bootstrap draws each weight as that many losses: the weights sum to \
+             {total_weight}, more than the {MAX_BOOTSTRAP_WEIGHT} a replicate may hold"
+        )));
+    }
     let limits: Vec<f64> = match limits {
         None => data
             .rows()
@@ -1865,6 +1875,11 @@ mod tests {
         assert!(ks_bootstrap(&fit_capped, &capped, Some(&at_own), 9, 5).is_ok());
         let halves = data.clone().weights(vec![1.5; 10]).unwrap();
         assert!(ks_bootstrap(&fit, &halves, None, 9, 5).is_err());
+        // #951: a whole-number weight of 1e12 would reserve four vectors of
+        // that many slots per replicate.
+        let huge = data.clone().weights(vec![1e12; 10]).unwrap();
+        let err = ks_bootstrap(&fit, &huge, None, 9, 5).unwrap_err();
+        assert!(err.to_string().contains("weights sum"), "{err}");
     }
 
     #[test]

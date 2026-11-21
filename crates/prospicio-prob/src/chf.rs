@@ -707,6 +707,16 @@ impl ChfDistribution {
                 reason: "a Grid starts at 0: the window must start at 0 or above, on a whole number of buckets",
             });
         }
+        // A law far from 0 for its spread pads billions of buckets (#951):
+        // at most 2^28 (2 GB of zeros), the largest window.
+        const MAX_PAD_BUCKETS: f64 = (1u64 << 28) as f64;
+        if k0 > MAX_PAD_BUCKETS {
+            return Err(Error::InvalidParameter {
+                name: "x_min",
+                value: self.x_min,
+                reason: "the window starts too many buckets above 0 to pad a Grid with zeros",
+            });
+        }
         let mut probs = vec![0.0; k0 as usize];
         probs.extend(self.masses.iter().map(|p| p.max(0.0)));
         Grid::normalized(self.step, probs)
@@ -1942,6 +1952,18 @@ mod tests {
         }
         assert!(d.report().law_mean.is_nan());
         assert_eq!(d.report().outside_mass(), 0.0);
+    }
+
+    #[test]
+    fn to_grid_refuses_a_window_far_above_zero() {
+        // #951: Normal(1e9, 1) puts the window about 8e12 buckets from 0.
+        let law = ChfLaw::Normal(Normal::new(1e9, 1.0).unwrap());
+        let d = invert(&law, &ChfOptions::with_log2(12)).unwrap();
+        let err = d.to_grid().unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidParameter { name: "x_min", .. }),
+            "{err}"
+        );
     }
 
     #[test]
