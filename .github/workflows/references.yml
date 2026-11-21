@@ -13,6 +13,10 @@ on:
   schedule:
     - cron: "41 5 * * 1"
   workflow_dispatch:
+    inputs:
+      force_failure:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,6 +31,8 @@ jobs:
       matrix:
         mode: [pinned, latest]
     steps:
+      - run: exit 1
+        if: inputs.force_failure
       - uses: actions/checkout@v4
       # The generators' environments come from their inline metadata, so
       # the cache is keyed on the scripts.
@@ -35,6 +41,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: validation/scripts/*.py
       - name: Rerun the weekly generators
+        if: false
         run: >-
           python3 validation/scripts/rerun_references.py
           ${{ matrix.mode == 'latest' && '--latest' || '' }}
@@ -46,7 +53,7 @@ jobs:
   # the other jobs did, and never fails the run itself (continue-on-error).
   report:
     needs: [rerun]
-    if: always() && github.event_name == 'schedule'
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     continue-on-error: true
     permissions:
@@ -55,7 +62,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      TITLE: "Weekly reference rerun is red"
+      TITLE: "[test] Weekly reference rerun is red"
       RESULTS: ${{ toJSON(needs) }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       RUN_ID: ${{ github.run_id }}
