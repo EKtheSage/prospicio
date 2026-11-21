@@ -40,6 +40,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # `cargo xtask check --changed` repeats DOCS_ONLY in xtask/src/check.rs;
+  # keep the two in step (its unit test lists sample paths).
   # Paths a pull request can change without running the python and r jobs:
   # nothing in them is built or read by the bindings' tests (the guides in
   # docs/guides and the notebooks in examples/ are).
@@ -79,7 +81,9 @@ jobs:
   # jobs read these outputs; one that is not a matrix and feeds no other job
   # is skipped as a whole, without a runner, and a skipped job passes. Every
   # output is true on the other events (msrv: not on a push), where each job
-  # has rules of its own. The clone has the history but no file contents
+  # has rules of its own. `cargo xtask check --changed` (xtask/src/check.rs)
+  # reads the same filters (`DOCS_ONLY` above and the rust and docs outputs
+  # below): change them together. The clone has the history but no file contents
   # (`blob:none`): the diff needs names only.
   changes:
     runs-on: ubuntu-latest
