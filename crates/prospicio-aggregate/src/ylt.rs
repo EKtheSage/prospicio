@@ -215,6 +215,15 @@ impl YearLossTable {
                 "n_years = {n_years} is below the largest year, {largest}"
             )));
         }
+        // The bound of `new` (#832) applies to the argument too: expanding
+        // the table makes a list of rows for each year (#951).
+        if n_years > MAX_DENSE_YEARS && n_years / 1000 > self.years.len() {
+            return Err(Error::Data(format!(
+                "n_years = {n_years} is far above the {} rows: n_years is the number of \
+                 simulated years, at most {MAX_DENSE_YEARS} or 1,000 for each row",
+                self.years.len()
+            )));
+        }
         self.n_years = n_years;
         Ok(self)
     }
@@ -582,6 +591,12 @@ mod tests {
         let err = t.check_values("peril", &["wind"]).unwrap_err().to_string();
         assert!(err.contains("row 3"), "{err}");
         assert!(t.check_values("region", &["eu"]).is_err());
+
+        // #951: n_years of 10^12 would list a year per entry.
+        let one = YearLossTable::new(&[1], &[1.0]).unwrap();
+        let err = one.clone().with_n_years(1_000_000_000_000).unwrap_err();
+        assert!(err.to_string().contains("n_years"), "{err}");
+        assert_eq!(one.with_n_years(1 << 24).unwrap().n_years(), 1 << 24);
 
         assert!(YearLossTable::new(&[0], &[1.0]).is_err());
         assert!(YearLossTable::new(&[1], &[-1.0]).is_err());

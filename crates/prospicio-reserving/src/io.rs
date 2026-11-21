@@ -306,6 +306,69 @@ fn csv_table<R: Read>(mut reader: R, comment: Option<u8>) -> Result<Table> {
     })
 }
 
+/// The most cells a sheet's used range (its bounding box) may span whatever
+/// the number of filled cells: 2^24 (#951).
+const MAX_SHEET_CELLS: u64 = 1 << 24;
+
+/// Refuses an Excel sheet whose bounding box is far larger than its filled
+/// cells, before calamine allocates the box: `worksheet_range` builds every
+/// cell between the first and the last, so one stray cell at A1 and one at
+/// XFD1048576 ask for 1.7e10 cells and abort the process (#951). Reads the
+/// cells of an xlsx or xlsb sheet without building the range; other formats
+/// are bounded by their own limits.
+fn check_used_range<RS: std::io::Read + std::io::Seek>(
+    book: &mut calamine::Sheets<RS>,
+    sheet: &str,
+    shown: &str,
+) -> Result<()> {
+    use calamine::{DataRef, Sheets};
+    let fail = |e: String| Error::File(format!("{shown}, sheet \"{sheet}\": {e}"));
+    let (mut rows, mut cols) = ((u32::MAX, 0u32), (u32::MAX, 0u32));
+    let mut filled = 0u64;
+    let mut take = |row: u32, col: u32, empty: bool| {
+        if !empty {
+            filled += 1;
+            rows = (rows.0.min(row), rows.1.max(row));
+            cols = (cols.0.min(col), cols.1.max(col));
+        }
+    };
+    match book {
+        Sheets::Xlsx(x) => {
+            let Ok(mut reader) = x.worksheet_cells_reader(sheet) else {
+                return Ok(());
+            };
+            while let Some(c) = reader.next_cell().map_err(|e| fail(e.to_string()))? {
+                let (r, k) = c.get_position();
+                take(r, k, matches!(c.get_value(), DataRef::Empty));
+            }
+        }
+        Sheets::Xlsb(x) => {
+            let Ok(mut reader) = x.worksheet_cells_reader(sheet) else {
+                return Ok(());
+            };
+            while let Some(c) = reader.next_cell().map_err(|e| fail(e.to_string()))? {
+                let (r, k) = c.get_position();
+                take(r, k, matches!(c.get_value(), DataRef::Empty));
+            }
+        }
+        _ => return Ok(()),
+    }
+    if filled == 0 {
+        return Ok(());
+    }
+    let span = u64::from(rows.1 - rows.0 + 1) * u64::from(cols.1 - cols.0 + 1);
+    if span > MAX_SHEET_CELLS && span / 1000 > filled {
+        return Err(fail(format!(
+            "the used range, rows {} to {} and columns {} to {}, spans {span} cells for {filled} \n             filled; a stray cell far from the table spreads it this far. Clear the cells outside \n             the table, or copy the table to a new sheet",
+            rows.0 + 1,
+            rows.1 + 1,
+            column_letters(cols.0),
+            column_letters(cols.1),
+        )));
+    }
+    Ok(())
+}
+
 fn excel_table(path: &Path, sheet: Option<&str>) -> Result<Table> {
     use calamine::{Data, Reader, open_workbook_auto};
 
@@ -329,6 +392,7 @@ fn excel_table(path: &Path, sheet: Option<&str>) -> Result<Table> {
             .cloned()
             .ok_or_else(|| Error::File(format!("{shown} has no sheets")))?,
     };
+    check_used_range(&mut book, &sheet, &shown.to_string())?;
     let range = book
         .worksheet_range(&sheet)
         .map_err(|e| Error::File(format!("{shown}, sheet \"{sheet}\": {e}")))?;
@@ -1164,6 +1228,106 @@ company,ay,dy,paid,incurred
             e.contains("blank.csv") && e.ends_with("the file has no observed values"),
             "{e}"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A one-sheet xlsx holding `cells` (reference, number), in a zip
+    /// without compression.
+    fn tiny_xlsx(cells: &[(&str, f64)]) -> Vec<u8> {
+        fn crc32(data: &[u8]) -> u32 {
+            let mut crc = !0u32;
+            for &b in data {
+                crc ^= u32::from(b);
+                for _ in 0..8 {
+                    crc = if crc & 1 == 1 {
+                        (crc >> 1) ^ 0xEDB8_8320
+                    } else {
+                        crc >> 1
+                    };
+                }
+            }
+            !crc
+        }
+        const NS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+        const DOC: &str = "http://schemas.openxmlformats.org/officeDocument/2006";
+        let sheet_rows: String = cells
+            .iter()
+            .map(|(r, v)| {
+                let row: String = r.chars().filter(char::is_ascii_digit).collect();
+                format!("<row r=\"{row}\"><c r=\"{r}\"><v>{v}</v></c></row>")
+            })
+            .collect();
+        let files: [(&str, String); 5] = [
+            (
+                "[Content_Types].xml",
+                "<?xml version=\"1.0\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/></Types>".into(),
+            ),
+            (
+                "_rels/.rels",
+                format!("<?xml version=\"1.0\"?><Relationships xmlns=\"{NS}\"><Relationship Id=\"rId1\" Type=\"{DOC}/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>"),
+            ),
+            (
+                "xl/workbook.xml",
+                format!("<?xml version=\"1.0\"?><workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"{DOC}/relationships\"><sheets><sheet name=\"Sheet1\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>"),
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                format!("<?xml version=\"1.0\"?><Relationships xmlns=\"{NS}\"><Relationship Id=\"rId1\" Type=\"{DOC}/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>"),
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                format!("<?xml version=\"1.0\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>{sheet_rows}</sheetData></worksheet>"),
+            ),
+        ];
+        let mut out = Vec::new();
+        let mut central = Vec::new();
+        for (name, body) in &files {
+            let offset = out.len() as u32;
+            let (crc, len, n) = (crc32(body.as_bytes()), body.len() as u32, name.len() as u16);
+            let mut head = Vec::new();
+            head.extend_from_slice(&[20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            head.extend_from_slice(&crc.to_le_bytes());
+            head.extend_from_slice(&len.to_le_bytes());
+            head.extend_from_slice(&len.to_le_bytes());
+            head.extend_from_slice(&n.to_le_bytes());
+            head.extend_from_slice(&[0, 0]);
+            out.extend_from_slice(&[0x50, 0x4b, 3, 4]);
+            out.extend_from_slice(&head);
+            out.extend_from_slice(name.as_bytes());
+            out.extend_from_slice(body.as_bytes());
+            central.extend_from_slice(&[0x50, 0x4b, 1, 2, 20, 0]);
+            central.extend_from_slice(&head);
+            central.extend_from_slice(&[0; 10]);
+            central.extend_from_slice(&offset.to_le_bytes());
+            central.extend_from_slice(name.as_bytes());
+        }
+        let start = out.len() as u32;
+        out.extend_from_slice(&central);
+        out.extend_from_slice(&[0x50, 0x4b, 5, 6, 0, 0, 0, 0]);
+        out.extend_from_slice(&(files.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(files.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(central.len() as u32).to_le_bytes());
+        out.extend_from_slice(&start.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+        out
+    }
+
+    #[test]
+    fn a_stray_cell_far_from_the_table_is_refused_before_the_range_is_allocated() {
+        // #951: cells at A1 and XFD1048576 make a used range of 1.7e10
+        // cells, which calamine allocates before any check of ours.
+        let dir = std::env::temp_dir().join(format!("prospicio-io-xlsx-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let layout = FileLayout::wide("year", "paid");
+        let path = dir.join("stray.xlsx");
+        std::fs::write(&path, tiny_xlsx(&[("A1", 1.0), ("XFD1048576", 2.0)])).unwrap();
+        let e = file_error(Triangle::read_excel(&path, None, &layout));
+        assert!(e.contains("stray.xlsx") && e.contains("used range"), "{e}");
+        // The same reader goes on to read a small, dense sheet.
+        let path = dir.join("small.xlsx");
+        std::fs::write(&path, tiny_xlsx(&[("A1", 1.0), ("B2", 2.0)])).unwrap();
+        let e = file_error(Triangle::read_excel(&path, None, &layout));
+        assert!(!e.contains("used range"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
