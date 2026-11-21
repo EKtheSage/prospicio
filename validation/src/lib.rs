@@ -14,6 +14,14 @@ use std::path::Path;
 
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
 
+// The optional dependencies are read by the test binaries only (a
+// dev-dependency cannot be optional, #967); naming them here keeps cargo's
+// unused-dependency lint quiet.
+#[cfg(feature = "bayes")]
+use prospicio_bayes as _;
+#[cfg(feature = "nn")]
+use prospicio_nn as _;
+
 /// One row of a reference file: column name to raw value.
 #[derive(Debug, Clone)]
 pub struct Case {
