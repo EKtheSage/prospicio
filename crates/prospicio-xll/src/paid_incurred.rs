@@ -285,13 +285,9 @@ fn pic_fit(args: &[Grid]) -> Result<PicFit> {
         })?,
     };
     let convention = match text_option(&args[5], "convention")?.as_deref() {
-        None | Some("model") => PicConvention::Model,
-        Some("r" | "chainladder" | "r-chainladder") => PicConvention::RChainLadder,
-        Some(other) => {
-            return Err(format!(
-                "convention must be \"model\" or \"r\", got {other:?}"
-            ));
-        }
+        None => PicConvention::Model,
+        Some(name) => PicConvention::from_name(name)
+            .ok_or_else(|| crate::unknown_name("convention", name, PicConvention::NAMES))?,
     };
     // A side of the priors is given as a mean and a standard deviation
     // together, or not at all.
