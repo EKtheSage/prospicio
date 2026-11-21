@@ -109,6 +109,6 @@ for (s in c("r-chainladder", "chainladder", "r")) {
     paid_incurred_chain(tri(), "paid", "incurred", convention = s)@total_reserve, want))
 }
 expect_error_like(paid_incurred_chain(tri(), "paid", "incurred", convention = "nope"),
-                  "convention")
+                  "should be one of")
 
 cat("option name tests passed\n")
