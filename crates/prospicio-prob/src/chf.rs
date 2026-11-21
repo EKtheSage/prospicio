@@ -421,9 +421,14 @@ impl ChfLaw {
     /// inversion transforms, the atom taken out (`aggregate`'s
     /// `truncation_at`).
     pub fn truncation_at(&self, h: f64) -> Result<f64> {
+        self.truncation_with(h, self.atom())
+    }
+
+    /// [`Self::truncation_at`] with `atom` taken out, or nothing.
+    fn truncation_with(&self, h: f64, atom: Option<(f64, f64)>) -> Result<f64> {
         let s = Complex64::new(std::f64::consts::PI / h, 0.0);
         let mut c = self.chf(&[s])?[0];
-        if let Some((x, w)) = self.atom() {
+        if let Some((x, w)) = atom {
             c -= w * Complex64::new(0.0, std::f64::consts::PI * x / h).exp();
         }
         Ok(c.norm())
@@ -821,6 +826,8 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
     let tilting = options.tilt != Tilt::Off && !fixed_grid;
     let tilt_family = if tilting { law.tilt_family() } else { None };
     let (h, x0, tilt, edge_error, mut masses, below, above);
+    // The atom taken out of `φ`, for the masses and the truncation report.
+    let mut atom = law.atom();
     let split = match law {
         ChfLaw::Stable(st) if tilting && law.tilt_side() == Some(TiltSide::Both) => Some(*st),
         _ => None,
@@ -839,9 +846,7 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                 // A grid the user gives may not hold the atom (off the grid
                 // or outside the window): then it stays in `φ`, as it did
                 // before a CGMY law's atom was taken out (#944).
-                let atom = law
-                    .atom()
-                    .filter(|&(xa, _)| !fixed_grid || atom_bucket(xa, x0, h, n).is_some());
+                atom = atom.filter(|&(xa, _)| !fixed_grid || atom_bucket(xa, x0, h, n).is_some());
                 masses = invert_on(law, x0, h, n, 0.0, atom)?;
                 (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
                 edge_error = match law.tilt_family() {
@@ -888,7 +893,7 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
         step: h,
         x_min: x0,
         step_given: options.step.is_some(),
-        truncation_error: law.truncation_at(h)?,
+        truncation_error: law.truncation_with(h, atom)?,
         outside_below: below,
         outside_above: above,
         tilt,
@@ -1697,6 +1702,24 @@ mod tests {
             };
             let d = invert(&law, &opts).unwrap();
             let plain = invert_on(&law, x_min, 0.1, 1 << 10, 0.0, None).unwrap();
+            assert_eq!(d.masses(), &plain[..], "x_min = {x_min}");
+            // The report's truncation is of phi with the atom in.
+            let s = Complex64::new(std::f64::consts::PI / 0.1, 0.0);
+            let full = law.chf(&[s]).unwrap()[0].norm();
+            assert_eq!(d.report().truncation_error, full, "x_min = {x_min}");
+            assert!(full > law.truncation_at(0.1).unwrap());
+        }
+        // The same for a Tweedie's atom at 0, off a given grid or outside it.
+        let tw = ChfLaw::Tweedie(Tweedie::new(100.0, 2.0, 1.5).unwrap());
+        for x_min in [-0.5, 0.5] {
+            let opts = ChfOptions {
+                log2: 10,
+                step: Some(1.0),
+                x_min: Some(x_min),
+                ..ChfOptions::default()
+            };
+            let d = invert(&tw, &opts).unwrap();
+            let plain = invert_on(&tw, x_min, 1.0, 1 << 10, 0.0, None).unwrap();
             assert_eq!(d.masses(), &plain[..], "x_min = {x_min}");
         }
         // A given grid that holds mu still takes the atom out.
