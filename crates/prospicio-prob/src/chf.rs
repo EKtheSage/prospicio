@@ -30,8 +30,9 @@
 //!
 //! **An atom** (the Tweedie's point mass at 0, a CGMY law's at `mu` for
 //! `Y < 0`) is taken out of `φ` before inversion and added back to its
-//! bucket, so frequency truncation does not ring around it. A grid the user
-//! gives (`step` and `x_min`) that does not hold the atom leaves it in `φ`.
+//! bucket, so frequency truncation does not ring around it. A grid that
+//! does not hold the atom (one the user gives, or an automatic window that
+//! leaves out a negligible atom) leaves it in `φ`.
 //!
 //! **Tilting.** The kernel inverts along the line `Im s = θ`, where the
 //! integrand decays like the damped law `e^{−θx} f(x)`: the discretized
@@ -843,10 +844,12 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                     (Some(h), Some(x)) => (h, x),
                     _ => plain_window(law, n, p, options.step)?,
                 };
-                // A grid the user gives may not hold the atom (off the grid
-                // or outside the window): then it stays in `φ`, as it did
-                // before a CGMY law's atom was taken out (#944).
-                atom = atom.filter(|&(xa, _)| !fixed_grid || atom_bucket(xa, x0, h, n).is_some());
+                // A grid may not hold the atom: one the user gives can put it
+                // off the grid or outside the window, and the automatic
+                // window from the quantiles can leave out a negligible atom
+                // when the jumps go mostly one way. Then it stays in `φ`, as
+                // it did before a CGMY law's atom was taken out (#944).
+                atom = atom.filter(|&(xa, _)| atom_bucket(xa, x0, h, n).is_some());
                 masses = invert_on(law, x0, h, n, 0.0, atom)?;
                 (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
                 edge_error = match law.tilt_family() {
@@ -1732,6 +1735,27 @@ mod tests {
         let d = invert(&law, &opts).unwrap();
         let plain = invert_on(&law, -20.0, 0.05, 1 << 10, 0.0, None).unwrap();
         assert_ne!(d.masses(), &plain[..]);
+    }
+
+    #[test]
+    fn an_automatic_window_without_the_atom_inverts_with_the_atom_left_in() {
+        // Jumps mostly one way and a negligible atom (mass about 1.5e-159):
+        // the window from the quantiles does not hold mu, so the atom stays
+        // in phi instead of failing (#944).
+        let ts = TemperedStable::new(200.0, 1000.0, 1.0, -0.5, 0.0).unwrap();
+        let law = ChfLaw::TemperedStable(ts);
+        let d = invert(&law, &ChfOptions::default()).unwrap();
+        assert!(d.x_min() > 0.0, "{}", d.x_min());
+        let n = d.masses().len();
+        let plain = invert_on(&law, d.x_min(), d.step(), n, 0.0, None).unwrap();
+        assert_eq!(d.masses(), &plain[..]);
+        let s = Complex64::new(std::f64::consts::PI / d.step(), 0.0);
+        let full = law.chf(&[s]).unwrap()[0].norm();
+        assert_eq!(d.report().truncation_error, full);
+        // Wrapped in an affine map, the same.
+        let moved = ChfLaw::affine(law, 2.0, 1.0).unwrap();
+        let d = invert(&moved, &ChfOptions::default()).unwrap();
+        assert!(d.x_min() > 1.0, "{}", d.x_min());
     }
 
     #[test]
