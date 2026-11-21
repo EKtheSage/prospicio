@@ -6,4 +6,4 @@
   is the fit's with the paid pattern and the latest paid hashed in. Before,
   two runs on different latest paid amounts gave different `unpaid` draws
   with the same record. The `input_hash` of an incurred-basis result
-  changes once; the paid basis keeps the fit's (#958).
+  changes once; the paid basis keeps the fit's (#958, #1022).
