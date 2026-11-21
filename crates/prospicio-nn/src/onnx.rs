@@ -209,23 +209,29 @@ impl OnnxModel {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         // onnx-ir 0.21 panics on some malformed files (an initializer whose
         // dims do not match its data, a Gemm or MatMul node with the wrong
-        // number of inputs or outputs), so a panic is caught and returned
-        // as an error like a parse failure (#832).
-        let parsed = std::panic::catch_unwind(|| OnnxGraphBuilder::new().parse_bytes(bytes))
-            .map_err(|payload| {
-                let why = payload
-                    .downcast_ref::<String>()
-                    .map(String::as_str)
-                    .or_else(|| payload.downcast_ref::<&str>().copied())
-                    .unwrap_or("no message");
-                Error::Data(format!(
-                    "not a readable ONNX model: the ONNX parser (onnx-ir {ONNX_IR}) stopped on it \
-                     with \"{why}\"; either the file is malformed (a node with the wrong \
-                     number of inputs or outputs, an initializer whose data does not match its \
-                     dims), or it is valid ONNX that onnx-ir cannot read, which is worth \
-                     reporting with the file"
-                ))
-            })?;
+        // number of inputs or outputs), and reading a constant's values
+        // after the parse can panic too, so a panic anywhere in the parse or
+        // the conversion is caught and returned as an error like a parse
+        // failure (#832, #952).
+        std::panic::catch_unwind(|| Self::read(bytes)).unwrap_or_else(|payload| {
+            let why = payload
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| payload.downcast_ref::<&str>().copied())
+                .unwrap_or("no message");
+            Err(Error::Data(format!(
+                "not a readable ONNX model: the ONNX reader (onnx-ir {ONNX_IR}) stopped on it \
+                 with \"{why}\"; either the file is malformed (a node with the wrong \
+                 number of inputs or outputs, an initializer whose data does not match its \
+                 dims), or it is valid ONNX that onnx-ir cannot read, which is worth \
+                 reporting with the file"
+            )))
+        })
+    }
+
+    /// The parse and the conversion, which may panic on a malformed file.
+    fn read(bytes: &[u8]) -> Result<Self> {
+        let parsed = OnnxGraphBuilder::new().parse_bytes(bytes);
         let graph = parsed.map_err(|e| Error::Data(format!("not a readable ONNX model: {e}")))?;
         let inputs = graph
             .inputs
@@ -386,8 +392,11 @@ fn operand(a: &Argument) -> std::result::Result<Operand, String> {
             // onnx-ir 0.21 builds a constant from its bytes without checking
             // them against its dims, and reading it then pads or cuts: a
             // [2, 2] initializer with 3 floats read as [1, 2, 3, 0] (#832).
-            let cells: usize = data.shape.iter().product();
-            if data.bytes.len() != cells * data.dtype.size() {
+            let cells = data.shape.iter().try_fold(1usize, |n, &d| n.checked_mul(d));
+            let want = cells.and_then(|n| n.checked_mul(data.dtype.size()));
+            if want != Some(data.bytes.len()) {
+                let cells =
+                    cells.map_or_else(|| "more than usize::MAX".to_string(), |n| n.to_string());
                 return Err(format!(
                     "{MALFORMED}a constant {}declares shape {:?} ({cells} values) but holds {} \
                      bytes of {:?}",
