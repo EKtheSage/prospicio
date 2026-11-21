@@ -1911,6 +1911,39 @@ mod tests {
     }
 
     #[test]
+    fn a_tweedie_with_many_expected_claims_inverts_with_its_atom_below_the_window() {
+        // Mean 1000 and 10000 at dispersion 1 and power 1.5: the window's
+        // left edge is above 0, the atom e^(-lambda) is outside it (#946).
+        for mean in [1000.0, 10000.0] {
+            let laws = [
+                ChfLaw::Tweedie(Tweedie::new(mean, 1.0, 1.5).unwrap()),
+                ChfLaw::TweediePower(TweediePower::new(1.5, mean, 1.0).unwrap()),
+                ChfLaw::affine(
+                    ChfLaw::Tweedie(Tweedie::new(mean, 1.0, 1.5).unwrap()),
+                    2.0,
+                    5.0,
+                )
+                .unwrap(),
+            ];
+            for law in laws {
+                let d = invert(&law, &ChfOptions::default()).unwrap();
+                let r = d.report();
+                let (xa, _) = law.atom().unwrap();
+                assert!(d.x_min() > xa, "mean {mean}: x_min {}", d.x_min());
+                assert!(
+                    (r.total_mass - 1.0).abs() <= r.outside_mass() + 1e-9,
+                    "mean {mean}: {} + {}",
+                    r.total_mass,
+                    r.outside_mass()
+                );
+                assert!((d.mean() - law.mean()).abs() < 1e-6 * law.mean().abs());
+                let var = d.variance();
+                assert!((var - law.variance()).abs() < 1e-3 * law.variance());
+            }
+        }
+    }
+
+    #[test]
     fn affine_moves_the_window_and_the_atom() {
         let t = ChfLaw::Tweedie(Tweedie::new(100.0, 2.0, 1.5).unwrap());
         let law = ChfLaw::affine(t, 0.5, 10.0).unwrap();
