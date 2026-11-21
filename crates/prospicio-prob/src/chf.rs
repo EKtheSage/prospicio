@@ -566,8 +566,9 @@ pub struct ChfReport {
     /// grid whose left edge was given. For a power tail where its series
     /// does not hold (a window that ends near the body), what the masses
     /// leave of 1 under a tilt that keeps the tail from wrapping, and
-    /// otherwise an upper bound (`P(X < δ₁)`, or 1): the wrapped tail is
-    /// then in the masses, and nothing is added to the first bucket.
+    /// otherwise an upper bound (`P(X < δ₁)`, or 1). Under a smaller tilt
+    /// part of the tail has wrapped into the masses, so the first bucket
+    /// gets at most what they leave of 1 (about nothing untilted).
     pub outside_below: f64,
     /// The law's mass above the window: a Chernoff bound, which wraps onto
     /// the window's bottom end, or the tail mass beyond a right power
@@ -889,13 +890,18 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                 }
                 // Only a tilt that damps the wrapped tail leaves it out of
                 // the masses: then what they leave of 1 lies beyond the
-                // window, and a left tail's goes into the first bucket.
+                // window, and a left tail's goes into the first bucket. A
+                // smaller tilt leaves part of the tail in the masses, so the
+                // first bucket gets no more than they leave of 1.
+                let inside: f64 = masses.iter().sum();
                 let unwrapped = tau >= TILT_UNWRAPPED;
-                let residual = unwrapped.then(|| 1.0 - masses.iter().sum::<f64>());
+                let residual = unwrapped.then_some(1.0 - inside);
                 (below, above) = outside_at(law, h, x0, n, fixed_grid, residual)?;
-                if unwrapped {
-                    masses[0] += below;
-                }
+                masses[0] += if unwrapped {
+                    below
+                } else {
+                    below.min(1.0 - inside).max(0.0)
+                };
                 tilt = if left { (tau, 0.0) } else { (0.0, tau) };
             }
         }
@@ -1940,6 +1946,9 @@ mod tests {
             (1.95, 1.0, 10, 0.001),
             (1.1, 1.0, 10, 0.001),
             (1.5, -1.0, 10, 0.001),
+            // a tilt between none and the full one
+            (1.5, 1.0, 12, 0.003),
+            (1.5, -1.0, 12, 0.003),
         ] {
             let d = invert(
                 &stable(alpha, beta, 1.0, 0.0),
@@ -1950,8 +1959,47 @@ mod tests {
             let case = format!("{alpha} {beta} 2^{log2} {step}: {r:?}");
             let lowest = d.masses().iter().copied().fold(f64::INFINITY, f64::min);
             assert!(lowest >= -1e-9, "{case}: a mass of {lowest}");
-            assert!(r.total_mass <= 1.0 + 1e-6, "{case}");
-            assert!(r.total_mass + r.outside_above >= 1.0 - 1e-6, "{case}");
+            let tau = r.tilt.0.max(r.tilt.1);
+            if tau == 0.0 {
+                // untilted, the tail wraps onto the window
+                assert!((r.total_mass - 1.0).abs() < 1e-9, "{case}");
+            } else {
+                // beta = -1 holds the mass below in its first bucket
+                assert!(
+                    (r.total_mass + r.outside_above - 1.0).abs() < 1e-2,
+                    "{case}"
+                );
+                assert!(r.total_mass <= 1.0 + 1e-6, "{case}");
+            }
+        }
+        let partial = invert(&stable(1.5, 1.0, 1.0, 0.0), &on_step(12, 0.003, Tilt::Auto)).unwrap();
+        let tau = partial.report().tilt.1;
+        assert!(0.0 < tau && tau < TILT_UNWRAPPED, "{tau}");
+    }
+
+    #[test]
+    fn a_small_fixed_tilt_keeps_a_left_tail_in_the_first_bucket() {
+        // Below the tilt that damps the wrap out of the masses, the left
+        // tail still goes into the first bucket, up to what the masses
+        // leave of 1.
+        for alpha in [1.5, 0.7] {
+            for tau in [1.0, 4.0] {
+                let d = invert(
+                    &stable(alpha, -1.0, 1.0, 0.0),
+                    &ChfOptions {
+                        tilt: Tilt::Fixed(tau),
+                        ..ChfOptions::with_log2(12)
+                    },
+                )
+                .unwrap();
+                let r = d.report();
+                assert!(r.outside_below > 1e-5, "{alpha} {tau}: {r:?}");
+                assert!(
+                    d.masses()[0] >= 0.5 * r.outside_below,
+                    "{alpha} {tau}: {r:?}"
+                );
+                assert!((r.total_mass - 1.0).abs() < 1e-6, "{alpha} {tau}: {r:?}");
+            }
         }
     }
 
