@@ -45,7 +45,7 @@ env:
   # Paths a pull request can change without running the python and r jobs:
   # nothing in them is built or read by the bindings' tests (the guides in
   # docs/guides and the notebooks in examples/ are).
-  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|test_check_lanes|test_rerun_references|check_bindings|test_check_bindings|fold_changes|bayes_shards)\.py$|validation/bindings-allowlist\.toml$|deny\.toml$)'
+  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|crates/prospicio-wasm/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|test_check_lanes|test_rerun_references|check_bindings|test_check_bindings|fold_changes|bayes_shards)\.py$|validation/bindings-allowlist\.toml$|deny\.toml$)'
 
 jobs:
   # The checks every pull request needs, a few seconds in all (#827): the
@@ -98,6 +98,7 @@ jobs:
       fremtpl2: ${{ steps.filter.outputs.fremtpl2 }}
       bayes: ${{ steps.filter.outputs.bayes }}
       deny: ${{ steps.filter.outputs.deny }}
+      wasm: ${{ steps.filter.outputs.wasm }}
     steps:
       - if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
@@ -113,7 +114,7 @@ jobs:
         run: |
           out() { echo "$1=$2" | tee -a "$GITHUB_OUTPUT"; }
           if [ "$EVENT" != pull_request ]; then
-            for k in rust bindings rbuild docs render report fremtpl2 bayes deny; do out "$k" true; done
+            for k in rust bindings rbuild docs render report fremtpl2 bayes deny wasm; do out "$k" true; done
             out msrv "$([ "$EVENT" = push ] && echo false || echo true)"
             exit 0
           fi
@@ -126,6 +127,7 @@ jobs:
           # rust: anything but docs, knowledge, change fragments and lane
           # status; the Excel add-in and xtask are Rust (#827).
           rust_free="${DOCS_ONLY//crates\/prospicio-xll\/|/}"
+          rust_free="${rust_free//crates\/prospicio-wasm\/|/}"
           rust_free="${rust_free//xtask\/|/}"
           out rust "$(other "$rust_free")"
           # msrv: the manifests and the lock file (the nightly run checks
@@ -144,6 +146,12 @@ jobs:
           out fremtpl2 "$(any '^(crates/prospicio-glm/|crates/prospicio-models/|crates/prospicio-math/|crates/prospicio-nn/|validation/(Cargo\.toml|build\.rs)|validation/(tests|scripts|reference)/.*fremtpl2|\.github/workflows/ci\.yml)')"
           out bayes "$(any '^(crates/prospicio-(reserving|bayes|prob|core|math|glm|models)/|Cargo\.(toml|lock)|validation/(Cargo\.toml|build\.rs|src/|data/|scripts/stan/)|validation/(tests|scripts|reference)/.*(bayes|meyers|compartmental)|\.github/workflows/ci\.yml)')"
           out deny "$(any '(^|/)Cargo\.(toml|lock)$|^deny\.toml$|^\.github/workflows/ci\.yml$')"
+          # wasm: the JavaScript package (crates/prospicio-wasm) and what it
+          # is built from or tested against: the crates in the WASM scope and
+          # glm and models (non-optional dependencies of reserving, so linked
+          # into the package), the data the tests read, xtask, the cargo
+          # config and the manifests.
+          out wasm "$(any '^(crates/prospicio-(wasm|core|math|prob|aggregate|pricing|reserving|glm|models)/|validation/(data|reference)/|xtask/|\.cargo/|Cargo\.(toml|lock)$|\.github/workflows/ci\.yml$)')"
 
   # Clippy, the debug tests, rustdoc and the WASM check. A pull request that
   # touches only docs, knowledge, change fragments or lane status skips them
@@ -178,6 +186,49 @@ jobs:
       # The crates in the WASM scope (docs/architecture.md, "Open
       # decisions") build for the browser.
       - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
+
+  # The JavaScript package (crates/prospicio-wasm, docs/design/wasm.md):
+  # clippy for the wasm32 target, the bindings' tests under Node
+  # (wasm-bindgen-test, against the parity rows) and the built npm package's
+  # own tests (`cargo xtask wasm`). It runs when the changes job's wasm
+  # output is true (the binding crate, a crate in the WASM scope, the data
+  # the tests read, xtask, the manifests or this workflow) and on the
+  # nightly and manual runs, not on a push to main. `cargo xtask check
+  # --changed` reads the same filter (xtask/src/check.rs).
+  wasm:
+    needs: changes
+    if: github.event_name != 'push' && needs.changes.outputs.wasm == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The command-line tool must be the version of the wasm-bindgen crate
+      # that crates/prospicio-wasm pins; rust-cache keeps ~/.cargo/bin, so
+      # this compiles only when the pin moves.
+      - name: Install wasm-bindgen at the pinned version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' crates/prospicio-wasm/Cargo.toml)
+          if [ "$(wasm-bindgen --version 2>/dev/null)" != "wasm-bindgen $version" ]; then
+            cargo install wasm-bindgen-cli --version "$version" --locked --force
+          fi
+      - run: cargo clippy -p prospicio-wasm --target wasm32-unknown-unknown --all-targets -- -D warnings
+      # The runner is set in .cargo/config.toml: Node runs the tests.
+      - run: cargo test -p prospicio-wasm --target wasm32-unknown-unknown
+      # The npm package, with its tests as a JavaScript program runs them.
+      - run: cargo xtask wasm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prospicio-wasm-pkg
+          path: target/wasm/pkg
+          retention-days: 7
 
   # The workspace builds on the rust-version it declares (Cargo.toml,
   # 1.92), so the manifest cannot drift from the code again (#829). The R
@@ -806,7 +857,7 @@ jobs:
   # it when a scheduled run passes. It runs only on the schedule, whatever
   # the other jobs did, and never fails the run itself (continue-on-error).
   report:
-    needs: [checks, changes, rust, msrv, python-build, python, r-build, r, examples-r, docs, deal-report, fremtpl2, bayes-build, bayes, deny]
+    needs: [checks, changes, rust, wasm, msrv, python-build, python, r-build, r, examples-r, docs, deal-report, fremtpl2, bayes-build, bayes, deny]
     if: always() && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     continue-on-error: true

@@ -106,7 +106,7 @@ import tomllib
 
 LANGUAGES = {"python": "crates/prospicio-python/src", "r": "crates/prospicio-r/src"}
 REPORT_ONLY = {"excel": "crates/prospicio-xll/src"}
-NOT_LIBRARIES = {"prospicio", "prospicio-python", "prospicio-r", "prospicio-xll"}
+NOT_LIBRARIES = {"prospicio", "prospicio-python", "prospicio-r", "prospicio-xll", "prospicio-wasm"}
 ALLOWLIST = "validation/bindings-allowlist.toml"
 ITEM_KEYWORDS = {"struct", "enum", "union", "trait", "type", "fn"}
 

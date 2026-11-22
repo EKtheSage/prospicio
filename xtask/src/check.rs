@@ -3,14 +3,17 @@
 //!
 //! It mirrors the `checks` job (formatting and the Python governance
 //! scripts) and the `rust` job (clippy, tests, rustdoc, the WASM check), and
-//! adds `cargo xtask generated --check` when the bindings' inputs change.
+//! adds `cargo xtask generated --check` when the bindings' inputs change and
+//! `cargo xtask wasm` (the JavaScript package, CI's `wasm` job) when the
+//! package's inputs change.
 //! The Python and R test suites, the Bayesian shards and the site render are
 //! left to CI (`AGENTS.md`, "Checks", says when to run them by hand).
 //!
 //! - `--changed`: read `git diff --name-only origin/main...HEAD` (plus the
 //!   working tree) and run only what CI's `changes` job would run.
 //! - `--fast`: skip the slow Rust steps (`cargo test`, rustdoc, WASM) and
-//!   the generated-files check; clippy still runs.
+//!   the generated-files check and the JavaScript package; clippy still
+//!   runs.
 //!
 //! A step whose tool is missing (R, uv, rustup's WASM target, Python) is
 //! skipped with a printed note, and the run goes on after a failed step so
@@ -22,8 +25,8 @@ use std::time::{Duration, Instant};
 use crate::{Options, Result, cargo, generated, root, run, rust, show, step};
 
 /// What a diff asks for. Keep the filters below in step with the `changes`
-/// job of `.github/workflows/ci.yml` (its `DOCS_ONLY` and the `rust` and
-/// `docs` outputs); ci.yml carries the same reminder.
+/// job of `.github/workflows/ci.yml` (its `DOCS_ONLY` and the `rust`, `docs`
+/// and `wasm` outputs); ci.yml carries the same reminder.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Wanted {
     /// The `rust` job: anything but docs, knowledge, fragments, lane status
@@ -31,10 +34,13 @@ pub(crate) struct Wanted {
     pub rust: bool,
     /// The `docs` job's generated files (`cargo xtask generated --check`).
     pub generated: bool,
+    /// The `wasm` job: the JavaScript package (`cargo xtask wasm`).
+    pub wasm: bool,
 }
 
 /// ci.yml `DOCS_ONLY`, as a function. With `rust_counts` the Excel add-in and
-/// `xtask` are not docs-only (ci.yml's `rust_free`).
+/// `xtask` and the JavaScript package are not docs-only (ci.yml's
+/// `rust_free`).
 fn docs_only(path: &str, rust_counts: bool) -> bool {
     const SCRIPTS: &[&str] = &[
         "check_okf",
@@ -62,7 +68,11 @@ fn docs_only(path: &str, rust_counts: bool) -> bool {
     {
         return true;
     }
-    if !rust_counts && (path.starts_with("crates/prospicio-xll/") || path.starts_with("xtask/")) {
+    if !rust_counts
+        && (path.starts_with("crates/prospicio-xll/")
+            || path.starts_with("crates/prospicio-wasm/")
+            || path.starts_with("xtask/"))
+    {
         return true;
     }
     if let Some(name) = path.strip_prefix(".github/workflows/") {
@@ -103,10 +113,43 @@ fn generated_input(path: &str) -> bool {
     PREFIXES.iter().any(|p| path.starts_with(p)) || FILES.contains(&path)
 }
 
+/// ci.yml's `wasm` output: the JavaScript package and what it is built from
+/// or tested against. The crates are those `cargo tree -p prospicio-wasm
+/// --target wasm32-unknown-unknown -e normal` lists: the WASM scope, and
+/// `glm` and `models`, which `prospicio-reserving` depends on unconditionally.
+fn wasm_input(path: &str) -> bool {
+    const CRATES: &[&str] = &[
+        "wasm",
+        "core",
+        "math",
+        "prob",
+        "aggregate",
+        "pricing",
+        "reserving",
+        "glm",
+        "models",
+    ];
+    const PREFIXES: &[&str] = &[
+        "validation/data/",
+        "validation/reference/",
+        "xtask/",
+        ".cargo/",
+    ];
+    path.strip_prefix("crates/prospicio-").is_some_and(|rest| {
+        rest.split_once('/')
+            .is_some_and(|(name, _)| CRATES.contains(&name))
+    }) || PREFIXES.iter().any(|p| path.starts_with(p))
+        || matches!(
+            path,
+            "Cargo.toml" | "Cargo.lock" | ".github/workflows/ci.yml"
+        )
+}
+
 pub(crate) fn wanted(changed: &[String]) -> Wanted {
     Wanted {
         rust: changed.iter().any(|p| !docs_only(p, true)),
         generated: changed.iter().any(|p| generated_input(p)),
+        wasm: changed.iter().any(|p| wasm_input(p)),
     }
 }
 
@@ -262,18 +305,19 @@ fn changed_files() -> Result<Vec<String>> {
 
 pub(crate) fn check(changed: bool, fast: bool) -> Result {
     let started = Instant::now();
-    let (want_rust, want_generated) = if changed {
+    let (want_rust, want_generated, want_wasm) = if changed {
         let files = changed_files()?;
         let w = wanted(&files);
         println!(
-            "{} files changed: rust job {}, generated files {}",
+            "{} files changed: rust job {}, generated files {}, JavaScript package {}",
             files.len(),
             if w.rust { "runs" } else { "skipped" },
-            if w.generated { "checked" } else { "skipped" }
+            if w.generated { "checked" } else { "skipped" },
+            if w.wasm { "built" } else { "skipped" }
         );
-        (w.rust, w.generated)
+        (w.rust, w.generated, w.wasm)
     } else {
-        (true, true)
+        (true, true, true)
     };
     let root = root();
     let mut rep = Report { rows: Vec::new() };
@@ -377,6 +421,54 @@ pub(crate) fn check(changed: bool, fast: bool) -> Result {
         });
     }
 
+    // The `wasm` job: the JavaScript package, clippy for wasm32 and both
+    // test layers. It needs the wasm32 target, wasm-bindgen's command-line
+    // tool at the pinned version (`cargo xtask wasm` says which) and Node.
+    if !want_wasm {
+        rep.skip("JavaScript package", "no input of the package changed");
+    } else if fast {
+        rep.skip("JavaScript package", "--fast");
+    } else if !wasm_target_installed() {
+        rep.skip(
+            "JavaScript package",
+            "target missing: run `rustup target add wasm32-unknown-unknown`",
+        );
+    } else if !tool_runs("node") || !tool_runs("wasm-bindgen") {
+        rep.skip(
+            "JavaScript package",
+            "needs Node and wasm-bindgen (`cargo xtask wasm` names the pinned version to install)",
+        );
+    } else {
+        let mut clippy = Command::new(cargo());
+        clippy.args([
+            "clippy",
+            "-p",
+            "prospicio-wasm",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ]);
+        rep.cmd("cargo clippy (prospicio-wasm, wasm32)", clippy);
+        let mut test = Command::new(cargo());
+        test.args([
+            "test",
+            "-p",
+            "prospicio-wasm",
+            "--target",
+            "wasm32-unknown-unknown",
+        ]);
+        rep.cmd("cargo test (prospicio-wasm, wasm32)", test);
+        rep.task("cargo xtask wasm", || {
+            crate::wasm(Options {
+                check: false,
+                tests: true,
+            })
+        });
+    }
+
     summary(&rep, started.elapsed())
 }
 
@@ -430,6 +522,7 @@ mod tests {
             "changes/changelog/x.md",
             "docs/lanes/reserving.md",
             "docs/design/models.md",
+            "docs/design/wasm.md",
             "docs/release.md",
             "AGENTS.md",
             "validation/scripts/check_okf.py",
@@ -446,6 +539,7 @@ mod tests {
         for p in [
             "crates/prospicio-core/src/lib.rs",
             "crates/prospicio-xll/src/lib.rs",
+            "crates/prospicio-wasm/src/lib.rs",
             "xtask/src/main.rs",
             "Cargo.lock",
             ".github/workflows/ci.yml",
@@ -494,5 +588,40 @@ mod tests {
         ] {
             assert!(!w(&[p]).generated, "{p} must not check the generated files");
         }
+    }
+
+    #[test]
+    fn the_javascript_package_follows_its_inputs() {
+        for p in [
+            "crates/prospicio-wasm/src/lib.rs",
+            "crates/prospicio-wasm/js/package.test.mjs",
+            "crates/prospicio-core/src/lib.rs",
+            "crates/prospicio-reserving/src/bootstrap.rs",
+            "crates/prospicio-glm/src/lib.rs",
+            "crates/prospicio-models/src/lib.rs",
+            "validation/data/genins.csv",
+            "validation/reference/x.json",
+            "xtask/src/main.rs",
+            ".cargo/config.toml",
+            "Cargo.toml",
+            "Cargo.lock",
+            ".github/workflows/ci.yml",
+        ] {
+            assert!(w(&[p]).wasm, "{p} must build the JavaScript package");
+        }
+        for p in [
+            "crates/prospicio-python/src/lib.rs",
+            "crates/prospicio-wasmish/src/lib.rs",
+            "crates/prospicio-nn/src/lib.rs",
+            "crates/prospicio-bayes/src/lib.rs",
+            "validation/tests/aggregate.rs",
+            "docs/design/wasm.md",
+            "AGENTS.md",
+            "python/prospicio/reserving.py",
+            "crates/prospicio-xll/Cargo.toml",
+        ] {
+            assert!(!w(&[p]).wasm, "{p} must not build the JavaScript package");
+        }
+        assert!(!w(&[]).wasm);
     }
 }
