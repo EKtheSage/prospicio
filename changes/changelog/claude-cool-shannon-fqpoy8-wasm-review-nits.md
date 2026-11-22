@@ -6,4 +6,4 @@
   has; its message no longer subtracts from the number of years.
 - `Predictive.summary()` throws when a dimension is named `mean` or
   `std_dev` (a key column of that name): the summary's own column of that
-  name replaced the dimension's labels.
+  name replaced the dimension's labels (#1042).
