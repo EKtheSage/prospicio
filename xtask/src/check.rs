@@ -114,7 +114,9 @@ fn generated_input(path: &str) -> bool {
 }
 
 /// ci.yml's `wasm` output: the JavaScript package and what it is built from
-/// or tested against.
+/// or tested against. The crates are those `cargo tree -p prospicio-wasm
+/// --target wasm32-unknown-unknown -e normal` lists: the WASM scope, and
+/// `glm` and `models`, which `prospicio-reserving` depends on unconditionally.
 fn wasm_input(path: &str) -> bool {
     const CRATES: &[&str] = &[
         "wasm",
@@ -124,6 +126,8 @@ fn wasm_input(path: &str) -> bool {
         "aggregate",
         "pricing",
         "reserving",
+        "glm",
+        "models",
     ];
     const PREFIXES: &[&str] = &[
         "validation/data/",
@@ -593,6 +597,8 @@ mod tests {
             "crates/prospicio-wasm/js/package.test.mjs",
             "crates/prospicio-core/src/lib.rs",
             "crates/prospicio-reserving/src/bootstrap.rs",
+            "crates/prospicio-glm/src/lib.rs",
+            "crates/prospicio-models/src/lib.rs",
             "validation/data/genins.csv",
             "validation/reference/x.json",
             "xtask/src/main.rs",
@@ -606,7 +612,8 @@ mod tests {
         for p in [
             "crates/prospicio-python/src/lib.rs",
             "crates/prospicio-wasmish/src/lib.rs",
-            "crates/prospicio-models/src/lib.rs",
+            "crates/prospicio-nn/src/lib.rs",
+            "crates/prospicio-bayes/src/lib.rs",
             "validation/tests/aggregate.rs",
             "docs/design/wasm.md",
             "AGENTS.md",

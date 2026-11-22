@@ -147,9 +147,11 @@ jobs:
           out bayes "$(any '^(crates/prospicio-(reserving|bayes|prob|core|math|glm|models)/|Cargo\.(toml|lock)|validation/(Cargo\.toml|build\.rs|src/|data/|scripts/stan/)|validation/(tests|scripts|reference)/.*(bayes|meyers|compartmental)|\.github/workflows/ci\.yml)')"
           out deny "$(any '(^|/)Cargo\.(toml|lock)$|^deny\.toml$|^\.github/workflows/ci\.yml$')"
           # wasm: the JavaScript package (crates/prospicio-wasm) and what it
-          # is built from or tested against: the crates in the WASM scope, the
-          # data the tests read, xtask, the cargo config and the manifests.
-          out wasm "$(any '^(crates/prospicio-(wasm|core|math|prob|aggregate|pricing|reserving)/|validation/(data|reference)/|xtask/|\.cargo/|Cargo\.(toml|lock)$|\.github/workflows/ci\.yml$)')"
+          # is built from or tested against: the crates in the WASM scope and
+          # glm and models (non-optional dependencies of reserving, so linked
+          # into the package), the data the tests read, xtask, the cargo
+          # config and the manifests.
+          out wasm "$(any '^(crates/prospicio-(wasm|core|math|prob|aggregate|pricing|reserving|glm|models)/|validation/(data|reference)/|xtask/|\.cargo/|Cargo\.(toml|lock)$|\.github/workflows/ci\.yml$)')"
 
   # Clippy, the debug tests, rustdoc and the WASM check. A pull request that
   # touches only docs, knowledge, change fragments or lane status skips them
