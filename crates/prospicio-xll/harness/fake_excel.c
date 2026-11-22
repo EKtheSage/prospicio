@@ -88,10 +88,16 @@ typedef void (*AFn14)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *
 
 static int registered = 0, async_registered = 0, failures = 0;
 
-/* The one asynchronous call outstanding: its handle's token, and the copy
- * of the result xlAsyncReturn delivered (from the add-in's own thread). */
-static volatile LONG async_token = 0;
-static XLOPER12 *volatile async_result = NULL;
+/* The asynchronous calls outstanding, one a slot: each handle's token, and
+ * the copy of the result xlAsyncReturn delivered (from the add-in's own
+ * thread). A slot marked dropped is a call Excel gave up on (an interrupted
+ * recalculation): its result is refused, as Excel refuses it (#955). */
+#define SLOTS 8
+#define xlretInvAsynchronousContext 256
+static volatile LONG async_token[SLOTS];
+static XLOPER12 *volatile async_result[SLOTS];
+static volatile LONG async_dropped[SLOTS];
+static volatile LONG async_refused = 0;
 static volatile LONG async_bad = 0;
 
 /* A deep copy of a value Excel would copy out of xlAsyncReturn: the add-in
@@ -143,16 +149,23 @@ __declspec(dllexport) int __stdcall MdCallBack12(int xlfn, int count, XLOPER12 *
     if (xlfn == xlAsyncReturn) {
         /* The handle back, as Excel gave it, and a result the add-in still
          * owns (not marked xlbitDLLFree). */
-        int ok = count == 2 && args[0]->xltype == xltypeBigData &&
-                 (LONG)(intptr_t)args[0]->val.array.lparray == async_token && async_token != 0 &&
-                 !(args[1]->xltype & xlbitDLLFree);
-        if (!ok) {
+        int slot = -1;
+        if (count == 2 && args[0]->xltype == xltypeBigData && !(args[1]->xltype & xlbitDLLFree)) {
+            LONG token = (LONG)(intptr_t)args[0]->val.array.lparray;
+            for (int i = 0; i < SLOTS; i++)
+                if (token != 0 && async_token[i] == token) slot = i;
+        }
+        if (slot < 0) {
             InterlockedIncrement(&async_bad);
             return 0;
         }
+        if (async_dropped[slot]) {
+            InterlockedIncrement(&async_refused);
+            return xlretInvAsynchronousContext;
+        }
         XLOPER12 *c = malloc(sizeof(XLOPER12));
         *c = copy_value(args[1]);
-        InterlockedExchangePointer((PVOID volatile *)&async_result, c);
+        InterlockedExchangePointer((PVOID volatile *)&async_result[slot], c);
         res->xltype = xltypeBool;
         res->val.xbool = 1;
         return 0;
@@ -178,26 +191,32 @@ __declspec(dllexport) int __stdcall MdCallBack12(int xlfn, int count, XLOPER12 *
     return 1;
 }
 
-/* A fresh handle for the next asynchronous call. */
-static XLOPER12 *new_handle(void) {
-    static XLOPER12 h;
+/* A fresh handle for an asynchronous call in `slot`; `dropped` for a call
+ * Excel gives up on before its result comes. */
+static XLOPER12 *handle_in(int slot, int dropped) {
+    static XLOPER12 h[SLOTS];
     static LONG next = 0;
-    InterlockedExchangePointer((PVOID volatile *)&async_result, NULL);
-    async_token = InterlockedIncrement(&next);
-    h.xltype = xltypeBigData;
-    h.val.array.lparray = (XLOPER12 *)(intptr_t)async_token;
-    h.val.array.rows = 0;
-    return &h;
+    InterlockedExchangePointer((PVOID volatile *)&async_result[slot], NULL);
+    async_dropped[slot] = dropped;
+    async_token[slot] = InterlockedIncrement(&next);
+    h[slot].xltype = xltypeBigData;
+    h[slot].val.array.lparray = (XLOPER12 *)(intptr_t)async_token[slot];
+    h[slot].val.array.rows = 0;
+    return &h[slot];
 }
 
-/* Waits for xlAsyncReturn, as Excel does while the cell shows
- * #GETTING_DATA; NULL after two minutes. */
-static XLOPER12 *await_async(void) {
-    for (int i = 0; i < 120000 && !async_result; i++) Sleep(1);
-    XLOPER12 *r = async_result;
-    async_token = 0;
+/* Waits for the xlAsyncReturn of the call in `slot`, as Excel does while
+ * the cell shows #GETTING_DATA; NULL after two minutes. */
+static XLOPER12 *await_slot(int slot) {
+    for (int i = 0; i < 120000 && !async_result[slot]; i++) Sleep(1);
+    XLOPER12 *r = async_result[slot];
+    async_token[slot] = 0;
     return r;
 }
+
+/* One call outstanding at a time: slot 0. */
+static XLOPER12 *new_handle(void) { return handle_in(0, 0); }
+static XLOPER12 *await_async(void) { return await_slot(0); }
 
 static void print_value(const XLOPER12 *x) {
     char buf[512];
@@ -437,6 +456,45 @@ int main(int argc, char **argv) {
           o2 && (o2->xltype & 0xFFF) == xltypeMulti && o2->val.array.lparray[11 * 9 + 3].val.num == ot[3].val.num);
     check("the kept result comes back within 100 ms", again < 100);
     if (o2) free_copy(o2);
+
+    /* Several calls outstanding at once (#955): two cells on the same new
+     * inputs, which join one run, and a third on another seed beside them. */
+    XLOPER12 seed2 = seed, seed3 = seed, seed4 = seed;
+    seed2.val.num = 2;
+    seed3.val.num = 3;
+    seed4.val.num = 4;
+    odp(&tri, &sims, &seed2, &missing, &missing, &missing, &missing, &missing, handle_in(1, 0));
+    odp(&tri, &sims, &seed2, &missing, &missing, &missing, &missing, &missing, handle_in(2, 0));
+    odp(&tri, &sims, &seed3, &missing, &missing, &missing, &missing, &missing, handle_in(3, 0));
+    XLOPER12 *j1 = await_slot(1), *j2 = await_slot(2), *j3 = await_slot(3);
+    int tables = j1 && j2 && j3 && (j1->xltype & 0xFFF) == xltypeMulti && (j2->xltype & 0xFFF) == xltypeMulti &&
+                 (j3->xltype & 0xFFF) == xltypeMulti;
+    check("three calls outstanding at once each get their table", tables && async_bad == 0);
+    if (tables) {
+        double sd1 = j1->val.array.lparray[11 * 9 + 3].val.num, sd2 = j2->val.array.lparray[11 * 9 + 3].val.num,
+               sd3 = j3->val.array.lparray[11 * 9 + 3].val.num;
+        check("two cells on the same inputs get the same numbers", sd1 == sd2);
+        check("each seed gets its own numbers", sd1 != sd3 && sd1 != ot[3].val.num && sd3 != ot[3].val.num);
+    }
+    if (j1) free_copy(j1);
+    if (j2) free_copy(j2);
+    if (j3) free_copy(j3);
+
+    /* A call Excel dropped (an interrupted recalculation): its result is
+     * offered once and refused, nothing breaks, and the run is kept, so the
+     * recalculation that follows answers at once. */
+    odp(&tri, &sims, &seed4, &missing, &missing, &missing, &missing, &missing, handle_in(4, 1));
+    for (int i = 0; i < 120000 && !async_refused; i++) Sleep(1);
+    check("a dropped call's result is offered once and refused",
+          async_refused == 1 && async_result[4] == NULL && async_bad == 0);
+    async_token[4] = 0;
+    t0 = GetTickCount();
+    odp(&tri, &sims, &seed4, &missing, &missing, &missing, &missing, &missing, handle_in(5, 0));
+    XLOPER12 *kept = await_slot(5);
+    again = GetTickCount() - t0;
+    check("the dropped call's run was kept: the next call answers within 100 ms",
+          kept && (kept->xltype & 0xFFF) == xltypeMulti && again < 100);
+    if (kept) free_copy(kept);
     free_copy(o);
 
     /* The draws: 100000 rows of 11 cells and a header, allocated by the
