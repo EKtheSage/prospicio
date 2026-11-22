@@ -1453,22 +1453,14 @@ fn aggregate_elt_severity_moments(
 }
 
 fn elt_bucketing(name: &str) -> Result<prospicio_aggregate::EltBucketing> {
-    match name {
-        "nearest" => Ok(prospicio_aggregate::EltBucketing::Nearest),
-        "means_linear" => Ok(prospicio_aggregate::EltBucketing::MeansLinear),
-        other => Err(Error::Other(format!(
-            "bucketing must be \"nearest\" or \"means_linear\", got \"{other}\""
-        ))),
-    }
+    prospicio_aggregate::EltBucketing::from_name(name).ok_or_else(|| {
+        crate::unknown_name("bucketing", name, prospicio_aggregate::EltBucketing::NAMES)
+    })
 }
 
 fn elt_grid_list(r: &prospicio_aggregate::EltGridReport) -> List {
-    let rule = match r.bucketing {
-        prospicio_aggregate::EltBucketing::Nearest => "nearest",
-        prospicio_aggregate::EltBucketing::MeansLinear => "means_linear",
-    };
     list!(
-        bucketing = rule,
+        bucketing = r.bucketing.name(),
         rate_above = r.rate_above,
         severity_mean = r.severity_mean,
         grid_mean = r.grid_mean

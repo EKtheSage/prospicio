@@ -47,4 +47,4 @@ if (length(bad)) stop("elt grid parity fails at rows ", paste(head(bad, 10), col
 narrow <- elt_severity_grid(secondary, step, 64)$report
 stopifnot(narrow$bucketing == "nearest", narrow$rate_above > 0,
           narrow$grid_mean < narrow$severity_mean)
-expect_error_like(elt_severity_grid(secondary, step, 64, "linear"), "should be one of")
+expect_error_like(elt_severity_grid(secondary, step, 64, "exact"), "should be one of")

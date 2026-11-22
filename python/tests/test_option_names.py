@@ -158,6 +158,22 @@ def test_distortion_family_spellings(name):
         calibrate("bitvar", x, premium)
 
 
+@pytest.mark.parametrize("name", ["means_linear", "linear"])
+def test_elt_bucketing_spellings(name):
+    # The means-alone rule in Python's and Excel's spelling (#956).
+    from prospicio.aggregate import EventLossTable
+
+    elt = EventLossTable(
+        [0.5, 0.25, 0.05], [130.0, 270.5, 1234.5], [0.0] * 3, [0.0] * 3, [260.0, 541.0, 2469.0]
+    )
+    want, _ = elt.severity_grid(10.0, 256, "means_linear")
+    got, report = elt.severity_grid(10.0, 256, name)
+    assert list(got.probs) == list(want.probs)
+    assert report["bucketing"] == "means_linear"
+    with pytest.raises(ValueError, match="bucketing must be"):
+        elt.severity_grid(10.0, 256, "nope")
+
+
 @pytest.mark.parametrize("name", ["r_chainladder", "r-chainladder", "chainladder", "r"])
 def test_paid_incurred_convention_spellings(name):
     # Excel's spellings of R ChainLadder's convention, and Python's own (#956).
