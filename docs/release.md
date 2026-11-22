@@ -245,7 +245,7 @@ package.
 | Bugs (P1) | #939, #940, #941, #942, #943, #975 (GIL releases and FFI panics in the Python bindings and the Excel add-in) |
 | Bugs (P2) | #935, #944 to #954 |
 | Bugs (P3) | #955, #958, #959, #960 |
-| Additive | #956 (option names made the same in Python, R and Excel, with the old names kept as deprecated aliases), #576 (the WASM JavaScript package, #985 and #989) |
+| Additive | #956 (option names made the same in Python, R and Excel, with the old names kept as deprecated aliases), #576 (the WASM JavaScript package, #1039 and #1040) |
 | Numerics with unchanged results | #971 (one LU factorization in `linalg::inverse`, the rearrangement algorithm's sweeps) |
 | CI and tooling | #936, #962, #965, #966, #967, #968 |
 | Docs | #961 |
