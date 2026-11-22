@@ -321,9 +321,12 @@ impl AsyncHandle {
         if self.0.xltype & 0x0FFF != XLTYPE_BIGDATA {
             return;
         }
-        let mut args = [self.0, XlOper::from_grid(grid)];
-        excel(XL_ASYNC_RETURN, &mut args);
-        unsafe { free_owned(&args[1]) };
+        // After `xlAutoClose` Excel may have unloaded what the reply needs.
+        jobs::SHUTDOWN.reply_unless_closed(|| {
+            let mut args = [self.0, XlOper::from_grid(grid)];
+            excel(XL_ASYNC_RETURN, &mut args);
+            unsafe { free_owned(&args[1]) };
+        });
     }
 }
 
@@ -402,6 +405,7 @@ fn register(dll: &XlOper, f: &Function) -> bool {
 /// Called by Excel when the add-in loads: registers every function.
 #[unsafe(no_mangle)]
 pub extern "system" fn xlAutoOpen() -> i32 {
+    jobs::SHUTDOWN.open();
     let Some(dll) = excel(XL_GET_NAME, &mut []) else {
         return 0;
     };
@@ -415,6 +419,7 @@ pub extern "system" fn xlAutoOpen() -> i32 {
 /// Called by Excel when the add-in unloads.
 #[unsafe(no_mangle)]
 pub extern "system" fn xlAutoClose() -> i32 {
+    jobs::SHUTDOWN.close();
     1
 }
 
