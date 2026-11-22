@@ -44,7 +44,8 @@ jobs:
           fi
 
   # One abi3 wheel per platform serves every Python from 3.9. Each wheel is
-  # installed and the Python test suite run against it on its own platform.
+  # installed and the Python test suite run against it on its own platform,
+  # on Python 3.12; the Linux x86_64 wheel also on 3.9 (#962).
   wheels:
     needs: version
     strategy:
@@ -105,6 +106,44 @@ jobs:
           for f in $alone; do ignore="$ignore --ignore=$f"; done
           RAYON_NUM_THREADS=1 pytest tests -n 4 --dist loadfile $ignore --durations=25 --durations-min=5
           pytest $alone --durations=25 --durations-min=5
+      # The wheel is abi3 from Python 3.9, and every other test runs on
+      # 3.12, so the package's Python files could use something newer and
+      # nothing would say (#962). On Linux x86_64 alone, since those files
+      # are the same on every platform: every submodule imported, then the
+      # light test files, with the releases of the test dependencies that
+      # still support 3.9. Python 3.9 is past its end of life: when a
+      # dependency of the tests drops it, cut this back to the import.
+      - name: Test the wheel on Python 3.9, the oldest it serves
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        working-directory: python
+        run: |
+          uv venv --python 3.9 .venv-39
+          source .venv-39/bin/activate
+          uv pip install --group dev
+          uv pip install prospicio --no-index --find-links dist
+          # From another directory, or `prospicio` is this checkout's
+          # source, which has no extension module.
+          (cd "$RUNNER_TEMP" && python -c "
+          import importlib, pkgutil, sys, prospicio
+          assert sys.version_info[:2] == (3, 9), sys.version
+          names = sorted(m.name for m in pkgutil.iter_modules(prospicio.__path__))
+          for name in names:
+              importlib.import_module('prospicio.' + name)
+          print('imported on', sys.version.split()[0], names)
+          ")
+          alone="tests/test_reserving_compartmental.py
+            tests/test_reserving_hierarchical_bf.py
+            tests/test_reserving_compartmental_backtest.py
+            tests/test_reserving_compartmental_segments.py
+            tests/test_reserving_compartmental_one_year_segments.py
+            tests/test_reserving_pattern_draws.py
+            tests/test_boosting.py
+            tests/test_guides.py
+            tests/test_examples.py"
+          ignore=""
+          for f in $alone; do ignore="$ignore --ignore=$f"; done
+          RAYON_NUM_THREADS=1 pytest tests -n 4 --dist loadfile $ignore --durations=10 --durations-min=5
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.target }}

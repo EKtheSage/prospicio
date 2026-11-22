@@ -725,11 +725,13 @@ def draws_from_inference_data(idata, var_names=None, log_likelihood=None):
 
 
 def _mean_se(values):
+    # math.fsum, not sum: the built-in adds floats with compensation from
+    # Python 3.12 only, so its last bit depends on the interpreter (#962).
     k = len(values)
-    m = sum(values) / k
+    m = math.fsum(values) / k
     if k < 2:
         return m, math.nan
-    var = sum((v - m) ** 2 for v in values) / (k - 1)
+    var = math.fsum((v - m) ** 2 for v in values) / (k - 1)
     return m, math.sqrt(var / k)
 
 

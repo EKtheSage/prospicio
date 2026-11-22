@@ -8,7 +8,7 @@ does the work; this note is the checklist around it.
 
 | Registry | Name | Built from |
 |---|---|---|
-| PyPI | `prospicio` | `python/` and `crates/prospicio-python`: an sdist, and one abi3 wheel (Python 3.9+) each for Linux x86_64 and aarch64 (manylinux), macOS (universal2) and Windows x64 |
+| PyPI | `prospicio` | `python/` and `crates/prospicio-python`: an sdist, and one abi3 wheel (Python 3.9+) each for Linux x86_64 and aarch64 (manylinux), macOS (universal2) and Windows x64; each wheel is tested on Python 3.12, and the Linux x86_64 wheel on 3.9 as well (#962) |
 | crates.io | `prospicio` | `crates/prospicio`: the umbrella crate. It re-exports the others as modules (`prospicio::reserving`, `prospicio::prob`, ...); `bayes` and `nn` are features |
 | crates.io | `prospicio-core`, `-math`, `-prob`, `-aggregate`, `-pricing`, `-reserving`, `-models`, `-glm`, `-bayes`, `-nn` | `crates/prospicio-*` |
 
