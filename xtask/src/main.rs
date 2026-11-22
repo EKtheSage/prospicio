@@ -27,6 +27,8 @@
 //! (CI's `python` and `r` jobs run them; the docs build need not run them
 //! again).
 
+mod check;
+
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -36,6 +38,7 @@ use std::process::{Command, ExitCode};
 
 const USAGE: &str = "\
 usage: cargo xtask <task> [--check] [--no-tests]
+       cargo xtask check [--changed] [--fast]
 
 tasks:
   python   build the Python extension and stubs, test, render its docs
@@ -48,8 +51,16 @@ tasks:
            pkgdown's index, without rendering the sites
   xll      build the 64-bit Excel add-in as target/xll/prospicio.xll and
            smoke-test it in a fake Excel when MinGW (and Wine) are found
+  check    the checks CI runs on a pull request, in one command: formatting,
+           the Python governance scripts, clippy, tests, rustdoc, the WASM
+           check and, when bindings change, `generated --check`; a step
+           whose tool is missing is skipped with a note
 
-  --check     fail if the build changed a committed generated file
+  --changed   check: run only what CI's change filters ask for, from
+              `git diff origin/main...HEAD` and the working tree
+  --fast      check: skip cargo test, rustdoc, the WASM check and
+              `generated --check`
+  --check    fail if the build changed a committed generated file
   --no-tests  skip the Python and R test suites
   --thin-lto  xll: thin link-time optimization on the default codegen units,
               a faster build of a slightly larger add-in (pull requests);
@@ -74,10 +85,12 @@ fn main() -> ExitCode {
         tests: !args.iter().any(|a| a == "--no-tests"),
     };
     let thin_lto = args.iter().any(|a| a == "--thin-lto");
+    let changed = args.iter().any(|a| a == "--changed");
+    let fast = args.iter().any(|a| a == "--fast");
     let tasks: Vec<&str> = args
         .iter()
         .map(String::as_str)
-        .filter(|a| !["--check", "--no-tests", "--thin-lto"].contains(a))
+        .filter(|a| !["--check", "--no-tests", "--thin-lto", "--changed", "--fast"].contains(a))
         .collect();
     let result = match tasks.as_slice() {
         ["python"] => python(opts),
@@ -86,6 +99,7 @@ fn main() -> ExitCode {
         ["docs"] => docs(opts),
         ["generated"] => generated(opts),
         ["xll"] => xll(thin_lto),
+        ["check"] => check::check(changed, fast),
         [] | ["help"] | ["-h"] | ["--help"] => {
             print!("{USAGE}");
             return ExitCode::SUCCESS;

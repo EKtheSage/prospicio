@@ -75,18 +75,27 @@ pub fn tvar_sorted(sorted: &[f64], p: f64) -> Result<f64> {
 /// `p = 0` gives the smallest draw and `p = 1` the largest. `sorted` must
 /// be non-empty and sorted ascending; this is checked only in debug builds.
 ///
+/// A NaN draw gives NaN, in debug and release builds alike: a slice sorted
+/// by `f64::total_cmp` holds its NaNs at its ends, where they are looked
+/// for. Infinite draws are draws like any other, so `p = 1` gives `inf`
+/// when the largest is. A `p` outside `[0, 1]` is an error.
+///
 /// ```
 /// use prospicio_prob::risk::var_linear_sorted;
 ///
 /// let x = [1.0, 2.0, 3.0, 4.0];
 /// assert_eq!(var_linear_sorted(&x, 0.5), Ok(2.5));
 /// assert_eq!(var_linear_sorted(&x, 1.0), Ok(4.0));
+/// assert!(var_linear_sorted(&[1.0, f64::NAN], 0.0).unwrap().is_nan());
 /// ```
 pub fn var_linear_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     check_probability(p)?;
     check_draws(sorted)?;
-    debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
     let n = sorted.len();
+    if sorted[0].is_nan() || sorted[n - 1].is_nan() {
+        return Ok(f64::NAN);
+    }
+    debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
     let h = p * (n - 1) as f64;
     let j = h.floor() as usize;
     if j >= n - 1 {
@@ -544,6 +553,26 @@ fn is_sorted(x: &[f64]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_linear_quantile_of_draws_with_a_nan_is_nan() {
+        // #959: sorted with total_cmp, a NaN is last (or first, with its
+        // sign bit set); the debug assertion used to panic on it.
+        let mut x = vec![2.0, f64::NAN, 1.0, 3.0];
+        x.sort_by(f64::total_cmp);
+        let mut y = vec![2.0, -f64::NAN, 1.0];
+        y.sort_by(f64::total_cmp);
+        for p in [0.0, 0.3, 1.0] {
+            assert!(var_linear_sorted(&x, p).unwrap().is_nan());
+            assert!(var_linear_sorted(&y, p).unwrap().is_nan());
+        }
+        // An infinite draw is a draw; p outside [0, 1] is an error.
+        let z = [1.0, 2.0, f64::INFINITY];
+        assert_eq!(var_linear_sorted(&z, 1.0), Ok(f64::INFINITY));
+        assert_eq!(var_linear_sorted(&z, 0.25), Ok(1.5));
+        assert!(var_linear_sorted(&z, 1.5).is_err());
+        assert!(var_linear_sorted(&z, -0.1).is_err());
+    }
 
     #[test]
     fn an_empty_slice_is_an_error_not_a_panic() {

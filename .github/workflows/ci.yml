@@ -40,6 +40,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # `cargo xtask check --changed` repeats DOCS_ONLY in xtask/src/check.rs;
+  # keep the two in step (its unit test lists sample paths).
   # Paths a pull request can change without running the python and r jobs:
   # nothing in them is built or read by the bindings' tests (the guides in
   # docs/guides and the notebooks in examples/ are).
@@ -79,7 +81,9 @@ jobs:
   # jobs read these outputs; one that is not a matrix and feeds no other job
   # is skipped as a whole, without a runner, and a skipped job passes. Every
   # output is true on the other events (msrv: not on a push), where each job
-  # has rules of its own. The clone has the history but no file contents
+  # has rules of its own. `cargo xtask check --changed` (xtask/src/check.rs)
+  # reads the same filters (`DOCS_ONLY` above and the rust and docs outputs
+  # below): change them together. The clone has the history but no file contents
   # (`blob:none`): the diff needs names only.
   changes:
     runs-on: ubuntu-latest
@@ -796,3 +800,45 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+
+  # Reports a scheduled run that failed (#936): opens an issue titled
+  # "Nightly CI is red", or adds a comment to it when it is already open, and closes
+  # it when a scheduled run passes. It runs only on the schedule, whatever
+  # the other jobs did, and never fails the run itself (continue-on-error).
+  report:
+    needs: [checks, changes, rust, msrv, python-build, python, r-build, r, examples-r, docs, deal-report, fremtpl2, bayes-build, bayes, deny]
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      issues: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: "Nightly CI is red"
+      RESULTS: ${{ toJSON(needs) }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RUN_ID: ${{ github.run_id }}
+    steps:
+      - name: Open, update or close the issue
+        shell: bash
+        run: |
+          failed=$(jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key' <<< "$RESULTS")
+          number=$(gh issue list --state open --limit 200 --json number,title \
+            --jq 'map(select(.title == env.TITLE)) | first | .number // empty')
+          if [ -z "$failed" ]; then
+            if [ -n "$number" ]; then
+              gh issue close "$number" --comment "The scheduled run passed: $RUN_URL"
+            fi
+            exit 0
+          fi
+          jobs=$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID/jobs?per_page=100" --paginate \
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "- [\(.name)](\(.html_url))"' || true)
+          [ -n "$jobs" ] || jobs=$(sed 's/^/- /' <<< "$failed")
+          body=$(printf 'A scheduled run failed: %s\n\nFailed jobs:\n\n%s\n' "$RUN_URL" "$jobs")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$TITLE" --body "$body"
+          fi

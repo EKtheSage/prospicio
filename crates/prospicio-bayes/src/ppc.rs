@@ -393,6 +393,30 @@ mod tests {
     use prospicio_math::special::norm_quantile;
 
     #[test]
+    fn the_tie_breaking_uniforms_come_from_their_own_stream() {
+        // #831, #959: every replicate ties with its observation, so each
+        // PIT is its tie-breaking uniform. They are the first draws of
+        // TIE_STREAM, not of stream 0, which replicate 0 draws from.
+        let n = 5;
+        let y = vec![1.0; n];
+        let y_rep = vec![1.0; 4 * n];
+        let ll = vec![-1.0; 4 * n];
+        for seed in [0, 7] {
+            let pit = loo_pit(&y, &y_rep, &ll, None, seed).unwrap().pit;
+            let first = |stream: u64| -> Vec<f64> {
+                let mut rng = StreamRng::new(seed, stream);
+                (0..n).map(|_| rng.next_open01()).collect()
+            };
+            for (p, u) in pit.iter().zip(first(TIE_STREAM)) {
+                assert!((p - u).abs() < 1e-15, "{p} vs {u}");
+            }
+            for (p, u) in pit.iter().zip(first(0)) {
+                assert!((p - u).abs() > 1e-6, "{p} is stream 0's {u}");
+            }
+        }
+    }
+
+    #[test]
     fn statistics_by_hand() {
         let x = [3.0, 0.0, 1.0, 0.0, 6.0];
         assert_eq!(Statistic::Mean.of(&x), 2.0);

@@ -35,10 +35,12 @@ fn names_and_help_fit_excel() {
 fn every_symbol_dispatches() {
     for f in FUNCTIONS {
         // Missing arguments reach the function, which answers with a value
-        // or an error; never "no function".
+        // or an error; never "no function", and never by panicking.
         let out = call(f.symbol, vec![Grid::missing(); f.args.len()]);
         let text = format!("{:?}", out.cells);
         assert!(!text.contains("no function"), "{}: {text}", f.name);
+        // Nor a panic, which `call` catches and reports as text (#955).
+        assert!(!text.contains("a panic"), "{}: {text}", f.name);
     }
     assert!(format!("{:?}", call("pro_nothing", vec![]).cells).contains("no function"));
 }

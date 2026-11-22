@@ -116,4 +116,13 @@ for (s in c("means_linear", "linear")) {
 }
 expect_error_like(elt_severity_grid(elt, 10, 256, "nope"), "should be one of")
 
+# The paid-incurred chain's R ChainLadder convention in every spelling (#956).
+want <- paid_incurred_chain(tri(), "paid", "incurred", convention = "r_chainladder")@total_reserve
+for (s in c("r-chainladder", "chainladder", "r")) {
+  stopifnot(identical(
+    paid_incurred_chain(tri(), "paid", "incurred", convention = s)@total_reserve, want))
+}
+expect_error_like(paid_incurred_chain(tri(), "paid", "incurred", convention = "nope"),
+                  "should be one of")
+
 cat("option name tests passed\n")

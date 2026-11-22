@@ -172,3 +172,15 @@ def test_elt_bucketing_spellings(name):
     assert report["bucketing"] == "means_linear"
     with pytest.raises(ValueError, match="bucketing must be"):
         elt.severity_grid(10.0, 256, "nope")
+
+
+@pytest.mark.parametrize("name", ["r_chainladder", "r-chainladder", "chainladder", "r"])
+def test_paid_incurred_convention_spellings(name):
+    # Excel's spellings of R ChainLadder's convention, and Python's own (#956).
+    tri = triangle()
+    want = PaidIncurredChain(convention="r_chainladder").fit(tri, "paid", "incurred")
+    got = PaidIncurredChain(convention=name).fit(tri, "paid", "incurred")
+    assert got.total_reserve == want.total_reserve
+    assert PaidIncurredChain(convention=name).convention == "r_chainladder"
+    with pytest.raises(ValueError, match="convention must be"):
+        PaidIncurredChain(convention="nope")

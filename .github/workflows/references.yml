@@ -39,3 +39,45 @@ jobs:
           python3 validation/scripts/rerun_references.py
           ${{ matrix.mode == 'latest' && '--latest' || '' }}
           --report "$GITHUB_STEP_SUMMARY"
+
+  # Reports a scheduled run that failed (#936): opens an issue titled
+  # "Weekly reference rerun is red", or adds a comment to it when it is already open, and closes
+  # it when a scheduled run passes. It runs only on the schedule, whatever
+  # the other jobs did, and never fails the run itself (continue-on-error).
+  report:
+    needs: [rerun]
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      issues: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: "Weekly reference rerun is red"
+      RESULTS: ${{ toJSON(needs) }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RUN_ID: ${{ github.run_id }}
+    steps:
+      - name: Open, update or close the issue
+        shell: bash
+        run: |
+          failed=$(jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key' <<< "$RESULTS")
+          number=$(gh issue list --state open --limit 200 --json number,title \
+            --jq 'map(select(.title == env.TITLE)) | first | .number // empty')
+          if [ -z "$failed" ]; then
+            if [ -n "$number" ]; then
+              gh issue close "$number" --comment "The scheduled run passed: $RUN_URL"
+            fi
+            exit 0
+          fi
+          jobs=$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID/jobs?per_page=100" --paginate \
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "- [\(.name)](\(.html_url))"' || true)
+          [ -n "$jobs" ] || jobs=$(sed 's/^/- /' <<< "$failed")
+          body=$(printf 'A scheduled run failed: %s\n\nFailed jobs:\n\n%s\n' "$RUN_URL" "$jobs")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$TITLE" --body "$body"
+          fi
