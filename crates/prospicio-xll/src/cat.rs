@@ -498,11 +498,8 @@ fn bucketing(g: &Grid, elt: &EventLossTable) -> Result<EltBucketing> {
     match text_option(g, "bucketing")?.as_deref() {
         None if elt.standard_deviations().iter().any(|&s| s > 0.0) => Ok(EltBucketing::Nearest),
         None => Ok(EltBucketing::MeansLinear),
-        Some("nearest") => Ok(EltBucketing::Nearest),
-        Some("linear") => Ok(EltBucketing::MeansLinear),
-        Some(other) => Err(format!(
-            "bucketing must be \"nearest\" or \"linear\", got {other:?}"
-        )),
+        Some(name) => EltBucketing::from_name(name)
+            .ok_or_else(|| crate::unknown_name("bucketing", name, EltBucketing::NAMES)),
     }
 }
 

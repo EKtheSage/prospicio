@@ -323,3 +323,19 @@ fn pic_priors_come_in_pairs_and_a_tight_prior_holds_its_mean() {
     let (a, b) = (num(model.get(11, 5)), num(r.get(11, 5)));
     assert!(a != b && ((a - b) / b).abs() < 0.01, "{a} vs {b}");
 }
+
+/// Every spelling of the convention that Python, R or Excel took before
+/// is taken by all three through `PicConvention::NAMES` (#956).
+#[test]
+fn pic_takes_every_spelling_of_the_convention() {
+    let want = call("pro_res_pic", pic_args("usaa", "r")).unwrap();
+    for name in ["r_chainladder", "R_ChainLadder", " chainladder ", "r-chainladder"] {
+        let got = call("pro_res_pic", pic_args("usaa", name)).unwrap();
+        assert_eq!(num(got.get(11, 5)), num(want.get(11, 5)), "{name}");
+    }
+    let err = call("pro_res_pic", pic_args("usaa", "nope")).unwrap_err();
+    assert!(
+        err.contains("convention must be \"model\"") && err.contains("got \"nope\""),
+        "{err}"
+    );
+}

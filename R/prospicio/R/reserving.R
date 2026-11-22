@@ -6097,6 +6097,10 @@ paid_incurred_fit <- S7::new_class(
   constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
 )
 
+# The paid-incurred chain's R ChainLadder convention in Excel's spellings (#956).
+pic_convention_aliases <- c("r" = "r_chainladder", "chainladder" = "r_chainladder",
+                            "r-chainladder" = "r_chainladder")
+
 # A numeric setting of paid_incurred_chain(): `null` for NULL, or a
 # numeric vector without NA.
 pic_numbers <- function(x, name, null = numeric(0)) {
@@ -6121,7 +6125,8 @@ paid_incurred_chain <- function(triangle, paid, incurred, sigma = NULL, tau = NU
   extrapolation <- match.arg(option_alias(extrapolation,
                                          c("log-linear" = "loglinear", "log_linear" = "loglinear")),
                             c("loglinear", "mack"))
-  convention <- match.arg(convention)
+  convention <- match.arg(option_alias(convention, pic_convention_aliases),
+                          c("model", "r_chainladder"))
   for (pair in list(c("phi_mean", "phi_sd"), c("psi_mean", "psi_sd"))) {
     if (is.null(get(pair[1])) != is.null(get(pair[2]))) {
       stop(sprintf("give both %s and %s, or neither", pair[1], pair[2]), call. = FALSE)

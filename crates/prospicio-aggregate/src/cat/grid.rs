@@ -34,6 +34,32 @@ pub enum EltBucketing {
     MeansLinear,
 }
 
+impl EltBucketing {
+    /// Every name the Python, R and Excel front ends accept, with its rule,
+    /// the canonical name of each first (#956).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("nearest", Self::Nearest),
+        ("means_linear", Self::MeansLinear),
+        ("linear", Self::MeansLinear),
+    ];
+
+    /// The rule named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, b)| b)
+    }
+
+    /// The canonical name, `"nearest"` or `"means_linear"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Nearest => "nearest",
+            Self::MeansLinear => "means_linear",
+        }
+    }
+}
+
 /// What putting an event loss table's severity on a grid lost.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EltGridReport {
@@ -253,6 +279,26 @@ mod tests {
             &[2000.0, 500.0, 5000.0, 100.0],
         )
         .unwrap()
+    }
+
+    /// Every spelling Python, R or Excel took before #956 still resolves,
+    /// and the canonical name round-trips.
+    #[test]
+    fn bucketing_names_cover_every_front_end() {
+        for name in ["means_linear", "linear"] {
+            assert_eq!(
+                EltBucketing::from_name(name),
+                Some(EltBucketing::MeansLinear)
+            );
+        }
+        assert_eq!(
+            EltBucketing::from_name("nearest"),
+            Some(EltBucketing::Nearest)
+        );
+        assert_eq!(EltBucketing::from_name("exact"), None);
+        for &(_, b) in EltBucketing::NAMES {
+            assert_eq!(EltBucketing::from_name(b.name()), Some(b));
+        }
     }
 
     #[test]

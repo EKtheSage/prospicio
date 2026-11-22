@@ -339,14 +339,19 @@ fn max_over_phi(p: f64, y: &[f64], mu: &[f64], w: &[f64], start: f64) -> Result<
     Ok((phi, value))
 }
 
+/// The cap on [`golden_max`]'s steps: each keeps 0.618 of the bracket, so
+/// 200 shrink it by `1e-42`, past any tolerance a float can meet.
+const GOLDEN_STEPS: usize = 200;
+
 /// Golden-section search for the maximum of a unimodal `f` on `[a, b]`,
 /// until the bracket is within `tol (1 + |c|)` of its lower interior point
 /// `c`: the minimum of `-f` (negation is exact, so the steps are the same).
+/// At most [`GOLDEN_STEPS`] steps; NaN for a bracket that is not finite.
 fn golden_max(a: f64, b: f64, tol: f64, f: impl Fn(f64) -> f64) -> f64 {
     golden_section_by(
         a,
         b,
-        usize::MAX,
+        GOLDEN_STEPS,
         |a, b, c| (b - a).abs() <= tol * (1.0 + c.abs()),
         |x| -f(x),
     )

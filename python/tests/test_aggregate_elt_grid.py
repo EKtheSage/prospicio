@@ -73,4 +73,4 @@ def test_the_count_and_the_reports():
 
 def test_a_bad_rule_is_refused():
     with pytest.raises(ValueError, match="means_linear"):
-        _table(SECONDARY).severity_grid(STEP, 64, "linear")
+        _table(SECONDARY).severity_grid(STEP, 64, "exact")

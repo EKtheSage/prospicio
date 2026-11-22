@@ -126,5 +126,28 @@ for (s in c("CSR", "Csr")) {
 }
 expect_error_like(meyers_spec(model = "ipi"), "should be one of")
 
+# The event loss table's means-alone bucketing in Python's and Excel's
+# spellings (#956).
+elt <- event_loss_table(rate = c(0.5, 0.25, 0.05), mean = c(130, 270.5, 1234.5),
+                        sd_independent = rep(0, 3), sd_correlated = rep(0, 3),
+                        exposure = c(260, 541, 2469))
+want <- elt_severity_grid(elt, 10, 256, "means_linear")$severity@probs
+for (s in c("means_linear", "linear")) {
+  got <- elt_severity_grid(elt, 10, 256, s)
+  stopifnot(identical(got$severity@probs, want), identical(got$report$bucketing, "means_linear"))
+  stopifnot(identical(elt_aggregate_grid(elt, 10, 256, s)$annual@probs,
+                      elt_aggregate_grid(elt, 10, 256, "means_linear")$annual@probs))
+}
+expect_error_like(elt_severity_grid(elt, 10, 256, "nope"), "should be one of")
+
+# The paid-incurred chain's R ChainLadder convention in every spelling (#956).
+want <- paid_incurred_chain(tri(), "paid", "incurred", convention = "r_chainladder")@total_reserve
+for (s in c("r-chainladder", "chainladder", "r")) {
+  stopifnot(identical(
+    paid_incurred_chain(tri(), "paid", "incurred", convention = s)@total_reserve, want))
+}
+expect_error_like(paid_incurred_chain(tri(), "paid", "incurred", convention = "nope"),
+                  "should be one of")
+
 cat("option name tests passed\n")
 

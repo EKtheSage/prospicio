@@ -2618,15 +2618,8 @@ impl Triangle {
         let extrapolation = VarianceExtrapolation::from_name(extrapolation).ok_or_else(|| {
             crate::unknown_name("extrapolation", extrapolation, VarianceExtrapolation::NAMES)
         })?;
-        let convention = match convention {
-            "model" => PicConvention::Model,
-            "r_chainladder" => PicConvention::RChainLadder,
-            other => {
-                return Err(Error::Other(format!(
-                    "convention must be \"model\" or \"r_chainladder\", got {other:?}"
-                )));
-            }
-        };
+        let convention = PicConvention::from_name(convention)
+            .ok_or_else(|| crate::unknown_name("convention", convention, PicConvention::NAMES))?;
         let inner = PaidIncurredChain {
             priors: PicPriors {
                 phi_mean,
