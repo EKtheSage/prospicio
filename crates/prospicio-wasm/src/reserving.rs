@@ -119,9 +119,14 @@ impl Triangle {
         let columns: Vec<(String, Vec<f64>)> = match (&input.value, &input.values) {
             (Some(v), None) => vec![("value".to_owned(), numbers(v))],
             (None, Some(Pairs(vs))) => vs.iter().map(|(n, v)| (n.clone(), numbers(v))).collect(),
-            _ => {
+            (Some(_), Some(_)) => {
                 return Err(JsError::new(
                     "Triangle.fromLong: give value or values, not both",
+                ));
+            }
+            (None, None) => {
+                return Err(JsError::new(
+                    "Triangle.fromLong: give value (one measure) or values (several by name)",
                 ));
             }
         };

@@ -91,8 +91,21 @@ impl Predictive {
     }
 
     /// One row per component: its label under each dimension's name, and
-    /// the `mean` and `std_dev` of its draws.
-    pub fn summary(&self) -> JsValue {
+    /// the `mean` and `std_dev` of its draws. An error when a dimension is
+    /// itself named `mean` or `std_dev` (a key column of that name), whose
+    /// labels the statistics would replace.
+    pub fn summary(&self) -> Result<JsValue, JsError> {
+        if let Some(name) = self
+            .inner
+            .dims()
+            .iter()
+            .find(|d| matches!(d.as_str(), "mean" | "std_dev"))
+        {
+            return Err(JsError::new(&format!(
+                "summary: the dimension {name:?} has the name of a summary column; \
+                 rename that key column, or aggregate() it away first"
+            )));
+        }
         let marginals: Vec<_> = self
             .inner
             .components()
@@ -108,7 +121,7 @@ impl Predictive {
                 self.inner.components().iter().map(|c| key_text(&c[d])),
             );
         }
-        o.numbers("mean", &mean).numbers("std_dev", &sd).done()
+        Ok(o.numbers("mean", &mean).numbers("std_dev", &sd).done())
     }
 
     /// The distribution summed over every dimension not in `keep`, on the

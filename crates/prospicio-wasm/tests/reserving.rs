@@ -204,7 +204,7 @@ fn the_odp_bootstrap_draws_what_the_core_draws_for_a_seed() {
     );
     assert!(mean < var && var <= tvar);
     assert!((mean / 18_680_855.61 - 1.0).abs() < 0.05, "{mean}");
-    let summary = reserves.summary();
+    let summary = ok(reserves.summary());
     assert_eq!(labels(&summary, "origin").len(), 10);
     assert_eq!(column(&summary, "mean").len(), 10);
     // Summed over origins there is one component: the total.
@@ -242,4 +242,58 @@ fn an_error_is_a_javascript_error_with_the_cores_message() {
         ("value", numbers(&[1.0])),
     ]));
     assert!(message(bad_origin.err().unwrap()).contains("soon"));
+}
+
+#[wasm_bindgen_test]
+fn from_long_says_which_of_value_and_values_is_wrong() {
+    let (origin, development, value) = genins_columns();
+    let table = |extra: &[(&str, JsValue)]| {
+        let mut entries = vec![
+            ("origin", numbers(&origin)),
+            ("development", numbers(&development)),
+        ];
+        entries.extend(extra.iter().cloned());
+        object(&entries)
+    };
+    let fails = |t: JsValue| match Triangle::from_long(t) {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => message(e),
+    };
+    // Neither: the message asks for one, and does not say "not both".
+    let neither = fails(table(&[]));
+    assert!(neither.contains("give value"), "{neither}");
+    assert!(!neither.contains("not both"), "{neither}");
+    let both = fails(table(&[
+        ("value", numbers(&value)),
+        ("values", object(&[("paid", numbers(&value))])),
+    ]));
+    assert!(both.contains("not both"), "{both}");
+}
+
+#[wasm_bindgen_test]
+fn a_summary_refuses_a_dimension_named_as_one_of_its_columns() {
+    // A key column called "mean" is a dimension of the simulated reserves:
+    // the summary's own "mean" column would replace its labels.
+    let (origin, development, value) = genins_columns();
+    let lob: Array = value.iter().map(|_| JsValue::from_str("motor")).collect();
+    let tri = ok(Triangle::from_long(object(&[
+        ("origin", numbers(&origin)),
+        ("development", numbers(&development)),
+        ("value", numbers(&value)),
+        ("keys", object(&[("mean", lob.into())])),
+    ])));
+    let options = object(&[("nSims", JsValue::from_f64(50.0))]);
+    let fit = ok(odp_bootstrap(&tri, "value", options));
+    let reserves = {
+        use wasm_bindgen::convert::TryFromJsValue;
+        prospicio_wasm::Predictive::try_from_js_value(get(&fit, "reserves")).unwrap()
+    };
+    let e = match reserves.summary() {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => message(e),
+    };
+    assert!(e.contains("\"mean\"") && e.contains("aggregate"), "{e}");
+    // With the key summed away the summary is by origin, as without keys.
+    let by_origin = ok(reserves.aggregate(vec!["origin".to_owned()]));
+    assert_eq!(labels(&ok(by_origin.summary()), "origin").len(), 10);
 }
