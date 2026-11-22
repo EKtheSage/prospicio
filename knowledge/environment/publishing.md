@@ -28,6 +28,9 @@ sources:
   - id: pypi-tp
     resource: https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/
     title: PyPI, creating a project through OIDC
+  - id: npm-tp
+    resource: https://docs.npmjs.com/trusted-publishers
+    title: npm, Trusted publishing (read 2026-11-20 from the npm/documentation repository)
 ---
 
 # Facts
@@ -105,3 +108,31 @@ sources:
 [^crates-rl]: crates.io, rate limits
 [^v001]: Release workflow run for v0.0.1
 [^v003]: Release workflow run for v0.0.3
+
+## npm (the JavaScript package, #576)
+
+The package `prospicio` on npm is `target/wasm/pkg`, built by `cargo xtask
+wasm` from `crates/prospicio-wasm`; `release.yml`'s `npm-package` job
+builds it on every run and the `npm` job publishes it on a tag. What npm's
+trusted publishing needs, as its documentation stood on 2026-11-20:
+
+- npm 11.5.1 or later and Node 22.14.0 or later; the workflow uses Node 24
+  with `registry-url: https://registry.npmjs.org`, `permissions: id-token:
+  write` and plain `npm publish`. No token or `NODE_AUTH_TOKEN`.
+- The trusted publisher is added in an existing package's settings
+  (organization or user, repository, workflow filename, optional
+  environment name, allowed actions), so a new package's first version is
+  published by hand. Up to 10 trusted publishers per package.
+- A new trusted publisher configuration must complete its first publish
+  within 2 days or it expires; npm does not check the fields when they are
+  saved.
+- Only cloud-hosted runners. For a workflow run through `workflow_call` or
+  `workflow_dispatch`, npm checks the calling workflow's name.
+- Provenance is attached automatically for a public package published
+  from a public repository.
+
+The name `prospicio` was free on npm on 2026-11-20 (`npm view prospicio`
+returned 404). `npm pack --dry-run` on the 0.1.0 build lists 18 files, 1.6
+MB packed and 5.1 MB unpacked (three copies of the 1.5 MB module, one per
+target). The `npm` job is skipped until the repository variable
+`NPM_PUBLISH` is `true` (`docs/release.md`, one-time setup, step 4).

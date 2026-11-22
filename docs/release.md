@@ -1,7 +1,8 @@
 # Releasing
 
-A release publishes the Python package `prospicio` to PyPI and the Rust
-crates to crates.io from one version tag. `.github/workflows/release.yml`
+A release publishes the Python package `prospicio` to PyPI, the Rust
+crates to crates.io and the JavaScript package `prospicio` to npm from one
+version tag. `.github/workflows/release.yml`
 does the work; this note is the checklist around it.
 
 ## What is published
@@ -11,22 +12,25 @@ does the work; this note is the checklist around it.
 | PyPI | `prospicio` | `python/` and `crates/prospicio-python`: an sdist, and one abi3 wheel (Python 3.9+) each for Linux x86_64 and aarch64 (manylinux), macOS (universal2) and Windows x64; each wheel is tested on Python 3.12, and the Linux x86_64 wheel on 3.9 as well (#962) |
 | crates.io | `prospicio` | `crates/prospicio`: the umbrella crate. It re-exports the others as modules (`prospicio::reserving`, `prospicio::prob`, ...); `bayes` and `nn` are features |
 | crates.io | `prospicio-core`, `-math`, `-prob`, `-aggregate`, `-pricing`, `-reserving`, `-models`, `-glm`, `-bayes`, `-nn` | `crates/prospicio-*` |
+| npm | `prospicio` | `crates/prospicio-wasm`, built by `cargo xtask wasm`: one WebAssembly module with glue for bundlers, Node and a plain browser page (`docs/design/wasm.md`). Published once the owner has done step 4 of the one-time setup |
 
 The Excel add-in is not on a registry: `.github/workflows/xll.yml` attaches
 `prospicio-xll-<tag>.zip` (`prospicio.xll`, the test workbook, its README
 and a SHA-256) to a **draft** GitHub release for the tag, which the owner
 reviews and publishes (`docs/design/xll.md`, decision 15).
 
-`prospicio-python`, `prospicio-r`, `prospicio-xll`, `validation` and `xtask` set
-`publish = false`. CRAN is separate and not set up yet. The R package
+`prospicio-python`, `prospicio-r`, `prospicio-xll`, `prospicio-wasm`,
+`validation` and `xtask` set `publish = false` (the JavaScript package
+goes to npm, not crates.io). CRAN is separate and not set up yet. The R package
 installs from GitHub with `remotes::install_github("EKtheSage/prospicio",
 subdir = "R/prospicio")`: `R/prospicio/bootstrap.R`, which pkgbuild runs
 before `R CMD build`, copies `prospicio-r` and the workspace crates it
 depends on into the tarball's `src/rust/`. CRAN will also need the
 third-party crates vendored for an offline build.
 
-Every crate and the Python package take their version from
-`workspace.package.version` in the root `Cargo.toml`. The `prospicio-*`
+Every crate, the Python package and the npm package take their version
+from `workspace.package.version` in the root `Cargo.toml` (`cargo xtask
+wasm` writes it into the package's `package.json`). The `prospicio-*`
 entries in `[workspace.dependencies]` repeat it (`cargo publish` puts that
 version in place of the path), so a version bump changes both.
 
@@ -60,9 +64,40 @@ Do these once, before the first release.
    expiry, revoked afterwards) and then added here. The first release,
    v0.0.1, used such a token for all 11 crates.
 3. **GitHub environments** (optional but recommended). The publish jobs run
-   in the environments `pypi` and `crates-io`; GitHub creates them on first
-   use. Adding yourself as a required reviewer on each (*Settings →
+   in the environments `pypi`, `crates-io` and `npm`; GitHub creates them on
+   first use. Adding yourself as a required reviewer on each (*Settings →
    Environments*) makes every publish wait for your approval.
+4. **npm.** Until this step is done the workflow's `npm` job is skipped and
+   a tag publishes to PyPI and crates.io only. npm lets a trusted publisher
+   be added only on a package that exists, so the first version goes up by
+   hand:
+
+   1. Create an account at npmjs.com with 2FA. The name `prospicio` was
+      free on 2026-11-20 (`npm view prospicio` returned 404).
+   2. After a release's tag run has finished, download its `npm-package`
+      artifact (*Actions → Release → the run → Artifacts*), unpack it, and
+      in that folder run `npm login` and `npm publish`. This is the same
+      package the run built and tested; it reserves the name with that
+      release's version.
+   3. Before the **next** release, and no more than two days before its
+      tag (a trusted publisher that has not published within two days of
+      being created expires): on npmjs.com open the package's *Settings →
+      Trusted Publisher*, choose GitHub Actions and give
+
+      | Field | Value |
+      |---|---|
+      | Organization or user | `EKtheSage` |
+      | Repository | `prospicio` |
+      | Workflow filename | `release.yml` |
+      | Environment name | `npm` |
+      | Allowed actions | `npm publish` |
+
+      npm does not check these when they are saved; a wrong value shows
+      only as an authentication error at the publish.
+   4. In the repository's *Settings → Secrets and variables → Actions →
+      Variables*, add `NPM_PUBLISH` with the value `true`. From then on a
+      tag publishes the package from the `npm` job, with no stored token
+      and with a provenance attestation.
 
 ## Version plan
 
@@ -150,9 +185,9 @@ parked by the user's decision of 2026-11-07 (the XLL already reaches Excel
 users, and a browser package needs more enterprise work to deploy, such as
 security review and user groups on Azure) and taken up again on 2026-11-20
 for 0.2.1: the package is built and tested (`docs/design/wasm.md`), and
-it will be published to npm as `prospicio` (the user's decision of
-2026-11-20); until the publish job is built a release publishes nothing to
-npm. The crates stay WASM-compatible: the
+it is published to npm as `prospicio` (the user's decision of
+2026-11-20) by the release workflow's `npm` job, once the owner has done
+step 4 of the one-time setup above. The crates stay WASM-compatible: the
 `wasm32-unknown-unknown` check in `AGENTS.md` is unchanged.
 
 **0.1.0** (the user's decision of 2026-11-07, planned; the release after
@@ -210,7 +245,7 @@ package.
 | Bugs (P1) | #939, #940, #941, #942, #943, #975 (GIL releases and FFI panics in the Python bindings and the Excel add-in) |
 | Bugs (P2) | #935, #944 to #954 |
 | Bugs (P3) | #955, #958, #959, #960 |
-| Additive | #956 (option names made the same in Python, R and Excel, with the old names kept as deprecated aliases), #576 (the WASM JavaScript package, #985 and #989) |
+| Additive | #956 (option names made the same in Python, R and Excel, with the old names kept as deprecated aliases), #576 (the WASM JavaScript package, #1039 and #1040) |
 | Numerics with unchanged results | #971 (one LU factorization in `linalg::inverse`, the rearrangement algorithm's sweeps) |
 | CI and tooling | #936, #962, #965, #966, #967, #968 |
 | Docs | #961 |
@@ -267,7 +302,8 @@ two actuarial tracks.
 
    The workflow checks that the tag and the R package's `DESCRIPTION`
    match the workspace version, builds
-   and tests again, then publishes to PyPI and crates.io.
+   and tests again, then publishes to PyPI and crates.io, and to npm once
+   `NPM_PUBLISH` is set (one-time setup, step 4).
 
    The **XLL** workflow builds the Excel add-in for the same tag and
    attaches it to a draft GitHub release; publish the draft (*Releases*)
@@ -277,8 +313,9 @@ two actuarial tracks.
    access stops at its own branch, and the push comes back `403`. The
    owner pushes the tag.
 
-Neither registry lets a version be replaced. A bad release is yanked
-(`cargo yank`, or *Manage project* on PyPI) and fixed in the next version.
+No registry lets a version be replaced. A bad release is yanked
+(`cargo yank`, *Manage project* on PyPI, `npm deprecate` on npm) and fixed
+in the next version.
 `cargo publish --workspace` uploads the crates one at a time. If it stops
 partway, the crates already uploaded stay published, and rerunning it fails
 on them; publish the remaining crates with `cargo publish -p <crate>`, in
@@ -296,3 +333,14 @@ cargo publish --workspace          # every publishable crate, in order
 
 PyPI uploads from a laptop need wheels for every platform, so they are
 best left to the workflow.
+
+The npm package builds on any machine with the `wasm32-unknown-unknown`
+target, Node and the pinned `wasm-bindgen` tool (`cargo xtask wasm` prints
+the install command):
+
+```sh
+cargo xtask wasm                   # builds and tests target/wasm/pkg
+cd target/wasm/pkg
+npm login
+npm publish
+```
