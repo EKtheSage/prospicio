@@ -53,6 +53,12 @@ it.
   it depends on, built on their default features, which no other job
   lints: it found `push_combined` in `prospicio-reserving` unused without
   the `bayes` feature.
+- CI's `wasm` job runs these three when the `changes` job's `wasm` output
+  is true (the binding crate, a crate in the WASM scope, the data the tests
+  read, xtask, `.cargo/`, the manifests or ci.yml), on pull requests and on
+  the nightly and manual runs. `cargo xtask check --changed` reads the same
+  filter (`xtask/src/check.rs`) and runs them when it matches, skipping
+  with a note when Node, the pinned `wasm-bindgen` or the target is missing.
 
 ## Quirks
 
