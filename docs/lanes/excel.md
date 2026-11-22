@@ -17,4 +17,4 @@ Finished items are in [done/excel.md](done/excel.md), which agents read when the
 - [code-signing-certificate] a code-signing certificate is the user's to buy
 - [excel-help-defaults-test] #955 a test that compares each help text's stated defaults with the code: each function called with its required arguments alone and with each documented default given explicitly
 - [excel-harness-concurrent-async] #955 the fake Excel with two asynchronous calls outstanding and a refused handle, so the join, cache-hit-burst and dropped-handle paths run outside the unit tests of `src/jobs.rs`
-- [excel-close-during-run] #955 in Excel 365, with `[excel-confirm-async]`: quit during a long `PRO.RES.BAYES.BF`; if it crashes, a shutdown flag set in `xlAutoClose` that the workers check before `xlAsyncReturn`
+- [excel-close-during-run] #955 in Excel 365, with `[excel-confirm-async]`: quit during a long `PRO.RES.BAYES.BF`; the shutdown flag is in place (xlAutoClose), the crash was never confirmed

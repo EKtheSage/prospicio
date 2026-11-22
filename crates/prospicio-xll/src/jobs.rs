@@ -25,6 +25,40 @@ use std::sync::{Arc, LazyLock, Mutex, mpsc};
 use crate::call;
 use crate::sheet::Grid;
 
+/// Set when Excel unloads the add-in (`xlAutoClose`): a worker that ends
+/// afterwards must not call into Excel (`xlAsyncReturn`). Runs still finish
+/// and are kept; only the reply to Excel is skipped.
+#[derive(Default)]
+pub struct Shutdown(std::sync::atomic::AtomicBool);
+
+impl Shutdown {
+    pub const fn new() -> Self {
+        Self(std::sync::atomic::AtomicBool::new(false))
+    }
+
+    /// The add-in is closing: later replies are skipped.
+    pub fn close(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// The add-in is open (again): replies go through.
+    pub fn open(&self) {
+        self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Runs `reply` unless the add-in is closing; says whether it ran.
+    pub fn reply_unless_closed(&self, reply: impl FnOnce()) -> bool {
+        if self.0.load(std::sync::atomic::Ordering::SeqCst) {
+            return false;
+        }
+        reply();
+        true
+    }
+}
+
+/// The add-in's shutdown flag, set by `xlAutoClose`.
+pub static SHUTDOWN: Shutdown = Shutdown::new();
+
 /// The exported symbols of the functions Excel calls asynchronously:
 /// every function with a `sims` or `replicates` argument and every MCMC fit.
 pub const ASYNC: &[&str] = &[
@@ -204,6 +238,19 @@ fn finish(key: String, grid: Arc<Grid>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_reply_to_excel_after_close() {
+        let flag = Shutdown::new();
+        let mut replies = 0;
+        assert!(flag.reply_unless_closed(|| replies += 1));
+        flag.close();
+        assert!(!flag.reply_unless_closed(|| replies += 1));
+        flag.open();
+        assert!(flag.reply_unless_closed(|| replies += 1));
+        assert_eq!(replies, 2);
+    }
+
     use crate::sheet::Value;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
