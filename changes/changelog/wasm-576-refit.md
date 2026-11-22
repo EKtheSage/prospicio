@@ -2,7 +2,7 @@
 
 - A JavaScript package over the WASM-scope crates, `crates/prospicio-wasm`
   (`wasm-bindgen`), built by `cargo xtask wasm` for bundlers, Node and a
-  plain browser page (#576, #985): `Triangle.fromLong`, `chainLadder`, `mack`,
+  plain browser page (#576, #1039): `Triangle.fromLong`, `chainLadder`, `mack`,
   `bornhuetterFerguson` and `odpBootstrap`; `Dist.fromJson` with `cdf`,
   `quantile`, `lev`, `layer` and `tvar`; `Count`, `fft`, `simulateEvents`,
   `Tower.fromJson` with `apply`, `oep` and `occurrencePml`;
