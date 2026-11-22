@@ -1879,3 +1879,32 @@ def test_explanations_match_the_shared_reference():
     for row in [1, 37, 81]:
         expected = [float(r["expected"]) for r in want(f"ice_row{row}", "x")]
         assert curves.curves[row - 1] == pytest.approx(expected, rel=1e-12, abs=1e-15)
+
+
+def _compare_with_scores(values):
+    x = [i / 10 for i in range(60)]
+    d = Design([[1.0] * 60, x], ["(Intercept)", "x"])
+    y = [1.0 + 2.0 * v + ((i * 7) % 5 - 2) * 0.2 for i, v in enumerate(x)]
+    splits = k_fold(60, len(values), 3)
+    it = iter(values)
+    return compare({"glm": Glm("gaussian")}, d, y, splits, {"s": lambda t, p, _: next(it)})
+
+
+def test_compare_mean_with_opposite_infinities_is_nan():
+    c = _compare_with_scores([math.inf, -math.inf, 1.0])
+    assert math.isnan(c.mean("glm", "s"))
+    assert math.isnan(c.std_error("glm", "s"))
+
+
+def test_compare_mean_with_overflow_is_inf():
+    c = _compare_with_scores([1e308, 1e308, 1e308])
+    assert c.mean("glm", "s") == math.inf
+
+
+def test_mean_se_finite_uses_fsum_and_nonfinite_falls_back():
+    from prospicio.models import _mean_se
+
+    assert _mean_se([0.1] * 10)[0] == 0.1
+    assert math.isnan(_mean_se([math.inf, -math.inf])[0])
+    assert _mean_se([1e308, 1e308])[0] == math.inf
+    assert _mean_se([math.inf, 1.0])[0] == math.inf
