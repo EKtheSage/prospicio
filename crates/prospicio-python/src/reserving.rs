@@ -7962,10 +7962,7 @@ fn pic_extrapolation_name(e: VarianceExtrapolation) -> &'static str {
 }
 
 fn pic_convention_name(c: PicConvention) -> &'static str {
-    match c {
-        PicConvention::Model => "model",
-        PicConvention::RChainLadder => "r_chainladder",
-    }
+    c.name()
 }
 
 #[pymethods]
@@ -7995,15 +7992,8 @@ impl PyPaidIncurredChain {
         let extrapolation = VarianceExtrapolation::from_name(extrapolation).ok_or_else(|| {
             crate::unknown_name("extrapolation", extrapolation, VarianceExtrapolation::NAMES)
         })?;
-        let convention = match convention {
-            "model" => PicConvention::Model,
-            "r_chainladder" => PicConvention::RChainLadder,
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "convention must be \"model\" or \"r_chainladder\", got {other:?}"
-                )));
-            }
-        };
+        let convention = PicConvention::from_name(convention)
+            .ok_or_else(|| crate::unknown_name("convention", convention, PicConvention::NAMES))?;
         let (phi_mean, phi_sd) = pic_prior(phi_mean, phi_sd, "phi")?;
         let (psi_mean, psi_sd) = pic_prior(psi_mean, psi_sd, "psi")?;
         Ok(Self {

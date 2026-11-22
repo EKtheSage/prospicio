@@ -156,3 +156,15 @@ def test_distortion_family_spellings(name):
     assert math.isclose(d.measure(x), premium, rel_tol=1e-9)
     with pytest.raises(ValueError, match="unknown distortion family"):
         calibrate("bitvar", x, premium)
+
+
+@pytest.mark.parametrize("name", ["r_chainladder", "r-chainladder", "chainladder", "r"])
+def test_paid_incurred_convention_spellings(name):
+    # Excel's spellings of R ChainLadder's convention, and Python's own (#956).
+    tri = triangle()
+    want = PaidIncurredChain(convention="r_chainladder").fit(tri, "paid", "incurred")
+    got = PaidIncurredChain(convention=name).fit(tri, "paid", "incurred")
+    assert got.total_reserve == want.total_reserve
+    assert PaidIncurredChain(convention=name).convention == "r_chainladder"
+    with pytest.raises(ValueError, match="convention must be"):
+        PaidIncurredChain(convention="nope")
