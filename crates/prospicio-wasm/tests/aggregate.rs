@@ -136,3 +136,20 @@ fn a_tower_from_json_cedes_what_the_core_cedes() {
     assert!(given.events(3).is_err());
     assert!(Tower::from_json(JsValue::from_str("{}")).is_err());
 }
+
+#[wasm_bindgen_test]
+fn a_year_past_the_last_is_an_error_that_counts_the_years() {
+    let years: js_sys::Array = [vec![1.0, 2.0], vec![], vec![5.0]]
+        .iter()
+        .map(|y| JsValue::from(js_sys::Float64Array::from(y.as_slice())))
+        .collect();
+    let set = ok(EventSet::from_years(years.into(), None));
+    assert_eq!(ok(set.events(2)).to_vec(), [5.0]);
+    let e = match set.events(3) {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => common::message(e),
+    };
+    assert!(e.contains("year 3") && e.contains("3 years"), "{e}");
+    // No years at all is refused when the set is built.
+    assert!(EventSet::from_years(js_sys::Array::new().into(), None).is_err());
+}

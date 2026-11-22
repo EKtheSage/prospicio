@@ -201,10 +201,10 @@ impl EventSet {
 
     /// The losses of year `year` (from 0).
     pub fn events(&self, year: usize) -> Result<Float64Array, JsError> {
-        if year >= self.inner.n_sims() {
+        let n = self.inner.n_sims();
+        if year >= n {
             return Err(JsError::new(&format!(
-                "year {year} is past the last, {}",
-                self.inner.n_sims() - 1
+                "year {year} is past the last: the set has {n} years, numbered from 0"
             )));
         }
         Ok(Float64Array::from(self.inner.events(year)))
