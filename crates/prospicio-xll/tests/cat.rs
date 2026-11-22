@@ -562,11 +562,14 @@ fn elt_agg_is_the_cores_grid() {
         assert_eq!(get(&out, "Grid mean"), total.mean());
     }
     // ...or the means alone, as aggregate's `no2u`.
-    let out = elt_agg(&secondary, none(), none(), t("linear"), grid);
     let (total, _, _) = elt
         .aggregate_grid(10.0, 1024, EltBucketing::MeansLinear)
         .unwrap();
-    same_tail(&out, &total);
+    // Excel's `linear` and Python's and R's `means_linear` (#956).
+    for rule in ["linear", "means_linear", "Means_Linear"] {
+        let out = elt_agg(&secondary, none(), none(), t(rule), grid);
+        same_tail(&out, &total);
+    }
     // A grid too short says how much it cut off.
     let out = elt_agg(&secondary, none(), none(), none(), Some((10.0, 64.0)));
     assert!(get(&out, "Rate above the grid") > 0.0);

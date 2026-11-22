@@ -183,6 +183,34 @@ pub enum PicConvention {
     RChainLadder,
 }
 
+impl PicConvention {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// convention, the canonical name of each first (#956).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("model", Self::Model),
+        ("r_chainladder", Self::RChainLadder),
+        ("r-chainladder", Self::RChainLadder),
+        ("chainladder", Self::RChainLadder),
+        ("r", Self::RChainLadder),
+    ];
+
+    /// The convention named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, c)| c)
+    }
+
+    /// The canonical name, `"model"` or `"r_chainladder"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::RChainLadder => "r_chainladder",
+        }
+    }
+}
+
 /// A fitted paid-incurred chain. Per-origin vectors run over the
 /// triangle's origins; the oldest is taken as fully developed, its
 /// ultimate its last paid value with no reserve and no error.
@@ -672,6 +700,26 @@ impl PicFit {
 mod tests {
     use super::*;
     use crate::{Average, ChainLadder, Development, DevelopmentColumn, Grain, Long, Month};
+
+    /// Every spelling Python, R or Excel took before #956 still resolves,
+    /// and the canonical name round-trips.
+    #[test]
+    fn convention_names_cover_every_front_end() {
+        for name in ["r_chainladder", "r-chainladder", "chainladder", "r"] {
+            assert_eq!(
+                PicConvention::from_name(name),
+                Some(PicConvention::RChainLadder)
+            );
+        }
+        assert_eq!(
+            PicConvention::from_name("model"),
+            Some(PicConvention::Model)
+        );
+        assert_eq!(PicConvention::from_name("nope"), None);
+        for &(_, c) in PicConvention::NAMES {
+            assert_eq!(PicConvention::from_name(c.name()), Some(c));
+        }
+    }
 
     /// Merz and Wüthrich's example data (Dahms 2008), as printed in their
     /// tail-factor paper (2010 preprint), Tables 1 and 2.

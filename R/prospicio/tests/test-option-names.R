@@ -172,4 +172,52 @@ stopifnot(identical(law("in_force", "accident"), law("in_force", "calendar")))
 stopifnot(law("in_force", "policy") != law("in_force", "calendar"))
 expect_error_like(law("in_force", "fiscal"), "should be one of")
 
+# The rule past the pattern's end: Excel's "none" for "no_development" (#956).
+for (s in c("no_development", "none")) {
+  stopifnot(identical(as_latest_valuation(tri(), "paid", past_pattern_end = s)@past_pattern_end,
+                      "no_development"))
+}
+expect_error_like(as_latest_valuation(tri(), "paid", past_pattern_end = "hold"),
+                  "past_pattern_end must be")
+
+# The loglogistic growth curve in Excel's spellings (#956).
+bench <- stats::setNames(c(0.18, 0.47, 0.66, 0.78, 0.855, 0.90, 0.93, 0.951, 0.965, 0.975),
+                         seq(12, 120, by = 12))
+want <- benchmark_curve(bench)
+for (s in c("loglogistic", "log-logistic", "log_logistic")) {
+  got <- benchmark_curve(bench, curve = s)
+  stopifnot(identical(got@omega, want@omega), identical(got@curve, "loglogistic"))
+}
+expect_error_like(benchmark_curve(bench, curve = "gompertz"), "should be one of")
+
+# Meyers' model name in any case, as Python takes it (#956).
+for (s in c("CSR", "Csr")) {
+  stopifnot(identical(meyers_spec(model = s)@model, "csr"))
+}
+expect_error_like(meyers_spec(model = "ipi"), "should be one of")
+
+# The event loss table's means-alone bucketing in Python's and Excel's
+# spellings (#956).
+elt <- event_loss_table(rate = c(0.5, 0.25, 0.05), mean = c(130, 270.5, 1234.5),
+                        sd_independent = rep(0, 3), sd_correlated = rep(0, 3),
+                        exposure = c(260, 541, 2469))
+want <- elt_severity_grid(elt, 10, 256, "means_linear")$severity@probs
+for (s in c("means_linear", "linear")) {
+  got <- elt_severity_grid(elt, 10, 256, s)
+  stopifnot(identical(got$severity@probs, want), identical(got$report$bucketing, "means_linear"))
+  stopifnot(identical(elt_aggregate_grid(elt, 10, 256, s)$annual@probs,
+                      elt_aggregate_grid(elt, 10, 256, "means_linear")$annual@probs))
+}
+expect_error_like(elt_severity_grid(elt, 10, 256, "nope"), "should be one of")
+
+# The paid-incurred chain's R ChainLadder convention in every spelling (#956).
+want <- paid_incurred_chain(tri(), "paid", "incurred", convention = "r_chainladder")@total_reserve
+for (s in c("r-chainladder", "chainladder", "r")) {
+  stopifnot(identical(
+    paid_incurred_chain(tri(), "paid", "incurred", convention = s)@total_reserve, want))
+}
+expect_error_like(paid_incurred_chain(tri(), "paid", "incurred", convention = "nope"),
+                  "should be one of")
+
 cat("option name tests passed\n")
+

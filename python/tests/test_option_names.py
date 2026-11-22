@@ -13,6 +13,8 @@ from prospicio.models import Design, ZeroInflated
 from prospicio.reserving import (
     BenchmarkCurve,
     ChainLadder,
+    LatestDiagonal,
+    Meyers,
     Mack,
     MunichChainLadder,
     PaidIncurredChain,
@@ -286,3 +288,57 @@ def test_rate_change_applies_spellings(name):
     assert got.rate_level(period, 1.0).in_force_changes == [0, 0, 1, 0, 1]
     with pytest.raises(ValueError, match="applies must be"):
         RateHistory([2011.0], [0.1], applies=["sometimes"])
+
+@pytest.mark.parametrize("name", ["loglogistic", "log-logistic", "log_logistic"])
+def test_growth_curve_spellings(name):
+    # Excel's spellings of the loglogistic growth curve (#956).
+    bench = {12: 0.18, 24: 0.47, 36: 0.66, 48: 0.78, 60: 0.855, 72: 0.90}
+    want = BenchmarkCurve().fit(bench, "percent_developed").omega
+    assert BenchmarkCurve(curve=name).fit(bench, "percent_developed").omega == want
+    with pytest.raises(ValueError, match="growth curve must be"):
+        BenchmarkCurve(curve="gompertz")
+
+
+@pytest.mark.parametrize("name", ["csr", "CSR", "Csr"])
+def test_meyers_model_in_any_case(name):
+    # Python took the model in any case; R now does too (#956).
+    assert Meyers(name).model == "csr"
+    with pytest.raises(ValueError, match="model must be"):
+        Meyers("ipi")
+
+
+@pytest.mark.parametrize("name", ["no_development", "none"])
+def test_past_pattern_end_spellings(name):
+    # Excel's "none" for "no_development" (#956).
+    d = LatestDiagonal([2023, 2024], [24, 12], [1.0, 2.0], past_pattern_end=name)
+    assert d.past_pattern_end == "no_development"
+    with pytest.raises(ValueError, match="past_pattern_end must be"):
+        LatestDiagonal([2023, 2024], [24, 12], [1.0, 2.0], past_pattern_end="hold")
+
+
+@pytest.mark.parametrize("name", ["means_linear", "linear"])
+def test_elt_bucketing_spellings(name):
+    # The means-alone rule in Python's and Excel's spelling (#956).
+    from prospicio.aggregate import EventLossTable
+
+    elt = EventLossTable(
+        [0.5, 0.25, 0.05], [130.0, 270.5, 1234.5], [0.0] * 3, [0.0] * 3, [260.0, 541.0, 2469.0]
+    )
+    want, _ = elt.severity_grid(10.0, 256, "means_linear")
+    got, report = elt.severity_grid(10.0, 256, name)
+    assert list(got.probs) == list(want.probs)
+    assert report["bucketing"] == "means_linear"
+    with pytest.raises(ValueError, match="bucketing must be"):
+        elt.severity_grid(10.0, 256, "nope")
+
+
+@pytest.mark.parametrize("name", ["r_chainladder", "r-chainladder", "chainladder", "r"])
+def test_paid_incurred_convention_spellings(name):
+    # Excel's spellings of R ChainLadder's convention, and Python's own (#956).
+    tri = triangle()
+    want = PaidIncurredChain(convention="r_chainladder").fit(tri, "paid", "incurred")
+    got = PaidIncurredChain(convention=name).fit(tri, "paid", "incurred")
+    assert got.total_reserve == want.total_reserve
+    assert PaidIncurredChain(convention=name).convention == "r_chainladder"
+    with pytest.raises(ValueError, match="convention must be"):
+        PaidIncurredChain(convention="nope")

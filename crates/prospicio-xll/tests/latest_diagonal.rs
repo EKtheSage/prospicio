@@ -1136,7 +1136,7 @@ fn input_errors_name_their_argument() {
     );
     assert_eq!(
         e(base().past_end("extend").cl()),
-        "past_end must be \"reject\", \"none\" or \"tail\", got \"extend\""
+        "past_end must be \"reject\", \"no_development\", \"tail\" or \"none\", got \"extend\""
     );
     assert_eq!(
         e(base().kind("factor").cl()),
@@ -1222,4 +1222,16 @@ fn an_interior_blank_widens_the_age_to_age_factor_before_it() {
     // factor of 1 from 24 to 36 it is 1.2.
     assert_rel(u[1], 1.2, 1e-12, "24 months, factor of 1");
     assert!(b[1] > 1.2 + 1e-6, "24 months, widened: {}", b[1]);
+}
+
+/// Every spelling of the rule past the pattern's end that Python, R or
+/// Excel took before is taken by all three through `PastPatternEnd::NAMES`
+/// (#956).
+#[test]
+fn past_end_takes_every_spelling() {
+    let want = column(&past(&[132.0, 120.0, 108.0, 12.0]).past_end("none").cl(), "Ultimate");
+    for name in ["no_development", "No_Development", " NONE "] {
+        let got = column(&past(&[132.0, 120.0, 108.0, 12.0]).past_end(name).cl(), "Ultimate");
+        assert_eq!(got, want, "{name}");
+    }
 }

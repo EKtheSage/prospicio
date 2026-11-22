@@ -3131,13 +3131,9 @@ impl PyEventLossTable {
 }
 
 fn elt_bucketing(name: &str) -> PyResult<prospicio_aggregate::EltBucketing> {
-    match name {
-        "nearest" => Ok(prospicio_aggregate::EltBucketing::Nearest),
-        "means_linear" => Ok(prospicio_aggregate::EltBucketing::MeansLinear),
-        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "bucketing must be \"nearest\" or \"means_linear\", got {other:?}"
-        ))),
-    }
+    prospicio_aggregate::EltBucketing::from_name(name).ok_or_else(|| {
+        crate::unknown_name("bucketing", name, prospicio_aggregate::EltBucketing::NAMES)
+    })
 }
 
 fn elt_grid_report<'py>(
@@ -3145,11 +3141,7 @@ fn elt_grid_report<'py>(
     r: &prospicio_aggregate::EltGridReport,
 ) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(py);
-    let rule = match r.bucketing {
-        prospicio_aggregate::EltBucketing::Nearest => "nearest",
-        prospicio_aggregate::EltBucketing::MeansLinear => "means_linear",
-    };
-    d.set_item("bucketing", rule)?;
+    d.set_item("bucketing", r.bucketing.name())?;
     d.set_item("rate_above", r.rate_above)?;
     d.set_item("severity_mean", r.severity_mean)?;
     d.set_item("grid_mean", r.grid_mean)?;

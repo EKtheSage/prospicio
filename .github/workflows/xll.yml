@@ -68,12 +68,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
+          components: clippy
       - uses: Swatinem/rust-cache@v2
       # osslsigncode only when the signing step will run (#966).
       - name: Install MinGW and Wine, and osslsigncode to sign
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq gcc-mingw-w64-x86-64 wine64 ${{ env.SIGN == 'true' && 'osslsigncode' || '' }}
+      # src/xll.rs is cfg(windows), so only this target lints its FFI (#955).
+      - run: cargo clippy -p prospicio-xll --target x86_64-pc-windows-gnu -- -D warnings
       # Builds target/xll/prospicio.xll, then runs harness/fake_excel.c on
       # it under Wine; a failed check fails the job. A pull request builds
       # with thin link-time optimization (#966): a shorter build of a

@@ -150,6 +150,34 @@ pub enum PastPatternEnd {
     Tail,
 }
 
+impl PastPatternEnd {
+    /// Every name the Python, R and Excel front ends accept, with its rule,
+    /// the canonical name of each first (#956).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("reject", Self::Reject),
+        ("no_development", Self::NoDevelopment),
+        ("tail", Self::Tail),
+        ("none", Self::NoDevelopment),
+    ];
+
+    /// The rule named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, r)| r)
+    }
+
+    /// The canonical name: `"reject"`, `"no_development"` or `"tail"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Reject => "reject",
+            Self::NoDevelopment => "no_development",
+            Self::Tail => "tail",
+        }
+    }
+}
+
 fn invalid(why: impl Into<String>) -> Error {
     Error::Diagonal(why.into())
 }
@@ -1524,6 +1552,24 @@ impl CapeCod {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every spelling Python, R or Excel took before #956 still resolves,
+    /// and the canonical name round-trips.
+    #[test]
+    fn past_pattern_end_names_cover_every_front_end() {
+        for (name, want) in [
+            ("reject", PastPatternEnd::Reject),
+            ("no_development", PastPatternEnd::NoDevelopment),
+            ("none", PastPatternEnd::NoDevelopment),
+            ("tail", PastPatternEnd::Tail),
+        ] {
+            assert_eq!(PastPatternEnd::from_name(name), Some(want), "{name}");
+        }
+        assert_eq!(PastPatternEnd::from_name("hold"), None);
+        for &(_, rule) in PastPatternEnd::NAMES {
+            assert_eq!(PastPatternEnd::from_name(rule.name()), Some(rule));
+        }
+    }
 
     fn diagonal(grain: Grain, latest: &[f64]) -> LatestDiagonal {
         let origins: Vec<Month> = (0..latest.len())

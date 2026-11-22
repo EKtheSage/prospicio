@@ -623,20 +623,12 @@ fn months(years: &[i32], months: &[i32], arg: &str) -> Result<Vec<Month>> {
 }
 
 fn growth_curve(name: &str) -> Result<GrowthCurve> {
-    match name {
-        "loglogistic" => Ok(GrowthCurve::LogLogistic),
-        "weibull" => Ok(GrowthCurve::Weibull),
-        _ => Err(Error::Other(format!(
-            "curve must be \"loglogistic\" or \"weibull\", got \"{name}\""
-        ))),
-    }
+    GrowthCurve::from_name(name)
+        .ok_or_else(|| crate::unknown_name("curve", name, GrowthCurve::NAMES))
 }
 
 fn growth_curve_name(curve: GrowthCurve) -> &'static str {
-    match curve {
-        GrowthCurve::LogLogistic => "loglogistic",
-        GrowthCurve::Weibull => "weibull",
-    }
+    curve.name()
 }
 
 /// Clark's `max_age`: R passes `Inf` to develop to infinity.
@@ -2626,15 +2618,8 @@ impl Triangle {
         let extrapolation = VarianceExtrapolation::from_name(extrapolation).ok_or_else(|| {
             crate::unknown_name("extrapolation", extrapolation, VarianceExtrapolation::NAMES)
         })?;
-        let convention = match convention {
-            "model" => PicConvention::Model,
-            "r_chainladder" => PicConvention::RChainLadder,
-            other => {
-                return Err(Error::Other(format!(
-                    "convention must be \"model\" or \"r_chainladder\", got {other:?}"
-                )));
-            }
-        };
+        let convention = PicConvention::from_name(convention)
+            .ok_or_else(|| crate::unknown_name("convention", convention, PicConvention::NAMES))?;
         let inner = PaidIncurredChain {
             priors: PicPriors {
                 phi_mean,
@@ -4592,16 +4577,8 @@ fn meyers_settings(
     run: [f64; 7],
     dependence: SegmentDependence,
 ) -> Result<Meyers> {
-    let model = match model {
-        "crc" => MeyersModel::Crc,
-        "csr" => MeyersModel::Csr,
-        "cay" => MeyersModel::Cay,
-        _ => {
-            return Err(Error::Other(format!(
-                "model must be \"crc\", \"csr\" or \"cay\", got \"{model}\""
-            )));
-        }
-    };
+    let model = MeyersModel::from_name(model)
+        .ok_or_else(|| crate::unknown_name("model", model, MeyersModel::NAMES))?;
     let [
         logelr_mean,
         logelr_sd,
@@ -6963,22 +6940,12 @@ impl CompartmentalFit {
 }
 
 fn past_pattern_end(name: &str) -> Result<PastPatternEnd> {
-    match name {
-        "reject" => Ok(PastPatternEnd::Reject),
-        "no_development" => Ok(PastPatternEnd::NoDevelopment),
-        "tail" => Ok(PastPatternEnd::Tail),
-        _ => Err(Error::Other(format!(
-            "past_pattern_end must be \"reject\", \"no_development\" or \"tail\", got \"{name}\""
-        ))),
-    }
+    PastPatternEnd::from_name(name)
+        .ok_or_else(|| crate::unknown_name("past_pattern_end", name, PastPatternEnd::NAMES))
 }
 
 fn past_pattern_end_name(rule: PastPatternEnd) -> &'static str {
-    match rule {
-        PastPatternEnd::Reject => "reject",
-        PastPatternEnd::NoDevelopment => "no_development",
-        PastPatternEnd::Tail => "tail",
-    }
+    rule.name()
 }
 
 fn grain_name(grain: Grain) -> &'static str {

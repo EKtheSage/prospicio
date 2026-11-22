@@ -25,7 +25,9 @@
 //!   segment's simulations as whole rows
 //!   ([`PredictiveDistribution::reorder_groups`]) so every segment keeps
 //!   its own distribution and its joint structure across origins. The
-//!   dependence is the user's, as a Spearman matrix.
+//!   dependence is the user's, as a Spearman matrix. Simulations whose
+//!   segment totals tie exactly (reserves of 0, say) rank in their order,
+//!   the earlier one lower, as `reorder_groups` ranks them.
 //!
 //! The joint distribution then goes to
 //! [`PredictiveDistribution::capital`] for the portfolio's risk measure and

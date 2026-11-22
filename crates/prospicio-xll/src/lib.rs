@@ -2789,7 +2789,10 @@ pub static FUNCTIONS: &[Function] = &[
         args: &[
             TRIANGLE,
             EXPOSURE,
-            APRIORI,
+            Arg {
+                name: "apriori",
+                help: "The a priori expected loss ratio, ultimate per unit of exposure, such as 0.75: one number for every origin",
+            },
             Arg {
                 name: "cv",
                 help: "CV of the gamma prior on each origin's ultimate (0.1 if omitted); small holds the a priori firmly (classical BF), \"flat\" is the Bayesian chain ladder",
