@@ -135,15 +135,12 @@ pub(crate) fn piecewise_truncation(p3: &Grid) -> Result<(f64, Truncation)> {
     };
     let kind = match cells.get(1) {
         None => Truncation::LastPiece,
-        Some(Value::Text(s)) => match s.trim().to_ascii_lowercase().as_str() {
-            "lp" | "last_piece" => Truncation::LastPiece,
-            "wd" | "whole_distribution" => Truncation::WholeDistribution,
-            other => {
-                return Err(format!(
-                    "the truncation kind must be \"lp\" or \"wd\", got {other:?}"
-                ));
-            }
-        },
+        Some(Value::Text(s)) => {
+            let name = s.trim().to_ascii_lowercase();
+            Truncation::from_name(&name).ok_or_else(|| {
+                crate::unknown_name("the truncation kind", &name, Truncation::NAMES)
+            })?
+        }
         Some(other) => {
             return Err(format!(
                 "the truncation kind must be \"lp\" or \"wd\", got {other:?}"

@@ -76,20 +76,11 @@ fn draws(g: &Grid) -> Result<(Vec<Value>, PredictiveDistribution)> {
 }
 
 fn method(g: &Grid) -> Result<AllocationMethod> {
-    Ok(match text_option(g, "method")?.as_deref() {
-        None | Some("euler") | Some("natural") => AllocationMethod::Euler,
-        Some("covariance") => AllocationMethod::Covariance,
-        Some("covariance_margin") => AllocationMethod::CovarianceMargin,
-        Some("proportional") => AllocationMethod::Proportional,
-        Some("marginal") => AllocationMethod::Marginal,
-        Some("shapley") => AllocationMethod::Shapley,
-        Some(other) => {
-            return Err(format!(
-                "method must be \"euler\" (or \"natural\"), \"covariance\", \"covariance_margin\", \
-                 \"proportional\", \"marginal\" or \"shapley\", got {other:?}"
-            ));
-        }
-    })
+    match text_option(g, "method")?.as_deref() {
+        None => Ok(AllocationMethod::Euler),
+        Some(name) => AllocationMethod::from_name(name)
+            .ok_or_else(|| crate::unknown_name("method", name, AllocationMethod::NAMES)),
+    }
 }
 
 fn header(columns: &[&str]) -> Vec<Value> {

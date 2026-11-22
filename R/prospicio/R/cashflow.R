@@ -70,8 +70,20 @@ print.cashflow_requirement <- function(x, ...) {
 cashflow_adjustment <- function(month, written_rate, less_commission = FALSE,
                                 base = c("ultimate", "to-date")) {
   structure(list(month = as.double(month), written_rate = as.double(written_rate),
-                 less_commission = isTRUE(less_commission), base = match.arg(base)),
+                 less_commission = isTRUE(less_commission),
+                 base = match.arg(cashflow_option(base), c("ultimate", "to-date"))),
             class = "cashflow_adjustment")
+}
+
+# A cash-flow option in the form its name tables hold (#956): lower case, trimmed,
+# with `_` and spaces as `-`, so "Unearned Premium", "unearned_premium" and
+# "unearned-premium" are one option, as in Python and Excel. Anything but a
+# single string is returned as it is, match.arg()'s default vector included.
+cashflow_option <- function(x) {
+  if (is.character(x) && length(x) == 1 && !is.na(x)) {
+    return(gsub("[_ ]+", "-", tolower(trimws(x))))
+  }
+  x
 }
 
 # A set of months as the kind and values `Cashflow$new` reads: "monthly",
@@ -80,6 +92,7 @@ cashflow_adjustment <- function(month, written_rate, less_commission = FALSE,
 # list(every = n, first = m).
 cashflow_dates <- function(x, name, commutation = FALSE) {
   if (is.character(x)) {
+    x <- cashflow_option(x)
     kinds <- c("monthly", "quarterly", if (commutation) "at-commutation")
     if (length(x) != 1 || !x %in% kinds) {
       stop(sprintf("%s: use %s, a number of months, several months, or list(every =, first =)",
@@ -227,13 +240,20 @@ cashflow_terms <- function(premium, commutation_month, written, earned, paid, re
     as.double(paid), r$bases, r$loads, r$floor, r$limit, cr$bases, cr$loads, cr$floor, cr$limit,
     as.double(collected_rate), isTRUE(deduct_commission), as.double(lag), adj("month", double(1)),
     adj("written_rate", double(1)), as.double(adj("less_commission", logical(1))),
-    adj("base", character(1)), funding$kind, funding$values, match.arg(funding_rule),
-    as.double(premium_offset), match.arg(reference), match.arg(funding_source), release$kind,
-    release$values, as.double(annual_yield), match.arg(interest_basis), as.double(opening_fixed),
+    adj("base", character(1)), funding$kind, funding$values,
+    match.arg(cashflow_option(funding_rule), c("shortfall", "obligation-increase")),
+    as.double(premium_offset),
+    match.arg(cashflow_option(reference), c("previous-date", "running-max")),
+    match.arg(cashflow_option(funding_source), c("investor", "operating-first")), release$kind,
+    release$values, as.double(annual_yield),
+    match.arg(cashflow_option(interest_basis), c("average", "opening", "closing")),
+    as.double(opening_fixed),
     as.double(opening_share), as.double(expense_rate), as.double(buffer_months),
     isTRUE(buffer_paid), isTRUE(buffer_expenses), equity$kind, equity$values,
     if (is.null(fee)) double() else as.double(fee[[1]]),
-    if (is.null(fee)) double() else as.double(fee[[2]]), match.arg(fee_basis)
+    if (is.null(fee)) double() else as.double(fee[[2]]),
+    match.arg(cashflow_option(fee_basis),
+              c("profit", "profit-over-premium", "profit-over-capital"))
   ))
   structure(list(ptr = ptr), class = "cashflow_terms")
 }

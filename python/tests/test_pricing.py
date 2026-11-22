@@ -1091,9 +1091,9 @@ def test_deal_ave():
 def test_cashflow_terms_errors():
     thirds = [1 / 3, 2 / 3, 1.0]
     req = P.CollateralRequirement([("reserve", 1.0)])
-    with pytest.raises(ValueError, match="unknown base"):
+    with pytest.raises(ValueError, match="base must be"):
         P.CollateralRequirement({"ibnr": 1.0})
-    with pytest.raises(ValueError, match="unknown base"):
+    with pytest.raises(ValueError, match="base must be"):
         P.PremiumAdjustment(1, 0.1, base="final")
     with pytest.raises(ValueError, match="need 4"):
         P.CashflowTerms(100.0, 4, [1.0] * 3, thirds, thirds, req)
@@ -1106,7 +1106,7 @@ def test_cashflow_terms_errors():
         P.CashflowTerms(100.0, 3, [1.0] * 3, thirds, thirds, req, funding_dates="weekly")
     with pytest.raises(ValueError, match="unknown funding rule"):
         P.CashflowTerms(100.0, 3, [1.0] * 3, thirds, thirds, req, funding_rule="calls")
-    with pytest.raises(ValueError, match="unknown fee basis"):
+    with pytest.raises(ValueError, match="fee basis must be"):
         P.CashflowTerms(100.0, 3, [1.0] * 3, thirds, thirds, req, fee=([0.0], [0.1]),
                         fee_basis="carry")
 

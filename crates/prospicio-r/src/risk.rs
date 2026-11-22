@@ -213,25 +213,12 @@ impl RiskDistortion {
         ))
     }
 
-    /// Allocation by `method` ("euler", "covariance", "covariance_margin", "proportional",
-    /// "marginal" or "shapley"): `list(total, standalone, allocated)`.
+    /// Allocation by `method` (`AllocationMethod::NAMES`): `list(total, standalone, allocated)`.
     fn capital(&self, pd: Robj, method: &str) -> Result<List> {
         let pd = <&PredictiveDistribution>::try_from(&pd)
             .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
-        let method = match method {
-            "euler" => AllocationMethod::Euler,
-            "covariance" => AllocationMethod::Covariance,
-            "covariance_margin" => AllocationMethod::CovarianceMargin,
-            "proportional" => AllocationMethod::Proportional,
-            "marginal" => AllocationMethod::Marginal,
-            "shapley" => AllocationMethod::Shapley,
-            other => {
-                return Err(Error::Other(format!(
-                    "method must be euler, covariance, covariance_margin, proportional, marginal or \
-                     shapley, got {other}"
-                )));
-            }
-        };
+        let method = AllocationMethod::from_name(method)
+            .ok_or_else(|| crate::unknown_name("method", method, AllocationMethod::NAMES))?;
         let a = pd.inner.capital(&self.inner, method).map_err(to_r)?;
         Ok(list!(
             total = a.total,

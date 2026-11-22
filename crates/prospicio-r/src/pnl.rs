@@ -593,15 +593,7 @@ fn tower_of(tower: &Robj) -> Result<Option<&ReinsuranceTower>> {
 }
 
 fn face_of(face: &str) -> Result<Face> {
-    match face {
-        "consolidated" => Ok(Face::Consolidated),
-        "walk" => Ok(Face::Walk),
-        "peel-top-down" => Ok(Face::PeelTopDown),
-        "peel-bottom-up" => Ok(Face::PeelBottomUp),
-        other => Err(Error::Other(format!(
-            "a face is consolidated, walk, peel-top-down or peel-bottom-up, not {other:?}"
-        ))),
-    }
+    Face::from_name(face).ok_or_else(|| crate::unknown_name("face", face, Face::NAMES))
 }
 
 /// A book from flattened expenses; an empty label means the default.

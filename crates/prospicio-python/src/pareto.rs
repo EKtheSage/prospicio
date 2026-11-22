@@ -5,7 +5,6 @@
 
 use prospicio_core::StreamRng;
 use prospicio_prob::{Counting, Distribution, LargeLosses, Severity, Truncation};
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::distributions::{PyNegativeBinomial, PyPoisson};
@@ -256,20 +255,12 @@ fn bounded_above(data: LargeLosses, upper: Option<Vec<f64>>) -> PyResult<LargeLo
 }
 
 fn truncation_kind(kind: &str) -> PyResult<Truncation> {
-    match kind {
-        "lp" => Ok(Truncation::LastPiece),
-        "wd" => Ok(Truncation::WholeDistribution),
-        _ => Err(PyValueError::new_err(
-            "truncation_type must be \"lp\" (last piece) or \"wd\" (whole distribution)",
-        )),
-    }
+    Truncation::from_name(kind)
+        .ok_or_else(|| crate::unknown_name("truncation_type", kind, Truncation::NAMES))
 }
 
 fn truncation_name(kind: Truncation) -> &'static str {
-    match kind {
-        Truncation::LastPiece => "lp",
-        Truncation::WholeDistribution => "wd",
-    }
+    kind.name()
 }
 
 /// Single-parameter Pareto: ``P(X > x) = (t / x) ** alpha`` for ``x >= t``,

@@ -482,6 +482,38 @@ pub enum Face {
     PeelBottomUp,
 }
 
+impl Face {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// face, the canonical name of each first (#956). `top-down` and
+    /// `bottom-up` are Excel's short names for the peel faces.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("consolidated", Self::Consolidated),
+        ("walk", Self::Walk),
+        ("peel-top-down", Self::PeelTopDown),
+        ("top-down", Self::PeelTopDown),
+        ("peel-bottom-up", Self::PeelBottomUp),
+        ("bottom-up", Self::PeelBottomUp),
+    ];
+
+    /// The face named `name` ([`NAMES`](Self::NAMES)), or `None`. The text
+    /// is read in any case, with `_` or a space for `-`, as Excel has
+    /// always read it.
+    pub fn from_name(name: &str) -> Option<Self> {
+        let key = name.trim().to_ascii_lowercase().replace(['_', ' '], "-");
+        Self::NAMES.iter().find(|(n, _)| *n == key).map(|&(_, f)| f)
+    }
+
+    /// The canonical name, such as `"peel-top-down"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Consolidated => "consolidated",
+            Self::Walk => "walk",
+            Self::PeelTopDown => "peel-top-down",
+            Self::PeelBottomUp => "peel-bottom-up",
+        }
+    }
+}
+
 /// The seller's book: a premium, expenses and the labels of its legs.
 ///
 /// ```

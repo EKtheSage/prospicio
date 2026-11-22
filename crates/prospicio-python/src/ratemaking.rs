@@ -180,12 +180,8 @@ fn applies(values: Option<Vec<String>>, n: usize) -> PyResult<Vec<Applies>> {
     }
     values
         .iter()
-        .map(|a| match a.as_str() {
-            "written" => Ok(Applies::Written),
-            "in_force" => Ok(Applies::InForce),
-            other => Err(PyValueError::new_err(format!(
-                "applies must be \"written\" or \"in_force\", got {other:?}"
-            ))),
+        .map(|a| {
+            Applies::from_name(a).ok_or_else(|| crate::unknown_name("applies", a, Applies::NAMES))
         })
         .collect()
 }

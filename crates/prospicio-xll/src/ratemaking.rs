@@ -11,7 +11,7 @@
 //! 19).
 
 use prospicio_pricing::ratemaking::{
-    Applies, ExpenseCategory, LossRatioExperience, LossRatioYear, Period, Provisions,
+    Applies, ExpenseCategory, LossRatioExperience, LossRatioYear, Period, PeriodKind, Provisions,
     PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, RateSchedule, ScheduleTrend,
     TrendBasis, TrendFit, TrendItem, credibility_weighted, cumulative_loss_ratio,
     premium_based_expenses, trended_present_rates, year_fraction,
@@ -118,18 +118,8 @@ fn history(effective: &Grid, changes: &Grid, applies: &Grid, given: &Grid) -> Re
         (0..n)
             .map(|k| match cells[if cells.len() == 1 { 0 } else { k }] {
                 v if v.is_blank() => Ok(Applies::Written),
-                Value::Text(s) => match s
-                    .trim()
-                    .to_ascii_lowercase()
-                    .replace([' ', '-'], "_")
-                    .as_str()
-                {
-                    "written" => Ok(Applies::Written),
-                    "in_force" | "inforce" => Ok(Applies::InForce),
-                    other => Err(format!(
-                        "applies must be \"written\" or \"in_force\", got {other:?}"
-                    )),
-                },
+                Value::Text(s) => Applies::from_name(s)
+                    .ok_or_else(|| crate::unknown_name("applies", s, Applies::NAMES)),
                 other => Err(format!(
                     "applies must be \"written\" or \"in_force\", got {other:?}"
                 )),
@@ -172,13 +162,12 @@ fn history(effective: &Grid, changes: &Grid, applies: &Grid, given: &Grid) -> Re
 fn period_kind(g: &Grid) -> Result<bool> {
     match g.as_scalar() {
         Some(v) if v.is_blank() => Ok(false),
-        Some(Value::Text(s)) => match s.trim().to_ascii_lowercase().as_str() {
-            "calendar" | "accident" => Ok(false),
-            "policy" => Ok(true),
-            other => Err(format!(
-                "period must be \"calendar\" or \"policy\", got {other:?}"
-            )),
-        },
+        Some(Value::Text(s)) => {
+            let name = s.trim().to_ascii_lowercase();
+            PeriodKind::from_name(&name)
+                .map(|k| k == PeriodKind::Policy)
+                .ok_or_else(|| crate::unknown_name("period", &name, PeriodKind::NAMES))
+        }
         _ => Err("period must be \"calendar\" or \"policy\"".into()),
     }
 }

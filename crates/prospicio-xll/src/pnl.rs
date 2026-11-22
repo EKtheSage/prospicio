@@ -204,19 +204,12 @@ fn covers(grid: &Grid) -> Result<Option<Tower>> {
 }
 
 fn face(grid: &Grid) -> Result<Face> {
-    let f = text_option(grid, "face")?.map(|s| s.replace([' ', '_'], "-"));
-    Ok(match f.as_deref() {
-        None | Some("walk") => Face::Walk,
-        Some("consolidated") => Face::Consolidated,
-        Some("peel-top-down" | "top-down") => Face::PeelTopDown,
-        Some("peel-bottom-up" | "bottom-up") => Face::PeelBottomUp,
-        Some(other) => {
-            return Err(format!(
-                "face must be \"walk\" (default), \"consolidated\", \"top-down\" or \
-                 \"bottom-up\", got {other:?}"
-            ));
+    match text_option(grid, "face")?.as_deref() {
+        None => Ok(Face::Walk),
+        Some(name) => {
+            Face::from_name(name).ok_or_else(|| crate::unknown_name("face", name, Face::NAMES))
         }
-    })
+    }
 }
 
 fn opt(x: Option<f64>) -> Value {

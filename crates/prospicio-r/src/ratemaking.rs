@@ -6,8 +6,8 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_pricing::ratemaking::{
     Applies, BeforeSchedule, ExpenseCategory, LossRatioExperience, LossRatioYear, Period,
-    Provisions, PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, RateSchedule,
-    ScheduleTrend, TrendBasis, TrendFit, TrendItem,
+    PeriodKind, Provisions, PurePremiumExperience, PurePremiumYear, RateChange, RateHistory,
+    RateSchedule, ScheduleTrend, TrendBasis, TrendFit, TrendItem,
 };
 
 use crate::to_r;
@@ -34,13 +34,9 @@ fn year_fractions(year: &[i32], month: &[i32], day: &[i32]) -> Result<Vec<f64>> 
 }
 
 fn period(kind: &str, start: f64, end: f64) -> Result<Period> {
-    match kind {
-        "calendar" => Period::calendar(start, end).map_err(to_r),
-        "policy" => Period::policy(start, end).map_err(to_r),
-        other => Err(Error::Other(format!(
-            "period must be \"calendar\" or \"policy\", got {other}"
-        ))),
-    }
+    let kind = PeriodKind::from_name(kind)
+        .ok_or_else(|| crate::unknown_name("period", kind, PeriodKind::NAMES))?;
+    Period::new(kind, start, end).map_err(to_r)
 }
 
 /// `c(average written date, average earned date)` of a period.
@@ -56,12 +52,8 @@ fn period_dates(kind: &str, start: f64, end: f64, term: f64) -> Result<Vec<f64>>
 fn applies(values: &[String]) -> Result<Vec<Applies>> {
     values
         .iter()
-        .map(|a| match a.as_str() {
-            "written" => Ok(Applies::Written),
-            "in_force" => Ok(Applies::InForce),
-            other => Err(Error::Other(format!(
-                "applies must be \"written\" or \"in_force\", got {other}"
-            ))),
+        .map(|a| {
+            Applies::from_name(a).ok_or_else(|| crate::unknown_name("applies", a, Applies::NAMES))
         })
         .collect()
 }

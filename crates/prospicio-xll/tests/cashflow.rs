@@ -322,6 +322,64 @@ fn a_deal_with_every_rule_is_the_crate_s() {
     assert!(num(trace.get(40, 1)).abs() < 1e-9, "money is conserved");
 }
 
+/// Every spelling of a cash-flow option that Python or R takes, and the
+/// names in `Base::NAMES` and the like, give Excel the same deal (#956).
+#[test]
+fn every_spelling_of_an_option_gives_the_same_deal() {
+    let (terms_grid, patterns, requirement, commutation, _) = full_deal();
+    let respell = |g: &Grid| {
+        let spell = |s: &str| -> String {
+            match s {
+            "to-date" => "TO_DATE",
+            "running-max" => "running_max",
+            "operating-first" => "Operating First",
+            "opening" => "OPENING",
+            "profit" => "Profit",
+            "unearned-premium" => "Unearned_Premium",
+            other => other,
+            }
+            .to_string()
+        };
+        Grid {
+            cells: g
+                .cells
+                .iter()
+                .map(|v| match v {
+                    Value::Text(s) => Value::from(spell(s).as_str()),
+                    other => other.clone(),
+                })
+                .collect(),
+            ..g.clone()
+        }
+    };
+    let u = [0.4, 1.3];
+    let args = |terms: &Grid, requirement: &Grid| {
+        vec![
+            Grid::column(&u),
+            terms.clone(),
+            patterns.clone(),
+            requirement.clone(),
+            none(),
+            t("flows"),
+            none(),
+            commutation.clone(),
+        ]
+    };
+    let want = call("pro_cap_cashflow", args(&terms_grid, &requirement));
+    let got = call(
+        "pro_cap_cashflow",
+        args(&respell(&terms_grid), &respell(&requirement)),
+    );
+    assert_eq!(got, want);
+    assert_eq!(want.rows, 3, "{want:?}");
+
+    // An unknown option is refused in the one format of the other front ends.
+    let bad = rows(vec![label("outstanding", &[nv(1.0)]), label("nope", &[nv(1.0)])]);
+    let out = call("pro_cap_cashflow", args(&terms_grid, &bad));
+    let err = text(&out);
+    assert!(err.contains("unknown base"), "{err}");
+}
+
 #[test]
 fn errors() {
     let (terms_grid, patterns, requirement, _, _) = full_deal();

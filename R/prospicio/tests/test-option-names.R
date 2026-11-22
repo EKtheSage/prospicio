@@ -102,6 +102,76 @@ for (f in c("ph", "proportional_hazard", "Proportional Hazard", "proportional-ha
 }
 expect_error_like(calibrate_distortion("bitvar", x, premium), "unknown distortion family")
 
+# The allocation method in Excel's spelling (AllocationMethod::NAMES, #956).
+pd <- predictive_distribution(matrix(c(1, 4, 2, 3, 2, 1, 5, 6), ncol = 2),
+                              data.frame(lob = c("motor", "property")))
+want <- capital_allocation(pd, distortion("tvar", 0.5), "euler")$by_component$allocated
+stopifnot(identical(capital_allocation(pd, distortion("tvar", 0.5), "natural")$by_component$allocated,
+                    want))
+expect_error_like(capital_allocation(pd, distortion("tvar", 0.5), "nope"), "should be one of")
+
+# A cash-flow option in any case, with "_", "-" or a space between the words
+# (prospicio_pricing::cashflow::option_key, #956).
+ramp <- function(m) pmin((1:36) / m, 1)
+flows_of <- function(base, adjustment, rule, reference, source, interest, fee, release) {
+  req <- cashflow_requirement(setNames(c(1, 0.2), c(base, "reserve")))
+  terms <- cashflow_terms(100, 30, ramp(12), ramp(24), ramp(36), req,
+                          adjustments = list(cashflow_adjustment(18, 0.1, base = adjustment)),
+                          funding_rule = rule, reference = reference, funding_source = source,
+                          annual_yield = 0.04, interest_basis = interest,
+                          fee = list(c(0, 100), c(0.1, 0.2)), fee_basis = fee,
+                          equity_release = release)
+  cashflow_run(terms, c(0.6, 1.5))$flows
+}
+want <- flows_of("unearned-premium", "to-date", "obligation-increase", "running-max",
+                 "operating-first", "opening", "profit-over-premium", "at-commutation")
+stopifnot(identical(
+  flows_of("Unearned_Premium", "TO DATE", "Obligation Increase", "running_max", " Operating-First ",
+           "OPENING", "profit_over_premium", "At Commutation"),
+  want))
+expect_error_like(cashflow_terms(100, 30, ramp(12), ramp(24), ramp(36),
+                                 cashflow_requirement(c(nope = 1))), "base must be")
+
+# The piecewise Pareto's truncation kind in Excel's spellings (Truncation::NAMES, #956).
+for (p in list(c("lp", "lp"), c("last_piece", "lp"), c("wd", "wd"), c("whole_distribution", "wd"))) {
+  got <- piecewise_pareto(c(1000, 2000), c(1, 2), truncation = 5000, truncation_type = p[1])
+  want <- piecewise_pareto(c(1000, 2000), c(1, 2), truncation = 5000, truncation_type = p[2])
+  stopifnot(got@truncation_type == p[2], survival(got, 1500) == survival(want, 1500))
+}
+expect_error_like(piecewise_pareto(1, 1, truncation = 2, truncation_type = "nope"),
+                  "truncation_type must be")
+
+# The P&L face in Excel's short names (Face::NAMES, #956).
+local({
+  gross <- list(c(2, 3, 4, 5, 6, 8), c(0.25, 0.3, 0.09, 0.2, 0.12, 0.04))
+  high <- with_ceding_commission(with_deposit_premium(aggregate_stop_loss("High", 3, 5), 1), 0.1)
+  low <- with_deposit_premium(aggregate_stop_loss("Low", 2, 3), 0.5)
+  book <- pnl_book("Ex6", 10, list(pnl_expense("premium", 0.1)))
+  tower <- reinsurance_tower(list(low, high))
+  for (p in list(c("top-down", "peel-top-down"), c("Top_Down", "peel-top-down"),
+                 c("bottom-up", "peel-bottom-up"), c("peel bottom up", "peel-bottom-up"))) {
+    want <- book_ledger(book, gross, tower, p[2])
+    got <- book_ledger(book, gross, tower, p[1])
+    stopifnot(identical(mean(ledger_result(got)), mean(ledger_result(want))),
+              identical(ledger_sheet(got)$step, ledger_sheet(want)$step))
+  }
+  expect_error_like(book_ledger(book, gross, NULL, "sideways"), "face must be")
+})
+
+# The rate-change rule and the period kind in Excel's spellings (Applies::NAMES and
+# PeriodKind::NAMES, #956).
+eff <- c(2010.5, 2011, 2011.5, 2012.25)
+chg <- c(0.05, 0.10, -0.05, -0.01)
+law <- function(a, period = "calendar") {
+  rate_level(eff, chg, start = 2011, end = 2012, term = 1, period = period,
+             applies = c("written", "written", a, "written"))$on_level_factor
+}
+for (a in c("inforce", "In-Force", "in force")) stopifnot(identical(law(a), law("in_force")))
+expect_error_like(law("sometimes"), "applies must be")
+stopifnot(identical(law("in_force", "accident"), law("in_force", "calendar")))
+stopifnot(law("in_force", "policy") != law("in_force", "calendar"))
+expect_error_like(law("in_force", "fiscal"), "should be one of")
+
 # The rule past the pattern's end: Excel's "none" for "no_development" (#956).
 for (s in c("no_development", "none")) {
   stopifnot(identical(as_latest_valuation(tri(), "paid", past_pattern_end = s)@past_pattern_end,

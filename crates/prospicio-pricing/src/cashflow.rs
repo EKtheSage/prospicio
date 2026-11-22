@@ -2275,9 +2275,130 @@ pub fn deal_ave(
     Ok(report)
 }
 
+/// An option's text in the form the name tables hold: trimmed, in lower
+/// case, with `_` and spaces turned into `-` (#956). Excel has always read
+/// a cash-flow option this way, so `"Unearned Premium"`, `"unearned_premium"`
+/// and `"unearned-premium"` are one option in every front end.
+pub fn option_key(s: &str) -> String {
+    s.trim().to_lowercase().replace(['_', ' '], "-")
+}
+
+/// `NAMES`, `from_name` and `name` on a unit enum of cash-flow options
+/// (#956). `from_name` reads its text with [`option_key`]; `NAMES` holds the
+/// canonical spellings, the first of an option's being what `name` gives.
+macro_rules! option_names {
+    ($ty:ident, $(($name:literal, $variant:expr)),+ $(,)?) => {
+        impl $ty {
+            /// Every option with its canonical name, which `from_name`
+            /// reads in any case with `_`, `-` or a space between words.
+            pub const NAMES: &'static [(&'static str, Self)] = &[$(($name, $variant)),+];
+
+            /// The option named `name` (see [`NAMES`](Self::NAMES)), or `None`.
+            pub fn from_name(name: &str) -> Option<Self> {
+                let key = option_key(name);
+                Self::NAMES
+                    .iter()
+                    .find(|(n, _)| *n == key)
+                    .map(|&(_, v)| v)
+            }
+
+            /// The canonical name, such as `"unearned-premium"`.
+            pub fn name(self) -> &'static str {
+                Self::NAMES
+                    .iter()
+                    .find(|(_, v)| *v == self)
+                    .map(|&(n, _)| n)
+                    .expect("every option has a name")
+            }
+        }
+    };
+}
+
+option_names!(
+    Base,
+    ("unearned-premium", Base::UnearnedPremium),
+    ("reserve", Base::Reserve),
+    ("outstanding", Base::Outstanding),
+    ("written", Base::Written),
+    ("earned", Base::Earned),
+    ("fixed", Base::Fixed),
+);
+option_names!(
+    AdjustmentBase,
+    ("ultimate", AdjustmentBase::Ultimate),
+    ("to-date", AdjustmentBase::ToDate),
+);
+option_names!(
+    ObligationReference,
+    ("previous-date", ObligationReference::PreviousDate),
+    ("running-max", ObligationReference::RunningMax),
+);
+option_names!(
+    FundingSource,
+    ("investor", FundingSource::Investor),
+    ("operating-first", FundingSource::OperatingFirst),
+);
+option_names!(
+    InterestBasis,
+    ("average", InterestBasis::Average),
+    ("opening", InterestBasis::Opening),
+    ("closing", InterestBasis::Closing),
+);
+option_names!(
+    FeeBasis,
+    ("profit", FeeBasis::Profit),
+    ("profit-over-premium", FeeBasis::ProfitOverPremium),
+    ("profit-over-capital", FeeBasis::ProfitOverCapital),
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every spelling Python, R or Excel took before #956 still resolves
+    /// to its option, in any case, with `_`, `-` or a space between the
+    /// words; the canonical name round-trips; and a stranger is refused.
+    #[test]
+    fn option_names_cover_every_front_end() {
+        for name in [
+            "unearned-premium",
+            "Unearned_Premium",
+            " unearned premium ",
+            "UNEARNED-PREMIUM",
+        ] {
+            assert_eq!(Base::from_name(name), Some(Base::UnearnedPremium), "{name}");
+        }
+        assert_eq!(Base::from_name("unearned"), None);
+        assert_eq!(Base::NAMES.len(), 6);
+        assert_eq!(
+            AdjustmentBase::from_name("to_date"),
+            Some(AdjustmentBase::ToDate)
+        );
+        assert_eq!(
+            ObligationReference::from_name("Running Max"),
+            Some(ObligationReference::RunningMax)
+        );
+        assert_eq!(
+            FundingSource::from_name("operating_first"),
+            Some(FundingSource::OperatingFirst)
+        );
+        assert_eq!(
+            InterestBasis::from_name("CLOSING"),
+            Some(InterestBasis::Closing)
+        );
+        assert_eq!(
+            FeeBasis::from_name("profit_over_capital"),
+            Some(FeeBasis::ProfitOverCapital)
+        );
+        assert_eq!(FeeBasis::from_name("nope"), None);
+        for &(_, b) in Base::NAMES {
+            assert_eq!(Base::from_name(b.name()), Some(b));
+        }
+        for &(_, b) in FeeBasis::NAMES {
+            assert_eq!(FeeBasis::from_name(b.name()), Some(b));
+        }
+        assert_eq!(option_key(" Obligation_Increase "), "obligation-increase");
+    }
 
     /// A deal written over 12 months, earned over 36 and paid over 48,
     /// commuting after month 30 with premium still unearned.

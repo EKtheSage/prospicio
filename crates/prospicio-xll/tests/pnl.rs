@@ -391,3 +391,30 @@ fn errors() {
         run(vec![x, p, n(10.0), none(), none(), none(), t("graph")]).contains("output must be")
     );
 }
+
+/// The peel faces in every spelling Python, R or Excel takes, from
+/// `Face::NAMES` (#956): the short names, and the long ones Python and R
+/// use, give the same sheet.
+#[test]
+fn face_spellings() {
+    let run = |case_name: &str, face: &str| {
+        let mut args = case(case_name).unwrap();
+        args[5] = t(face);
+        call("pro_cap_pnl", args.to_vec())
+    };
+    let top_down = run("ex6td", "top-down");
+    for face in ["peel-top-down", "Peel_Top_Down", " TOP DOWN "] {
+        assert_eq!(run("ex6td", face), top_down, "{face}");
+    }
+    let bottom_up = run("ex6bu", "bottom-up");
+    for face in ["peel-bottom-up", "peel_bottom_up", "Bottom Up"] {
+        assert_eq!(run("ex6bu", face), bottom_up, "{face}");
+    }
+    assert_ne!(top_down, bottom_up);
+    let bad = run("ex6td", "sideways");
+    let msg = text(&bad);
+    assert!(
+        msg.contains("face must be \"consolidated\"") && msg.contains("got \"sideways\""),
+        "{msg}"
+    );
+}

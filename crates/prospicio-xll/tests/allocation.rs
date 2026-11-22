@@ -197,3 +197,32 @@ fn totals_and_names() {
         "measure must be",
     );
 }
+
+/// Excel's `natural` and every method Python and R take are one table,
+/// `AllocationMethod::NAMES` (#956).
+#[test]
+fn natural_is_the_euler_allocation() {
+    let x = Grid::from_rows(
+        [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]]
+            .iter()
+            .map(|r| r.iter().map(|&v| Value::Number(v)).collect())
+            .collect(),
+    );
+    let want = call("pro_cap_allocate", vec![x.clone(), t("tvar"), n(0.5)]);
+    for name in ["euler", "natural", " Natural "] {
+        let got = call(
+            "pro_cap_allocate",
+            vec![x.clone(), t("tvar"), n(0.5), t(name)],
+        );
+        assert_eq!(got, want, "{name}");
+    }
+    let out = call(
+        "pro_cap_allocate",
+        vec![x, t("tvar"), n(0.5), t("average")],
+    );
+    let msg = text(&out);
+    assert!(
+        msg.contains("method must be \"euler\"") && msg.contains("got \"average\""),
+        "{msg}"
+    );
+}

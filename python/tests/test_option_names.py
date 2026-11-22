@@ -8,7 +8,7 @@ import math
 
 import pytest
 
-from prospicio.distributions import Count, Sampled
+from prospicio.distributions import Count, PredictiveDistribution, Sampled
 from prospicio.models import Design, ZeroInflated
 from prospicio.reserving import (
     BenchmarkCurve,
@@ -20,7 +20,7 @@ from prospicio.reserving import (
     PaidIncurredChain,
     Triangle,
 )
-from prospicio.risk import calibrate
+from prospicio.risk import Distortion, calibrate, capital
 
 ROWS = [
     [110.0, 290.0, 370.0, 420.0, 440.0, 452.0],
@@ -159,6 +159,135 @@ def test_distortion_family_spellings(name):
     with pytest.raises(ValueError, match="unknown distortion family"):
         calibrate("bitvar", x, premium)
 
+
+@pytest.mark.parametrize("name", ["euler", "natural"])
+def test_allocation_method_spellings(name):
+    # Excel's `natural` is the Euler allocation (AllocationMethod::NAMES, #956).
+    pd = PredictiveDistribution(
+        ["lob"],
+        [("motor",), ("property",)],
+        [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]],
+    )
+    want = capital(pd, Distortion.tvar(0.5), "euler").allocated
+    got = capital(pd, Distortion.tvar(0.5), name)
+    assert got.allocated == want
+    assert got.method == "euler"
+    with pytest.raises(ValueError, match="method must be"):
+        capital(pd, Distortion.tvar(0.5), "nope")
+
+
+def test_cashflow_option_spellings():
+    # Excel reads a cash-flow option in any case, with `_`, `-` or a space between
+    # the words; Python and R do too (prospicio_pricing::cashflow::option_key, #956).
+    from prospicio.pricing import CashflowTerms, CollateralRequirement, PremiumAdjustment
+
+    def ramp(m):
+        return [min((t + 1) / m, 1.0) for t in range(36)]
+
+    def flows(base, adjustment, rule, reference, source, interest, fee, release):
+        terms = CashflowTerms(
+            100.0,
+            30,
+            ramp(12),
+            ramp(24),
+            ramp(36),
+            CollateralRequirement({base: 1.0, "reserve": 0.2}),
+            adjustments=[PremiumAdjustment(18, 0.1, base=adjustment)],
+            funding_rule=rule,
+            reference=reference,
+            funding_source=source,
+            annual_yield=0.04,
+            interest_basis=interest,
+            fee=([0.0, 100.0], [0.1, 0.2]),
+            fee_basis=fee,
+            equity_release=release,
+        )
+        return terms.run([0.6, 1.5]).flows
+
+    want = flows(
+        "unearned-premium",
+        "to-date",
+        "obligation-increase",
+        "running-max",
+        "operating-first",
+        "opening",
+        "profit-over-premium",
+        "at-commutation",
+    )
+    got = flows(
+        "Unearned_Premium",
+        "TO DATE",
+        "Obligation Increase",
+        "running_max",
+        " Operating-First ",
+        "OPENING",
+        "profit_over_premium",
+        "At Commutation",
+    )
+    assert got == want
+    assert CollateralRequirement({"Unearned Premium": 0.3}).terms == [("unearned-premium", 0.3)]
+    with pytest.raises(ValueError, match="base must be"):
+        CollateralRequirement({"nope": 1.0})
+    with pytest.raises(ValueError, match="fee basis must be"):
+        flows("fixed", "ultimate", "shortfall", "previous-date", "investor", "average", "nope", "monthly")
+
+@pytest.mark.parametrize(
+    "name, canonical",
+    [("lp", "lp"), ("last_piece", "lp"), ("wd", "wd"), ("whole_distribution", "wd")],
+)
+def test_truncation_type_spellings(name, canonical):
+    # Excel's `last_piece` and `whole_distribution` (Truncation::NAMES, #956).
+    from prospicio.distributions import PiecewisePareto
+
+    want = PiecewisePareto([1000.0, 2000.0], [1.0, 2.0], truncation=5000.0, truncation_type=canonical)
+    got = PiecewisePareto([1000.0, 2000.0], [1.0, 2.0], truncation=5000.0, truncation_type=name)
+    assert got.truncation_type == canonical
+    assert got.survival(1500.0) == want.survival(1500.0)
+    with pytest.raises(ValueError, match="truncation_type must be"):
+        PiecewisePareto([1.0], [1.0], truncation=2.0, truncation_type="nope")
+
+@pytest.mark.parametrize(
+    "name, canonical",
+    [
+        ("top-down", "peel-top-down"),
+        ("Top_Down", "peel-top-down"),
+        ("peel top down", "peel-top-down"),
+        ("bottom-up", "peel-bottom-up"),
+        ("peel_bottom_up", "peel-bottom-up"),
+    ],
+)
+def test_book_face_spellings(name, canonical):
+    # Excel's short names for the peel faces (Face::NAMES, #956).
+    from prospicio.aggregate import Book, Expense
+    from prospicio.reinsurance import Layer, Tower
+
+    gross = ([2, 3, 4, 5, 6, 8], [0.25, 0.3, 0.09, 0.2, 0.12, 0.04])
+    high = Layer.stop_loss("High", 3.0, 5.0).with_deposit_premium(1.0).with_ceding_commission(0.1)
+    low = Layer.stop_loss("Low", 2.0, 3.0).with_deposit_premium(0.5)
+    book = Book("Ex6", 10.0, [Expense("premium", 0.1)])
+    want = book.ledger(gross, Tower([low, high]), canonical)
+    got = book.ledger(gross, Tower([low, high]), name)
+    assert got.result.mean() == want.result.mean()
+    assert got.sheet()["step"] == want.sheet()["step"]
+    with pytest.raises(ValueError, match="face must be"):
+        book.ledger(gross, None, "sideways")
+
+@pytest.mark.parametrize("name", ["in_force", "inforce", "In-Force", "in force"])
+def test_rate_change_applies_spellings(name):
+    # Excel's `inforce`, and its case and separator rules (Applies::NAMES, #956).
+    from prospicio.pricing import Period, RateHistory
+
+    effective = [2010.5, 2011.0, 2011.5, 2012.25]
+    changes = [0.05, 0.10, -0.05, -0.01]
+    period = Period.calendar(2011.0, 2012.0)
+    want = RateHistory(effective, changes, applies=["written", "written", "in_force", "written"])
+    got = RateHistory(effective, changes, applies=["written", "written", name, "written"])
+    assert (
+        got.rate_level(period, 1.0).on_level_factor == want.rate_level(period, 1.0).on_level_factor
+    )
+    assert got.rate_level(period, 1.0).in_force_changes == [0, 0, 1, 0, 1]
+    with pytest.raises(ValueError, match="applies must be"):
+        RateHistory([2011.0], [0.1], applies=["sometimes"])
 
 @pytest.mark.parametrize("name", ["loglogistic", "log-logistic", "log_logistic"])
 def test_growth_curve_spellings(name):
