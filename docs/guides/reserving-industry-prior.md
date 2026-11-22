@@ -379,6 +379,6 @@ of an R-hat just above 1.01. A real analysis would use the default sampler.
   `percent_developed_sd` holds that spread: use it to widen the tail by hand,
   as section 6 shows you must.
 * A model that pools the programs themselves, in place of fixing a prior from
-  outside, is #599.
+  outside, is `HierarchicalBf` (decision 30 of `docs/design/reserving-bayes.md`).
 * `examples/ils_deal_analysis.ipynb` uses this prior on a deal, with synthetic
   peers so that it runs without the fetch.

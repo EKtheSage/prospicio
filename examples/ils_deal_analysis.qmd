@@ -475,7 +475,7 @@ The table lists each step that works around a gap in `prospicio`, with the issue
 | Ref | Step in this document | Status | Issue |
 |---|---|---|---|
 | G1 | the 2026 loss ratio in section 5 | closed; `bayes_new_year()` used, which has no trend (section 5 prints the gap) | #598 |
-| G2 | one program fitted under a fixed prior in sections 3 and 4, not several pooled | open | #599 |
+| G2 | one program fitted under a fixed prior in sections 3 and 4, not several pooled | closed; `bayes_hierarchical_bf()` pools programs, and this document still fits one program under a fixed prior | #599 |
 | G3 | one payment pattern for all simulations in section 7 | closed; each simulation pays on its own pattern, `monthly_pattern_draws(year_2026, ...)` | #600 |
 | G4 | the monthly patterns in section 7 | closed; `monthly_pattern_draws()` on the underwriting basis used (section 7, #722) | #601 |
 | G5 | the loss ratio draws in section 4 | closed; `loss_ratio_draws()` used | #602 |

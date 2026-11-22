@@ -97,10 +97,9 @@ and later on Windows, macOS and Linux, so no Rust toolchain is needed. Then
 open the notebook in Jupyter.
 
 To run a notebook against unreleased changes in this repository, use the
-uv project in `python/` (needs Rust). `submission_evaluation.ipynb` needs
-this route until the release after 0.0.2, since it uses functions that
-0.0.2 does not have (`RateHistory`, `Period`, `occurrence_layer_statistics`
-and others). From the repository root:
+uv project in `python/` (needs Rust). The notebooks run on the released
+0.1.0 and later, so this route is only for changes not yet released. From
+the repository root:
 
 ```sh
 uv run --project python --group examples jupyter lab
