@@ -2254,6 +2254,7 @@ latest_valuation <- S7::new_class(
 past_pattern_end_arg <- function(rule) {
   rules <- c("reject", "no_development", "tail")
   if (identical(rule, rules)) return("reject")
+  rule <- option_alias(rule, c("none" = "no_development")) # Excel's spelling (#956)
   if (!is.character(rule) || length(rule) != 1 || !rule %in% rules) {
     stop(sprintf('past_pattern_end must be "reject", "no_development" or "tail", got %s',
                  paste(deparse(rule), collapse = " ")), call. = FALSE)
@@ -3705,6 +3706,11 @@ meyers_fit <- S7::new_class(
   }
 )
 
+# Meyers' model name in any case, as Python takes it (MeyersModel::from_name, #956).
+meyers_model_arg <- function(model) {
+  if (is.character(model) && length(model) == 1 && !is.na(model)) tolower(model) else model
+}
+
 #' @rdname meyers_fit
 #' @export
 meyers <- function(triangle, column, premium, model = c("crc", "csr", "cay"),
@@ -3719,7 +3725,7 @@ meyers <- function(triangle, column, premium, model = c("crc", "csr", "cay"),
       stop(sprintf("%s must be the name of a column", arg), call. = FALSE)
     }
   }
-  model <- match.arg(model)
+  model <- match.arg(meyers_model_arg(model), c("crc", "csr", "cay"))
   k <- meyers_settings(logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape,
                       chains, tune, draws, target_accept, max_depth)
   ptr <- reserving_result(triangle@ptr$meyers(
@@ -3861,7 +3867,7 @@ meyers_segments <- function(triangle, column, premium, model = c("crc", "csr", "
       stop(sprintf("%s must be the name of a column", arg), call. = FALSE)
     }
   }
-  model <- match.arg(model)
+  model <- match.arg(meyers_model_arg(model), c("crc", "csr", "cay"))
   dependence <- match.arg(dependence)
   ptr <- reserving_result(triangle@ptr$meyers_segments(
     column, premium, model, single_number(logelr_mean, "logelr_mean"),
@@ -3966,7 +3972,7 @@ meyers_one_year <- function(triangle, column, premium, model = c("crc", "csr", "
   s <- meyers_args(triangle, column, premium, logelr_mean, logelr_sd, origin_sd,
                    development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed,
                    target_accept, max_depth)
-  model <- match.arg(model)
+  model <- match.arg(meyers_model_arg(model), c("crc", "csr", "cay"))
   refit <- match.arg(refit)
   ptr <- reserving_result(triangle@ptr$meyers_one_year(
     column, premium, model, s$priors, s$run, single_number(k_threshold, "k_threshold"), refit,
@@ -3998,7 +4004,7 @@ meyers_one_year_segments <- function(triangle, column, premium, model = c("crc",
   s <- meyers_args(triangle, column, premium, logelr_mean, logelr_sd, origin_sd,
                    development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed,
                    target_accept, max_depth)
-  model <- match.arg(model)
+  model <- match.arg(meyers_model_arg(model), c("crc", "csr", "cay"))
   dependence <- match.arg(dependence)
   refit <- match.arg(refit)
   ptr <- reserving_result(triangle@ptr$meyers_one_year_segments(
@@ -5712,11 +5718,14 @@ clark_max_age <- function(max_age) {
   as.double(max_age)
 }
 
+# Excel's spellings of the loglogistic growth curve (GrowthCurve::NAMES, #956).
+growth_curve_aliases <- c("log-logistic" = "loglogistic", "log_logistic" = "loglogistic")
+
 #' @rdname clark_fit
 #' @export
-clark_ldf <- function(triangle, column = NULL, curve = c("loglogistic", "weibull"), max_age = Inf) {
+clark_ldf <-function(triangle, column = NULL, curve = c("loglogistic", "weibull"), max_age = Inf) {
   column <- fit_column(triangle, column)
-  curve <- match.arg(curve)
+  curve <- match.arg(option_alias(curve, growth_curve_aliases), c("loglogistic", "weibull"))
   clark_fit(ptr = reserving_result(triangle@ptr$clark_ldf(column, curve, clark_max_age(max_age))))
 }
 
@@ -5731,7 +5740,7 @@ clark_cape_cod <- function(triangle, column, exposure, curve = c("loglogistic", 
       stop(sprintf("%s must be the name of one column", arg), call. = FALSE)
     }
   }
-  curve <- match.arg(curve)
+  curve <- match.arg(option_alias(curve, growth_curve_aliases), c("loglogistic", "weibull"))
   ptr <- reserving_result(triangle@ptr$clark_cape_cod(column, exposure, curve, clark_max_age(max_age)))
   clark_fit(ptr = ptr)
 }
@@ -6249,7 +6258,7 @@ benchmark_curve <- function(pattern, kind = c("percent_developed", "cdf"),
                             curve = c("loglogistic", "weibull"), weights = NULL, max_age = Inf,
                             origin_width = NULL) {
   kind <- match.arg(option_alias(kind, pattern_kind_aliases), c("percent_developed", "cdf"))
-  curve <- match.arg(curve)
+  curve <- match.arg(option_alias(curve, growth_curve_aliases), c("loglogistic", "weibull"))
   if (!is.numeric(pattern) || is.null(names(pattern))) {
     stop("pattern must be a named numeric vector, the names ages in months", call. = FALSE)
   }
@@ -8185,7 +8194,7 @@ meyers_spec <- S7::new_class(
                          origin_sd = 3.162, development_sd = 3.162, gamma_sd = 0.05,
                          rho_shape = 2, chains = 4, tune = 1000, draws = 2000,
                          target_accept = 0.95, max_depth = 10) {
-    model <- match.arg(model)
+    model <- match.arg(meyers_model_arg(model), c("crc", "csr", "cay"))
     k <- meyers_settings(logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape,
                          chains, tune, draws, target_accept, max_depth)
     S7::new_object(S7::S7_object(), model = model, logelr_mean = k$logelr_mean,

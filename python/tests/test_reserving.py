@@ -1544,7 +1544,7 @@ def test_clark_every_segment_at_once():
 
 def test_clark_errors(triangles):
     raa = triangles["raa"]
-    with pytest.raises(ValueError, match="unknown growth curve"):
+    with pytest.raises(ValueError, match="growth curve must be"):
         ClarkLdf(curve="gompertz")
     with pytest.raises(ValueError, match="max_age = 119 is invalid"):
         ClarkLdf(max_age=119).fit(raa, "values")

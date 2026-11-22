@@ -7,6 +7,23 @@ use prospicio_bayes::nuts::LogDensity;
 use prospicio_core::Period;
 use prospicio_prob::Distribution;
 
+/// Python took the model name in any case before #956, R only in lower
+/// case; the table is lower case and `from_name` ignores the case.
+#[test]
+fn model_names_ignore_the_case() {
+    for (name, want) in [
+        ("crc", MeyersModel::Crc),
+        ("CSR", MeyersModel::Csr),
+        ("Cay", MeyersModel::Cay),
+    ] {
+        assert_eq!(MeyersModel::from_name(name), Some(want), "{name}");
+    }
+    assert_eq!(MeyersModel::from_name("ipi"), None);
+    for &(_, m) in MeyersModel::NAMES {
+        assert_eq!(MeyersModel::from_name(m.name()), Some(m));
+    }
+}
+
 /// Meyers' illustrative insurer, group 353 Commercial Auto paid
 /// (Meyers 2019, Table 2.2; validation/data/clrd_comauto_353.csv), the
 /// cells at calendar years up to 1997.

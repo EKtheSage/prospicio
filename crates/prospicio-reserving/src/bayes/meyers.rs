@@ -65,6 +65,20 @@ pub enum MeyersModel {
 }
 
 impl MeyersModel {
+    /// Every name the Python and R front ends accept, with its model, in
+    /// lower case (#956).
+    pub const NAMES: &'static [(&'static str, Self)] =
+        &[("crc", Self::Crc), ("csr", Self::Csr), ("cay", Self::Cay)];
+
+    /// The model named `name` ([`NAMES`](Self::NAMES)) in any case, or
+    /// `None`. Python took the name in any case, so every front end does.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|&(_, m)| m)
+    }
+
     /// `crc`, `csr` or `cay`.
     pub fn name(self) -> &'static str {
         match self {

@@ -102,6 +102,30 @@ for (f in c("ph", "proportional_hazard", "Proportional Hazard", "proportional-ha
 }
 expect_error_like(calibrate_distortion("bitvar", x, premium), "unknown distortion family")
 
+# The rule past the pattern's end: Excel's "none" for "no_development" (#956).
+for (s in c("no_development", "none")) {
+  stopifnot(identical(as_latest_valuation(tri(), "paid", past_pattern_end = s)@past_pattern_end,
+                      "no_development"))
+}
+expect_error_like(as_latest_valuation(tri(), "paid", past_pattern_end = "hold"),
+                  "past_pattern_end must be")
+
+# The loglogistic growth curve in Excel's spellings (#956).
+bench <- stats::setNames(c(0.18, 0.47, 0.66, 0.78, 0.855, 0.90, 0.93, 0.951, 0.965, 0.975),
+                         seq(12, 120, by = 12))
+want <- benchmark_curve(bench)
+for (s in c("loglogistic", "log-logistic", "log_logistic")) {
+  got <- benchmark_curve(bench, curve = s)
+  stopifnot(identical(got@omega, want@omega), identical(got@curve, "loglogistic"))
+}
+expect_error_like(benchmark_curve(bench, curve = "gompertz"), "should be one of")
+
+# Meyers' model name in any case, as Python takes it (#956).
+for (s in c("CSR", "Csr")) {
+  stopifnot(identical(meyers_spec(model = s)@model, "csr"))
+}
+expect_error_like(meyers_spec(model = "ipi"), "should be one of")
+
 # The event loss table's means-alone bucketing in Python's and Excel's
 # spellings (#956).
 elt <- event_loss_table(rate = c(0.5, 0.25, 0.05), mean = c(130, 270.5, 1234.5),
@@ -126,3 +150,4 @@ expect_error_like(paid_incurred_chain(tri(), "paid", "incurred", convention = "n
                   "should be one of")
 
 cat("option name tests passed\n")
+

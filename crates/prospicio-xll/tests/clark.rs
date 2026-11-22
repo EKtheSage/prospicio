@@ -139,3 +139,17 @@ fn ldf_method_has_no_elr_and_errors_come_back_as_text() {
         .contains("max_age")
     );
 }
+
+/// Every spelling of the loglogistic curve that Python, R or Excel took
+/// before is taken by all three through `GrowthCurve::NAMES` (#956).
+#[test]
+fn the_loglogistic_curve_takes_every_spelling() {
+    let want = format!("{:?}", call("pro_res_clark_params", vec![raa()]));
+    for name in ["loglogistic", "log-logistic", "log_logistic", " Log-Logistic "] {
+        let params = call(
+            "pro_res_clark_params",
+            vec![raa(), Grid::missing(), t(name)],
+        );
+        assert_eq!(format!("{params:?}"), want, "{name}");
+    }
+}

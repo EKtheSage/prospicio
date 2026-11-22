@@ -13,6 +13,8 @@ from prospicio.models import Design, ZeroInflated
 from prospicio.reserving import (
     BenchmarkCurve,
     ChainLadder,
+    LatestDiagonal,
+    Meyers,
     Mack,
     MunichChainLadder,
     PaidIncurredChain,
@@ -156,6 +158,33 @@ def test_distortion_family_spellings(name):
     assert math.isclose(d.measure(x), premium, rel_tol=1e-9)
     with pytest.raises(ValueError, match="unknown distortion family"):
         calibrate("bitvar", x, premium)
+
+
+@pytest.mark.parametrize("name", ["loglogistic", "log-logistic", "log_logistic"])
+def test_growth_curve_spellings(name):
+    # Excel's spellings of the loglogistic growth curve (#956).
+    bench = {12: 0.18, 24: 0.47, 36: 0.66, 48: 0.78, 60: 0.855, 72: 0.90}
+    want = BenchmarkCurve().fit(bench, "percent_developed").omega
+    assert BenchmarkCurve(curve=name).fit(bench, "percent_developed").omega == want
+    with pytest.raises(ValueError, match="growth curve must be"):
+        BenchmarkCurve(curve="gompertz")
+
+
+@pytest.mark.parametrize("name", ["csr", "CSR", "Csr"])
+def test_meyers_model_in_any_case(name):
+    # Python took the model in any case; R now does too (#956).
+    assert Meyers(name).model == "csr"
+    with pytest.raises(ValueError, match="model must be"):
+        Meyers("ipi")
+
+
+@pytest.mark.parametrize("name", ["no_development", "none"])
+def test_past_pattern_end_spellings(name):
+    # Excel's "none" for "no_development" (#956).
+    d = LatestDiagonal([2023, 2024], [24, 12], [1.0, 2.0], past_pattern_end=name)
+    assert d.past_pattern_end == "no_development"
+    with pytest.raises(ValueError, match="past_pattern_end must be"):
+        LatestDiagonal([2023, 2024], [24, 12], [1.0, 2.0], past_pattern_end="hold")
 
 
 @pytest.mark.parametrize("name", ["means_linear", "linear"])
