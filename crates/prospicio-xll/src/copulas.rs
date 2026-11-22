@@ -23,6 +23,24 @@ const NAMES: &str = "\"gaussian\", \"t\", \"clayton\", \"gumbel\", \"frank\" or 
 /// The most rows a call simulates or reorders, under Excel's 1,048,576.
 const MAX_ROWS: usize = 1_000_000;
 
+/// The most cells a simulation returns (rows times dimensions). About 80
+/// bytes a cell are alive at the peak (the draws, the grid and Excel's
+/// copy), and Rust aborts the process, Excel with it, when an allocation
+/// fails.
+const MAX_CELLS: usize = 10_000_000;
+
+/// Refuses a simulation of `sims` rows and `dim` columns over [`MAX_CELLS`],
+/// before it runs.
+fn check_cells(sims: usize, dim: usize) -> Result<()> {
+    let cells = sims.saturating_mul(dim);
+    if cells > MAX_CELLS {
+        return Err(format!(
+            "{sims} rows by {dim} columns is {cells} cells; at most {MAX_CELLS} are returned"
+        ));
+    }
+    Ok(())
+}
+
 /// The numbers of a range, row by row, every cell a number.
 fn matrix(grid: &Grid, name: &str) -> Result<Vec<f64>> {
     grid.cells
@@ -143,6 +161,7 @@ pub fn sim(args: &[Grid]) -> Result<Grid> {
     let c = copula(&args[0], &args[1], &args[5], dim)?;
     let seed = seed(&args[4])?;
     let d = c.dim();
+    check_cells(sims, d)?;
     let mut u = vec![0.0; d];
     let rows = (0..sims)
         .map(|i| {
@@ -310,6 +329,7 @@ pub fn nested_sim(args: &[Grid]) -> Result<Grid> {
     let c = nested(&args[0], &args[1], &args[2])?;
     let sims = count(&args[3], "sims", 10_000, MAX_ROWS)?;
     let seed = seed(&args[4])?;
+    check_cells(sims, c.dim())?;
     let mut u = vec![0.0; c.dim()];
     let rows = (0..sims)
         .map(|i| {

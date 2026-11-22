@@ -12,6 +12,7 @@ use prospicio_math::qmc::{Scramble, Sobol};
 use prospicio_math::special::{
     bivariate_norm_cdf, ln_gamma, norm_cdf, norm_quantile, student_t_cdf, student_t_quantile,
 };
+use rayon::prelude::*;
 
 use crate::distribution::Distribution;
 use crate::gamma::standard_gamma;
@@ -705,6 +706,14 @@ pub fn simulate(
     )
 }
 
+/// Whether sorting the columns of `n` rows on several threads pays: below
+/// this many rows the thread hand-off costs more than the sorts.
+fn parallel_sorts(n: usize, m: usize) -> bool {
+    m > 1 && n >= PARALLEL_SORT_MIN_ROWS
+}
+
+const PARALLEL_SORT_MIN_ROWS: usize = 4096;
+
 /// Iman–Conover target ranks: for each of `m` columns, the rank (0-based,
 /// ascending) that each of `n` rows should take so that the columns' rank
 /// correlation is close to `correlation`. Column `j > 0` shuffles its
@@ -762,18 +771,22 @@ pub(crate) fn target_ranks_with(
         }
     }
 
-    Ok(cols
-        .iter()
-        .map(|col| {
-            let mut order: Vec<usize> = (0..n).collect();
-            order.sort_by(|&a, &b| col[a].total_cmp(&col[b]));
-            let mut rank = vec![0; n];
-            for (r, &i) in order.iter().enumerate() {
-                rank[i] = r;
-            }
-            rank
-        })
-        .collect())
+    let rank_of = |col: &Vec<f64>| {
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by(|&a, &b| col[a].total_cmp(&col[b]));
+        let mut rank = vec![0; n];
+        for (r, &i) in order.iter().enumerate() {
+            rank[i] = r;
+        }
+        rank
+    };
+    // The columns are independent and each keeps its own stable sort, so
+    // the ranks do not depend on the number of threads.
+    Ok(if parallel_sorts(n, m) {
+        cols.par_iter().map(rank_of).collect()
+    } else {
+        cols.iter().map(rank_of).collect()
+    })
 }
 
 /// The reference scores of [`iman_conover_with`]: the values whose
@@ -927,13 +940,22 @@ pub fn iman_conover_with(
         StreamRng::new(seed, m as u64).shuffle(&mut rows);
     }
 
-    // Each component takes its sorted draws in the target ranks.
-    let mut draws = vec![0.0; n * m];
-    for (j, rank) in ranks.iter().enumerate() {
+    // Each component takes its sorted draws in the target ranks. The
+    // columns sort independently; the rows are written afterwards.
+    let column = |(j, rank): (usize, &Vec<usize>)| -> Vec<f64> {
         let mut sorted: Vec<f64> = (0..n).map(|i| pd.row(i).expect("in range")[j]).collect();
         sorted.sort_by(f64::total_cmp);
-        for (i, &r) in rank.iter().enumerate() {
-            draws[rows[i] * m + j] = sorted[r];
+        rank.iter().map(|&r| sorted[r]).collect()
+    };
+    let columns: Vec<Vec<f64>> = if parallel_sorts(n, m) {
+        ranks.par_iter().enumerate().map(column).collect()
+    } else {
+        ranks.iter().enumerate().map(column).collect()
+    };
+    let mut draws = vec![0.0; n * m];
+    for (j, values) in columns.iter().enumerate() {
+        for (i, &v) in values.iter().enumerate() {
+            draws[rows[i] * m + j] = v;
         }
     }
     let mut provenance = pd
@@ -1083,10 +1105,16 @@ fn correlation_factor(r: &[f64], dim: usize) -> Result<Vec<f64>> {
 /// Fills `out` with `L z` for standard normals `z` drawn in order by
 /// inverse transform.
 fn correlated_normals(chol: &[f64], rng: &mut StreamRng, out: &mut [f64]) {
-    let z: Vec<f64> = (0..out.len())
-        .map(|_| norm_quantile(rng.next_open01()))
-        .collect();
-    lower_mul(chol, &z, out);
+    for o in out.iter_mut() {
+        *o = norm_quantile(rng.next_open01());
+    }
+    // `L z` in place, rows from the last: row `i` reads only `z[0..=i]`, which
+    // later (smaller) rows have not yet overwritten. Same sums, same order
+    // as `lower_mul`.
+    let n = out.len();
+    for i in (0..n).rev() {
+        out[i] = (0..=i).map(|k| chol[i * n + k] * out[k]).sum();
+    }
 }
 
 fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
@@ -1101,6 +1129,21 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
 mod tests {
     use super::*;
     use std::f64::consts::PI;
+
+    #[test]
+    fn correlated_normals_in_place_match_a_separate_buffer() {
+        let r = [1.0, 0.5, 0.2, 0.5, 1.0, -0.3, 0.2, -0.3, 1.0];
+        let chol = cholesky(&r, 3).unwrap();
+        for seed in 0..5 {
+            let mut got = [0.0; 3];
+            correlated_normals(&chol, &mut StreamRng::new(seed, 0), &mut got);
+            let mut rng = StreamRng::new(seed, 0);
+            let z: Vec<f64> = (0..3).map(|_| norm_quantile(rng.next_open01())).collect();
+            let mut want = [0.0; 3];
+            lower_mul(&chol, &z, &mut want);
+            assert_eq!(got, want);
+        }
+    }
 
     fn draws(c: &dyn Copula, n: usize, seed: u64) -> Vec<Vec<f64>> {
         (0..n)
@@ -1763,5 +1806,202 @@ mod tests {
         assert!((corr(0, 1) - 0.5).abs() < 0.01 && (corr(1, 2) - 0.4).abs() < 0.01);
         assert_eq!(c.sample_qmc(8, 1).unwrap(), c.sample_qmc(8, 1).unwrap());
         assert_ne!(c.sample_qmc(8, 1).unwrap(), c.sample_qmc(8, 2).unwrap());
+    }
+
+    // Sequential copies of `target_ranks_with` and `iman_conover_with` as
+    // they were before the columns were sorted in parallel.
+    fn ref_target_ranks_with(
+        n: usize,
+        m: usize,
+        correlation: &[f64],
+        seed: u64,
+        scores: &Scores,
+    ) -> Result<Vec<Vec<usize>>> {
+        let target = correlation_factor(correlation, m)?;
+        if n < m + 1 {
+            return Err(invalid(
+                "n_sims",
+                n as f64,
+                "must exceed the number of components",
+            ));
+        }
+        let scores = scores.values(n)?;
+        let mut cols: Vec<Vec<f64>> = (0..m)
+            .map(|j| {
+                let mut c = scores.clone();
+                if j > 0 {
+                    StreamRng::new(seed, j as u64).shuffle(&mut c);
+                }
+                c
+            })
+            .collect();
+        let actual = correlation_factor(&sample_correlation(&cols), m)
+            .map_err(|_| invalid("n_sims", n as f64, "too few to decorrelate the scores"))?;
+        let (mut row, mut y, mut t) = (vec![0.0; m], vec![0.0; m], vec![0.0; m]);
+        for i in 0..n {
+            for (r, col) in row.iter_mut().zip(&cols) {
+                *r = col[i];
+            }
+            lower_solve(&actual, &row, &mut y);
+            lower_mul(&target, &y, &mut t);
+            for (col, v) in cols.iter_mut().zip(&t) {
+                col[i] = *v;
+            }
+        }
+        Ok(cols
+            .iter()
+            .map(|col| {
+                let mut order: Vec<usize> = (0..n).collect();
+                order.sort_by(|&a, &b| col[a].total_cmp(&col[b]));
+                let mut rank = vec![0; n];
+                for (r, &i) in order.iter().enumerate() {
+                    rank[i] = r;
+                }
+                rank
+            })
+            .collect())
+    }
+
+    fn ref_iman_conover_draws(
+        pd: &PredictiveDistribution,
+        correlation: &[f64],
+        seed: u64,
+        options: &ImanConover,
+    ) -> Result<Vec<f64>> {
+        let m = pd.n_components();
+        let n = pd.n_sims();
+        let ranks = ref_target_ranks_with(n, m, correlation, seed, &options.scores)?;
+        let mut rows: Vec<usize> = (0..n).collect();
+        if options.shuffle_rows {
+            StreamRng::new(seed, m as u64).shuffle(&mut rows);
+        }
+        let mut draws = vec![0.0; n * m];
+        for (j, rank) in ranks.iter().enumerate() {
+            let mut sorted: Vec<f64> = (0..n).map(|i| pd.row(i).expect("in range")[j]).collect();
+            sorted.sort_by(f64::total_cmp);
+            for (i, &r) in rank.iter().enumerate() {
+                draws[rows[i] * m + j] = sorted[r];
+            }
+        }
+        Ok(draws)
+    }
+
+    fn exchangeable(m: usize, rho: f64) -> Vec<f64> {
+        (0..m * m)
+            .map(|k| if k / m == k % m { 1.0 } else { rho })
+            .collect()
+    }
+
+    /// Draws with many ties and both zeros, from a seeded generator.
+    fn tied_pd(n: usize, m: usize, seed: u64) -> PredictiveDistribution {
+        let mut rng = StreamRng::new(seed, 999);
+        let draws: Vec<f64> = (0..n * m)
+            .map(|k| match k % 3 {
+                0 => (rng.next_open01() * 6.0).floor() - 2.0,
+                1 => [0.0, -0.0, 1.5][(rng.next_open01() * 3.0) as usize % 3],
+                _ => rng.next_open01() * 100.0,
+            })
+            .collect();
+        PredictiveDistribution::from_draws(
+            vec!["lob".into()],
+            (0..m as i64)
+                .map(|j| vec![crate::predictive::KeyValue::Int(j)])
+                .collect(),
+            draws,
+            Provenance::new("test"),
+        )
+        .unwrap()
+    }
+
+    fn bits(v: &[f64]) -> Vec<u64> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    fn flat(pd: &PredictiveDistribution) -> Vec<f64> {
+        (0..pd.n_sims())
+            .flat_map(|i| pd.row(i).unwrap().to_vec())
+            .collect()
+    }
+
+    #[test]
+    fn column_sorts_in_parallel_give_the_sequential_bits() {
+        let given: Vec<f64> = (0..20000)
+            .map(|i| ((i * 7919) % 20011) as f64 * 0.37)
+            .collect();
+        for (n, m) in [
+            (2, 1),
+            (5, 1),
+            (6, 3),
+            (50, 2),
+            (1000, 4),
+            (20000, 3),
+            (20000, 1),
+        ] {
+            for seed in [0u64, 1, 7] {
+                let corr = exchangeable(m, 0.4);
+                let scores = [
+                    Scores::Normal,
+                    Scores::StudentT(3.0),
+                    Scores::Given(given[..n].to_vec()),
+                ];
+                let pd = tied_pd(n, m, seed);
+                for sc in &scores {
+                    assert_eq!(
+                        target_ranks_with(n, m, &corr, seed, sc).unwrap(),
+                        ref_target_ranks_with(n, m, &corr, seed, sc).unwrap(),
+                        "target_ranks n={n} m={m} seed={seed}"
+                    );
+                    for shuffle_rows in [false, true] {
+                        let options = ImanConover {
+                            scores: sc.clone(),
+                            shuffle_rows,
+                        };
+                        let got = flat(&iman_conover_with(&pd, &corr, seed, &options).unwrap());
+                        let want = ref_iman_conover_draws(&pd, &corr, seed, &options).unwrap();
+                        assert_eq!(bits(&got), bits(&want), "n={n} m={m} seed={seed}");
+                    }
+                }
+                let got = flat(&iman_conover(&pd, &corr, seed).unwrap());
+                let want =
+                    ref_iman_conover_draws(&pd, &corr, seed, &ImanConover::default()).unwrap();
+                assert_eq!(bits(&got), bits(&want));
+                assert_eq!(
+                    target_ranks(n, m, &corr, seed).unwrap(),
+                    ref_target_ranks_with(n, m, &corr, seed, &Scores::Normal).unwrap()
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "timing; run by hand with --release -- --nocapture"]
+    fn time_column_sorts() {
+        let (n, m) = (100_000, 8);
+        let corr = exchangeable(m, 0.3);
+        let pd = tied_pd(n, m, 3);
+        let t = std::time::Instant::now();
+        let _ = ref_iman_conover_draws(&pd, &corr, 3, &ImanConover::default()).unwrap();
+        let seq = t.elapsed();
+        let t = std::time::Instant::now();
+        let _ = iman_conover(&pd, &corr, 3).unwrap();
+        println!("n={n} m={m} sequential {seq:?} current {:?}", t.elapsed());
+        for n in [200usize, 1000, 5000, 20000] {
+            let pd = tied_pd(n, 4, 3);
+            let c = exchangeable(4, 0.3);
+            let reps = (2_000_000 / n) as u32;
+            let t = std::time::Instant::now();
+            for _ in 0..reps {
+                let _ = ref_iman_conover_draws(&pd, &c, 3, &ImanConover::default()).unwrap();
+            }
+            let seq = t.elapsed() / reps;
+            let t = std::time::Instant::now();
+            for _ in 0..reps {
+                let _ = iman_conover(&pd, &c, 3).unwrap();
+            }
+            println!(
+                "n={n} m=4 sequential {seq:?} current {:?}",
+                t.elapsed() / reps
+            );
+        }
     }
 }

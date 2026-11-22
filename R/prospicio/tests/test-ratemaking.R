@@ -102,3 +102,8 @@ stopifnot(inherits(try(schedule_trend(2012, 2012, 0.05, 2016, cutoff = 13), sile
 near_unit(cumulative_loss_ratio(c(0, 0.6, NA, 0.9, 0.3), c(0, 100, NA, 300, 600)),
      c(0, 0.6, 0.6, 0.825, 0.51), 1e-15)
 stopifnot(inherits(try(cumulative_loss_ratio(c(0.5, 0.6), c(1, NA)), silent = TRUE), "try-error"))
+
+# An implausible inception or year is an error, not a hang or i32::MIN (#950).
+stopifnot(inherits(try(schedule_trend(2025, 2025, 0.04, 1e17), silent = TRUE), "try-error"))
+stopifnot(inherits(try(schedule_trend(2025, 2025, 0.04, 20260101), silent = TRUE), "try-error"))
+stopifnot(inherits(try(schedule_trend(3e9, 2025, 0.04, 2026), silent = TRUE), "try-error"))

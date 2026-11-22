@@ -136,6 +136,7 @@
 
 use prospicio_core::Lag;
 use prospicio_prob::PredictiveDistribution;
+use prospicio_prob::provenance::InputHasher;
 use prospicio_prob::risk::{tvar_sorted, var_sorted};
 
 use crate::bootstrap::{OdpBootstrapFit, OdpBootstrapFits};
@@ -226,8 +227,13 @@ impl DiscountCurve {
     }
 
     /// The spot rate at `t` years: the first rate up to the first maturity,
-    /// the last from the last maturity on, linear between.
+    /// the last from the last maturity on, linear between. A time before 0
+    /// takes the first rate (accumulation at the short rate), and a NaN time
+    /// gives NaN.
     pub fn rate(&self, t: f64) -> f64 {
+        if t.is_nan() {
+            return f64::NAN;
+        }
         let m = &self.maturities;
         let r = &self.rates;
         let last = m.len() - 1;
@@ -242,7 +248,8 @@ impl DiscountCurve {
         r[k - 1] + w * (r[k] - r[k - 1])
     }
 
-    /// The discount factor of a payment at `t` years, `(1 + r(t))^-t`.
+    /// The discount factor of a payment at `t` years, `(1 + r(t))^-t`; NaN
+    /// for a NaN `t`, above 1 for a negative one.
     pub fn factor(&self, t: f64) -> f64 {
         if t == 0.0 {
             return 1.0;
@@ -1151,15 +1158,12 @@ fn discount(
             ),
         )
         .param("timing", format!("{timing:?}"));
+    // Under the incurred basis the unpaid's record already names the
+    // basis, the paid pattern and the latest paid, and its input hash
+    // covers them.
     let provenance = match basis {
         PaymentBasis::Paid => provenance.param("basis", "paid"),
-        PaymentBasis::Incurred {
-            paid_pattern,
-            latest_paid,
-        } => provenance
-            .param("basis", "incurred")
-            .param("paid pattern", format!("{paid_pattern:?}"))
-            .param("latest paid", format!("{latest_paid:?}")),
+        PaymentBasis::Incurred { .. } => provenance,
     };
     let discounted = PredictiveDistribution::from_draws(
         unpaid.dims().to_vec(),
@@ -1189,6 +1193,8 @@ fn discount(
 
 /// The undiscounted unpaid: the fit's reserves under the paid basis; under
 /// the incurred basis each draw plus its component's case reserve.
+/// The incurred basis's record names the basis, the paid pattern and the
+/// latest paid, and its input hash is the fit's with the two hashed in.
 fn unpaid_of(
     reserves: &PredictiveDistribution,
     components: &[Component<'_>],
@@ -1203,13 +1209,36 @@ fn unpaid_of(
         .chunks_exact(n)
         .flat_map(|row| row.iter().zip(components).map(|(r, c)| r + c.case))
         .collect();
+    let PaymentBasis::Incurred {
+        paid_pattern,
+        latest_paid,
+    } = basis
+    else {
+        unreachable!("the paid basis returned above");
+    };
+    // The case reserves are an input of these draws: two runs on other
+    // latest paid amounts must not carry the same record (#958).
     let mut provenance = reserves.provenance().clone();
     provenance.parameters.retain(|(k, _)| k != "output");
+    let mut provenance = provenance
+        .param("output", "unpaid")
+        .param("basis", "incurred")
+        .param("paid pattern", format!("{paid_pattern:?}"))
+        .param("latest paid", format!("{latest_paid:?}"));
+    if let Some(fit) = provenance.input_hash.take() {
+        let hash = InputHasher::new()
+            .str(&fit)
+            .str("incurred basis")
+            .f64s(paid_pattern)
+            .f64s(latest_paid)
+            .finish();
+        provenance = provenance.input_hash(hash);
+    }
     Ok(PredictiveDistribution::from_draws(
         reserves.dims().to_vec(),
         reserves.components().to_vec(),
         draws,
-        provenance.param("output", "unpaid"),
+        provenance,
     )?)
 }
 
@@ -1464,6 +1493,18 @@ mod tests {
     use crate::{
         ChainLadder, DevelopmentColumn, Long, Mack, MackBootstrap, OdpBootstrap, Tail, Triangle,
     };
+
+    #[test]
+    fn nan_time_gives_nan_not_a_panic() {
+        let flat = DiscountCurve::flat(0.03).unwrap();
+        assert!(flat.rate(f64::NAN).is_nan());
+        assert!(flat.factor(f64::NAN).is_nan());
+        let curve = DiscountCurve::spot(&[1.0, 5.0], &[0.02, 0.04]).unwrap();
+        assert!(curve.rate(f64::NAN).is_nan());
+        assert!(curve.factor(f64::NAN).is_nan());
+        // A negative time accumulates at the short rate, as documented.
+        assert!((flat.factor(-1.0) - 1.03).abs() < 1e-12);
+    }
 
     fn at(rate: f64, timing: PaymentTiming) -> Discounting {
         Discounting {
@@ -2209,6 +2250,79 @@ mod tests {
 
     /// Over segments the latest paid values are segment-major, in the
     /// order of the reserves' components.
+    #[test]
+    fn the_incurred_basis_is_in_the_provenance_of_both_outputs() {
+        // Two runs that differ only in the latest paid (or only in the
+        // paid pattern) give other draws, so other records (#958).
+        let origin =
+            [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(crate::Month::january);
+        let tri = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
+            values: &[(
+                "incurred",
+                &[
+                    90.0, 140.0, 160.0, 165.0, 100.0, 150.0, 170.0, 110.0, 160.0, 120.0,
+                ],
+            )],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let fit = MackBootstrap {
+            n_sims: 20,
+            seed: 7,
+            ..Default::default()
+        }
+        .fit(&tri, "incurred")
+        .unwrap();
+        let run = |paid_pattern: &[f64], latest_paid: &[f64]| {
+            let basis = PaymentBasis::Incurred {
+                paid_pattern: paid_pattern.to_vec(),
+                latest_paid: latest_paid.to_vec(),
+            };
+            discounted_reserves(&fit, &at(0.05, PaymentTiming::MidPeriod), &basis).unwrap()
+        };
+        let pattern = [0.4, 0.7, 0.9, 1.0];
+        let latest = [160.0, 140.0, 100.0, 50.0];
+        let a = run(&pattern, &latest);
+        let again = run(&pattern, &latest);
+        let b = run(&pattern, &[160.0, 130.0, 100.0, 50.0]);
+        let c = run(&[0.3, 0.7, 0.9, 1.0], &latest);
+        let fit_hash = fit.reserves.provenance().input_hash.clone();
+        assert!(fit_hash.is_some());
+        type Out = fn(&DiscountedReserves) -> &PredictiveDistribution;
+        let outs: [Out; 2] = [|d| &d.unpaid, |d| &d.discounted];
+        for out in outs {
+            let (pa, pb, pc) = (
+                out(&a).provenance(),
+                out(&b).provenance(),
+                out(&c).provenance(),
+            );
+            assert_eq!(pa, out(&again).provenance());
+            assert_ne!(pa.parameters, pb.parameters);
+            assert_ne!(pa.parameters, pc.parameters);
+            assert_ne!(pa.input_hash, pb.input_hash);
+            assert_ne!(pa.input_hash, pc.input_hash);
+            assert_ne!(pa.input_hash, fit_hash);
+            // Each parameter once.
+            for name in ["output", "basis", "paid pattern", "latest paid"] {
+                assert_eq!(pa.parameters.iter().filter(|(k, _)| k == name).count(), 1);
+            }
+        }
+        // The paid basis keeps the fit's hash.
+        let paid = discounted_reserves(
+            &fit,
+            &at(0.05, PaymentTiming::MidPeriod),
+            &PaymentBasis::Paid,
+        )
+        .unwrap();
+        assert_eq!(paid.unpaid.provenance().input_hash, fit_hash);
+        assert_eq!(paid.discounted.provenance().input_hash, fit_hash);
+    }
+
     #[test]
     fn the_incurred_basis_over_segments_takes_the_latest_paid_segment_major() {
         let fits = OdpBootstrap {

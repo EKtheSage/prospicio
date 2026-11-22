@@ -7,6 +7,7 @@ use prospicio_pricing::cashflow::{
     Dates, FeeBasis, Forward, Funding, FundingRule, FundingSource, Interest, InterestBasis,
     MonthlyPatterns, ObligationReference, Operating, PatternDraws, PerformanceFee, PremiumFlow,
     Requirement, Term, Timing, Trace, Valuation, condition_on_paid as condition, deal_ave as ave,
+    option_key,
 };
 use prospicio_pricing::returns::TieredFee;
 use pyo3::exceptions::PyValueError;
@@ -17,20 +18,7 @@ use crate::payout::{PyIrrResult, irr_options};
 use crate::to_py;
 
 fn base(name: &str) -> PyResult<Base> {
-    Ok(match name {
-        "unearned-premium" => Base::UnearnedPremium,
-        "reserve" => Base::Reserve,
-        "outstanding" => Base::Outstanding,
-        "written" => Base::Written,
-        "earned" => Base::Earned,
-        "fixed" => Base::Fixed,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "unknown base {other:?}; use \"unearned-premium\", \"reserve\", \
-                 \"outstanding\", \"written\", \"earned\" or \"fixed\""
-            )));
-        }
-    })
+    Base::from_name(name).ok_or_else(|| crate::unknown_name("base", name, Base::NAMES))
 }
 
 /// A set of months: ``"monthly"``, ``"quarterly"``, an interval ``n``
@@ -38,7 +26,7 @@ fn base(name: &str) -> PyResult<Base> {
 /// ``{"every": n, "first": m}``.
 fn dates(spec: &Bound<'_, PyAny>, name: &str) -> PyResult<Dates> {
     if let Ok(s) = spec.extract::<String>() {
-        return match s.as_str() {
+        return match option_key(&s).as_str() {
             "monthly" => Ok(Dates::monthly()),
             "quarterly" => Ok(Dates::quarterly()),
             other => Err(PyValueError::new_err(format!(
@@ -83,7 +71,7 @@ fn dates(spec: &Bound<'_, PyAny>, name: &str) -> PyResult<Dates> {
 /// When an account releases: the dates above, or ``"at-commutation"``.
 fn timing(spec: &Bound<'_, PyAny>, name: &str) -> PyResult<Timing> {
     if let Ok(s) = spec.extract::<String>() {
-        match s.as_str() {
+        match option_key(&s).as_str() {
             "monthly" => return Ok(Timing::Monthly),
             "at-commutation" => return Ok(Timing::AtCommutation),
             _ => {}
@@ -149,11 +137,16 @@ impl PyCollateralRequirement {
                 .collect::<PyResult<_>>()?,
             Err(_) => terms.extract()?,
         };
+        let bases: Vec<Base> = pairs
+            .iter()
+            .map(|(b, _)| base(b))
+            .collect::<PyResult<_>>()?;
         let mut inner = Requirement::new(
-            pairs
+            bases
                 .iter()
-                .map(|(b, l)| Ok(Term::new(base(b)?, *l)))
-                .collect::<PyResult<_>>()?,
+                .zip(&pairs)
+                .map(|(b, (_, l))| Term::new(*b, *l))
+                .collect(),
         )
         .with_floor(floor);
         if let Some((trigger, cap)) = limit {
@@ -161,7 +154,7 @@ impl PyCollateralRequirement {
         }
         Ok(PyCollateralRequirement {
             inner,
-            names: pairs.into_iter().map(|(b, _)| b).collect(),
+            names: bases.iter().map(|b| b.name().to_string()).collect(),
         })
     }
 
@@ -240,15 +233,8 @@ impl PyPremiumAdjustment {
     #[new]
     #[pyo3(signature = (month, written_rate, *, less_commission = false, base = "ultimate"))]
     fn new(month: usize, written_rate: f64, less_commission: bool, base: &str) -> PyResult<Self> {
-        let base = match base {
-            "ultimate" => AdjustmentBase::Ultimate,
-            "to-date" => AdjustmentBase::ToDate,
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown base {other:?}; use \"ultimate\" or \"to-date\""
-                )));
-            }
-        };
+        let base = AdjustmentBase::from_name(base)
+            .ok_or_else(|| crate::unknown_name("base", base, AdjustmentBase::NAMES))?;
         Ok(PyPremiumAdjustment {
             inner: Adjustment {
                 month,
@@ -445,37 +431,24 @@ impl PyCashflowTerms {
                 .map(|a| a.inner)
                 .collect(),
         };
-        let rule = match funding_rule {
+        let rule = match option_key(funding_rule).as_str() {
             "shortfall" => FundingRule::Shortfall,
             "obligation-increase" => FundingRule::ObligationIncrease {
                 premium_offset,
-                reference: match reference {
-                    "previous-date" => ObligationReference::PreviousDate,
-                    "running-max" => ObligationReference::RunningMax,
-                    other => {
-                        return Err(PyValueError::new_err(format!(
-                            "unknown reference {other:?}; use \"previous-date\" or \
-                             \"running-max\""
-                        )));
-                    }
-                },
+                reference: ObligationReference::from_name(reference).ok_or_else(|| {
+                    crate::unknown_name("reference", reference, ObligationReference::NAMES)
+                })?,
             },
-            other => {
+            _ => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown funding rule {other:?}; use \"shortfall\" or \
+                    "unknown funding rule {funding_rule:?}; use \"shortfall\" or \
                      \"obligation-increase\""
                 )));
             }
         };
-        let source = match funding_source {
-            "investor" => FundingSource::Investor,
-            "operating-first" => FundingSource::OperatingFirst,
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown funding source {other:?}; use \"investor\" or \"operating-first\""
-                )));
-            }
-        };
+        let source = FundingSource::from_name(funding_source).ok_or_else(|| {
+            crate::unknown_name("funding source", funding_source, FundingSource::NAMES)
+        })?;
         t.funding = Funding {
             dates: match funding_dates {
                 Some(d) => dates(d, "funding_dates")?,
@@ -489,33 +462,17 @@ impl PyCashflowTerms {
         }
         t.interest = Interest {
             annual_yield,
-            basis: match interest_basis {
-                "average" => InterestBasis::Average,
-                "opening" => InterestBasis::Opening,
-                "closing" => InterestBasis::Closing,
-                other => {
-                    return Err(PyValueError::new_err(format!(
-                        "unknown interest basis {other:?}; use \"average\", \"opening\" or \
-                         \"closing\""
-                    )));
-                }
-            },
+            basis: InterestBasis::from_name(interest_basis).ok_or_else(|| {
+                crate::unknown_name("interest basis", interest_basis, InterestBasis::NAMES)
+            })?,
         };
         let fee = fee
             .map(|(breakpoints, slopes)| -> PyResult<PerformanceFee> {
                 Ok(PerformanceFee {
                     tiers: TieredFee::new(breakpoints, slopes).map_err(to_py)?,
-                    basis: match fee_basis {
-                        "profit" => FeeBasis::Profit,
-                        "profit-over-premium" => FeeBasis::ProfitOverPremium,
-                        "profit-over-capital" => FeeBasis::ProfitOverCapital,
-                        other => {
-                            return Err(PyValueError::new_err(format!(
-                                "unknown fee basis {other:?}; use \"profit\", \
-                                 \"profit-over-premium\" or \"profit-over-capital\""
-                            )));
-                        }
-                    },
+                    basis: FeeBasis::from_name(fee_basis).ok_or_else(|| {
+                        crate::unknown_name("fee basis", fee_basis, FeeBasis::NAMES)
+                    })?,
                 })
             })
             .transpose()?;

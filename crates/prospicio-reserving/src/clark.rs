@@ -58,6 +58,31 @@ pub enum GrowthCurve {
 }
 
 impl GrowthCurve {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// curve, the canonical name of each first (#956).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("loglogistic", Self::LogLogistic),
+        ("weibull", Self::Weibull),
+        ("log-logistic", Self::LogLogistic),
+        ("log_logistic", Self::LogLogistic),
+    ];
+
+    /// The curve named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, c)| c)
+    }
+
+    /// The canonical name, `"loglogistic"` or `"weibull"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::LogLogistic => "loglogistic",
+            Self::Weibull => "weibull",
+        }
+    }
+
     /// `G(age)`: 0 at age 0 or below, 1 at infinity.
     pub fn value(self, age: f64, omega: f64, theta: f64) -> f64 {
         if age <= 0.0 {
@@ -858,6 +883,27 @@ mod tests {
     use super::*;
     use crate::triangle::tests::{GENINS, RAA, annual};
     use crate::triangle::{DevelopmentColumn, Long};
+
+    /// Every spelling Python, R or Excel took before #956 still resolves,
+    /// and the canonical name round-trips.
+    #[test]
+    fn growth_curve_names_cover_every_front_end() {
+        for name in ["loglogistic", "log-logistic", "log_logistic"] {
+            assert_eq!(
+                GrowthCurve::from_name(name),
+                Some(GrowthCurve::LogLogistic),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            GrowthCurve::from_name("weibull"),
+            Some(GrowthCurve::Weibull)
+        );
+        assert_eq!(GrowthCurve::from_name("gompertz"), None);
+        for &(_, c) in GrowthCurve::NAMES {
+            assert_eq!(GrowthCurve::from_name(c.name()), Some(c));
+        }
+    }
     use crate::{Grain, Label, Month};
 
     /// GenIns with R's `?ClarkCapeCod` premium, `10e6 + 0.4e6 * (0:9)`, as

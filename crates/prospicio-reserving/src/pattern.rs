@@ -1577,12 +1577,24 @@ pub fn underwriting_paid_by_month(
     policy_months: u32,
     reading: AnnualReading,
 ) -> Result<Vec<f64>> {
+    if written.is_empty() {
+        return Err(Error::Pattern {
+            age: None,
+            reason: "`written` needs at least one period",
+        });
+    }
+    if times.len() != shares.len() {
+        return Err(Error::Pattern {
+            age: None,
+            reason: "`times` and `shares` need the same length",
+        });
+    }
     let mut cumulative = 0.0;
     let mut values = Vec::with_capacity(times.len());
     for (&t, &share) in times.iter().zip(shares) {
         cumulative += share;
         let months = t * 12.0;
-        if t <= 0.0 || (months - months.round()).abs() > 1e-9 {
+        if !t.is_finite() || t <= 0.0 || (months - months.round()).abs() > 1e-9 {
             return Err(Error::Pattern {
                 age: None,
                 reason: "an accident-period pattern needs times at whole, positive months",
@@ -1636,6 +1648,22 @@ mod tests {
         }
     }
     use super::*;
+
+    /// `underwriting_paid_by_month` rejects an empty `written`, unequal
+    /// `times` and `shares`, and a non-finite time instead of panicking or
+    /// silently cutting (#949).
+    #[test]
+    fn underwriting_paid_by_month_checks_inputs() {
+        let call = |t: &[f64], s: &[f64], w: &[f64]| {
+            underwriting_paid_by_month(t, s, Grain::Year, w, 12, Default::default())
+        };
+        assert!(call(&[1.0, 2.0], &[0.5, 0.5], &[]).is_err());
+        assert!(call(&[1.0, 2.0], &[1.0], &[1.0]).is_err());
+        assert!(call(&[1.0], &[0.5, 0.5], &[1.0]).is_err());
+        assert!(call(&[f64::NAN], &[1.0], &[1.0]).is_err());
+        assert!(call(&[f64::INFINITY], &[1.0], &[1.0]).is_err());
+        assert!(call(&[], &[], &[1.0]).is_err());
+    }
 
     const AGES: [Lag; 4] = [12, 24, 36, 48];
 

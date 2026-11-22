@@ -878,9 +878,11 @@ pub(crate) struct PyGrid {
 }
 
 fn discretized(
-    result: prospicio_core::Result<(Grid, DiscretizationReport)>,
+    py: Python<'_>,
+    run: impl FnOnce() -> prospicio_core::Result<(Grid, DiscretizationReport)> + Send,
 ) -> PyResult<(PyGrid, PyDiscretizationReport)> {
-    let (inner, report) = result.map_err(to_py)?;
+    // Pure Rust work on a possibly large grid: release the GIL.
+    let (inner, report) = py.detach(run).map_err(to_py)?;
     Ok((PyGrid { inner }, PyDiscretizationReport { inner: report }))
 }
 
@@ -964,12 +966,13 @@ impl PyGrid {
     ///     If ``step`` is not positive or ``points`` is 0.
     #[staticmethod]
     fn local_moment(
+        py: Python<'_>,
         severity: &Bound<'_, PyAny>,
         step: f64,
         points: usize,
     ) -> PyResult<(PyGrid, PyDiscretizationReport)> {
         let sev = extract_severity(severity)?;
-        discretized(Grid::local_moment(&sev, step, points))
+        discretized(py, || Grid::local_moment(&sev, step, points))
     }
 
     /// Discretizes a severity by rounding each loss to the nearest point.
@@ -990,12 +993,13 @@ impl PyGrid {
     ///     If ``step`` is not positive or ``points`` is 0.
     #[staticmethod]
     fn rounding(
+        py: Python<'_>,
         severity: &Bound<'_, PyAny>,
         step: f64,
         points: usize,
     ) -> PyResult<(PyGrid, PyDiscretizationReport)> {
         let sev = extract_severity(severity)?;
-        discretized(Grid::rounding(&sev, step, points))
+        discretized(py, || Grid::rounding(&sev, step, points))
     }
 
     /// Discretizes a severity by moving each cell's mass to its left end: a
@@ -1017,12 +1021,13 @@ impl PyGrid {
     ///     If ``step`` is not positive or ``points`` is 0.
     #[staticmethod]
     fn lower(
+        py: Python<'_>,
         severity: &Bound<'_, PyAny>,
         step: f64,
         points: usize,
     ) -> PyResult<(PyGrid, PyDiscretizationReport)> {
         let sev = extract_severity(severity)?;
-        discretized(Grid::lower(&sev, step, points))
+        discretized(py, || Grid::lower(&sev, step, points))
     }
 
     /// Grid step.
@@ -1695,6 +1700,7 @@ impl PyPredictiveDistribution {
     #[staticmethod]
     #[pyo3(signature = (parts, dim, same_simulations = false))]
     fn join(
+        py: Python<'_>,
         parts: Vec<(String, PyRef<'_, PyPredictiveDistribution>)>,
         dim: &str,
         same_simulations: bool,
@@ -1707,7 +1713,9 @@ impl PyPredictiveDistribution {
         } else {
             Pairing::Independent
         };
-        let inner = PredictiveDistribution::join(&refs, dim, pairing).map_err(to_py)?;
+        let inner = py
+            .detach(|| PredictiveDistribution::join(&refs, dim, pairing))
+            .map_err(to_py)?;
         Ok(Self { inner })
     }
 

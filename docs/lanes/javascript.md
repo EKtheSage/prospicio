@@ -1,6 +1,6 @@
 # JavaScript lane
 
-**Session:** Cloud (the JavaScript session). **Owns:** `crates/prospicio-wasm/`, `docs/design/wasm.md`, the `wasm` task in `xtask/src/main.rs`, the `wasm` job in `.github/workflows/ci.yml`
+**Session:** Cloud (the JavaScript session). **Owns:** `crates/prospicio-wasm/`, `docs/design/wasm.md`, the `wasm` task in `xtask/src/main.rs` and its filter in `xtask/src/check.rs`, the `wasm` job and the `changes` job's `wasm` output in `.github/workflows/ci.yml`
 
 This lane wraps the crates in the WASM scope and changes none of them. JavaScript is only a front end to Rust: a calculation the crates lack goes to the owning lane first
 

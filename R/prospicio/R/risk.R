@@ -1249,7 +1249,9 @@ S7::method(print, pot_tail) <- function(x, ...) {
 capital_allocation <- function(x, distortion,
                                method = c("euler", "covariance", "covariance_margin", "proportional",
                                           "marginal", "shapley")) {
-  method <- match.arg(method)
+  method <- match.arg(option_alias(method, c("natural" = "euler")),
+                      c("euler", "covariance", "covariance_margin", "proportional", "marginal",
+                        "shapley"))
   allocation_result(x, rust_result(distortion@ptr$capital(x@ptr, method)))
 }
 

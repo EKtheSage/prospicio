@@ -11,14 +11,14 @@
 //! 19).
 
 use prospicio_pricing::ratemaking::{
-    Applies, ExpenseCategory, LossRatioExperience, LossRatioYear, Period, Provisions,
+    Applies, ExpenseCategory, LossRatioExperience, LossRatioYear, Period, PeriodKind, Provisions,
     PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, RateSchedule, ScheduleTrend,
     TrendBasis, TrendFit, TrendItem, credibility_weighted, cumulative_loss_ratio,
     premium_based_expenses, trended_present_rates, year_fraction,
 };
 
 use crate::exposure::broadcast;
-use crate::pricing::{Result, numbers, scalar};
+use crate::pricing::{Result, numbers, paired, scalar};
 use crate::sheet::{Grid, Value, position};
 
 /// Serial numbers from here up are Excel dates, below it year fractions.
@@ -101,18 +101,10 @@ pub fn year_fraction_of(args: &[Grid]) -> Result<Grid> {
 /// The rate changes on the sheet: effective dates, the changes (or the
 /// cumulative levels when `given` is `"levels"`) and how each applies.
 fn history(effective: &Grid, changes: &Grid, applies: &Grid, given: &Grid) -> Result<RateHistory> {
-    let effective: Vec<f64> = numbers(effective, "effective")?
-        .into_iter()
-        .map(date)
-        .collect::<Result<_>>()?;
-    let values = numbers(changes, "changes")?;
+    let [effective, values] =
+        <[_; 2]>::try_from(paired(&[(effective, "effective"), (changes, "changes")])?).unwrap();
+    let effective: Vec<f64> = effective.into_iter().map(date).collect::<Result<_>>()?;
     let n = effective.len();
-    if values.len() != n {
-        return Err(format!(
-            "changes must have one value per effective date ({n}), got {}",
-            values.len()
-        ));
-    }
     let applies = if applies.is_blank() {
         vec![Applies::Written; n]
     } else {
@@ -126,18 +118,8 @@ fn history(effective: &Grid, changes: &Grid, applies: &Grid, given: &Grid) -> Re
         (0..n)
             .map(|k| match cells[if cells.len() == 1 { 0 } else { k }] {
                 v if v.is_blank() => Ok(Applies::Written),
-                Value::Text(s) => match s
-                    .trim()
-                    .to_ascii_lowercase()
-                    .replace([' ', '-'], "_")
-                    .as_str()
-                {
-                    "written" => Ok(Applies::Written),
-                    "in_force" | "inforce" => Ok(Applies::InForce),
-                    other => Err(format!(
-                        "applies must be \"written\" or \"in_force\", got {other:?}"
-                    )),
-                },
+                Value::Text(s) => Applies::from_name(s)
+                    .ok_or_else(|| crate::unknown_name("applies", s, Applies::NAMES)),
                 other => Err(format!(
                     "applies must be \"written\" or \"in_force\", got {other:?}"
                 )),
@@ -180,13 +162,12 @@ fn history(effective: &Grid, changes: &Grid, applies: &Grid, given: &Grid) -> Re
 fn period_kind(g: &Grid) -> Result<bool> {
     match g.as_scalar() {
         Some(v) if v.is_blank() => Ok(false),
-        Some(Value::Text(s)) => match s.trim().to_ascii_lowercase().as_str() {
-            "calendar" | "accident" => Ok(false),
-            "policy" => Ok(true),
-            other => Err(format!(
-                "period must be \"calendar\" or \"policy\", got {other:?}"
-            )),
-        },
+        Some(Value::Text(s)) => {
+            let name = s.trim().to_ascii_lowercase();
+            PeriodKind::from_name(&name)
+                .map(|k| k == PeriodKind::Policy)
+                .ok_or_else(|| crate::unknown_name("period", &name, PeriodKind::NAMES))
+        }
         _ => Err("period must be \"calendar\" or \"policy\"".into()),
     }
 }

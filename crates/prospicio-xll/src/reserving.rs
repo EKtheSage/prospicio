@@ -1192,13 +1192,9 @@ pub fn mack_bootstrap_cdr(args: &[Grid]) -> Result<Grid> {
 /// "weibull".
 fn growth_curve(grid: &Grid) -> Result<GrowthCurve> {
     match text_option(grid, "curve")?.as_deref() {
-        None | Some("loglogistic" | "log-logistic" | "log_logistic") => {
-            Ok(GrowthCurve::LogLogistic)
-        }
-        Some("weibull") => Ok(GrowthCurve::Weibull),
-        Some(other) => Err(format!(
-            "curve must be \"loglogistic\" or \"weibull\", got {other:?}"
-        )),
+        None => Ok(GrowthCurve::LogLogistic),
+        Some(name) => GrowthCurve::from_name(name)
+            .ok_or_else(|| crate::unknown_name("curve", name, GrowthCurve::NAMES)),
     }
 }
 
@@ -1287,10 +1283,7 @@ pub fn clark(args: &[Grid]) -> Result<Grid> {
 /// `PRO.RES.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])`.
 pub fn clark_params(args: &[Grid]) -> Result<Grid> {
     let fit = clark_fit(&args[0], &args[1], &args[2], &args[3])?;
-    let curve = match fit.curve {
-        GrowthCurve::LogLogistic => "loglogistic",
-        GrowthCurve::Weibull => "weibull",
-    };
+    let curve = fit.curve.name();
     let mut rows = vec![
         vec![Value::from("Curve"), Value::from(curve)],
         vec![Value::from("Omega"), Value::number(fit.omega)],

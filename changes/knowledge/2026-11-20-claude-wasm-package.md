@@ -1,1 +1,0 @@
-* **Creation**: [Building and testing the JavaScript package (WebAssembly)](/environment/wasm-build.md), from #576 (branch claude/wasm-package): the pinned wasm-bindgen tool, the tests under Node, serde-wasm-bindgen ignoring unknown option fields, Rayon running on the calling thread with the same draws, and the module's size (1.53 MB, 0.51 MB gzipped).

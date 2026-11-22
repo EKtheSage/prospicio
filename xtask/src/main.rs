@@ -30,6 +30,8 @@
 //! (CI's `python` and `r` jobs run them; the docs build need not run them
 //! again).
 
+mod check;
+
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -39,6 +41,7 @@ use std::process::{Command, ExitCode};
 
 const USAGE: &str = "\
 usage: cargo xtask <task> [--check] [--no-tests]
+       cargo xtask check [--changed] [--fast]
 
 tasks:
   python   build the Python extension and stubs, test, render its docs
@@ -53,9 +56,20 @@ tasks:
            smoke-test it in a fake Excel when MinGW (and Wine) are found
   wasm     build the JavaScript package as target/wasm/pkg (wasm-bindgen)
            and test it under Node
+  check    the checks CI runs on a pull request, in one command: formatting,
+           the Python governance scripts, clippy, tests, rustdoc, the WASM
+           check and, when bindings change, `generated --check`; a step
+           whose tool is missing is skipped with a note
 
-  --check     fail if the build changed a committed generated file
+  --changed   check: run only what CI's change filters ask for, from
+              `git diff origin/main...HEAD` and the working tree
+  --fast      check: skip cargo test, rustdoc, the WASM check and
+              `generated --check`
+  --check    fail if the build changed a committed generated file
   --no-tests  skip the Python and R test suites, and the JavaScript tests
+  --thin-lto  xll: thin link-time optimization on the default codegen units,
+              a faster build of a slightly larger add-in (pull requests);
+              without it, fat LTO on one unit, as a release is built
 ";
 
 /// Generated files that are committed, per binding: the build must leave
@@ -75,10 +89,13 @@ fn main() -> ExitCode {
         check: args.iter().any(|a| a == "--check"),
         tests: !args.iter().any(|a| a == "--no-tests"),
     };
+    let thin_lto = args.iter().any(|a| a == "--thin-lto");
+    let changed = args.iter().any(|a| a == "--changed");
+    let fast = args.iter().any(|a| a == "--fast");
     let tasks: Vec<&str> = args
         .iter()
         .map(String::as_str)
-        .filter(|a| *a != "--check" && *a != "--no-tests")
+        .filter(|a| !["--check", "--no-tests", "--thin-lto", "--changed", "--fast"].contains(a))
         .collect();
     let result = match tasks.as_slice() {
         ["python"] => python(opts),
@@ -86,8 +103,9 @@ fn main() -> ExitCode {
         ["rust"] => rust(),
         ["docs"] => docs(opts),
         ["generated"] => generated(opts),
-        ["xll"] => xll(),
+        ["xll"] => xll(thin_lto),
         ["wasm"] => wasm(opts),
+        ["check"] => check::check(changed, fast),
         [] | ["help"] | ["-h"] | ["--help"] => {
             print!("{USAGE}");
             return ExitCode::SUCCESS;
@@ -123,14 +141,26 @@ fn python(opts: Options) -> Result {
     let dir = root().join("python");
     // great-docs needs Python 3.11+, although the package supports 3.9+.
     // uv keeps an existing environment that satisfies this.
+    // UV_NO_SYNC: `uv run` would otherwise install the project first, a
+    // PEP 517 build and wheel that `maturin develop` below replaces (#966).
     let uv = || {
         let mut cmd = Command::new("uv");
-        cmd.env("UV_PYTHON", ">=3.11").current_dir(&dir);
+        cmd.env("UV_PYTHON", ">=3.11")
+            .env("UV_NO_SYNC", "1")
+            .current_dir(&dir);
         cmd
     };
     step("python: sync the environment");
-    // `examples`: Jupyter, to execute the notebooks for the user guide.
-    run(uv().args(["sync", "--group", "docs", "--group", "examples"]))?;
+    // `examples`: Jupyter, to execute the notebooks for the user guide. The
+    // dependencies only: `maturin develop` installs the project.
+    run(uv().args([
+        "sync",
+        "--no-install-project",
+        "--group",
+        "docs",
+        "--group",
+        "examples",
+    ]))?;
     step("python: build the extension and regenerate its type stubs");
     run(uv().args([
         "run",
@@ -774,11 +804,17 @@ fn generated(opts: Options) -> Result {
     let root = root();
     let dir = root.join("python");
     step("python: build the extension and regenerate its type stubs");
-    run(Command::new("uv").arg("sync").current_dir(&dir))?;
+    // The dependencies only, and no implicit sync in `uv run`: either would
+    // install the project through PEP 517 before `maturin develop` installs
+    // it again (#966).
+    run(Command::new("uv")
+        .args(["sync", "--no-install-project"])
+        .current_dir(&dir))?;
     // `--release`, as `cargo xtask python` builds it: the docs job's cache
     // (shared with pages.yml) holds release builds, so a debug build here
     // would compile every crate cold.
     run(Command::new("uv")
+        .env("UV_NO_SYNC", "1")
         .args([
             "run",
             "maturin",
@@ -1220,7 +1256,7 @@ fn found(program: &str) -> bool {
         .is_ok()
 }
 
-fn xll() -> Result {
+fn xll(thin_lto: bool) -> Result {
     let root = root();
     // MSVC on a Windows host; elsewhere the GNU target with MinGW's linker.
     let target = if cfg!(windows) {
@@ -1240,11 +1276,18 @@ fn xll() -> Result {
             "--target",
             target,
         ])
-        .args(["--config", "profile.release.strip=true"])
+        .args(["--config", "profile.release.strip=true"]);
+    if thin_lto {
+        // A pull request's build (#966): thin LTO on the default codegen
+        // units links in a fraction of the time, for a larger file.
+        build.args(["--config", "profile.release.lto=\"thin\""]);
+    } else {
         // Link-time optimization across crates and one codegen unit drop the
         // engines' unused code: 16.3 MB to 14.0 MB (xll.md, decision 47).
-        .args(["--config", "profile.release.lto=\"fat\""])
-        .args(["--config", "profile.release.codegen-units=1"]);
+        build
+            .args(["--config", "profile.release.lto=\"fat\""])
+            .args(["--config", "profile.release.codegen-units=1"]);
+    }
     let linker = "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER";
     if !cfg!(windows) && env::var_os(linker).is_none() {
         build.env(linker, MINGW_GCC);

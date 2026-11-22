@@ -1046,7 +1046,11 @@ real Excel.
     and one codegen unit, which drops unused code across crates: 16.3 MB
     to 14.0 MB on the GNU target (2026-11-05, with the old names; 16.2
     MB without LTO and without them), for a few more minutes of release
-    build.
+    build. A pull request's CI build passes `--thin-lto` instead (#966,
+    2026-11-20): thin LTO on the default codegen units, 135 s for the
+    whole build on four cores against 194 s for the fat step alone, and
+    18.3 MB against 15.7 MB; pushes to `main`, tags and manual runs keep
+    the fat build, so every add-in a person installs is built that way.
     The wrappers are 5% of the code; the rest is the engines
     (`rustfft`'s scalar, SSE and AVX kernels 16%, the Bayesian stack with
     the GLMs and the thread pool about 17%, `prospicio-reserving` 12%).
@@ -1174,6 +1178,13 @@ real Excel.
       in the fake Excel, against 0.2 s for 20,000 ODP simulations). Each
       function is a pure function of its inputs and seed (decisions 14
       and 21), so a kept result is what a rerun gives: no number changes.
+      Runs share a pool of 2 to 8 threads (one per processor) and results
+      already kept are answered by two more, so a sheet of many cells
+      queues instead of starting a thread each (#953). A result over 4
+      million cells is returned and not kept, leaving the others; the least
+      recently used result goes first. `PRO.CAP.COPULA.SIM` and
+      `PRO.CAP.NESTED.SIM` refuse more than 10 million cells (rows times
+      columns) before they run, since an allocation that fails closes Excel.
       The Bayesian fits stay kept as well (decision 21), so a fit's three
       views still sample once between them.
     - **An interrupted recalculation loses nothing.** Typing while Excel

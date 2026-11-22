@@ -84,13 +84,31 @@ pub fn cholesky_solve(l: &[f64], b: &[f64]) -> Vec<f64> {
 /// of their information matrix.
 pub fn cholesky_inverse(l: &[f64], n: usize) -> Vec<f64> {
     let mut inv = vec![0.0; n * n];
-    let mut e = vec![0.0; n];
+    // `lt` is `lᵀ` row-major, so the back substitution reads rows, not a
+    // strided column of `l`.
+    let mut lt = vec![0.0; n * n];
+    for i in 0..n {
+        for k in 0..=i {
+            lt[k * n + i] = l[i * n + k];
+        }
+    }
+    let (mut y, mut x) = (vec![0.0; n], vec![0.0; n]);
     for j in 0..n {
-        e.fill(0.0);
-        e[j] = 1.0;
-        let col = cholesky_solve(l, &e);
+        // Forward substitution on the unit vector `e_j`: the first `j`
+        // entries of `y` are zero, so the sums start at `k = j`, adding the
+        // same non-zero terms in the same order as a full pass.
+        y[..j].fill(0.0);
+        for i in j..n {
+            let b = if i == j { 1.0 } else { 0.0 };
+            let dot: f64 = (j..i).map(|k| l[i * n + k] * y[k]).sum();
+            y[i] = (b - dot) / l[i * n + i];
+        }
+        for i in (0..n).rev() {
+            let dot: f64 = (i + 1..n).map(|k| lt[i * n + k] * x[k]).sum();
+            x[i] = (y[i] - dot) / l[i * n + i];
+        }
         for i in 0..n {
-            inv[i * n + j] = col[i];
+            inv[i * n + j] = x[i];
         }
     }
     inv
@@ -164,9 +182,11 @@ pub fn mat_mul(a: &[f64], b: &[f64], n: usize) -> Vec<f64> {
     c
 }
 
-/// The inverse of the row-major `n × n` matrix `a`, column by column from
-/// [`solve`] on each unit vector. `None` if a solve fails (`a` singular,
-/// a non-finite pivot or a wrong length).
+/// The inverse of the row-major `n × n` matrix `a`, from one LU
+/// factorization with partial pivoting and `n` triangular solves. It does
+/// the same eliminations and sums in the same order as [`solve`] on each
+/// unit vector, so it gives the same bits. `None` if `a` is singular, holds
+/// a non-finite pivot or has a wrong length.
 ///
 /// A column can still hold non-finite values or come from an
 /// ill-conditioned `a`: the caller decides what to do with those, for
@@ -181,11 +201,54 @@ pub fn mat_mul(a: &[f64], b: &[f64], n: usize) -> Vec<f64> {
 /// assert!(inverse(&[1.0, 2.0, 2.0, 4.0], 2).is_none());
 /// ```
 pub fn inverse(a: &[f64], n: usize) -> Option<Vec<f64>> {
+    if n == 0 {
+        return Some(Vec::new());
+    }
+    if a.len() != n * n {
+        return None;
+    }
+    // LU in place. The multipliers sit below the diagonal at the row
+    // position of their step (rows are swapped from the pivot column on,
+    // not in multipliers already stored), and `piv` records the swaps, so
+    // each unit vector sees the eliminations of `solve` one step at a time.
+    let mut lu = a.to_vec();
+    let mut piv = vec![0usize; n];
+    for col in 0..n {
+        let p =
+            (col..n).max_by(|&i, &j| lu[i * n + col].abs().total_cmp(&lu[j * n + col].abs()))?;
+        if lu[p * n + col] == 0.0 || !lu[p * n + col].is_finite() {
+            return None;
+        }
+        piv[col] = p;
+        if p != col {
+            for j in col..n {
+                lu.swap(col * n + j, p * n + j);
+            }
+        }
+        for i in col + 1..n {
+            let f = lu[i * n + col] / lu[col * n + col];
+            for j in col + 1..n {
+                lu[i * n + j] -= f * lu[col * n + j];
+            }
+            lu[i * n + col] = f;
+        }
+    }
     let mut inv = vec![0.0; n * n];
+    let (mut b, mut x) = (vec![0.0; n], vec![0.0; n]);
     for j in 0..n {
-        let mut e = vec![0.0; n];
-        e[j] = 1.0;
-        let x = solve(a.to_vec(), e, n)?;
+        b.fill(0.0);
+        b[j] = 1.0;
+        for col in 0..n {
+            b.swap(col, piv[col]);
+            let bc = b[col];
+            for i in col + 1..n {
+                b[i] -= lu[i * n + col] * bc;
+            }
+        }
+        for i in (0..n).rev() {
+            let s: f64 = (i + 1..n).map(|k| lu[i * n + k] * x[k]).sum();
+            x[i] = (b[i] - s) / lu[i * n + i];
+        }
         for i in 0..n {
             inv[i * n + j] = x[i];
         }
@@ -314,7 +377,7 @@ pub fn symmetric_eigen(a: &[f64], n: usize) -> (Vec<f64>, Vec<f64>) {
 
 /// Cyclic Jacobi rotations of the symmetric matrix `a` to diagonal form,
 /// and, with `vectors`, the product of the rotations (the eigenvectors as
-/// columns; the identity otherwise, untouched).
+/// columns; empty otherwise, so no `n × n` matrix is allocated for it).
 fn jacobi(a: &[f64], n: usize, vectors: bool) -> (Vec<f64>, Vec<f64>) {
     assert_eq!(a.len(), n * n, "a must be n × n");
     let mut m = vec![0.0; n * n];
@@ -324,9 +387,15 @@ fn jacobi(a: &[f64], n: usize, vectors: bool) -> (Vec<f64>, Vec<f64>) {
             m[j * n + i] = a[i * n + j];
         }
     }
-    let mut v = vec![0.0; n * n];
-    for i in 0..n {
-        v[i * n + i] = 1.0;
+    let mut v = if vectors {
+        vec![0.0; n * n]
+    } else {
+        Vec::new()
+    };
+    if vectors {
+        for i in 0..n {
+            v[i * n + i] = 1.0;
+        }
     }
     let scale: f64 = m.iter().map(|v| v * v).sum::<f64>().sqrt();
     for _sweep in 0..100 {
@@ -527,5 +596,138 @@ mod tests {
         assert!(cholesky(&[1.0, 0.0, 0.0, 0.0], 2).is_none());
         assert!(cholesky(&[1.0, f64::NAN, f64::NAN, 1.0], 2).is_none());
         assert!(cholesky(&[1.0, 0.0, 0.0], 2).is_none());
+    }
+
+    /// The previous `inverse`: `solve` on each unit vector.
+    fn inverse_reference(a: &[f64], n: usize) -> Option<Vec<f64>> {
+        let mut inv = vec![0.0; n * n];
+        for j in 0..n {
+            let mut e = vec![0.0; n];
+            e[j] = 1.0;
+            let x = solve(a.to_vec(), e, n)?;
+            for i in 0..n {
+                inv[i * n + j] = x[i];
+            }
+        }
+        Some(inv)
+    }
+
+    /// The previous `cholesky_inverse`: `cholesky_solve` on each unit vector.
+    fn cholesky_inverse_reference(l: &[f64], n: usize) -> Vec<f64> {
+        let mut inv = vec![0.0; n * n];
+        for j in 0..n {
+            let mut e = vec![0.0; n];
+            e[j] = 1.0;
+            let col = cholesky_solve(l, &e);
+            for i in 0..n {
+                inv[i * n + j] = col[i];
+            }
+        }
+        inv
+    }
+
+    /// A deterministic pseudo-random matrix with entries in (-1, 1).
+    fn test_matrix(n: usize, seed: u64) -> Vec<f64> {
+        let mut s = seed;
+        (0..n * n)
+            .map(|_| {
+                s = s
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                ((s >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0
+            })
+            .collect()
+    }
+
+    #[test]
+    fn inverse_equals_the_per_column_solves() {
+        for n in [1, 2, 5, 20, 50] {
+            let mut a = test_matrix(n, n as u64);
+            // Mostly well conditioned, with a weak diagonal entry so pivots swap.
+            for i in 0..n {
+                a[i * n + i] += if i == 1 { 0.0 } else { 2.0 };
+            }
+            let new = inverse(&a, n).unwrap();
+            let old = inverse_reference(&a, n).unwrap();
+            for (x, y) in new.iter().zip(&old) {
+                assert!((x - y).abs() <= 1e-12 * y.abs(), "n={n}");
+                assert_eq!(x, y, "n={n}: same bits");
+            }
+        }
+        // Small and awkward cases.
+        for (a, n) in [
+            (vec![4.0], 1),
+            (vec![0.0, 1.0, 1.0, 0.0], 2),
+            (vec![1e-9, 1.0, 1.0, 1.0], 2),
+        ] {
+            assert_eq!(inverse(&a, n), inverse_reference(&a, n));
+        }
+    }
+
+    #[test]
+    fn inverse_refuses_what_the_old_one_refused() {
+        let singular = [
+            (vec![1.0, 2.0, 2.0, 4.0], 2),
+            (vec![1.0, 2.0, 3.0, 2.0, 4.0, 6.0, 1.0, 0.0, 1.0], 3),
+            (vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], 3),
+            (vec![0.0], 1),
+            (vec![1.0, f64::NAN, 0.0, 1.0], 2),
+        ];
+        for (a, n) in singular {
+            assert_eq!(inverse(&a, n).is_none(), inverse_reference(&a, n).is_none());
+        }
+        assert!(inverse(&[1.0, 2.0, 2.0, 4.0], 2).is_none());
+        assert!(inverse(&[1.0, 2.0, 3.0], 2).is_none());
+        assert_eq!(inverse(&[], 0), Some(vec![]));
+    }
+
+    #[test]
+    fn cholesky_inverse_equals_the_per_column_solves() {
+        for n in [1, 2, 5, 20] {
+            let b = test_matrix(n, 7 + n as u64);
+            // A = B Bᵀ + n I is positive definite.
+            let mut a = vec![0.0; n * n];
+            for i in 0..n {
+                for j in 0..n {
+                    a[i * n + j] = (0..n).map(|k| b[i * n + k] * b[j * n + k]).sum::<f64>()
+                        + if i == j { n as f64 } else { 0.0 };
+                }
+            }
+            let l = cholesky(&a, n).unwrap();
+            assert_eq!(cholesky_inverse(&l, n), cholesky_inverse_reference(&l, n));
+        }
+    }
+
+    #[test]
+    fn eigenvalues_do_not_need_the_vector_matrix() {
+        let a = [4.0, 1.0, 0.5, 1.0, 3.0, -0.2, 0.5, -0.2, 1.0];
+        let (m, v) = jacobi(&a, 3, false);
+        assert!(v.is_empty());
+        let (m2, _) = jacobi(&a, 3, true);
+        assert_eq!(m, m2);
+    }
+
+    /// Timing of the new and the old inverse at n = 50:
+    /// `cargo test -p prospicio-math --release --lib -- --ignored --nocapture inverse_timing`.
+    #[test]
+    #[ignore = "timing, run by hand"]
+    fn inverse_timing() {
+        let n = 50;
+        let mut a = test_matrix(n, 1);
+        for i in 0..n {
+            a[i * n + i] += 2.0;
+        }
+        let reps = 200;
+        let t = std::time::Instant::now();
+        for _ in 0..reps {
+            std::hint::black_box(inverse(std::hint::black_box(&a), n));
+        }
+        let new = t.elapsed() / reps;
+        let t = std::time::Instant::now();
+        for _ in 0..reps {
+            std::hint::black_box(inverse_reference(std::hint::black_box(&a), n));
+        }
+        let old = t.elapsed() / reps;
+        println!("inverse n=50: new {new:?}, old {old:?}");
     }
 }

@@ -106,7 +106,61 @@ pub enum Period {
     Policy { from: f64, to: f64 },
 }
 
+/// Which window a [`Period`] is: premium earned in it, or policies written
+/// in it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeriodKind {
+    /// Premium earned (losses occurring) in the window: a calendar or
+    /// accident year.
+    Calendar,
+    /// Policies written in the window: a policy year.
+    Policy,
+}
+
+impl PeriodKind {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// kind, the canonical name of each first (#956). `accident` is
+    /// Excel's name for [`Calendar`](Self::Calendar).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("calendar", Self::Calendar),
+        ("accident", Self::Calendar),
+        ("policy", Self::Policy),
+    ];
+
+    /// The kind named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, k)| k)
+    }
+
+    /// The canonical name, `"calendar"` or `"policy"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Calendar => "calendar",
+            Self::Policy => "policy",
+        }
+    }
+}
+
 impl Period {
+    /// The period of `kind` over `[from, to)`.
+    pub fn new(kind: PeriodKind, from: f64, to: f64) -> Result<Self> {
+        match kind {
+            PeriodKind::Calendar => Self::calendar(from, to),
+            PeriodKind::Policy => Self::policy(from, to),
+        }
+    }
+
+    /// Whether the window is of premium earned or of policies written.
+    pub fn kind(&self) -> PeriodKind {
+        match self {
+            Self::Calendar { .. } => PeriodKind::Calendar,
+            Self::Policy { .. } => PeriodKind::Policy,
+        }
+    }
+
     /// Premium earned (losses occurring) in `[from, to)`.
     pub fn calendar(from: f64, to: f64) -> Result<Self> {
         check_window(from, to)?;
@@ -170,6 +224,33 @@ pub enum Applies {
     /// To all premium earned on or after the effective date, policies in
     /// force included (a law change): a vertical line.
     InForce,
+}
+
+impl Applies {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// rule, the canonical name of each first (#956). `inforce` is
+    /// Excel's spelling of [`InForce`](Self::InForce).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("written", Self::Written),
+        ("in_force", Self::InForce),
+        ("inforce", Self::InForce),
+    ];
+
+    /// The rule named `name` ([`NAMES`](Self::NAMES)), or `None`. The text
+    /// is read in any case, with `-` or a space for `_`, as Excel has
+    /// always read it.
+    pub fn from_name(name: &str) -> Option<Self> {
+        let key = name.trim().to_ascii_lowercase().replace(['-', ' '], "_");
+        Self::NAMES.iter().find(|(n, _)| *n == key).map(|&(_, a)| a)
+    }
+
+    /// The canonical name, `"written"` or `"in_force"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Written => "written",
+            Self::InForce => "in_force",
+        }
+    }
 }
 
 /// One rate change: its effective date (a year fraction), the overall
@@ -733,7 +814,9 @@ impl ScheduleTrend {
     /// One row per accident year, in the order given; the latest year (each
     /// row holding it, if repeated) is the incomplete one under
     /// [`ScheduleTrend::cutoff`]. The inception must be finite and the
-    /// cutoff 1 to 12.
+    /// cutoff 1 to 12. The inception and every accident year must lie
+    /// within 500 years of the schedule's years, so a date serial such as
+    /// `20260101` is an error, not a long loop.
     pub fn factors(&self, schedule: &RateSchedule, years: &[i32]) -> Result<Vec<ScheduleTrendRow>> {
         if !self.inception.is_finite() {
             return Err(Error::InvalidParameter {
@@ -749,6 +832,25 @@ impl ScheduleTrend {
                 name: "cutoff",
                 value: f64::from(c),
                 reason: "must be 1 to 12 months",
+            });
+        }
+        let first = f64::from(schedule.years()[0]) - SCHEDULE_REACH;
+        let last = f64::from(schedule.years()[schedule.years().len() - 1]) + SCHEDULE_REACH;
+        if !(first..=last).contains(&self.inception) {
+            return Err(Error::InvalidParameter {
+                name: "inception",
+                value: self.inception,
+                reason: "is too far from the schedule's years; a year fraction such as 2026.5 is expected, not a date or a date serial",
+            });
+        }
+        if let Some(&y) = years
+            .iter()
+            .find(|&&y| !(first..=last).contains(&f64::from(y)))
+        {
+            return Err(Error::InvalidParameter {
+                name: "year",
+                value: f64::from(y),
+                reason: "is too far from the schedule's years; a calendar year is expected",
             });
         }
         let target = self.target();
@@ -780,6 +882,11 @@ impl ScheduleTrend {
             .collect())
     }
 }
+
+/// How far, in years, an inception or an accident year may lie outside the
+/// schedule's years. It bounds the work of `schedule_factor` to a few
+/// hundred steps.
+const SCHEDULE_REACH: f64 = 500.0;
 
 fn schedule_factor(
     schedule: &RateSchedule,
@@ -1289,6 +1396,51 @@ pub fn trended_present_rates(prior_indicated: f64, prior_implemented: f64, trend
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every spelling Python, R or Excel took before #956 still resolves
+    /// (Excel's `inforce` and `accident`), and the canonical name
+    /// round-trips.
+    #[test]
+    fn applies_and_period_names_cover_every_front_end() {
+        for name in ["in_force", "inforce", "In-Force", " in force "] {
+            assert_eq!(Applies::from_name(name), Some(Applies::InForce), "{name}");
+        }
+        assert_eq!(Applies::from_name("Written"), Some(Applies::Written));
+        assert_eq!(Applies::from_name("nope"), None);
+        for &(_, a) in Applies::NAMES {
+            assert_eq!(Applies::from_name(a.name()), Some(a));
+        }
+        for name in ["calendar", "accident"] {
+            assert_eq!(PeriodKind::from_name(name), Some(PeriodKind::Calendar));
+        }
+        assert_eq!(PeriodKind::from_name("policy"), Some(PeriodKind::Policy));
+        assert_eq!(PeriodKind::from_name("fiscal"), None);
+        for &(_, k) in PeriodKind::NAMES {
+            assert_eq!(PeriodKind::from_name(k.name()), Some(k));
+        }
+        let p = Period::new(PeriodKind::Policy, 2015.0, 2016.0).unwrap();
+        assert_eq!(p, Period::policy(2015.0, 2016.0).unwrap());
+        assert_eq!(p.kind(), PeriodKind::Policy);
+        assert!(Period::new(PeriodKind::Calendar, 2016.0, 2015.0).is_err());
+    }
+
+    #[test]
+    fn schedule_trend_rejects_an_implausible_inception_or_year() {
+        let s = RateSchedule::new(&[2025], &[0.04]).unwrap();
+        for bad in [1e17, 20260101.0, 45_000.0, -1e9] {
+            let e = ScheduleTrend::new(bad).factors(&s, &[2025]).unwrap_err();
+            assert!(e.to_string().contains("inception"), "{e}");
+        }
+        for bad in [i32::MIN, i32::MAX, 20260101] {
+            let e = ScheduleTrend::new(2026.0).factors(&s, &[bad]).unwrap_err();
+            assert!(e.to_string().contains("year"), "{e}");
+        }
+        assert!(
+            ScheduleTrend::new(2100.0)
+                .factors(&s, &[1950, 2025])
+                .is_ok()
+        );
+    }
 
     fn cy(y: f64) -> Period {
         Period::calendar(y, y + 1.0).unwrap()

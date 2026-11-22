@@ -7,4 +7,3 @@
 Finished items are in [done/reserving.md](done/reserving.md), which agents read when they need the lane's history; it is not imported into every session (#846).
 
 ## Next
-- [ifrs17-bindings] #553 PR 2: discounted reserves and the risk adjustment in Python and R, and the guide section (`reserving-ifrs17.md`)

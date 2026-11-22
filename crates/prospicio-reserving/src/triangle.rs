@@ -287,8 +287,8 @@ impl Triangle {
             .collect();
 
         let shape = [index.len(), columns.len(), n_origins, n_dev];
-        let size = checked_size(&shape, n).map_err(|span| {
-            Error::TooLarge(format!(
+        let size = checked_size(&shape, n).map_err(|refused| match refused {
+            Refused::Span(span) => Error::TooLarge(format!(
                 "origins from {} to {} ({n_origins} {} periods) and ages from {youngest} to \
                  {oldest} months ({n_dev} development periods) make {span} cells in each \
                  segment's grid, for {n} rows in all; check the earliest and latest origin and \
@@ -296,7 +296,15 @@ impl Triangle {
                 origins[0],
                 origins[n_origins - 1],
                 format!("{:?}", long.origin_grain).to_lowercase(),
-            ))
+            )),
+            Refused::Total(total) => Error::TooLarge(format!(
+                "{} segments by {} columns, each a grid of {n_origins} origins by {n_dev} ages, \
+                 make {total} cells for {n} rows in all, more than a triangle holds; a key \
+                 column that is close to unique (a claim or policy id) makes a segment of each \
+                 row, so key on the segment (line, state) only, or read the segments in \
+                 separate triangles",
+                shape[0], shape[1],
+            )),
         })?;
         let mut tri = Self {
             values: vec![0.0; size],
@@ -463,7 +471,7 @@ impl Triangle {
             .zip(&values)
             .map(|(c, v)| (*c, v.as_slice()))
             .collect();
-        Triangle::from_long(&Long {
+        let mut stacked = Triangle::from_long(&Long {
             keys: &[(key, &names)],
             origin: &origin,
             development: DevelopmentColumn::Age(&development),
@@ -471,7 +479,38 @@ impl Triangle {
             origin_grain: first.origin_grain(),
             development_grain: first.development_grain(),
             cumulative: first.is_cumulative(),
-        })
+        })?;
+        if !first.is_cumulative() {
+            // `from_long` fills every unobserved incremental up to the
+            // latest valuation of all programs with an observed zero. A
+            // program valued earlier, or missing a cell of its own, never
+            // observed those cells (#942): give each back its own mask.
+            for &(name, t) in triangles {
+                let i = stacked
+                    .index
+                    .binary_search(&Label::new([name]))
+                    .expect("every program is a segment");
+                for (c, col) in cols.iter().enumerate() {
+                    let tc = t.column_position(col).expect("checked above");
+                    for (o, start) in stacked.origins.iter().enumerate() {
+                        let to = t.origins.iter().position(|s| s == start);
+                        for (d, age) in stacked.development.iter().enumerate() {
+                            let td = t.development.iter().position(|a| a == age);
+                            let seen = match (to, td) {
+                                (Some(to), Some(td)) => t.mask[t.offset(0, tc, to, td)],
+                                _ => false,
+                            };
+                            if !seen {
+                                let at = stacked.offset(i, c, o, d);
+                                stacked.mask[at] = false;
+                                stacked.values[at] = 0.0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(stacked)
     }
 
     /// The triangle as a long table: one row per (segment, origin, age) with
@@ -1446,7 +1485,7 @@ impl Segment {
 
 /// The most cells one segment and column's grid (origins by ages) may
 /// span whatever the row count: 2^24, about 150 MB of values and mask.
-const MAX_DENSE_CELLS: usize = 1 << 24;
+pub(crate) const MAX_DENSE_CELLS: usize = 1 << 24;
 
 /// The product of `shape` (segments, columns, origins, ages), or `Err` with
 /// the span of one segment and column's grid, origins by ages, when that
@@ -1455,12 +1494,30 @@ const MAX_DENSE_CELLS: usize = 1 << 24;
 /// and age, whatever the number of segments, so many sparse segments over
 /// the same periods pass; an origin or valuation far from the others (a
 /// mistyped year) does not.
-fn checked_size(shape: &[usize; 4], rows: usize) -> std::result::Result<usize, usize> {
+fn checked_size(shape: &[usize; 4], rows: usize) -> std::result::Result<usize, Refused> {
     let span = shape[2].saturating_mul(shape[3]);
     if span > MAX_DENSE_CELLS && span / 1000 > rows {
-        return Err(span);
+        return Err(Refused::Span(span));
     }
-    Ok(shape.iter().fold(1usize, |a, &b| a.saturating_mul(b)))
+    let total = shape.iter().fold(1usize, |a, &b| a.saturating_mul(b));
+    if total > MAX_TOTAL_CELLS && total / 1000 > rows {
+        return Err(Refused::Total(total));
+    }
+    Ok(total)
+}
+
+/// The most cells all segments, columns and grids together may hold
+/// whatever the row count: 2^28, about 2.4 GB of values and mask (#951).
+/// Above it the total must still be within 1,000 cells for each row.
+const MAX_TOTAL_CELLS: usize = 1 << 28;
+
+/// Which bound [`checked_size`] refused, with the cells it counted.
+#[derive(Debug, PartialEq)]
+enum Refused {
+    /// One segment and column's grid, origins by ages.
+    Span(usize),
+    /// Segments by columns by the grid.
+    Total(usize),
 }
 
 #[cfg(test)]
@@ -1497,7 +1554,18 @@ pub(crate) mod tests {
         assert_eq!(checked_size(&[100, 1, 480, 480], 200), Ok(23_040_000));
         assert_eq!(
             checked_size(&[1, 1, 84_001, 84_001], 13),
-            Err(84_001 * 84_001)
+            Err(Refused::Span(84_001 * 84_001))
+        );
+        // #951: the product of all four axes is bounded too. 200,000 rows
+        // with a claim id key and 480 by 480 grids are 4.6e10 cells.
+        assert_eq!(
+            checked_size(&[200_000, 1, 480, 480], 200_000),
+            Err(Refused::Total(200_000 * 480 * 480))
+        );
+        // A big table dense enough to hold its cells passes.
+        assert_eq!(
+            checked_size(&[1_000, 1, 600, 600], 400_000),
+            Ok(360_000_000)
         );
         // Twelve years of months with gaps between origins still build.
         let origin: Vec<Month> = [2010, 2015, 2021].map(|y| m(y, 1)).to_vec();
@@ -1512,6 +1580,34 @@ pub(crate) mod tests {
         })
         .unwrap();
         assert_eq!(t.origins().len(), 133);
+    }
+
+    #[test]
+    fn many_segments_over_a_wide_grid_are_refused_before_the_grid_is_allocated() {
+        // #951: a nearly unique key (a claim id) makes a segment of each
+        // row, and every segment gets the whole grid. 1,000 segments of 600
+        // monthly origins by 600 monthly ages are 3.6e8 cells (3 GB) for
+        // 1,001 rows; the grid of one segment, 360,000 cells, is small.
+        let keys: Vec<String> = (0..1001).map(|k| format!("claim{k}")).collect();
+        let key_refs: Vec<&str> = keys.iter().map(String::as_str).collect();
+        let mut origin = vec![m(2000, 1); 1001];
+        origin[1000] = m(2049, 12);
+        let mut age = vec![1; 1001];
+        age[0] = 600;
+        let built = Triangle::from_long(&Long {
+            keys: &[("claim", &key_refs)],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&age),
+            values: &[("paid", &vec![1.0; 1001])],
+            origin_grain: Grain::Month,
+            development_grain: Grain::Month,
+            cumulative: true,
+        });
+        let Err(err) = built else {
+            panic!("1,001 segments of a 600 by 600 grid built a triangle")
+        };
+        assert!(matches!(err, Error::TooLarge(_)), "{err}");
+        assert!(err.to_string().contains("1001 segments"), "{err}");
     }
 
     /// RAA cumulative triangle (Mack 1993), origins 1981-1990.
@@ -1596,6 +1692,48 @@ pub(crate) mod tests {
 
     fn m(year: i32, month: u8) -> Month {
         Month::new(year, month).unwrap()
+    }
+
+    #[test]
+    fn stacking_incremental_programs_keeps_each_ones_own_missing_cells() {
+        // #942: B is valued a year before A; its 24-month cell was never
+        // observed and must not become an observed zero.
+        let one = |origin: &[Month], age: &[Lag], v: &[f64]| {
+            Triangle::from_long(&Long {
+                keys: &[],
+                origin,
+                development: DevelopmentColumn::Age(age),
+                values: &[("paid", v)],
+                origin_grain: Grain::Year,
+                development_grain: Grain::Year,
+                cumulative: false,
+            })
+            .unwrap()
+        };
+        let a = one(
+            &[m(2020, 1), m(2020, 1), m(2021, 1)],
+            &[12, 24, 12],
+            &[100.0, 40.0, 90.0],
+        );
+        let b = one(&[m(2020, 1)], &[12], &[80.0]);
+        assert_eq!((a.valuation(), b.valuation()), (m(2021, 12), m(2020, 12)));
+        let st = Triangle::stack(&[("A", &a), ("B", &b)], "program", &["paid"]).unwrap();
+        assert_eq!(st.shape(), [2, 1, 2, 2]);
+        assert!(!st.is_cumulative());
+        assert_eq!(st.get(1, 0, 0, 0), Some(80.0));
+        assert_eq!(st.get(1, 0, 0, 1), None);
+        assert_eq!(st.get(1, 0, 1, 0), None);
+        // The programs' own cells are untouched.
+        assert_eq!(st.get(0, 0, 0, 1), Some(40.0));
+        assert_eq!(st.get(0, 0, 1, 0), Some(90.0));
+        let back = st.segments("paid").unwrap();
+        for (seg, tri) in back.iter().zip([&a, &b]) {
+            let own = tri.segment("paid").unwrap();
+            assert_eq!(seg.cells, own.cells);
+            assert_eq!((seg.n_origins, seg.n_dev), (own.n_origins, own.n_dev));
+            assert_eq!(seg.origins, own.origins);
+            assert_eq!(seg.ages, own.ages);
+        }
     }
 
     #[test]

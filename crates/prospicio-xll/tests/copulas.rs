@@ -254,3 +254,14 @@ fn bad_inputs_are_named() {
     );
     assert!(text(&e).contains("at least two columns"), "{}", text(&e));
 }
+
+#[test]
+fn a_simulation_over_the_cell_cap_is_refused_before_it_runs() {
+    // 1,000,000 rows by 64 columns is about 5 GB at its peak.
+    let e = call(
+        "pro_cap_copula_sim",
+        vec![t("gaussian"), n(0.5), n(1_000_000.0), n(64.0)],
+    );
+    let s = text(&e);
+    assert!(s.starts_with("#PROSPICIO!") && s.contains("cells"), "{s}");
+}

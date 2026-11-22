@@ -1470,6 +1470,9 @@ elt_severity_moments <- function(elt) {
                                              cols$sd_correlated, cols$exposure))
 }
 
+# The means-alone rule in Excel's spelling (#956).
+elt_bucketing_aliases <- c("linear" = "means_linear")
+
 #' An event loss table on a grid
 #'
 #' `elt_severity_grid()` puts one event's loss given that it occurs on the
@@ -1507,7 +1510,8 @@ elt_severity_moments <- function(elt) {
 #' mean(annual)
 #' mean(elt_aggregate_grid(elt, 100, 64)$annual)
 elt_severity_grid <- function(elt, step, points, bucketing = c("nearest", "means_linear")) {
-  bucketing <- match.arg(bucketing)
+  bucketing <- match.arg(option_alias(bucketing, elt_bucketing_aliases),
+                         c("nearest", "means_linear"))
   r <- elt_grid_call(elt, step, points, bucketing, FALSE)
   list(severity = grid_distribution(ptr = r$severity), report = r$report)
 }
@@ -1515,7 +1519,8 @@ elt_severity_grid <- function(elt, step, points, bucketing = c("nearest", "means
 #' @rdname elt_severity_grid
 #' @export
 elt_aggregate_grid <- function(elt, step, points, bucketing = c("nearest", "means_linear")) {
-  bucketing <- match.arg(bucketing)
+  bucketing <- match.arg(option_alias(bucketing, elt_bucketing_aliases),
+                         c("nearest", "means_linear"))
   r <- elt_grid_call(elt, step, points, bucketing, TRUE)
   list(annual = grid_distribution(ptr = r$annual), severity_report = r$severity_report)
 }

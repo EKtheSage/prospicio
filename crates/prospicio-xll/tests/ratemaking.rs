@@ -291,7 +291,7 @@ fn errors_come_back_as_text() {
             "pro_prc_onlevel",
             vec![eff.clone(), column(&[0.1]), n(2011.0), n(2012.0)]
         )
-        .contains("one value per effective date")
+        .contains("changes has 1 cells, too few for effective")
     );
     assert!(
         e(
@@ -353,5 +353,52 @@ fn errors_come_back_as_text() {
             vec![column(&[0.0, 1.0]), column(&[1.0])]
         )
         .contains("same number of cells")
+    );
+}
+
+/// The rate-change rule and the period kind in every spelling Python, R or
+/// Excel takes, from `Applies::NAMES` and `PeriodKind::NAMES` (#956).
+#[test]
+fn applies_and_period_spellings() {
+    let eff = column(&CHAPTER_5_DATES);
+    let changes = column(&[0.05, 0.10, -0.01]);
+    let ol = |period: &str, applies: &[&str]| {
+        let applies = Grid::from_rows(applies.iter().map(|a| vec![Value::from(*a)]).collect());
+        let out = call(
+            "pro_prc_onlevel",
+            vec![
+                eff.clone(),
+                changes.clone(),
+                n(2011.0),
+                n(2012.0),
+                t(period),
+                n(1.0),
+                applies,
+            ],
+        );
+        match out.as_scalar() {
+            Some(v @ Value::Number(_)) => Ok(num(v)),
+            _ => Err(text(&out).to_string()),
+        }
+    };
+    let written = ["written"; 3];
+    let want = ol("calendar", &["written", "in_force", "written"]).unwrap();
+    assert!((want - ol("calendar", &written).unwrap()).abs() > 1e-6);
+    for name in ["inforce", "In-Force", "in force", "IN_FORCE"] {
+        assert_eq!(ol("calendar", &["written", name, "written"]), Ok(want), "{name}");
+    }
+    let err = ol("calendar", &["written", "sometimes", "written"]).unwrap_err();
+    assert!(
+        err.contains("applies must be \"written\"") && err.contains("got \"sometimes\""),
+        "{err}"
+    );
+    let calendar = ol("calendar", &written).unwrap();
+    assert_eq!(ol("accident", &written), Ok(calendar));
+    assert_eq!(ol(" Accident ", &written), Ok(calendar));
+    assert!(ol("policy", &written).unwrap() != calendar);
+    let err = ol("fiscal", &written).unwrap_err();
+    assert!(
+        err.contains("period must be \"calendar\"") && err.contains("got \"fiscal\""),
+        "{err}"
     );
 }

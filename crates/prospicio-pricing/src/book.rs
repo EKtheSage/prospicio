@@ -432,13 +432,13 @@ pub struct AdequacyRow {
     pub allocated_assets: f64,
     /// `allocated_assets − premium_kept`.
     pub allocated_capital: f64,
-    /// `margin / allocated_capital`.
+    /// `margin / allocated_capital`, NaN when the capital is 0.
     pub return_on_allocated: f64,
     /// The assets the deal adds written last; the book's own on the total.
     pub marginal_assets: f64,
     /// `marginal_assets − premium_kept`.
     pub marginal_capital: f64,
-    /// `margin / marginal_capital`.
+    /// `margin / marginal_capital`, NaN when the capital is 0.
     pub return_on_marginal: f64,
     /// The premium the rule allocates to the deal (its technical price).
     pub technical_premium: f64,
@@ -450,6 +450,12 @@ pub struct AdequacyRow {
     pub target_premium: f64,
     /// `premium_kept / target_premium`: above 1 the deal beats the target.
     pub adequacy: f64,
+}
+
+/// `x / by`, NaN when `by` is 0: a ratio to nothing is not defined, and
+/// an `inf` in a table would read as a number (#960).
+fn ratio(x: f64, by: f64) -> f64 {
+    if by == 0.0 { f64::NAN } else { x / by }
 }
 
 /// The book's price adequacy from [`DealBook::adequacy`].
@@ -698,7 +704,8 @@ impl DealBook {
     /// mean premium: `(deal, item, mean, ratio)` rows, the deals in order
     /// then `"total"`, the items as [`items`](Self::items). The book's
     /// ratios are sums over sums, the total of an item over the total
-    /// premium (equal to the ratio of the means).
+    /// premium (equal to the ratio of the means). A deal (or a book) whose
+    /// mean premium is 0 has NaN ratios.
     ///
     /// ```
     /// use prospicio_pricing::book::{DealBook, DealRun};
@@ -719,7 +726,7 @@ impl DealBook {
             let premium = mean(&values("premium")?);
             for item in self.items() {
                 let m = mean(&values(&item)?);
-                rows.push((deal.to_string(), item, m, m / premium));
+                rows.push((deal.to_string(), item, m, ratio(m, premium)));
             }
             Ok(())
         };
@@ -866,7 +873,8 @@ impl DealBook {
     /// the capital standard `assets`; the target return is the book's
     /// return at its technical price, so a deal that keeps its target
     /// premium returns the target on its allocated capital. On a book of
-    /// one deal the allocated and marginal bases agree.
+    /// one deal the allocated and marginal bases agree. A return on a
+    /// capital of 0 is NaN.
     ///
     /// ```
     /// use prospicio_pricing::book::{DealBook, DealRun};
@@ -924,10 +932,10 @@ impl DealBook {
                 margin,
                 allocated_assets: allocated.assets,
                 allocated_capital: ac,
-                return_on_allocated: margin / ac,
+                return_on_allocated: ratio(margin, ac),
                 marginal_assets,
                 marginal_capital: mc,
-                return_on_marginal: margin / mc,
+                return_on_marginal: ratio(margin, mc),
                 technical_premium: allocated.premium,
                 marginal_premium,
                 target_premium,
@@ -1051,7 +1059,8 @@ impl DealBook {
     /// "year"]`: `written_premium`, `earned_premium` and `paid_loss` from
     /// each deal's patterns (the premium and loss of each simulation spread
     /// by the month-by-month increments, placed at the deal's inception
-    /// plus the month), and `investor_flow` when every deal has flows; the
+    /// plus the month), and `investor_flow` only when every deal has flows (a
+    /// book where only some deals have flows has no such item); the
     /// deals in order, then `"total"`; the years from `start_year`, book
     /// month `m` in year `start_year + m / 12`.
     ///
@@ -1076,7 +1085,11 @@ impl DealBook {
             .iter()
             .zip(&patterns)
             .map(|(d, p)| {
-                let f = d.flows.as_ref().map_or(0, |f| f.months);
+                let f = d
+                    .flows
+                    .as_ref()
+                    .filter(|_| with_flows)
+                    .map_or(0, |f| f.months);
                 d.inception + p.written.len().max(f)
             })
             .max()
@@ -1108,7 +1121,7 @@ impl DealBook {
             place(0, &p.written, &d.premium);
             place(1, &p.earned, &d.premium);
             place(2, &p.paid, &d.loss);
-            if let Some(f) = &d.flows {
+            if let Some(f) = d.flows.as_ref().filter(|_| with_flows) {
                 for (j, row) in f.flows.chunks(f.months).enumerate() {
                     for (t, &v) in row.iter().enumerate() {
                         let y = (d.inception + t) / 12;
@@ -1601,6 +1614,26 @@ mod tests {
     }
 
     #[test]
+    fn a_calendar_of_a_book_with_some_flows_has_no_investor_flow_item() {
+        let with = run("a", 1.0);
+        let without = DealRun::new("b", vec![100.0; 6], vec![50.0; 6])
+            .unwrap()
+            .patterns(terms().patterns.clone());
+        let book = DealBook::new(vec![with, without]).unwrap();
+        let cal = book.calendar(2026).unwrap();
+        let has = |item: &str| {
+            cal.marginal(&vec![
+                KeyValue::from(item),
+                KeyValue::from("a"),
+                KeyValue::from(2026_i64),
+            ])
+            .is_some()
+        };
+        assert!(has("written_premium"));
+        assert!(!has("investor_flow"));
+    }
+
+    #[test]
     fn the_calendar_places_each_deal_from_its_inception() {
         let book = DealBook::new(vec![run("a", 1.0), run("b", 0.8).inception(6)]).unwrap();
         let cal = book.calendar(2026).unwrap();
@@ -1684,6 +1717,37 @@ mod tests {
         );
         let total = DealRun::new("total", vec![1.0; 3], vec![0.5; 3]).unwrap();
         assert!(DealBook::new(vec![total]).unwrap().amounts().is_err());
+    }
+
+    #[test]
+    fn ratios_with_nothing_to_divide_by_are_nan() {
+        // A deal with no premium has no ratios to premium, and a deal
+        // with no capital no return on it (#960): NaN, never inf.
+        let free = DealRun::new("free", vec![0.0; 4], vec![1.0, 2.0, 3.0, 9.0]).unwrap();
+        let paid = DealRun::new("paid", vec![10.0; 4], vec![4.0, 1.0, 2.0, 3.0]).unwrap();
+        let book = DealBook::new(vec![free, paid]).unwrap();
+        for (deal, item, mean, ratio) in book.summary().unwrap() {
+            assert!(mean.is_finite());
+            if deal == "free" {
+                assert!(ratio.is_nan(), "{deal} {item}: {ratio}");
+            } else {
+                assert!(ratio.is_finite(), "{deal} {item}: {ratio}");
+            }
+        }
+        // TVaR 50 of the losses is (3 + 9) / 2 = 6, the premium: the
+        // capital is 0 and the margin 6 - 3.75.
+        let full = DealRun::new("full", vec![6.0; 4], vec![1.0, 2.0, 3.0, 9.0]).unwrap();
+        let rule = PremiumRule::cost_of_capital(0.1).unwrap();
+        let r = DealBook::new(vec![full])
+            .unwrap()
+            .adequacy(&rule, &Distortion::tvar(0.5).unwrap())
+            .unwrap();
+        for row in &r.rows {
+            assert_eq!((row.allocated_capital, row.margin), (0.0, 2.25));
+            assert!(row.return_on_allocated.is_nan());
+            assert!(row.return_on_marginal.is_nan());
+            assert!(row.adequacy.is_finite());
+        }
     }
 
     #[test]

@@ -141,18 +141,26 @@ impl Portfolio {
     /// `∫ g(θ) dF(θ)` for each output of `g`, by Gauss–Legendre panels on
     /// `ln θ` between the quantiles `1e-15` and `1 - 1e-15`, the panels
     /// doubled until no output moves by more than `1e-13` of the largest.
+    ///
+    /// A very dispersed gamma (a cv above about 4.6) has its lower quantile
+    /// below the smallest floats: the panels then start at `θ = 1e-300` and
+    /// the mass below it, which is not negligible, counts as an atom there,
+    /// where `g` no longer moves (#960). Fails when the outputs still move
+    /// by more than `1e-8` of the largest at 4,096 panels.
     fn integrate(
         &self,
         n: usize,
         mut g: impl FnMut(f64, &mut [f64]) -> Result<()>,
     ) -> Result<Vec<f64>> {
-        let (ln_pdf, lo, hi): (Box<dyn Fn(f64) -> f64>, f64, f64) = match self.mixing {
+        type F = Box<dyn Fn(f64) -> f64>;
+        let (ln_pdf, below, lo, hi): (F, F, f64, f64) = match self.mixing {
             Mixing::Gamma { cv } => {
                 let a = 1.0 / (cv * cv);
                 let d = Gamma::new(a, 1.0 / a)?;
                 let c = a * a.ln() - ln_gamma(a);
                 (
                     Box::new(move |t: f64| c + (a - 1.0) * t.ln() - a * t),
+                    Box::new(move |t: f64| d.cdf(t)),
                     d.quantile(1e-15)?,
                     d.quantile(1.0 - 1e-15)?,
                 )
@@ -165,11 +173,17 @@ impl Portfolio {
                         0.5 * (phi / (2.0 * std::f64::consts::PI * t * t * t)).ln()
                             - phi * (t - 1.0) * (t - 1.0) / (2.0 * t)
                     }),
+                    Box::new(move |t: f64| d.cdf(t)),
                     d.quantile(1e-15)?,
                     d.quantile(1.0 - 1e-15)?,
                 )
             }
             _ => unreachable!("checked in Portfolio::classes"),
+        };
+        let (lo, atom) = if lo < THETA_FLOOR {
+            (THETA_FLOOR, below(THETA_FLOOR))
+        } else {
+            (lo, 0.0)
         };
         let (a, b) = (lo.ln(), hi.ln());
         let mut buf = vec![0.0; n];
@@ -211,6 +225,12 @@ impl Portfolio {
                     )?;
                 }
             }
+            if atom > 0.0 {
+                g(lo, &mut buf)?;
+                for (o, v) in out.iter_mut().zip(&buf) {
+                    *o += atom * v;
+                }
+            }
             Ok(out)
         };
         let mut panels = 32;
@@ -223,13 +243,26 @@ impl Portfolio {
                 .iter()
                 .zip(&prev)
                 .fold(0.0_f64, |m, (x, y)| m.max((x - y).abs()));
-            if moved <= 1e-13 * scale || panels >= 4096 {
+            if moved <= 1e-13 * scale {
                 return Ok(next);
+            }
+            if panels >= 4096 {
+                if moved <= 1e-8 * scale {
+                    return Ok(next);
+                }
+                return Err(Error::Data(format!(
+                    "the integral over the heterogeneity still moves by {:e} of its \
+                     largest value at {panels} panels",
+                    moved / scale
+                )));
             }
             prev = next;
         }
     }
 }
+
+/// The smallest `θ` the quadrature of [`Portfolio::integrate`] reaches.
+const THETA_FLOOR: f64 = 1e-300;
 
 fn check_lambda(lambda: f64) -> Result<()> {
     if lambda.is_finite() && lambda > 0.0 {
@@ -387,11 +420,55 @@ impl BonusMalus {
         self.matrix(&dp)
     }
 
+    /// The number of closed communicating classes of the level graph (an
+    /// edge from each level to every level a claim count can lead to). For
+    /// any `lambda > 0` every row entry has positive probability, so this
+    /// does not depend on `lambda`.
+    fn closed_classes(&self) -> usize {
+        let s = self.levels();
+        let mut reach = vec![false; s * s];
+        for (i, row) in self.table.iter().enumerate() {
+            reach[i * s + i] = true;
+            for &j in row {
+                reach[i * s + j] = true;
+            }
+        }
+        for k in 0..s {
+            for i in 0..s {
+                if reach[i * s + k] {
+                    for j in 0..s {
+                        if reach[k * s + j] {
+                            reach[i * s + j] = true;
+                        }
+                    }
+                }
+            }
+        }
+        // A level is in a closed class when everything it reaches reaches
+        // it back; count each class once, at its smallest level.
+        (0..s)
+            .filter(|&i| {
+                (0..s).all(|j| !reach[i * s + j] || reach[j * s + i])
+                    && (0..i).all(|j| !(reach[i * s + j] && reach[j * s + i]))
+            })
+            .count()
+    }
+
     /// Solve `x (P - I) = -rhs` with `Σ x = total`: the stationary
     /// distribution for `rhs = 0`, `total = 1`, and its derivative for
     /// `rhs = π P'`, `total = 0`.
     fn solve_left(&self, m: &[f64], rhs: &[f64], total: f64) -> Result<Vec<f64>> {
         let s = self.levels();
+        // Uniqueness is a property of the table, not of round-off in the
+        // solve: with two closed classes the system is singular, but the
+        // pivot is rarely exactly zero.
+        if self.closed_classes() > 1 {
+            return Err(Error::Data(
+                "the scale has no unique stationary distribution: it has more than one closed \
+                 class of levels"
+                    .into(),
+            ));
+        }
         // (P - I)^T, its last row replaced by ones.
         let mut a = vec![0.0; s * s];
         for i in 0..s {
@@ -660,6 +737,32 @@ mod tests {
     }
 
     #[test]
+    fn a_table_with_two_closed_classes_has_no_stationary_distribution() {
+        // Closed classes {0, 1} and {4, 5}; a newcomer starts at level 0.
+        let rows = vec![
+            vec![0, 1, 1],
+            vec![0, 1, 1],
+            vec![1, 3, 4],
+            vec![2, 4, 5],
+            vec![4, 5, 5],
+            vec![4, 5, 5],
+        ];
+        let bm = BonusMalus::table(0, rows).unwrap();
+        for lambda in [0.1, 0.37, 1.3] {
+            assert!(bm.stationary_at(lambda).is_err(), "lambda = {lambda}");
+            let rel = vec![1.0; 6];
+            assert!(bm.mean_relativity(lambda, &rel).is_err());
+            assert!(bm.efficiency(lambda, &rel).is_err());
+        }
+        // The transient view is still defined.
+        assert!(bm.distribution_after(0.37, 5).is_ok());
+        // One closed class {2} with transient levels still works.
+        let one = BonusMalus::table(0, vec![vec![1, 2], vec![2, 2], vec![2, 2]]).unwrap();
+        let pi = one.stationary_at(0.5).unwrap();
+        assert!((pi[2] - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
     fn two_levels_under_gamma_mixing_are_exact() {
         // -1/+1 on two levels: level 0 after a claim-free year, so
         // π_0(λ) = e^{-λ}; with Θ ~ Gamma(a, a), ∫ e^{-λθ} dF = (a/(a+λ))^a
@@ -685,6 +788,32 @@ mod tests {
             assert!((r[0] - a / (a + lambda)).abs() < 1e-12);
             assert!((r[1] - (1.0 - p0 * a / (a + lambda)) / (1.0 - p0)).abs() < 1e-11);
             assert!((pi[0] * r[0] + pi[1] * r[1] - 1.0).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn a_very_dispersed_gamma_is_integrated() {
+        // Below a shape of about 0.05 the gamma's quantile at 1e-15
+        // underflows to 0 (#960): the two-level closed form still holds.
+        let s = BonusMalus::rule(
+            2,
+            1,
+            BonusRule {
+                down: 1,
+                up_per_claim: 1,
+            },
+        )
+        .unwrap();
+        for cv in [4.0, 5.0, 6.0, 10.0] {
+            let a = 1.0 / (cv * cv);
+            let lambda = 0.1;
+            let port = Portfolio::new(lambda, gamma(cv)).unwrap();
+            let pi = s.stationary(&port).unwrap();
+            let p0 = (a / (a + lambda)).powf(a);
+            assert!((pi[0] - p0).abs() < 1e-11, "cv {cv}: {} vs {p0}", pi[0]);
+            let r = s.optimal_relativities(&port).unwrap();
+            assert!((r[0] - a / (a + lambda)).abs() < 1e-11, "cv {cv}: {}", r[0]);
+            assert!((pi[0] * r[0] + pi[1] * r[1] - 1.0).abs() < 1e-11, "cv {cv}");
         }
     }
 

@@ -1547,21 +1547,8 @@ impl PyAllocation {
     }
 }
 
-const METHODS: [(&str, AllocationMethod); 6] = [
-    ("euler", AllocationMethod::Euler),
-    ("covariance", AllocationMethod::Covariance),
-    ("covariance_margin", AllocationMethod::CovarianceMargin),
-    ("proportional", AllocationMethod::Proportional),
-    ("marginal", AllocationMethod::Marginal),
-    ("shapley", AllocationMethod::Shapley),
-];
-
 fn method_name(method: AllocationMethod) -> &'static str {
-    METHODS
-        .iter()
-        .find(|(_, m)| *m == method)
-        .map(|(name, _)| *name)
-        .expect("every method has a name")
+    method.name()
 }
 
 /// Allocates the distortion risk measure of a portfolio's total to its
@@ -1620,16 +1607,8 @@ pub(crate) fn capital(
     distortion: PyRef<'_, PyDistortion>,
     method: &str,
 ) -> PyResult<PyAllocation> {
-    let method = METHODS
-        .iter()
-        .find(|(name, _)| *name == method)
-        .map(|(_, m)| *m)
-        .ok_or_else(|| {
-            PyValueError::new_err(
-                "method must be one of euler, covariance, covariance_margin, proportional, \
-                 marginal, shapley",
-            )
-        })?;
+    let method = AllocationMethod::from_name(method)
+        .ok_or_else(|| crate::unknown_name("method", method, AllocationMethod::NAMES))?;
     let (pd, d) = (&pd.inner, distortion.inner.clone());
     let inner = py.detach(|| pd.capital(&d, method)).map_err(to_py)?;
     Ok(PyAllocation { inner })

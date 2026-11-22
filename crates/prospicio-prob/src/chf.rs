@@ -28,9 +28,11 @@
 //! ladder while that lowers the larger of the truncation and the mass the
 //! shortened window leaves outside.
 //!
-//! **An atom** (the Tweedie's point mass at 0) is taken out of `φ` before
-//! inversion and added back to its bucket, so frequency truncation does
-//! not ring around it.
+//! **An atom** (the Tweedie's point mass at 0, a CGMY law's at `mu` for
+//! `Y < 0`) is taken out of `φ` before inversion and added back to its
+//! bucket, so frequency truncation does not ring around it. A grid that
+//! does not hold the atom (one the user gives, or an automatic window that
+//! leaves out a negligible atom) leaves it in `φ`.
 //!
 //! **Tilting.** The kernel inverts along the line `Im s = θ`, where the
 //! integrand decays like the damped law `e^{−θx} f(x)`: the discretized
@@ -362,6 +364,7 @@ impl ChfLaw {
         match self {
             Self::Tweedie(t) => Some((0.0, (-t.lambda()).exp())),
             Self::TweediePower(d) => d.atom(),
+            Self::TemperedStable(d) => d.atom(),
             Self::Affine { base, scale, shift } => base.atom().map(|(x, w)| (scale * x + shift, w)),
             _ => None,
         }
@@ -419,9 +422,14 @@ impl ChfLaw {
     /// inversion transforms, the atom taken out (`aggregate`'s
     /// `truncation_at`).
     pub fn truncation_at(&self, h: f64) -> Result<f64> {
+        self.truncation_with(h, self.atom())
+    }
+
+    /// [`Self::truncation_at`] with `atom` taken out, or nothing.
+    fn truncation_with(&self, h: f64, atom: Option<(f64, f64)>) -> Result<f64> {
         let s = Complex64::new(std::f64::consts::PI / h, 0.0);
         let mut c = self.chf(&[s])?[0];
-        if let Some((x, w)) = self.atom() {
+        if let Some((x, w)) = atom {
             c -= w * Complex64::new(0.0, std::f64::consts::PI * x / h).exp();
         }
         Ok(c.norm())
@@ -495,8 +503,13 @@ pub enum Tilt {
     Auto,
     /// Never tilt and never cap: a heavy tail wraps onto the window.
     Off,
-    /// Exactly `τ ≥ 0` e-folds, the cap applied; only for a law with one
-    /// power tail.
+    /// Exactly `τ ≥ 0` e-folds, the cap applied, for a law with a power
+    /// tail (a stable law with `β = ±1`, or with `|β| < 1` where each half
+    /// gets the `τ`). Refused with `x_min` given: that grid is inverted
+    /// untilted. Refused for a law with one power tail where the light
+    /// side's mass below the window, which wraps onto its top end magnified
+    /// by `e^τ`, would then exceed round-off: a window that a given `step`
+    /// puts on the body.
     Fixed(f64),
 }
 
@@ -508,7 +521,10 @@ pub struct ChfOptions {
     /// The bucket. `None` sizes it by rule A from the tails.
     pub step: Option<f64>,
     /// The grid's left edge, with `step` given. `None` places it by the
-    /// rule. Required, with `step`, for a user's function.
+    /// rule. Required, with `step`, for a user's function. A given
+    /// `x_min` fixes the grid, so it is inverted untilted: `Tilt::Auto`
+    /// falls back to no tilt (a heavy tail wraps onto the window, and
+    /// `report.tilt` is `(0, 0)`), and `Tilt::Fixed` is refused.
     pub x_min: Option<f64>,
     /// The mass rule A's window covers, in `(0, 1)`.
     pub bucket_sizing_p: f64,
@@ -555,19 +571,27 @@ pub struct ChfReport {
     /// The law's mass below the window: a Chernoff bound, which wraps onto
     /// the window's top end, or under a tilt the tail mass beyond a left
     /// power tail's window, which is added to the first bucket; 0 on a
-    /// grid whose left edge was given.
+    /// grid whose left edge was given. For a power tail where its series
+    /// does not hold (a window that ends near the body), what the masses
+    /// leave of 1 under a tilt that keeps the tail from wrapping, and
+    /// otherwise an upper bound (`P(X < δ₁)`, or 1). Under a smaller tilt
+    /// part of the tail has wrapped into the masses, so the first bucket
+    /// gets at most what they leave of 1 (about nothing untilted).
     pub outside_below: f64,
     /// The law's mass above the window: a Chernoff bound, which wraps onto
     /// the window's bottom end, or the tail mass beyond a right power
-    /// tail's window, which a tilted grid leaves out.
+    /// tail's window, which a tilted grid leaves out. Where its series does
+    /// not hold, as for `outside_below`: what the masses leave of 1, or an
+    /// upper bound (`P(X > δ₁)`, or 1).
     pub outside_above: f64,
     /// `(left, right)`: the e-folds of damping across the window on each
     /// side, `(0, τ)` for a right power tail tilted, `(τ, 0)` for a left
     /// one, `(0, 0)` untilted.
     pub tilt: (f64, f64),
     /// The modelled worst relative error of a bucket at the heavy end of a
-    /// law with one power tail, `ρ e^(−τ) + ε κ e^τ`; NaN for any other
-    /// law.
+    /// law with one power tail, `ρ e^(−τ) + ε κ e^τ` (under a tilt `ε`
+    /// includes the light side's mass below the window, which wraps
+    /// magnified by `e^τ`); NaN for any other law.
     pub edge_error: f64,
     /// The law's mean (NaN for a user's function).
     pub law_mean: f64,
@@ -683,6 +707,16 @@ impl ChfDistribution {
                 reason: "a Grid starts at 0: the window must start at 0 or above, on a whole number of buckets",
             });
         }
+        // A law far from 0 for its spread pads billions of buckets (#951):
+        // at most 2^28 (2 GB of zeros), the largest window.
+        const MAX_PAD_BUCKETS: f64 = (1u64 << 28) as f64;
+        if k0 > MAX_PAD_BUCKETS {
+            return Err(Error::InvalidParameter {
+                name: "x_min",
+                value: self.x_min,
+                reason: "the window starts too many buckets above 0 to pad a Grid with zeros",
+            });
+        }
         let mut probs = vec![0.0; k0 as usize];
         probs.extend(self.masses.iter().map(|p| p.max(0.0)));
         Grid::normalized(self.step, probs)
@@ -745,8 +779,12 @@ impl Distribution for ChfDistribution {
 /// characteristic function.
 ///
 /// Fails when the options are out of range, when a user's function has no
-/// `step` and `x_min`, when `x_min` is given without `step`, or when the
-/// window cannot be sized from the law.
+/// `step` and `x_min`, when `x_min` is given without `step`, when the
+/// window cannot be sized from the law, or when a stable law with two
+/// power tails is given a `step` above `πγ / (104 ln 2)^(1/α)`, the
+/// largest its split into halves can take, or when `Tilt::Fixed` is asked
+/// for on a grid whose `x_min` is given, or on a window whose light side
+/// below it the tilt would magnify past round-off.
 pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
     if !(1..=28).contains(&options.log2) {
         return Err(Error::InvalidParameter {
@@ -814,9 +852,19 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
             ));
         }
     }
+    if fixed_grid && matches!(options.tilt, Tilt::Fixed(_)) {
+        return Err(Error::Data(
+            "a fixed tilt needs the window the rule places: a grid whose left edge is \
+             given (x_min) is inverted untilted, so the tilt would be ignored; omit x_min, \
+             or use tilt off or auto"
+                .into(),
+        ));
+    }
     let tilting = options.tilt != Tilt::Off && !fixed_grid;
     let tilt_family = if tilting { law.tilt_family() } else { None };
     let (h, x0, tilt, edge_error, mut masses, below, above);
+    // The atom taken out of `φ`, for the masses and the truncation report.
+    let mut atom = law.atom();
     let split = match law {
         ChfLaw::Stable(st) if tilting && law.tilt_side() == Some(TiltSide::Both) => Some(*st),
         _ => None,
@@ -832,8 +880,14 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                     (Some(h), Some(x)) => (h, x),
                     _ => plain_window(law, n, p, options.step)?,
                 };
-                masses = invert_on(law, x0, h, n, 0.0, law.atom())?;
-                (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
+                // A grid may not hold the atom: one the user gives can put it
+                // off the grid or outside the window, and the automatic
+                // window from the quantiles can leave out a negligible atom
+                // when the jumps go mostly one way. Then it stays in `φ`, as
+                // it did before a CGMY law's atom was taken out (#944).
+                atom = atom.filter(|&(xa, _)| atom_bucket(xa, x0, h, n).is_some());
+                masses = invert_on(law, x0, h, n, 0.0, atom)?;
+                (below, above) = outside_at(law, h, x0, n, fixed_grid, None)?;
                 edge_error = match law.tilt_family() {
                     Some(fam) if law.tilt_side() != Some(TiltSide::Both) => {
                         let y0 = if law.tilt_side() == Some(TiltSide::Right) {
@@ -849,19 +903,31 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
                 tilt = (0.0, 0.0);
             }
             Some(fam) => {
-                let (hh, y0, tau) = one_sided_window(&fam, n, p, options.step, options.tilt);
+                let (hh, y0, tau) = one_sided_window(&fam, n, p, options.step, options.tilt)?;
                 h = hh;
                 let left = law.tilt_side() == Some(TiltSide::Left);
                 x0 = if left { -(y0 + (n - 1) as f64 * h) } else { y0 };
                 let w = n as f64 * h;
                 masses = invert_on(&ChfLaw::Stable(fam), y0, h, n, tau / w, None)?;
-                let (rho, eps, kappa) = edge_terms(&fam, y0, h, n);
+                let (rho, eps, kappa) = tilted_edge_terms(&fam, y0, h, n);
                 edge_error = edge_error_at(tau, rho, eps, kappa);
                 if left {
                     masses.reverse();
                 }
-                (below, above) = outside_at(law, h, x0, n, fixed_grid)?;
-                masses[0] += below;
+                // Only a tilt that damps the wrapped tail leaves it out of
+                // the masses: then what they leave of 1 lies beyond the
+                // window, and a left tail's goes into the first bucket. A
+                // smaller tilt leaves part of the tail in the masses, so the
+                // first bucket gets no more than they leave of 1.
+                let inside: f64 = masses.iter().sum();
+                let unwrapped = tau >= TILT_UNWRAPPED;
+                let residual = (tau > 0.0).then_some((1.0 - inside, tau));
+                (below, above) = outside_at(law, h, x0, n, fixed_grid, residual)?;
+                masses[0] += if unwrapped {
+                    below
+                } else {
+                    below.min(1.0 - inside).max(0.0)
+                };
                 tilt = if left { (tau, 0.0) } else { (0.0, tau) };
             }
         }
@@ -878,7 +944,7 @@ pub fn invert(law: &ChfLaw, options: &ChfOptions) -> Result<ChfDistribution> {
         step: h,
         x_min: x0,
         step_given: options.step.is_some(),
-        truncation_error: law.truncation_at(h)?,
+        truncation_error: law.truncation_with(h, atom)?,
         outside_below: below,
         outside_above: above,
         tilt,
@@ -982,16 +1048,21 @@ fn invert_fn(
         })
         .collect();
     if let Some((xa, wa)) = atom {
-        let kf = ((xa - x0) / h).round();
-        let k = kf as isize;
-        if k < 0 || k as usize >= n || (x0 + kf * h - xa).abs() > 1e-9 * h.max(1.0) {
-            return Err(Error::Data(format!(
+        let k = atom_bucket(xa, x0, h, n).ok_or_else(|| {
+            Error::Data(format!(
                 "the atom at {xa} is not a grid point of x_min = {x0}, step = {h}, {n} buckets"
-            )));
-        }
-        p[k as usize] += wa;
+            ))
+        })?;
+        p[k] += wa;
     }
     Ok(p)
+}
+
+/// The bucket `k < n` whose grid point `x0 + h · k` is `xa`, if any.
+fn atom_bucket(xa: f64, x0: f64, h: f64, n: usize) -> Option<usize> {
+    let kf = ((xa - x0) / h).round();
+    let on_grid = kf >= 0.0 && kf < n as f64 && (x0 + kf * h - xa).abs() <= 1e-9 * h.max(1.0);
+    on_grid.then_some(kf as usize)
 }
 
 /// The smallest "nice" bucket at or above `bs`: `{1, 2, 4, 5, 8} · 10^k`
@@ -1239,7 +1310,8 @@ fn bucket_cap(fam: &Stable) -> f64 {
 /// the tilt damps, `ρ e^(−τ)`, with `ρ = q^(α+1) ζ(α+1, 1+q)`,
 /// `q = (x_R − δ₁)/W`; the amplified error `ε κ e^τ`, `ε = 2^(−52) +
 /// |φ(π/h)|`, `κ = sup f (x_R − δ₁)^(α+1) / (A α)`, both relative to the
-/// bucket mass at the right edge.
+/// bucket mass at the right edge. A tilted grid adds the light side below
+/// the window ([`tilted_edge_terms`]).
 fn edge_terms(fam: &Stable, x0: f64, h: f64, n: usize) -> (f64, f64, f64) {
     let (a, alpha) = (fam.tail_constant(), fam.alpha());
     let w = n as f64 * h;
@@ -1250,6 +1322,37 @@ fn edge_terms(fam: &Stable, x0: f64, h: f64, n: usize) -> (f64, f64, f64) {
     let kappa = fam.density_bound() * (x_r - fam.loc()).powf(alpha + 1.0) / (a * alpha);
     (rho, eps, kappa)
 }
+
+/// `(ρ, ε, κ)` of a tilted grid: [`edge_terms`] with `L/(h sup f)` added to
+/// `ε`. `L`, the light side's mass below the window, wraps onto its top end
+/// amplified by `e^τ`, as round-off does (#1010). On the window the rule
+/// places `L ≤ 1e-40` and the term is below round-off; on a window that a
+/// given step puts on the body it bounds the tilt.
+fn tilted_edge_terms(fam: &Stable, x0: f64, h: f64, n: usize) -> (f64, f64, f64) {
+    let (rho, eps, kappa) = edge_terms(fam, x0, h, n);
+    let light = light_mass_below(fam, x0) / (h * fam.density_bound());
+    (rho, eps + light, kappa)
+}
+
+/// The light side's mass below `x0` of a law with a right power tail: 0 at
+/// or below its support bound, else the Chernoff bound that places `x_l`.
+fn light_mass_below(fam: &Stable, x0: f64) -> f64 {
+    let (lo, _) = fam.support();
+    if x0 <= lo {
+        return 0.0;
+    }
+    let (s_minus, _) = fam.cgf_domain();
+    chernoff_tail(|u| fam.cgf(-u), -s_minus, -x0, fam.body_scale())
+}
+
+/// The largest mass the light side may leave below a tilted window, once
+/// amplified by `e^τ`: round-off on masses that sum to 1.
+const TILT_LIGHT_WRAP: f64 = f64::EPSILON;
+
+/// The tilt from which the masses of a one-sided law no longer hold the
+/// heavy tail that wraps onto them (it is damped by about `e^(−τ)`, here
+/// `10⁻³`), so that what they leave of 1 is the mass beyond the window.
+const TILT_UNWRAPPED: f64 = 6.907_755_278_982_137;
 
 /// `τ* = max(0, ½ ln(ρ / (ε κ)))`.
 fn tau_star(rho: f64, eps: f64, kappa: f64) -> f64 {
@@ -1271,7 +1374,7 @@ fn one_sided_window(
     p: f64,
     step: Option<f64>,
     tilt: Tilt,
-) -> (f64, f64, f64) {
+) -> Result<(f64, f64, f64)> {
     let eps = 1.0 - p;
     let (lo, _) = fam.support();
     let x_l = if lo.is_finite() {
@@ -1290,23 +1393,76 @@ fn one_sided_window(
         Some(h) => h,
         None => round_bucket((x_r - x_l) / n as f64).min(bucket_cap(fam)),
     };
-    let x0 = h * (x_l / h + 1e-12).floor();
+    // A given step may make the window too narrow to reach from the light
+    // edge to the body: it then sits on the body, as the untilted window
+    // does (the mean, or the location when the mean is infinite), with the
+    // light edge only as its left bound (#945). A window from the light edge
+    // that already holds the centre stays where it is.
+    let width = n as f64 * h;
+    let centre = if fam.mean().is_finite() {
+        fam.mean()
+    } else {
+        fam.loc()
+    };
+    let x_left = if step.is_some() && x_l + width < centre {
+        (centre - width / 2.0).max(x_l).min(x_r - width)
+    } else {
+        x_l
+    };
+    let x0 = h * (x_left / h + 1e-12).floor();
+    // On the body the light side has mass below the window, which the tilt
+    // amplifies by e^τ as it wraps onto the top end (#1010): the automatic
+    // tilt takes it into its balance (`tilted_edge_terms`), and a fixed one
+    // that would magnify it past round-off is refused.
     let tau = match tilt {
-        Tilt::Fixed(tau) => tau,
+        Tilt::Fixed(tau) => {
+            let light = light_mass_below(fam, x0);
+            if light * tau.exp() > TILT_LIGHT_WRAP {
+                return Err(Error::Data(format!(
+                    "a fixed tilt of {tau} e-folds on this window magnifies the light side's \
+                     mass below it (up to {light:.3e}) by e^{tau} as it wraps onto the top \
+                     end; use the automatic tilt, a smaller one, or a wider window (a larger \
+                     step or log2)"
+                )));
+            }
+            tau
+        }
         _ => {
-            let (rho, e, kappa) = edge_terms(fam, x0, h, n);
+            let (rho, e, kappa) = tilted_edge_terms(fam, x0, h, n);
             tau_star(rho, e, kappa)
         }
     };
-    (h, x0, tau)
+    Ok((h, x0, tau))
 }
 
 /// `(below, above)`: the law's mass outside `[x0, x0 + n h)`. A law with
 /// one power tail gives the tail mass beyond its window (on the heavy
 /// side); two power tails an estimate from the leading terms on a window
 /// placed to balance them; any other law the Chernoff bounds, 0 on a grid
-/// whose left edge was given.
-fn outside_at(law: &ChfLaw, h: f64, x0: f64, n: usize, fixed_grid: bool) -> Result<(f64, f64)> {
+/// whose left edge was given. Where the tail series is not valid (a window
+/// that ends within a few scales of the body, #945) the heavy side gets
+/// what the masses leave of 1, `r` in `residual = (r, τ)`, when they hold no
+/// wrapped tail (a tilt of at least [`TILT_UNWRAPPED`]), and otherwise an
+/// upper bound. A tilt `τ` damps the tail that wraps onto the window by at
+/// least `e^(−τ)`, so the mass beyond is at most `r / (1 − e^(−τ))`;
+/// untilted, the tail wraps onto the window whole and the masses sum to
+/// about 1 whatever lies outside (#1010), so only the crude bound is left.
+fn outside_at(
+    law: &ChfLaw,
+    h: f64,
+    x0: f64,
+    n: usize,
+    fixed_grid: bool,
+    residual: Option<(f64, f64)>,
+) -> Result<(f64, f64)> {
+    let beyond = |fam: &Stable, edge: f64| {
+        fam.tail_mass_above(edge)
+            .unwrap_or_else(|_| match residual {
+                Some((r, tau)) if tau >= TILT_UNWRAPPED => r.clamp(0.0, 1.0),
+                Some((r, tau)) => (r.max(0.0) / -(-tau).exp_m1()).min(tail_mass_bound(fam, edge)),
+                None => tail_mass_bound(fam, edge),
+            })
+    };
     match law.tilt_side() {
         Some(TiltSide::Both) => {
             let (a, b, alpha) = law
@@ -1319,14 +1475,27 @@ fn outside_at(law: &ChfLaw, h: f64, x0: f64, n: usize, fixed_grid: bool) -> Resu
         }
         Some(TiltSide::Right) => {
             let fam = law.tilt_family().expect("a right power tail");
-            Ok((0.0, fam.tail_mass_above(x0 + (n - 1) as f64 * h + h / 2.0)?))
+            let edge = x0 + (n - 1) as f64 * h + h / 2.0;
+            Ok((0.0, beyond(&fam, edge)))
         }
         Some(TiltSide::Left) => {
             let fam = law.tilt_family().expect("a left power tail");
-            Ok((fam.tail_mass_above(-(x0 - h / 2.0))?, 0.0))
+            Ok((beyond(&fam, -(x0 - h / 2.0)), 0.0))
         }
         None if fixed_grid => Ok((0.0, 0.0)),
         None => Ok(light_outside(law, h, x0, n)),
+    }
+}
+
+/// An upper bound on `P(X > x)` for a law with a right power tail, where
+/// its series is not valid: `P(X > δ₁)` above the location (1 where that is
+/// not defined, at `α = 1`), 1 at or below it.
+fn tail_mass_bound(fam: &Stable, x: f64) -> f64 {
+    let above_loc = fam.prob_above_loc();
+    if x > fam.loc() && above_loc.is_finite() {
+        above_loc.clamp(0.0, 1.0)
+    } else {
+        1.0
     }
 }
 
@@ -1398,6 +1567,9 @@ fn convolve(a: &[f64], b: &[f64], len: usize) -> Vec<f64> {
 /// product is unchanged), the least that brings the narrow half's
 /// truncation to round-off. The plus half carries the bucket factor and
 /// the minus half none, so it is applied once.
+///
+/// A given `step` above `πγ / (104 ln 2)^(1/α)` is refused: the wide half
+/// cannot give up that much normal.
 fn two_sided(st: &Stable, n: usize, p: f64, step: Option<f64>, tilt: Tilt) -> Result<TwoSided> {
     let (a_tail, b_tail, alpha) = (st.tail_constant(), st.left_tail_constant(), st.alpha());
     let eps = 1.0 - p;
@@ -1415,6 +1587,20 @@ fn two_sided(st: &Stable, n: usize, p: f64, step: Option<f64>, tilt: Tilt) -> Re
     let e_minus = (pi * minus_r.body_scale() / h).powf(alpha);
     let narrow_minus = e_minus <= e_plus;
     let e_narrow = e_plus.min(e_minus);
+    // The wide half gives up the normal that brings the narrow one to
+    // round-off, and must itself end at round-off: `e_plus + e_minus =
+    // (πγ/h)^α >= 2 · 52 ln 2`. The automatic bucket is capped below that;
+    // a given step above it left the wide half a transform that grows
+    // with the frequency, and masses that are no law's (#937).
+    if e_plus + e_minus < 2.0 * roundoff * (1.0 - 1e-12) {
+        let largest = h * ((e_plus + e_minus) / (2.0 * roundoff)).powf(1.0 / alpha);
+        return Err(Error::Data(format!(
+            "step {h} is too large to invert this two-sided stable law (alpha {alpha}, scale \
+             {}) by its halves: the largest step is {largest:.6} (pi scale / (104 ln 2)^(1/alpha)); \
+             give a smaller step, or omit step",
+            st.body_scale()
+        )));
+    }
     let sigma2 = (roundoff - e_narrow).max(0.0) * 2.0 * h * h / (pi * pi);
     let sigma = sigma2.sqrt();
     // the narrow half gains the normal, the wide half loses it; s² is
@@ -1471,8 +1657,14 @@ fn two_sided(st: &Stable, n: usize, p: f64, step: Option<f64>, tilt: Tilt) -> Re
     let m0 = -(z0_minus + (m - 1) as f64 * h);
     let full = convolve(&p_plus, &p_minus, 2 * m);
     let start = y0_plus + m0;
-    let tail_plus = plus.tail_mass_above(y0_plus + (m - 1) as f64 * h + h / 2.0)?;
-    let tail_minus = minus_r.tail_mass_above(z0_minus + (m - 1) as f64 * h + h / 2.0)?;
+    // beyond each half's window; where its series is not valid, what the
+    // window's masses leave of 1 (#945)
+    let tail_plus = plus
+        .tail_mass_above(y0_plus + (m - 1) as f64 * h + h / 2.0)
+        .unwrap_or_else(|_| (1.0 - p_plus.iter().sum::<f64>()).clamp(0.0, 1.0));
+    let tail_minus = minus_r
+        .tail_mass_above(z0_minus + (m - 1) as f64 * h + h / 2.0)
+        .unwrap_or_else(|_| (1.0 - p_minus.iter().sum::<f64>()).clamp(0.0, 1.0));
     let mut cum = Vec::with_capacity(full.len() + 1);
     cum.push(0.0);
     let mut acc = 0.0;
@@ -1617,6 +1809,141 @@ mod tests {
     }
 
     #[test]
+    fn a_cgmy_law_with_negative_y_has_its_atom_taken_out() {
+        // Y < 0: finite Levy measure, compound Poisson, an atom of mass
+        // exp(-C Gamma(-Y) (M^Y + G^Y)) at mu (#944).
+        let ts = TemperedStable::new(2.0, 3.0, 4.0, -0.5, 0.0).unwrap();
+        let w = (-2.0 * 1.772_453_850_905_516 * (4f64.powf(-0.5) + 3f64.powf(-0.5))).exp();
+        let law = ChfLaw::TemperedStable(ts);
+        let (xa, wa) = law.atom().expect("an atom for Y < 0");
+        assert_eq!(xa, 0.0);
+        assert!((wa - w).abs() < 1e-12, "{wa} {w}");
+        let d = invert(&law, &ChfOptions::default()).unwrap();
+        // The continuous part has a density singular at mu (like |x|^(-0.5)), so
+        // its phi decays slowly and stays above the flag at any practical
+        // step; with the atom out it is the continuous size only.
+        let tr = d.report().truncation_error;
+        assert!(tr < 1e-3, "{tr}");
+        let total: f64 = d.masses().iter().sum();
+        assert!((total - 1.0).abs() < 1e-6, "{total}");
+        // The bucket at mu holds the atom plus the continuous mass in it,
+        // and the neighbours hold only continuous mass (small).
+        let k = ((0.0 - d.x_min()) / d.step()).round() as usize;
+        assert!(d.masses()[k] >= w - 1e-9, "{} {w}", d.masses()[k]);
+        // Its continuous part is about w times the Levy mass within h/2 of mu,
+        // 2 C 2 sqrt(h/2) there (C = 2).
+        let cont = d.masses()[k] - w;
+        let approx = w * 8.0 * (d.step() / 2.0).sqrt();
+        assert!((cont / approx - 1.0).abs() < 0.2, "{cont} {approx}");
+        assert!(d.masses()[k - 1] < 1e-3 && d.masses()[k + 1] < 1e-3);
+        // Y > 0 has no atom.
+        let no = TemperedStable::new(2.0, 3.0, 4.0, 0.5, 0.0).unwrap();
+        assert!(ChfLaw::TemperedStable(no).atom().is_none());
+    }
+
+    #[test]
+    fn a_given_grid_without_the_atom_inverts_with_the_atom_left_in() {
+        // A grid the user gives that does not hold mu (off the grid, or
+        // outside the window) inverts as before the atom was taken out,
+        // with the atom left in phi (#944).
+        let ts = TemperedStable::new(2.0, 3.0, 4.0, -0.5, 0.05).unwrap();
+        let law = ChfLaw::TemperedStable(ts);
+        for x_min in [-20.0, 5.0] {
+            let opts = ChfOptions {
+                log2: 10,
+                step: Some(0.1),
+                x_min: Some(x_min),
+                ..ChfOptions::default()
+            };
+            let d = invert(&law, &opts).unwrap();
+            let plain = invert_on(&law, x_min, 0.1, 1 << 10, 0.0, None).unwrap();
+            assert_eq!(d.masses(), &plain[..], "x_min = {x_min}");
+            // The report's truncation is of phi with the atom in.
+            let s = Complex64::new(std::f64::consts::PI / 0.1, 0.0);
+            let full = law.chf(&[s]).unwrap()[0].norm();
+            assert_eq!(d.report().truncation_error, full, "x_min = {x_min}");
+            assert!(full > law.truncation_at(0.1).unwrap());
+        }
+        // The same for a Tweedie's atom at 0, off a given grid or outside it.
+        let tw = ChfLaw::Tweedie(Tweedie::new(100.0, 2.0, 1.5).unwrap());
+        for x_min in [-0.5, 0.5] {
+            let opts = ChfOptions {
+                log2: 10,
+                step: Some(1.0),
+                x_min: Some(x_min),
+                ..ChfOptions::default()
+            };
+            let d = invert(&tw, &opts).unwrap();
+            let plain = invert_on(&tw, x_min, 1.0, 1 << 10, 0.0, None).unwrap();
+            assert_eq!(d.masses(), &plain[..], "x_min = {x_min}");
+        }
+        // A given grid that holds mu still takes the atom out.
+        let opts = ChfOptions {
+            log2: 10,
+            step: Some(0.05),
+            x_min: Some(-20.0),
+            ..ChfOptions::default()
+        };
+        let d = invert(&law, &opts).unwrap();
+        let plain = invert_on(&law, -20.0, 0.05, 1 << 10, 0.0, None).unwrap();
+        assert_ne!(d.masses(), &plain[..]);
+    }
+
+    #[test]
+    fn an_automatic_window_without_the_atom_inverts_with_the_atom_left_in() {
+        // Jumps mostly one way and a negligible atom (mass about 1.5e-159):
+        // the window from the quantiles does not hold mu, so the atom stays
+        // in phi instead of failing (#944).
+        let ts = TemperedStable::new(200.0, 1000.0, 1.0, -0.5, 0.0).unwrap();
+        let law = ChfLaw::TemperedStable(ts);
+        let d = invert(&law, &ChfOptions::default()).unwrap();
+        assert!(d.x_min() > 0.0, "{}", d.x_min());
+        let n = d.masses().len();
+        let plain = invert_on(&law, d.x_min(), d.step(), n, 0.0, None).unwrap();
+        assert_eq!(d.masses(), &plain[..]);
+        let s = Complex64::new(std::f64::consts::PI / d.step(), 0.0);
+        let full = law.chf(&[s]).unwrap()[0].norm();
+        assert_eq!(d.report().truncation_error, full);
+        // Wrapped in an affine map, the same.
+        let moved = ChfLaw::affine(law, 2.0, 1.0).unwrap();
+        let d = invert(&moved, &ChfOptions::default()).unwrap();
+        assert!(d.x_min() > 1.0, "{}", d.x_min());
+    }
+
+    #[test]
+    fn a_tweedie_with_many_expected_claims_inverts_with_its_atom_below_the_window() {
+        // Mean 1000 and 10000 at dispersion 1 and power 1.5: the window's
+        // left edge is above 0, the atom e^(-lambda) is outside it (#946).
+        for mean in [1000.0, 10000.0] {
+            let laws = [
+                ChfLaw::Tweedie(Tweedie::new(mean, 1.0, 1.5).unwrap()),
+                ChfLaw::TweediePower(TweediePower::new(1.5, mean, 1.0).unwrap()),
+                ChfLaw::affine(
+                    ChfLaw::Tweedie(Tweedie::new(mean, 1.0, 1.5).unwrap()),
+                    2.0,
+                    5.0,
+                )
+                .unwrap(),
+            ];
+            for law in laws {
+                let d = invert(&law, &ChfOptions::default()).unwrap();
+                let r = d.report();
+                let (xa, _) = law.atom().unwrap();
+                assert!(d.x_min() > xa, "mean {mean}: x_min {}", d.x_min());
+                assert!(
+                    (r.total_mass - 1.0).abs() <= r.outside_mass() + 1e-9,
+                    "mean {mean}: {} + {}",
+                    r.total_mass,
+                    r.outside_mass()
+                );
+                assert!((d.mean() - law.mean()).abs() < 1e-6 * law.mean().abs());
+                let var = d.variance();
+                assert!((var - law.variance()).abs() < 1e-3 * law.variance());
+            }
+        }
+    }
+
+    #[test]
     fn affine_moves_the_window_and_the_atom() {
         let t = ChfLaw::Tweedie(Tweedie::new(100.0, 2.0, 1.5).unwrap());
         let law = ChfLaw::affine(t, 0.5, 10.0).unwrap();
@@ -1658,6 +1985,18 @@ mod tests {
         }
         assert!(d.report().law_mean.is_nan());
         assert_eq!(d.report().outside_mass(), 0.0);
+    }
+
+    #[test]
+    fn to_grid_refuses_a_window_far_above_zero() {
+        // #951: Normal(1e9, 1) puts the window about 8e12 buckets from 0.
+        let law = ChfLaw::Normal(Normal::new(1e9, 1.0).unwrap());
+        let d = invert(&law, &ChfOptions::with_log2(12)).unwrap();
+        let err = d.to_grid().unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidParameter { name: "x_min", .. }),
+            "{err}"
+        );
     }
 
     #[test]
@@ -1764,5 +2103,217 @@ mod tests {
             ..ChfOptions::with_log2(10)
         };
         assert!(invert(&stable(1.5, 1.0, 1.0, 0.0), &bad).is_err());
+    }
+
+    fn on_step(log2: u32, step: f64, tilt: Tilt) -> ChfOptions {
+        ChfOptions {
+            log2,
+            step: Some(step),
+            tilt,
+            ..ChfOptions::default()
+        }
+    }
+
+    #[test]
+    fn a_tilted_window_on_the_body_keeps_its_masses_a_probability() {
+        // A narrow window on a given step sits on the body, where the light
+        // side still has mass below it; the tilt must not magnify its wrap
+        // (#945, #1010: the masses summed to 2e6 and up to 1e107).
+        for (alpha, beta, log2, step) in [
+            (1.5, 1.0, 12, 0.001),
+            (1.5, 1.0, 12, 0.002),
+            (1.2, 1.0, 12, 0.001),
+            (1.5, -1.0, 12, 0.001),
+            (1.5, 1.0, 10, 0.001),
+            (1.95, 1.0, 10, 0.001),
+            (1.1, 1.0, 10, 0.001),
+            (1.5, -1.0, 10, 0.001),
+            // a tilt between none and the full one
+            (1.9, 1.0, 12, 0.004),
+            (1.9, -1.0, 12, 0.004),
+        ] {
+            let d = invert(
+                &stable(alpha, beta, 1.0, 0.0),
+                &on_step(log2, step, Tilt::Auto),
+            )
+            .unwrap();
+            let r = d.report();
+            let case = format!("{alpha} {beta} 2^{log2} {step}: {r:?}");
+            let lowest = d.masses().iter().copied().fold(f64::INFINITY, f64::min);
+            assert!(lowest >= -1e-9, "{case}: a mass of {lowest}");
+            let tau = r.tilt.0.max(r.tilt.1);
+            if tau == 0.0 {
+                // untilted, the tail wraps onto the window
+                assert!((r.total_mass - 1.0).abs() < 1e-9, "{case}");
+            } else {
+                // beta = -1 holds the mass below in its first bucket
+                assert!(
+                    (r.total_mass + r.outside_above - 1.0).abs() < 1e-2,
+                    "{case}"
+                );
+                assert!(r.total_mass <= 1.0 + 1e-6, "{case}");
+            }
+        }
+        let partial = invert(&stable(1.9, 1.0, 1.0, 0.0), &on_step(12, 0.004, Tilt::Auto)).unwrap();
+        let tau = partial.report().tilt.1;
+        assert!(0.0 < tau && tau < TILT_UNWRAPPED, "{tau}");
+    }
+
+    #[test]
+    fn a_small_fixed_tilt_keeps_a_left_tail_in_the_first_bucket() {
+        // Below the tilt that damps the wrap out of the masses, the left
+        // tail still goes into the first bucket, up to what the masses
+        // leave of 1.
+        for alpha in [1.5, 0.7] {
+            for tau in [1.0, 4.0] {
+                let d = invert(
+                    &stable(alpha, -1.0, 1.0, 0.0),
+                    &ChfOptions {
+                        tilt: Tilt::Fixed(tau),
+                        ..ChfOptions::with_log2(12)
+                    },
+                )
+                .unwrap();
+                let r = d.report();
+                assert!(r.outside_below > 1e-5, "{alpha} {tau}: {r:?}");
+                assert!(
+                    d.masses()[0] >= 0.5 * r.outside_below,
+                    "{alpha} {tau}: {r:?}"
+                );
+                assert!((r.total_mass - 1.0).abs() < 1e-6, "{alpha} {tau}: {r:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_fixed_tilt_that_magnifies_the_light_side_is_refused() {
+        let err = invert(
+            &stable(1.5, 1.0, 1.0, 0.0),
+            &on_step(10, 0.001, Tilt::Fixed(3.0)),
+        )
+        .expect_err("the light side below the window would wrap, magnified by e^3")
+        .to_string();
+        assert!(err.contains("light side"), "{err}");
+        // The window the rule places keeps the light side at 1e-40.
+        assert!(
+            invert(
+                &stable(1.5, 1.0, 1.0, 0.0),
+                &on_step(10, 0.05, Tilt::Fixed(3.0))
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn an_untilted_window_reports_the_mass_beyond_it_or_a_bound() {
+        // Untilted, the tail wraps onto the window, so the masses sum to
+        // about 1 and say nothing of what lies outside (#1010).
+        let (a, b) = (
+            invert(&stable(1.5, 1.0, 1.0, 0.0), &on_step(10, 0.01, Tilt::Off)).unwrap(),
+            invert(&stable(1.1, 1.0, 1.0, 0.0), &on_step(14, 0.001, Tilt::Off)).unwrap(),
+        );
+        assert!(a.report().outside_above >= 0.03, "{:?}", a.report());
+        assert!(b.report().outside_above >= 0.03, "{:?}", b.report());
+        let left = invert(&stable(1.5, -1.0, 1.0, 0.0), &on_step(10, 0.01, Tilt::Off)).unwrap();
+        assert!(left.report().outside_below >= 0.03, "{:?}", left.report());
+        // A window wholly below the support [0, inf): all the mass is above.
+        let below_support = invert(
+            &stable(0.7, 1.0, 1.0, 0.0),
+            &ChfOptions {
+                x_min: Some(-20.0),
+                ..on_step(10, 0.001, Tilt::Auto)
+            },
+        )
+        .unwrap();
+        assert_eq!(below_support.report().outside_above, 1.0);
+    }
+
+    #[test]
+    fn a_fixed_tilt_keeps_a_light_edge_window_that_holds_the_body() {
+        // The window from the light edge already holds the mean: it stays
+        // there, as before #945, and the light side's negligible mass below
+        // it is no reason to refuse the tilt.
+        for (alpha, beta, scale, loc, log2, step, tau) in [
+            (1.1, 1.0, 1.0, 0.0, 11, 0.01, 8.0),
+            (1.1, -1.0, 1.0, 0.0, 11, 0.01, 8.0),
+            (1.9, 1.0, 1.0, 0.0, 11, 0.01, 8.0),
+            (1.9, -1.0, 1.0, 0.0, 11, 0.01, 8.0),
+            (1.3, 1.0, 4.0, -1.0, 8, 0.2, 3.0),
+            (1.3, -1.0, 4.0, -1.0, 8, 0.2, 3.0),
+        ] {
+            let st =
+                Stable::new(alpha, beta, scale, loc, crate::StableParameterization::S1).unwrap();
+            let d = invert(&ChfLaw::Stable(st), &on_step(log2, step, Tilt::Fixed(tau)))
+                .unwrap_or_else(|e| panic!("{alpha} {beta} {scale} {loc}: {e}"));
+            let r = d.report();
+            let top = d.x_min() + (1u64 << log2) as f64 * d.step();
+            assert!(
+                d.x_min() <= st.mean() && st.mean() <= top,
+                "{alpha} {beta}: {r:?}"
+            );
+            // The masses are a probability, and with the mass beyond (a left
+            // tail's is in the first bucket; a right one's may be a bound
+            // under a small tilt) they leave nothing of 1.
+            assert!(r.total_mass <= 1.0 + 1e-4, "{alpha} {beta}: {r:?}");
+            let sum = r.total_mass + r.outside_above;
+            assert!(sum >= 1.0 - 1e-4, "{alpha} {beta}: {r:?}");
+            assert!(r.outside_above <= 0.1, "{alpha} {beta}: {r:?}");
+        }
+        // The light-edge window of Stable(1.1, 1, 1, 0) is [-11.05, 9.43].
+        let d = invert(
+            &stable(1.1, 1.0, 1.0, 0.0),
+            &on_step(11, 0.01, Tilt::Fixed(8.0)),
+        )
+        .unwrap();
+        assert!(d.x_min() < -11.0, "{:?}", d.report());
+        // A window that does not hold the body still moves onto it, and a
+        // fixed tilt that magnifies the light side's mass there is refused.
+        assert!(
+            invert(
+                &stable(1.5, 1.0, 1.0, 0.0),
+                &on_step(12, 0.001, Tilt::Fixed(8.0))
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn a_small_fixed_tilt_reports_the_mass_beyond_the_window() {
+        // On the default window the tail series or the wrapped masses give
+        // the mass beyond the window to a few parts in a hundred at worst,
+        // not the crude bound P(X > loc) (#945 review).
+        for (alpha, beta, scale, loc) in [
+            (1.5, 1.0, 1.0, 0.0),
+            (1.5, 1.0, 0.3, 2.0),
+            (1.5, 1.0, 4.0, -1.0),
+            (1.7, 1.0, 1.0, 0.0),
+            (1.3, 1.0, 0.3, 2.0),
+            (1.0, 1.0, 1.0, 0.0),
+            (1.0, -1.0, 1.0, 0.0),
+            (1.5, -1.0, 1.0, 0.0),
+        ] {
+            let law = stable(alpha, beta, scale, loc);
+            let fixed = ChfOptions {
+                log2: 8,
+                tilt: Tilt::Fixed(3.0),
+                ..ChfOptions::default()
+            };
+            let (f, a) = (
+                invert(&law, &fixed).unwrap().report().clone(),
+                invert(&law, &ChfOptions::with_log2(8))
+                    .unwrap()
+                    .report()
+                    .clone(),
+            );
+            let (got, want) = if beta > 0.0 {
+                (f.outside_above, a.outside_above)
+            } else {
+                (f.outside_below, a.outside_below)
+            };
+            assert!(
+                got >= want * (1.0 - 1e-3) && got <= want * 1.05,
+                "{alpha} {beta} {scale} {loc}: {got} against {want}"
+            );
+        }
     }
 }

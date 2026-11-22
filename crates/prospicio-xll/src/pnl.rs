@@ -15,7 +15,7 @@
 use prospicio_aggregate::pnl::{Book, Expense, ExpenseBasis, Face, LADDER, Ledger, Source};
 use prospicio_aggregate::{Layer, Tower};
 
-use crate::pricing::numbers;
+use crate::pricing::{numbers, paired};
 use crate::reserving::{number, percentiles, text_option};
 use crate::sheet::{Grid, Value, position};
 
@@ -30,22 +30,16 @@ const MAX_ATOMS: usize = 1 << 21;
 
 /// The gross annual losses and their probabilities.
 fn source(values: &Grid, probs: &Grid) -> Result<Source> {
-    let x = numbers(values, "values")?;
-    if x.len() > MAX_ATOMS {
+    if values.cells.len() > MAX_ATOMS {
         return Err(format!("values has more than {MAX_ATOMS} atoms"));
     }
-    let p = if probs.is_blank() {
-        vec![1.0 / x.len() as f64; x.len()]
+    let (x, p) = if probs.is_blank() {
+        let x = numbers(values, "values")?;
+        let p = vec![1.0 / x.len() as f64; x.len()];
+        (x, p)
     } else {
-        let p = numbers(probs, "probs")?;
-        if p.len() != x.len() {
-            return Err(format!(
-                "{} probs for {} values: give one probability per value",
-                p.len(),
-                x.len()
-            ));
-        }
-        p
+        let [x, p] = <[_; 2]>::try_from(paired(&[(values, "values"), (probs, "probs")])?).unwrap();
+        (x, p)
     };
     Source::new(x, p).map_err(err)
 }
@@ -210,19 +204,12 @@ fn covers(grid: &Grid) -> Result<Option<Tower>> {
 }
 
 fn face(grid: &Grid) -> Result<Face> {
-    let f = text_option(grid, "face")?.map(|s| s.replace([' ', '_'], "-"));
-    Ok(match f.as_deref() {
-        None | Some("walk") => Face::Walk,
-        Some("consolidated") => Face::Consolidated,
-        Some("peel-top-down" | "top-down") => Face::PeelTopDown,
-        Some("peel-bottom-up" | "bottom-up") => Face::PeelBottomUp,
-        Some(other) => {
-            return Err(format!(
-                "face must be \"walk\" (default), \"consolidated\", \"top-down\" or \
-                 \"bottom-up\", got {other:?}"
-            ));
+    match text_option(grid, "face")?.as_deref() {
+        None => Ok(Face::Walk),
+        Some(name) => {
+            Face::from_name(name).ok_or_else(|| crate::unknown_name("face", name, Face::NAMES))
         }
-    })
+    }
 }
 
 fn opt(x: Option<f64>) -> Value {

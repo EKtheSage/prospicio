@@ -9,7 +9,7 @@ use prospicio_pricing::cashflow::{
     ActualState, Adjustment, AdjustmentBase, Base, Buffer, CashflowTerms, Conditioning, Dates,
     FeeBasis, Funding, FundingRule, FundingSource, Interest, InterestBasis, MonthlyPatterns,
     ObligationReference, Operating, PatternDraws, PerformanceFee, PremiumFlow, Requirement, Term,
-    Timing, Trace, Valuation, condition_on_paid, deal_ave,
+    Timing, Trace, Valuation, condition_on_paid, deal_ave, option_key,
 };
 use prospicio_pricing::returns::TieredFee;
 
@@ -31,22 +31,8 @@ fn requirement(bases: &[String], loads: &[f64], floor: f64, limit: &[f64]) -> Re
         .iter()
         .zip(loads)
         .map(|(b, &l)| {
-            let base = match b.as_str() {
-                "unearned-premium" => Base::UnearnedPremium,
-                "reserve" => Base::Reserve,
-                "outstanding" => Base::Outstanding,
-                "written" => Base::Written,
-                "earned" => Base::Earned,
-                "fixed" => Base::Fixed,
-                other => {
-                    return Err(bad(
-                        "base",
-                        other,
-                        "\"unearned-premium\", \"reserve\", \"outstanding\", \"written\", \
-                         \"earned\" or \"fixed\"",
-                    ));
-                }
-            };
+            let base =
+                Base::from_name(b).ok_or_else(|| crate::unknown_name("base", b, Base::NAMES))?;
             Ok(Term::new(base, l))
         })
         .collect::<Result<_>>()?;
@@ -285,17 +271,9 @@ impl Cashflow {
                     month: whole(adjustment_month[i], "an adjustment's month")? as usize,
                     written_rate: adjustment_rate[i],
                     less_commission: adjustment_less_commission[i] != 0.0,
-                    base: match adjustment_base[i].as_str() {
-                        "ultimate" => AdjustmentBase::Ultimate,
-                        "to-date" => AdjustmentBase::ToDate,
-                        other => {
-                            return Err(bad(
-                                "adjustment base",
-                                other,
-                                "\"ultimate\" or \"to-date\"",
-                            ));
-                        }
-                    },
+                    base: AdjustmentBase::from_name(&adjustment_base[i]).ok_or_else(|| {
+                        crate::unknown_name("base", &adjustment_base[i], AdjustmentBase::NAMES)
+                    })?,
                 })
             })
             .collect::<Result<_>>()?;
@@ -305,41 +283,25 @@ impl Cashflow {
             lag: whole(lag, "lag")? as usize,
             adjustments,
         };
-        let rule = match funding_rule {
+        let rule = match option_key(funding_rule).as_str() {
             "shortfall" => FundingRule::Shortfall,
             "obligation-increase" => FundingRule::ObligationIncrease {
                 premium_offset,
-                reference: match reference {
-                    "previous-date" => ObligationReference::PreviousDate,
-                    "running-max" => ObligationReference::RunningMax,
-                    other => {
-                        return Err(bad(
-                            "reference",
-                            other,
-                            "\"previous-date\" or \"running-max\"",
-                        ));
-                    }
-                },
+                reference: ObligationReference::from_name(reference).ok_or_else(|| {
+                    crate::unknown_name("reference", reference, ObligationReference::NAMES)
+                })?,
             },
-            other => {
+            _ => {
                 return Err(bad(
                     "funding rule",
-                    other,
+                    funding_rule,
                     "\"shortfall\" or \"obligation-increase\"",
                 ));
             }
         };
-        let source = match funding_source {
-            "investor" => FundingSource::Investor,
-            "operating-first" => FundingSource::OperatingFirst,
-            other => {
-                return Err(bad(
-                    "funding source",
-                    other,
-                    "\"investor\" or \"operating-first\"",
-                ));
-            }
-        };
+        let source = FundingSource::from_name(funding_source).ok_or_else(|| {
+            crate::unknown_name("funding source", funding_source, FundingSource::NAMES)
+        })?;
         t.funding = Funding {
             dates: dates(funding_kind, funding_values, "funding_dates")?,
             rule,
@@ -348,36 +310,17 @@ impl Cashflow {
         t.collateral_release = timing(release_kind, release_values, "collateral_release")?;
         t.interest = Interest {
             annual_yield,
-            basis: match interest_basis {
-                "average" => InterestBasis::Average,
-                "opening" => InterestBasis::Opening,
-                "closing" => InterestBasis::Closing,
-                other => {
-                    return Err(bad(
-                        "interest basis",
-                        other,
-                        "\"average\", \"opening\" or \"closing\"",
-                    ));
-                }
-            },
+            basis: InterestBasis::from_name(interest_basis).ok_or_else(|| {
+                crate::unknown_name("interest basis", interest_basis, InterestBasis::NAMES)
+            })?,
         };
         let fee = if fee_breakpoints.is_empty() && fee_slopes.is_empty() {
             None
         } else {
             Some(PerformanceFee {
                 tiers: TieredFee::new(fee_breakpoints, fee_slopes).map_err(to_r)?,
-                basis: match fee_basis {
-                    "profit" => FeeBasis::Profit,
-                    "profit-over-premium" => FeeBasis::ProfitOverPremium,
-                    "profit-over-capital" => FeeBasis::ProfitOverCapital,
-                    other => {
-                        return Err(bad(
-                            "fee basis",
-                            other,
-                            "\"profit\", \"profit-over-premium\" or \"profit-over-capital\"",
-                        ));
-                    }
-                },
+                basis: FeeBasis::from_name(fee_basis)
+                    .ok_or_else(|| crate::unknown_name("fee basis", fee_basis, FeeBasis::NAMES))?,
             })
         };
         t.operating = Operating {

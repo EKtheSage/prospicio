@@ -7,7 +7,7 @@
 use prospicio_prob::Distortion;
 use prospicio_prob::distortion::{DistortionKind, Family, calibrate};
 
-use crate::pricing::{map1, numbers, scalar};
+use crate::pricing::{map1, numbers, paired, scalar};
 use crate::sheet::{Grid, Value};
 
 type Result<T> = std::result::Result<T, String>;
@@ -163,18 +163,12 @@ pub fn g(args: &[Grid]) -> Result<Grid> {
 /// The outcomes ascending with their probabilities: `probs` one per value
 /// (rescaled to sum to 1), or equally likely draws when omitted.
 fn outcomes(values: &Grid, probs: &Grid) -> Result<(Vec<f64>, Vec<f64>)> {
-    let x = numbers(values, "values")?;
-    let p = if probs.is_blank() {
-        vec![1.0 / x.len() as f64; x.len()]
+    let (x, p) = if probs.is_blank() {
+        let x = numbers(values, "values")?;
+        let p = vec![1.0 / x.len() as f64; x.len()];
+        (x, p)
     } else {
-        let p = numbers(probs, "probs")?;
-        if p.len() != x.len() {
-            return Err(format!(
-                "{} values and {} probs: give one probability per value",
-                x.len(),
-                p.len()
-            ));
-        }
+        let [x, p] = <[_; 2]>::try_from(paired(&[(values, "values"), (probs, "probs")])?).unwrap();
         if p.iter().any(|q| !(q.is_finite() && *q >= 0.0)) {
             return Err("probs must be non-negative".into());
         }
@@ -182,7 +176,8 @@ fn outcomes(values: &Grid, probs: &Grid) -> Result<(Vec<f64>, Vec<f64>)> {
         if (total - 1.0).abs() > 1e-9 {
             return Err(format!("probs must sum to 1, not {total}"));
         }
-        p.iter().map(|q| q / total).collect()
+        let p = p.iter().map(|q| q / total).collect();
+        (x, p)
     };
     let mut pairs: Vec<(f64, f64)> = x.into_iter().zip(p).collect();
     pairs.sort_by(|a, b| a.0.total_cmp(&b.0));

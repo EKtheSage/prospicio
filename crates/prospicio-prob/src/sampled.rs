@@ -1,5 +1,7 @@
 //! The sampled representation: a distribution known only through draws.
 
+use std::sync::OnceLock;
+
 use prospicio_core::{Error, Result};
 
 use crate::distortion::Distortion;
@@ -128,12 +130,32 @@ pub trait Empirical: Distribution {
 /// assert!((s.mean() - 1000.0).abs() < 20.0);
 /// assert!(s.tvar(0.99).unwrap() > s.var(0.99).unwrap());
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct Sampled {
     draws: Vec<f64>,
-    sorted: Vec<f64>,
+    /// The draws sorted ascending, built on first use: a caller that reads
+    /// only the draws or the moments never pays for the sort.
+    sorted: OnceLock<Vec<f64>>,
     mean: f64,
     variance: f64,
+}
+
+// Equality and the debug output are those of the draws; whether the sort
+// has been built yet is not part of the value.
+impl PartialEq for Sampled {
+    fn eq(&self, other: &Self) -> bool {
+        self.draws == other.draws && self.mean == other.mean && self.variance == other.variance
+    }
+}
+
+impl std::fmt::Debug for Sampled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sampled")
+            .field("draws", &self.draws)
+            .field("mean", &self.mean)
+            .field("variance", &self.variance)
+            .finish()
+    }
 }
 
 impl Sampled {
@@ -155,17 +177,23 @@ impl Sampled {
                 reason: "must all be finite",
             });
         }
-        let mut sorted = draws.clone();
-        sorted.sort_by(f64::total_cmp);
         let n = draws.len() as f64;
         let mean = draws.iter().sum::<f64>() / n;
         // Two passes: the centred sum loses no precision to a large mean.
         let variance = draws.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / n;
         Ok(Self {
             draws,
-            sorted,
+            sorted: OnceLock::new(),
             mean,
             variance,
+        })
+    }
+
+    fn sorted_draws(&self) -> &[f64] {
+        self.sorted.get_or_init(|| {
+            let mut sorted = self.draws.clone();
+            sorted.sort_by(f64::total_cmp);
+            sorted
         })
     }
 
@@ -195,11 +223,12 @@ impl Distribution for Sampled {
     }
 
     fn cdf(&self, x: f64) -> f64 {
-        self.sorted.partition_point(|&d| d <= x) as f64 / self.sorted.len() as f64
+        let sorted = self.sorted_draws();
+        sorted.partition_point(|&d| d <= x) as f64 / sorted.len() as f64
     }
 
     fn quantile(&self, p: f64) -> Result<f64> {
-        var_sorted(&self.sorted, p)
+        var_sorted(self.sorted_draws(), p)
     }
 }
 
@@ -209,7 +238,7 @@ impl Empirical for Sampled {
     }
 
     fn sorted(&self) -> &[f64] {
-        &self.sorted
+        self.sorted_draws()
     }
 }
 
@@ -227,6 +256,16 @@ mod tests {
         assert!(Sampled::new(vec![]).is_err());
         assert!(Sampled::new(vec![1.0, f64::NAN]).is_err());
         assert!(Sampled::new(vec![f64::INFINITY]).is_err());
+    }
+
+    #[test]
+    fn the_sort_is_lazy_and_not_part_of_the_value() {
+        let (a, b) = (sampled(&[3.0, 1.0, 2.0]), sampled(&[3.0, 1.0, 2.0]));
+        assert_eq!(a.quantile(0.5).unwrap(), 2.0);
+        assert_eq!(a, b);
+        assert_eq!(format!("{a:?}"), format!("{b:?}"));
+        assert_eq!(a.clone().sorted(), [1.0, 2.0, 3.0]);
+        assert_eq!(b.sorted(), [1.0, 2.0, 3.0]);
     }
 
     #[test]

@@ -11,7 +11,24 @@ use std::collections::HashMap;
 
 #[test]
 fn chf_levy_laws_match_aggregate() {
-    let cases = reference("chf_levy_aggregate.csv");
+    // `aggregate` does not take out the atom of a CGMY law with Y < 0 (#944),
+    // so its masses ring around mu (by 3e-3 in the bucket at mu, less with
+    // the distance, and about 1e-9 far away) and its truncation includes the atom. For
+    // those laws the truncation row and the masses within 400 buckets of mu
+    // (bucket 2110) are left out and the rest compare at 1e-8. The atom and the
+    // report are tested in prospicio-prob
+    // (`a_cgmy_law_with_negative_y_has_its_atom_taken_out`).
+    let atom_law = |c: &prospicio_validation::Case| {
+        c.get("distribution") == "tempered_stable" && c.param("params", "Y") < 0.0
+    };
+    let cases: Vec<_> = reference("chf_levy_aggregate.csv")
+        .into_iter()
+        .filter(|c| {
+            !(atom_law(c)
+                && (c.get("quantity") == "truncation_error"
+                    || (c.get("quantity") == "mass" && c.number("arg").is_some_and(|k| (k - 2110.0).abs() < 400.0))))
+        })
+        .collect();
     let mut done: HashMap<String, ChfDistribution> = HashMap::new();
     check(&cases, |c| {
         let v = |name: &str| c.param("params", name);
@@ -32,7 +49,7 @@ fn chf_levy_laws_match_aggregate() {
             invert(&law, &ChfOptions::with_log2(v("log2") as u32)).unwrap()
         });
         let r = d.report();
-        match c.get("quantity") {
+        let got = match c.get("quantity") {
             "step" => Some(d.step()),
             "x_min" => Some(d.x_min()),
             "truncation_error" => Some(r.truncation_error),
@@ -44,6 +61,12 @@ fn chf_levy_laws_match_aggregate() {
             "quantile" => d.quantile(c.number("arg")?).ok(),
             "mass" => Some(d.masses()[c.number("arg")? as usize]),
             _ => None,
+        };
+        // The ringing of aggregate's masses, mean and sd for an atom law.
+        let want = c.number("expected")?;
+        match (got, matches!(c.get("quantity"), "mass" | "mean" | "sd")) {
+            (Some(g), true) if atom_law(c) && (g - want).abs() < 1e-8 => Some(want),
+            (g, _) => g,
         }
     });
 }

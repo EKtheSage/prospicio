@@ -46,7 +46,8 @@ pub fn golden_section(a: f64, b: f64, f: impl FnMut(f64) -> f64) -> f64 {
 /// [`golden_section`] with the caller's stop rule: at most `max_steps`
 /// steps, stopping before a step once `done(a, b, c)` holds for the
 /// bracket `[a, b]` and its lower interior point `c`. Returns the
-/// bracket's midpoint.
+/// bracket's midpoint, or NaN at once when `a` or `b` is not finite: such
+/// a bracket has no width for a stop rule to reach.
 ///
 /// A rule that reads `c` stops where a search written around `c` would,
 /// such as a width relative to `1 + |c|`.
@@ -54,7 +55,7 @@ pub fn golden_section(a: f64, b: f64, f: impl FnMut(f64) -> f64) -> f64 {
 /// ```
 /// use prospicio_math::optimize::golden_section_by;
 ///
-/// let x = golden_section_by(0.0, 3.0, usize::MAX, |a, b, c| b - a <= 1e-6 * (1.0 + c.abs()), |x| {
+/// let x = golden_section_by(0.0, 3.0, 200, |a, b, c| b - a <= 1e-6 * (1.0 + c.abs()), |x| {
 ///     (x - 2.0).powi(2)
 /// });
 /// assert!((x - 2.0).abs() < 1e-5);
@@ -66,6 +67,9 @@ pub fn golden_section_by(
     mut done: impl FnMut(f64, f64, f64) -> bool,
     mut f: impl FnMut(f64) -> f64,
 ) -> f64 {
+    if !(a.is_finite() && b.is_finite()) {
+        return f64::NAN;
+    }
     let (mut a, mut b) = (a, b);
     let g = 0.5 * (5f64.sqrt() - 1.0);
     let (mut c, mut d) = (b - g * (b - a), a + g * (b - a));
@@ -380,6 +384,31 @@ fn simplex_pass(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn golden_section_ends_on_a_bracket_that_is_not_finite() {
+        // #959: `done` never holds on such a bracket, so with no step cap
+        // the search did not end.
+        for (a, b) in [
+            (f64::NAN, 1.0),
+            (0.0, f64::INFINITY),
+            (f64::NEG_INFINITY, 0.0),
+        ] {
+            let mut calls = 0;
+            let x = golden_section_by(
+                a,
+                b,
+                usize::MAX,
+                |a, b, _| b - a <= 1e-9,
+                |x| {
+                    calls += 1;
+                    x * x
+                },
+            );
+            assert!(x.is_nan());
+            assert_eq!(calls, 0);
+        }
+    }
 
     fn rosenbrock(x: &[f64]) -> f64 {
         100.0 * (x[1] - x[0] * x[0]).powi(2) + (1.0 - x[0]).powi(2)

@@ -58,7 +58,7 @@ Risk mathematics    Distributions · PredictiveDistribution · Dependence · Ris
   (the hub)         Every domain reads and writes these objects
         │
         ▼
-Numerical engine    Linear algebra (faer) · Optimization · Integration · FFT · Special functions
+Numerical engine    Linear algebra (prospicio-math, hand-written) · Optimization · Integration · FFT · Special functions
                     Stream-indexed RNG · Rayon outer-loop parallelism
 ```
 
@@ -128,7 +128,7 @@ Designed as its own note before Phase 2, matching the semantics users know from 
 
 ### RNG streams
 
-Counter-based or stream-indexed generators (e.g. Philox, or ChaCha with stream ids), one stream per simulation index. Results are bit-identical regardless of thread count, and any single simulation can be replayed from `(seed, stream id)`.
+Counter-based or stream-indexed generators (e.g. Philox, or ChaCha with stream ids), one stream per simulation index. Results are bit-identical regardless of thread count on one platform (not between platforms, see "Parallelism and reproducibility"), and any single simulation can be replayed from `(seed, stream id)`.
 
 ## Language boundary
 
@@ -137,7 +137,7 @@ The fast path is a closed set of Rust-native objects; user-defined Python/R call
 ### Python (primary)
 
 - PyO3 + maturin; wheels for Linux, macOS and Windows from day one.
-- Zero-copy in and out via Arrow and NumPy buffers; Polars/pandas accepted at the edge.
+- Values go in and out as Python lists of floats, copied; Polars/pandas are accepted at the edge. Zero-copy exchange through Arrow and NumPy buffers is planned (#978) and not built: Arrow exists only as a Rust API, the optional `arrow` feature of `prospicio-prob`.
 - Release the GIL inside every Rust call; parallel work never calls back into Python.
 - Custom distributions or losses defined in Python run single-threaded and are flagged as such in diagnostics.
 - Objects pickle (for multiprocessing and caching) and follow sklearn estimator conventions where they fit (`fit`, `predict`, `get_params`).
@@ -270,8 +270,9 @@ Tolerances are recorded per test; bootstrap and simulation tests compare distrib
 Parallelize the outermost loop only, and make every result reproducible from a seed regardless of thread count.
 
 - **Rayon on the outer loop:** bootstrap replicates, Monte Carlo paths, MCMC chains, CV folds, hyperparameter search, portfolio scenarios.
-- **Inner math single-threaded:** no Polars or BLAS thread pools inside a Rayon task. Configure faer and any BLAS to one thread within parallel regions.
+- **Inner math single-threaded:** no Polars or BLAS thread pools inside a Rayon task. The linear algebra is `prospicio-math`'s own and single-threaded, so there is none to configure today; a BLAS or faer behind it (#974) would be set to one thread within parallel regions.
 - **Deterministic streams:** simulation i always draws from stream i (see RNG streams), so 1 thread and 64 threads give identical output.
+- **Per platform:** identical output holds on one platform. A seeded sampler's draws can differ between platforms in the last bits, since `exp` and `ln` come from the system's math library, which is why the Bayesian fits' pins are asserted on Linux x86_64 alone (#841).
 - **Provenance on every result:** seed, stream scheme, sampler versions (recorded apart from the stream scheme, `rng.md`), package version and input hash travel with the PredictiveDistribution for audit and model-governance documentation.
 
 ## User-facing API surface

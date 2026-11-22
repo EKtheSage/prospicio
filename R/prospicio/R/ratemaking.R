@@ -47,16 +47,19 @@ year_fraction <- function(year, month, day) {
 #' # Accident year 2011 to rates effective 1/1/15, six-month policies: 4.25.
 #' average_earned_date(2015, 2016, 0.5, "policy") - average_earned_date(2011, 2012, 0.5)
 average_written_date <- function(start, end, term, period = c("calendar", "policy")) {
-  period <- match.arg(period)
+  period <- match.arg(option_alias(period, period_aliases), c("calendar", "policy"))
   rust_result(period_dates(period, as.double(start), as.double(end), as.double(term)))[[1]]
 }
 
 #' @rdname average_written_date
 #' @export
 average_earned_date <- function(start, end, term, period = c("calendar", "policy")) {
-  period <- match.arg(period)
+  period <- match.arg(option_alias(period, period_aliases), c("calendar", "policy"))
   rust_result(period_dates(period, as.double(start), as.double(end), as.double(term)))[[2]]
 }
+
+# Excel's name for a calendar period (PeriodKind::NAMES, #956).
+period_aliases <- c("accident" = "calendar")
 
 #' Premium at the current rate level: the parallelogram method
 #'
@@ -90,7 +93,7 @@ average_earned_date <- function(start, end, term, period = c("calendar", "policy
 #' r$on_level_factor
 rate_level <- function(effective, change = NULL, start, end, term,
                        period = c("calendar", "policy"), applies = "written", level = NULL) {
-  period <- match.arg(period)
+  period <- match.arg(option_alias(period, period_aliases), c("calendar", "policy"))
   if (is.null(change) == is.null(level)) stop("give one of `change` and `level`")
   values <- as.double(if (is.null(level)) change else level)
   r <- rust_result(rate_level_rust(as.double(effective), values,
@@ -183,8 +186,12 @@ schedule_trend <- function(years, trend_years, trend_rates, inception,
   if (anyNA(years) || any(years != round(years))) {
     stop("years must be whole calendar years")
   }
+  years_int <- suppressWarnings(as.integer(years))
+  if (anyNA(years_int)) {
+    stop("years must be whole calendar years within the integer range")
+  }
   r <- rust_result(schedule_trend_rust(
-    as.integer(years), as.double(trend_years), as.double(trend_rates),
+    years_int, as.double(trend_years), as.double(trend_rates),
     as.double(inception), basis, kind, as.integer(cutoff), before
   ))
   data.frame(year = r$year, start = r$start, target = r$target, factor = r$factor)

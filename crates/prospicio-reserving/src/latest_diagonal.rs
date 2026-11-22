@@ -19,7 +19,7 @@ use prospicio_core::{Grain, Lag, Month, Period};
 use crate::expected_loss::origin_exposure;
 use crate::pattern::{check_factors, grid, on_ages, own_cdf, span_end, tail_on_own_ages};
 use crate::segments::{collect_labelled, find_segment, labelled};
-use crate::triangle::Segment;
+use crate::triangle::{MAX_DENSE_CELLS, Segment};
 use crate::{
     Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit, Development,
     Error, ExpectedLoss, ExpectedLossFit, Label, PatternKind, PatternWeight, Result, SegmentFits,
@@ -148,6 +148,34 @@ pub enum PastPatternEnd {
     /// 11). An error with no tail: a factor of 1 is
     /// [`NoDevelopment`](Self::NoDevelopment).
     Tail,
+}
+
+impl PastPatternEnd {
+    /// Every name the Python, R and Excel front ends accept, with its rule,
+    /// the canonical name of each first (#956).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("reject", Self::Reject),
+        ("no_development", Self::NoDevelopment),
+        ("tail", Self::Tail),
+        ("none", Self::NoDevelopment),
+    ];
+
+    /// The rule named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, r)| r)
+    }
+
+    /// The canonical name: `"reject"`, `"no_development"` or `"tail"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Reject => "reject",
+            Self::NoDevelopment => "no_development",
+            Self::Tail => "tail",
+        }
+    }
 }
 
 fn invalid(why: impl Into<String>) -> Error {
@@ -441,6 +469,22 @@ impl LatestDiagonal {
             }
         };
         let gridded = self.on_grid(development, pattern, tail)?;
+        // The grid runs from the earliest to the latest origin, so one
+        // mistyped origin spreads it (#951).
+        let step = i64::from(self.origin_grain.months());
+        let first = self.origins.iter().min().expect("a diagonal has an origin");
+        let last = self.origins.iter().max().expect("a diagonal has an origin");
+        let n_origins = (last.months_since(*first) / step + 1) as usize;
+        let cells = n_origins.saturating_mul(gridded.ages.len());
+        if cells > MAX_DENSE_CELLS && cells / 1000 > self.origins.len() {
+            return Err(Error::TooLarge(format!(
+                "origins from {first} to {last} ({n_origins} periods) and {} ages make {cells} \
+                 cells for {} rows; check the earliest and latest origin, since one far from \
+                 the others spreads the grid this far",
+                gridded.ages.len(),
+                self.origins.len(),
+            )));
+        }
         let segment = self.segment(&gridded, &self.latest);
         let exposure = exposure.map(|e| self.segment(&gridded, e));
         Ok(Prepared {
@@ -1509,6 +1553,24 @@ impl CapeCod {
 mod tests {
     use super::*;
 
+    /// Every spelling Python, R or Excel took before #956 still resolves,
+    /// and the canonical name round-trips.
+    #[test]
+    fn past_pattern_end_names_cover_every_front_end() {
+        for (name, want) in [
+            ("reject", PastPatternEnd::Reject),
+            ("no_development", PastPatternEnd::NoDevelopment),
+            ("none", PastPatternEnd::NoDevelopment),
+            ("tail", PastPatternEnd::Tail),
+        ] {
+            assert_eq!(PastPatternEnd::from_name(name), Some(want), "{name}");
+        }
+        assert_eq!(PastPatternEnd::from_name("hold"), None);
+        for &(_, rule) in PastPatternEnd::NAMES {
+            assert_eq!(PastPatternEnd::from_name(rule.name()), Some(rule));
+        }
+    }
+
     fn diagonal(grain: Grain, latest: &[f64]) -> LatestDiagonal {
         let origins: Vec<Month> = (0..latest.len())
             .map(|k| Month::january(2024).add_months(-(k as i64) * i64::from(grain.months())))
@@ -1580,6 +1642,26 @@ mod tests {
             two.with_exposure(&[10.0, 20.0, -1.0]),
             Err(Error::InSegment { label, .. }) if label == "b"
         ));
+    }
+
+    #[test]
+    fn a_mistyped_origin_is_refused_before_the_grid_is_allocated() {
+        // #951: one monthly origin typed 9999 among the 2000s spreads the
+        // grid over 96,000 origins; with 200 monthly ages it is 1.9e7 cells
+        // for two rows.
+        let origins = [Month::january(2000), Month::january(9999)];
+        let rows = LatestDiagonal::new(Grain::Month, &origins, &[1, 1], &[100.0, 100.0]).unwrap();
+        let ages: Vec<(Lag, f64)> = (1..=200).map(|a| (a, 1.0)).collect();
+        let chain_ladder = ChainLadder {
+            development: Development {
+                pattern: Some(SelectedPattern::new(PatternKind::AgeToUltimate, ages)),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let err = chain_ladder.fit_diagonal(&rows).map(|_| ()).unwrap_err();
+        assert!(matches!(err, Error::TooLarge(_)), "{err}");
+        assert!(err.to_string().contains("9999"), "{err}");
     }
 
     #[test]

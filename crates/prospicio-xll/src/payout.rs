@@ -7,7 +7,7 @@
 use prospicio_pricing::payout::{PaymentPattern, price_over_payout};
 use prospicio_pricing::risk_load::{PremiumRule, Price};
 
-use crate::pricing::{numbers, scalar};
+use crate::pricing::{paired, scalar};
 use crate::reserving::text_option;
 use crate::sheet::{Grid, Value};
 
@@ -17,15 +17,7 @@ type Result<T> = std::result::Result<T, String>;
 /// default; `"paid"`, the share paid to date; `"factors"`, factors to
 /// ultimate), `shift` years later (0 if omitted).
 fn pattern(times: &Grid, values: &Grid, kind: &Grid, shift: &Grid) -> Result<PaymentPattern> {
-    let t = numbers(times, "times")?;
-    let v = numbers(values, "values")?;
-    if t.len() != v.len() {
-        return Err(format!(
-            "{} times and {} values: give one value per time",
-            t.len(),
-            v.len()
-        ));
-    }
+    let [t, v] = <[_; 2]>::try_from(paired(&[(times, "times"), (values, "values")])?).unwrap();
     let e = |e: prospicio_core::Error| e.to_string();
     let p = match text_option(kind, "kind")?.as_deref() {
         None | Some("shares") => PaymentPattern::new(t, v).map_err(e)?,

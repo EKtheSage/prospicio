@@ -1151,6 +1151,7 @@ impl CashflowTerms {
         let arrears = start.map_or(0.0, |s| s.arrears);
         if let Some(tr) = trace.as_deref_mut() {
             tr.opening_balance = start.map_or(0.0, |s| s.collateral + s.operating);
+            tr.first_month = v;
         }
 
         for t in v..t_n {
@@ -1559,6 +1560,9 @@ pub struct Trace {
     /// The trust and operating balances the trace starts from: 0 from
     /// inception, the actual balances from a valuation month.
     pub opening_balance: f64,
+    /// The month of the deal the trace's first entry is: 0 from inception,
+    /// the valuation month `v` from a valuation.
+    pub first_month: usize,
     /// The commutation requirement paid to the cedant.
     pub commutation_paid: f64,
     /// The performance fee.
@@ -1584,6 +1588,7 @@ impl Trace {
             investor: z(),
             funding_reference: z(),
             opening_balance: 0.0,
+            first_month: 0,
             commutation_paid: 0.0,
             fee: 0.0,
         }
@@ -1730,9 +1735,11 @@ pub struct ActualState {
 impl ActualState {
     /// The state of a simulated deal at the start of month `month`, from
     /// its [`trace`](CashflowTerms::trace) from inception: to value one
-    /// path of a simulation as if it had happened.
+    /// path of a simulation as if it had happened. Fails for
+    /// a trace from a valuation ([`Trace::first_month`] above 0), whose
+    /// entries are not months `0..`.
     pub fn from_trace(trace: &Trace, month: usize) -> Result<Self> {
-        if trace.opening_balance != 0.0 {
+        if trace.first_month != 0 || trace.opening_balance != 0.0 {
             return Err(Error::Data(
                 "the trace starts from a valuation; an actual state needs one from inception"
                     .into(),
@@ -2268,9 +2275,130 @@ pub fn deal_ave(
     Ok(report)
 }
 
+/// An option's text in the form the name tables hold: trimmed, in lower
+/// case, with `_` and spaces turned into `-` (#956). Excel has always read
+/// a cash-flow option this way, so `"Unearned Premium"`, `"unearned_premium"`
+/// and `"unearned-premium"` are one option in every front end.
+pub fn option_key(s: &str) -> String {
+    s.trim().to_lowercase().replace(['_', ' '], "-")
+}
+
+/// `NAMES`, `from_name` and `name` on a unit enum of cash-flow options
+/// (#956). `from_name` reads its text with [`option_key`]; `NAMES` holds the
+/// canonical spellings, the first of an option's being what `name` gives.
+macro_rules! option_names {
+    ($ty:ident, $(($name:literal, $variant:expr)),+ $(,)?) => {
+        impl $ty {
+            /// Every option with its canonical name, which `from_name`
+            /// reads in any case with `_`, `-` or a space between words.
+            pub const NAMES: &'static [(&'static str, Self)] = &[$(($name, $variant)),+];
+
+            /// The option named `name` (see [`NAMES`](Self::NAMES)), or `None`.
+            pub fn from_name(name: &str) -> Option<Self> {
+                let key = option_key(name);
+                Self::NAMES
+                    .iter()
+                    .find(|(n, _)| *n == key)
+                    .map(|&(_, v)| v)
+            }
+
+            /// The canonical name, such as `"unearned-premium"`.
+            pub fn name(self) -> &'static str {
+                Self::NAMES
+                    .iter()
+                    .find(|(_, v)| *v == self)
+                    .map(|&(n, _)| n)
+                    .expect("every option has a name")
+            }
+        }
+    };
+}
+
+option_names!(
+    Base,
+    ("unearned-premium", Base::UnearnedPremium),
+    ("reserve", Base::Reserve),
+    ("outstanding", Base::Outstanding),
+    ("written", Base::Written),
+    ("earned", Base::Earned),
+    ("fixed", Base::Fixed),
+);
+option_names!(
+    AdjustmentBase,
+    ("ultimate", AdjustmentBase::Ultimate),
+    ("to-date", AdjustmentBase::ToDate),
+);
+option_names!(
+    ObligationReference,
+    ("previous-date", ObligationReference::PreviousDate),
+    ("running-max", ObligationReference::RunningMax),
+);
+option_names!(
+    FundingSource,
+    ("investor", FundingSource::Investor),
+    ("operating-first", FundingSource::OperatingFirst),
+);
+option_names!(
+    InterestBasis,
+    ("average", InterestBasis::Average),
+    ("opening", InterestBasis::Opening),
+    ("closing", InterestBasis::Closing),
+);
+option_names!(
+    FeeBasis,
+    ("profit", FeeBasis::Profit),
+    ("profit-over-premium", FeeBasis::ProfitOverPremium),
+    ("profit-over-capital", FeeBasis::ProfitOverCapital),
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every spelling Python, R or Excel took before #956 still resolves
+    /// to its option, in any case, with `_`, `-` or a space between the
+    /// words; the canonical name round-trips; and a stranger is refused.
+    #[test]
+    fn option_names_cover_every_front_end() {
+        for name in [
+            "unearned-premium",
+            "Unearned_Premium",
+            " unearned premium ",
+            "UNEARNED-PREMIUM",
+        ] {
+            assert_eq!(Base::from_name(name), Some(Base::UnearnedPremium), "{name}");
+        }
+        assert_eq!(Base::from_name("unearned"), None);
+        assert_eq!(Base::NAMES.len(), 6);
+        assert_eq!(
+            AdjustmentBase::from_name("to_date"),
+            Some(AdjustmentBase::ToDate)
+        );
+        assert_eq!(
+            ObligationReference::from_name("Running Max"),
+            Some(ObligationReference::RunningMax)
+        );
+        assert_eq!(
+            FundingSource::from_name("operating_first"),
+            Some(FundingSource::OperatingFirst)
+        );
+        assert_eq!(
+            InterestBasis::from_name("CLOSING"),
+            Some(InterestBasis::Closing)
+        );
+        assert_eq!(
+            FeeBasis::from_name("profit_over_capital"),
+            Some(FeeBasis::ProfitOverCapital)
+        );
+        assert_eq!(FeeBasis::from_name("nope"), None);
+        for &(_, b) in Base::NAMES {
+            assert_eq!(Base::from_name(b.name()), Some(b));
+        }
+        for &(_, b) in FeeBasis::NAMES {
+            assert_eq!(FeeBasis::from_name(b.name()), Some(b));
+        }
+        assert_eq!(option_key(" Obligation_Increase "), "obligation-increase");
+    }
 
     /// A deal written over 12 months, earned over 36 and paid over 48,
     /// commuting after month 30 with premium still unearned.
@@ -2667,6 +2795,34 @@ mod tests {
     }
 
     #[test]
+    fn a_deal_that_has_run_off_has_no_forward_return() {
+        // A deal that has paid out and released everything has nothing left
+        // to value: its forward flows are all zero, and a row worth 0 at
+        // every rate has no rate of return.
+        let mut terms = CashflowTerms::new(
+            100.0,
+            3,
+            patterns(),
+            Requirement::new(vec![Term::new(Base::Reserve, 1.0)]),
+        )
+        .unwrap();
+        terms.premium_flow.collected_rate = 0.0;
+        let state = ActualState {
+            month: 2,
+            ..ActualState::default()
+        };
+        let val = terms.valuation(state).unwrap();
+        let f = val
+            .run(&[0.0], &[0.2], Conditioning::BornhuetterFerguson)
+            .unwrap();
+        assert!(f.forward_rows().iter().all(|&x| x == 0.0));
+        let irr = f.forward_irr(&IrrOptions::default()).unwrap();
+        assert_eq!(irr.len(), 1);
+        let r = irr[0];
+        assert!(!r.found && r.rate.is_nan() && r.sign_changes == 0, "{r:?}");
+    }
+
+    #[test]
     fn refuses_valuations_it_cannot_run() {
         let terms = full();
         let path = terms.trace(0.9, 0.2).unwrap();
@@ -2721,6 +2877,20 @@ mod tests {
             .trace(0.9, 0.2, Conditioning::BornhuetterFerguson)
             .unwrap();
         assert!(ActualState::from_trace(&tr, 3).is_err());
+        // Nor is one whose balances were both 0 at the valuation (#960).
+        let empty = ActualState {
+            month: 6,
+            funding_reference: Some(0.0),
+            ..ActualState::default()
+        };
+        let tr = terms
+            .valuation(empty)
+            .unwrap()
+            .trace(0.9, 0.2, Conditioning::BornhuetterFerguson)
+            .unwrap();
+        assert_eq!((tr.opening_balance, tr.first_month), (0.0, 6));
+        assert!(ActualState::from_trace(&tr, 3).is_err());
+        assert_eq!(path.first_month, 0);
         assert!(
             condition_on_paid(&[0.5], 0.0, 1.0, 0.5, Conditioning::BornhuetterFerguson).is_err()
         );
