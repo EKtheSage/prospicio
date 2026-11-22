@@ -1,0 +1,1 @@
+* **Creation**: [The abi3 wheel on Python 3.9](/environment/python-39-wheel.md), from testing the wheel on the oldest Python it serves (#962, branch claude/cool-shannon-fqpoy8-ci-962-python39): every submodule imports and 3,765 light tests pass on CPython 3.9.25; the built-in `sum` is compensated from Python 3.12 only, which moved `_mean_se` in the last bit.
