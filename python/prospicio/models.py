@@ -724,14 +724,26 @@ def draws_from_inference_data(idata, var_names=None, log_likelihood=None):
     return draws_from_arrays(arrays, log_likelihood=ll, divergences=diverging)
 
 
-def _mean_se(values):
+def _fsum(values):
     # math.fsum, not sum: the built-in adds floats with compensation from
     # Python 3.12 only, so its last bit depends on the interpreter (#962).
+    # fsum raises on inputs where sum gave nan (inf and -inf) or inf (an
+    # overflow), so those fall back to sum (#1037).
+    values = list(values)
+    if all(map(math.isfinite, values)):
+        try:
+            return math.fsum(values)
+        except OverflowError:
+            pass
+    return sum(values)
+
+
+def _mean_se(values):
     k = len(values)
-    m = math.fsum(values) / k
+    m = _fsum(values) / k
     if k < 2:
         return m, math.nan
-    var = math.fsum((v - m) ** 2 for v in values) / (k - 1)
+    var = _fsum((v - m) ** 2 for v in values) / (k - 1)
     return m, math.sqrt(var / k)
 
 
