@@ -417,6 +417,12 @@ pub extern "system" fn xlAutoOpen() -> i32 {
 }
 
 /// Called by Excel when the add-in unloads.
+///
+/// Excel can call this before its "save changes?" prompt on quit; if the
+/// user cancels, the add-in stays loaded. The next call into any function
+/// clears the flag again, so only the replies to runs that finish between
+/// the cancelled quit and that call are lost (those cells show their
+/// pending value until they are recalculated).
 #[unsafe(no_mangle)]
 pub extern "system" fn xlAutoClose() -> i32 {
     jobs::SHUTDOWN.close();
@@ -454,6 +460,9 @@ macro_rules! udf {
         /// Called by Excel with valid XLOPER12 arguments.
         #[unsafe(no_mangle)]
         pub unsafe extern "system" fn $symbol($($arg: *const XlOper),*) -> *mut XlOper {
+            // Excel is calling us, so it is running: a quit cancelled after
+            // `xlAutoClose` must not leave replies switched off.
+            jobs::SHUTDOWN.open();
             let args = vec![$(unsafe { read_grid($arg) }),*];
             result(&call(stringify!($symbol), args))
         }
@@ -469,6 +478,8 @@ macro_rules! udf_async {
         /// Called by Excel with valid XLOPER12 arguments and its handle.
         #[unsafe(no_mangle)]
         pub unsafe extern "system" fn $symbol($($arg: *const XlOper,)* handle: *const XlOper) {
+            // As in `udf!`: a call means Excel is running.
+            jobs::SHUTDOWN.open();
             let args = vec![$(unsafe { read_grid($arg) }),*];
             let handle = unsafe { AsyncHandle::copy(handle) };
             pin();
