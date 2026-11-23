@@ -250,6 +250,11 @@ package.
 | CI and tooling | #936, #962, #965, #966, #967, #968 |
 | Docs | #961 |
 
+Status on 2026-11-23: the release PR sets 0.2.1, with no breaking change.
+The fixes of the review, the option-name aliases (#956), the JavaScript package
+(#576) and the CI work are in the changelog section; #961 and the CI items
+that change no package are tracked by the milestone only.
+
 **0.3.0** (the user's decision of 2026-11-20, planned): the performance
 work that changes how simulations draw or sum (so a seeded run's numbers
 change, noted under "Breaking changes"), the refactors of the bindings, and
