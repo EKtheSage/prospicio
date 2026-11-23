@@ -1,11 +1,11 @@
 ### Pricing
 
-- `ActualState::from_trace` refuses every trace from a valuation. Before, it
-  told one from a trace from inception by its opening balance alone, so a
-  valuation trace whose trust and operating balances were both 0 was read as
-  months `0..`. `Trace` has a new public field, `first_month` (0 from
-  inception, the valuation month from a valuation); Rust code that builds a
-  `Trace` with a struct literal adds it (#960, #1018).
+- `ActualState::from_trace` refuses a trace from a valuation, told by its
+  nonzero opening balance. A valuation from a month above 0 whose trust and
+  operating balances are both exactly 0 is still read as months `0..`; a
+  `Trace::first_month` field would tell it, but adding a field to a `Trace`
+  that can be built with a struct literal breaks semver, so it is left for
+  0.3.0 (#960, #1018, #1043).
 - The bonus-malus integrals over a very dispersed gamma heterogeneity (a cv
   above about 4.6) count the mass below `θ = 1e-300`, which they lost before
   (`1e-9` on a stationary probability at cv 6), and `stationary`,
