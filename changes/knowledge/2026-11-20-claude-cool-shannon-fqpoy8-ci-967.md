@@ -1,1 +1,0 @@
-* **Update**: [Where CI's time went, and what cut it](/environment/ci-runtime.md), what each release job compiles (#967, branch claude/cool-shannon-fqpoy8-ci-967): `prospicio-validation`'s features `arrow`, `bayes`, `io` and `nn`, on by default and off in CI's `bayes` and `fremtpl2` jobs, whose cold `bayes` build fell from about 335 s to 136 s on four cores.

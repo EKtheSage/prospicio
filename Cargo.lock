@@ -4046,7 +4046,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "prospicio"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "prospicio-aggregate",
  "prospicio-bayes",
@@ -4062,7 +4062,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-aggregate"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "prospicio-core",
  "prospicio-math",
@@ -4074,7 +4074,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-bayes"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nuts-rs",
  "prospicio-core",
@@ -4088,7 +4088,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "rand_chacha 0.10.0",
  "rand_core 0.10.1",
@@ -4097,7 +4097,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-glm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "prospicio-core",
  "prospicio-math",
@@ -4108,14 +4108,14 @@ dependencies = [
 
 [[package]]
 name = "prospicio-math"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "prospicio-models"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "prospicio-core",
  "prospicio-math",
@@ -4126,7 +4126,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-nn"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "burn",
  "onnx-ir",
@@ -4138,7 +4138,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-pricing"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "microlp",
  "prospicio-aggregate",
@@ -4150,7 +4150,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-prob"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "arrow-array",
  "arrow-ipc",
@@ -4165,7 +4165,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-python"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "prospicio-aggregate",
  "prospicio-bayes",
@@ -4181,7 +4181,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-r"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "extendr-api",
  "prospicio-aggregate",
@@ -4197,7 +4197,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-reserving"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "calamine",
  "csv",
@@ -4212,7 +4212,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-validation"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "prospicio-aggregate",
  "prospicio-bayes",
@@ -4230,7 +4230,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-wasm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "js-sys",
  "prospicio-aggregate",
@@ -4246,7 +4246,7 @@ dependencies = [
 
 [[package]]
 name = "prospicio-xll"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "prospicio-aggregate",
  "prospicio-bayes",
@@ -6596,7 +6596,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.2.0"
+version = "0.2.1"
 
 [[package]]
 name = "xxhash-rust"

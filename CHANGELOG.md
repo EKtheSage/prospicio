@@ -7,6 +7,207 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+## 0.2.1 (2026-11-23)
+
+### Models
+
+- Python: the means and standard errors of `Comparison`,
+  `PermutationImportance`, `InteractionScreen` and `PartialDependence` are
+  the same on every Python version. They were taken with the built-in
+  `sum`, which adds floats with compensation from Python 3.12 only, so a
+  value could differ in its last bit between 3.9 to 3.11 and 3.12; they
+  now use `math.fsum` (#962, #1033).
+- Python: the means and standard errors of `Comparison`, `PermutationImportance`, `InteractionScreen` and `PartialDependence` no longer raise for scores that are infinite or overflow. A score of +inf on one split and -inf on another gives a NaN mean, and scores of 1e308 give an infinite mean, as before #1033; finite scores are unchanged (#1037, #1038).
+- `OnnxModel::from_bytes` returns an error, not a panic, for a malformed
+  ONNX file that fails after the parse (a constant whose dims overflow) (#952, #1016).
+
+### Excel
+
+- `PRO.RES.BAYES.BF`'s help for `apriori` says it takes one number for
+  every origin. It said a row or column per origin was allowed, which the
+  function answers with `#PROSPICIO! apriori must be a positive number`
+  (#955, #1026).
+- `PRO.CAP.CASHFLOW` reads `u` and a per-simulation `commission` range together. A row blank in one range and not in the other is now an error naming the cell, where each range dropped its blanks on its own and the commissions were paired with the wrong loss ratios. A row blank in both is still dropped, and one commission for all simulations or none is read as before (#1004, #1011).
+- Functions that take ranges meant to line up row by row (`PRO.PRC.PROFILE`,
+  the tabulated exposure curve, the piecewise Pareto, payout patterns, rate
+  histories, sliding-scale anchors, outcome tables with probabilities, the
+  benchmark curve) read them together. A row blank in every range is still
+  dropped; a row blank in one range and not in another is now an error naming
+  the range and the cell, where each range's blanks were dropped on their own
+  and the values paired one row off. Ranges of different sizes are an error
+  (#1000).
+- Asynchronous functions share a pool of threads instead of starting one per call, so a sheet of hundreds of cells no longer starts hundreds of threads. A result over 4 million cells is returned and not kept, so it no longer empties the kept results, and the least recently used result is evicted first, not the oldest. `PRO.CAP.COPULA.SIM` and `PRO.CAP.NESTED.SIM` return an error text for more than 10,000,000 cells (rows times columns) instead of risking an out-of-memory crash of Excel. Numbers do not change (#953, #1012).
+- `PRO.RES.BAYES.ODP` and `PRO.RES.BAYES.BF`: cells that ask for different
+  views of one fit in the same recalculation now wait for one sampler run
+  instead of each starting their own, and no longer push duplicate fits out of
+  the cache. Results are unchanged (#954, #1014).
+- A finished asynchronous call no longer replies to Excel after the add-in closes (a shutdown flag set when Excel unloads it), so a run that finishes while Excel quits no longer calls into it. The next call to any function turns replies back on, so a quit cancelled at the save prompt leaves the add-in working (#955, #1036).
+
+### Reserving
+
+- Under `PaymentBasis::Incurred`, the `unpaid` draws of `discounted_reserves`
+  record the basis, the paid pattern and the latest paid in their
+  provenance, as the `discounted` draws did, and the `input_hash` of both
+  is the fit's with the paid pattern and the latest paid hashed in. Before,
+  two runs on different latest paid amounts gave different `unpaid` draws
+  with the same record. The `input_hash` of an incurred-basis result
+  changes once; the paid basis keeps the fit's (#958, #1022).
+- `Triangle::stack` of incremental programs keeps each program's own
+  unobserved cells. A program valued earlier than the others, or missing a
+  cell, no longer gains observed zero increments there, so `HierarchicalBf`
+  built from incremental triangles with unequal valuations no longer reads
+  them as a year of zero development (#942, #993).
+- `DiscountCurve.rate` and `factor` (Python, R and Rust) return NaN for a NaN time instead of panicking; a negative time still accumulates at the short rate, now documented (#947, #1006).
+- `underwriting_paid_by_month` returns an error, instead of panicking, for an
+  empty `written`, and also rejects `times` and `shares` of unequal length and
+  a non-finite time. Valid inputs give the same results (#949, #1008).
+- A triangle table with many segments over a wide grid (a nearly unique key
+  such as a claim id), a latest-valuation table with a mistyped origin, and
+  an Excel sheet with a stray cell far from the table now return an error
+  instead of asking for tens of gigabytes and aborting the process (#951,
+  #1019).
+- The paid-incurred chain's `convention` takes the same names in Python, R and Excel, from `PicConvention::NAMES`: `model`, and `r_chainladder`, `r-chainladder`, `chainladder` or `r` for R ChainLadder's. Excel now accepts `r_chainladder`, and Python and R accept Excel's `r`, `chainladder` and `r-chainladder`. No spelling is removed (#956, #1025).
+- The rule past the pattern's end takes the same names in Python, R and Excel, from `PastPatternEnd::NAMES`: `reject`, `no_development` (or `none`) and `tail`. Python and R now accept Excel's `none`. No spelling is removed (#956, #1030).
+- Clark's and the benchmark curve's growth `curve` takes the same names in Python, R and Excel, from `GrowthCurve::NAMES`: `loglogistic` (or `log-logistic`, `log_logistic`) and `weibull`. Python and R now accept Excel's two extra spellings. No spelling is removed (#956, #1030).
+- Meyers' `model` (`crc`, `csr`, `cay`) is read in any case in Python and R, from `MeyersModel::from_name`. R was exact before; Python already took any case (#956, #1030).
+
+### Distributions and probability
+
+- `risk::var_linear_sorted` gives NaN for draws that hold a NaN, in debug
+  builds as in release builds. Before, a debug build panicked on its
+  sortedness assertion, which reached the posterior summaries of
+  `prospicio-bayes` (#959, #1024).
+- `PredictiveDistribution::reorder_groups` and the reserving
+  `SegmentDependence::RankCorrelation` built on it now state their rule for
+  simulations whose group totals tie exactly: they rank in their order, the
+  earlier one lower. The results are unchanged (#959, #1024).
+- `optimize::golden_section_by` returns NaN at once for a bracket that is
+  not finite. Before, with no step cap, the search could not end (#959, #1024).
+- A CGMY (`TemperedStable`) law with `Y < 0` is compound Poisson with an atom
+  at `mu`; the characteristic-function engine now takes the atom out before
+  inversion, so the bucket at `mu` and its neighbours no longer ring. New
+  `TemperedStable::atom`. Masses near `mu` change for `Y < 0` only. A grid
+  that does not hold `mu` (one the user gives with `step` and `x_min`, or an
+  automatic window that leaves out a negligible atom when the jumps go mostly
+  one way) leaves the atom in, as before, instead of failing; so does a
+  Tweedie's grid without 0 (#944, #1007).
+- A stable law inverted with `x_min` given refuses `Tilt::Fixed` (the grid is
+  inverted untilted, so the tilt was ignored; `Tilt::Auto` falls back to none,
+  now documented). A tilted one-sided stable law on a given `step` with a
+  window that, from its light edge, would not reach the mean is placed on the
+  body (the mean); one that reaches it stays at the light edge, as before; the automatic tilt there counts the light side's mass below the
+  window, which the tilt magnifies as it wraps (it falls to no tilt where that
+  mass is large), and `Tilt::Fixed` is refused where it would magnify that
+  mass past round-off. `Stable::tail_mass_above` returns an error where its
+  series is not valid (at or below the location, near the body) instead of a
+  value above 1 (above `alpha = 1` it answers while its smallest term is
+  within 1e-3 of the sum); `chf::invert` then reports the mass beyond the
+  window as what the masses leave of 1 under a tilt that keeps the tail from
+  wrapping, under a smaller tilt `tau` as that divided by `1 - e^-tau`, and
+  untilted as an upper bound (`P(X > location)`, or 1) (#945, #1010).
+- `ChfDistribution::to_grid` refuses a window too far above 0 to pad, and
+  `ks_bootstrap` refuses weights summing past 2^24, instead of aborting on
+  the allocation (#951, #1019).
+- The capital allocation method and the piecewise Pareto's truncation kind take the same names in Python, R and Excel, from `AllocationMethod::NAMES` and `Truncation::NAMES`: Python and R now accept Excel's `natural` (the Euler allocation), `last_piece` and `whole_distribution`. No spelling is removed (#956, #1031).
+- `linalg::inverse` factors the matrix once and solves `n` triangular systems (about 7 times faster at `n = 50`), `linalg::cholesky_inverse` and the eigenvalue routine allocate less, `rearrange` sums and sorts each column less often (about 2.5 times faster at `d = 10`, `n = 10 000`), `correlated_normals` draws without a temporary vector and `Sampled` sorts its draws on first use. The results are the same to the last bit, and seeded runs give the same numbers (#971, #1002).
+- `iman_conover`, `iman_conover_with` and the group reordering by correlation sort
+  their columns on several threads once there are 4096 simulations or more and
+  two or more components; the results are bit-for-bit the same (#971, #1029).
+
+### Pricing
+
+- `ActualState::from_trace` refuses a trace from a valuation, told by its
+  nonzero opening balance. A valuation from a month above 0 whose trust and
+  operating balances are both exactly 0 is still read as months `0..`; a
+  `Trace::first_month` field would tell it, but adding a field to a `Trace`
+  that can be built with a struct literal breaks semver, so it is left for
+  0.3.0 (#960, #1018, #1043).
+- The bonus-malus integrals over a very dispersed gamma heterogeneity (a cv
+  above about 4.6) count the mass below `θ = 1e-300`, which they lost before
+  (`1e-9` on a stationary probability at cv 6), and `stationary`,
+  `optimal_relativities` and the other portfolio integrals return an error
+  when they have not settled to `1e-8` at 4,096 panels, where they returned
+  the last value (#960, #1018).
+- `DealBook::summary` gives NaN for a ratio to a mean premium of 0, and
+  `DealBook::adequacy` NaN for a return on a capital of 0. Before, they
+  were `inf` (or NaN for 0 over 0) (#960, #1018).
+- An ILF or ELF table read a rounding error past its last limit (for
+  example `0.2 + 0.4` on a table ending at `0.6`) returns the last value
+  instead of NaN, so a casualty profile's exposure factors stay finite (#939, #994).
+- `BonusMalus::stationary_at` and everything built on it (`efficiency`,
+  `mean_relativity`, `stationary`, `optimal_relativities`) now return an
+  error for a table with more than one closed class of levels, which has no
+  unique stationary distribution. Before, round-off could let the solve
+  return one of the many solutions as if it were the answer (#940, #997).
+- `irr` and `irr_rows` (and the forward and since-inception IRRs of a valuation) no longer report a found root for flows that are all zero, or that sum to 0 at every time: such a row is worth 0 at every rate, so it now gives `found = false`, NaN rate and NPV, and no sign changes. Summaries that counted a run-off deal's -0.19% as a return now leave it out (#941, #996).
+- `DealBook::calendar` no longer panics on a book where some deals have
+  investor flows and others do not; the table then has no `investor_flow`
+  item, as `cashflows` already requires every deal's flows (#948, #1013).
+- `ScheduleTrend::factors` (and `schedule_trend` in Python and R) rejects an
+  inception or accident year more than 500 years from the schedule's years,
+  such as `1e17` or a date serial like `20260101`, with an error that names
+  the value; before, it hung or returned `inf`. In R, a year beyond the
+  integer range is an error, not `NA` (#950, #1015).
+- The cash-flow bases and options (base, adjustment base, funding rule and source, reference, interest basis, fee basis, release and funding dates), the rate-change rule (`applies`) and the period kind take the same names in Python, R and Excel, from the new `NAMES` tables in `prospicio_pricing`: Python and R now accept Excel's any-case spellings with `_`, `-` or a space as the separator (`Unearned Premium`), `inforce` and `accident`. `Period::new` and `PeriodKind` are new. No spelling is removed (#956, #1031).
+
+### Aggregate and reinsurance
+
+- `ruin::wiener_hopf` returns an error when every step `X - cW` is a
+  multiple of two or more grid points (claims on a sub-lattice and a wait
+  that rounds to one of its points). Before, every `psi` was NaN (#960, #1018).
+- `YearLossTable::with_n_years` refuses a year count far above the rows,
+  as `YearLossTable::new` does (#951, #1019).
+- An event loss table's `bucketing` takes the same names in Python, R and Excel, from `EltBucketing::NAMES`: `nearest`, and `means_linear` or `linear` for the means-alone rule. Excel now accepts `means_linear`, and Python and R accept `linear`. No spelling is removed (#956, #1028).
+- The P&L face takes the same names in Python, R and Excel, from `Face::NAMES`: Python and R now accept Excel's `top-down` and `bottom-up`, in any case with `_` or a space for `-`. No spelling is removed (#956, #1031).
+
+### JavaScript (WebAssembly)
+
+- `Triangle.fromLong` with neither `value` nor `values` says to give one;
+  it said "give value or values, not both", the message for giving both
+  (#1042).
+- `EventSet.events(year)` past the last year says how many years the set
+  has; its message no longer subtracts from the number of years (#1042).
+- `Predictive.summary()` throws when a dimension is named `mean` or
+  `std_dev` (a key column of that name): the summary's own column of that
+  name replaced the dimension's labels (#1042).
+- A JavaScript package over the WASM-scope crates, `crates/prospicio-wasm`
+  (`wasm-bindgen`), built by `cargo xtask wasm` for bundlers, Node and a
+  plain browser page (#576, #1039): `Triangle.fromLong`, `chainLadder`, `mack`,
+  `bornhuetterFerguson` and `odpBootstrap`; `Dist.fromJson` with `cdf`,
+  `quantile`, `lev`, `layer` and `tvar`; `Count`, `fft`, `simulateEvents`,
+  `Tower.fromJson` with `apply`, `oep` and `occurrencePml`;
+  `Distortion.fromName`, `price` and `priceAtCostOfCapital`. Tables are
+  objects of `Float64Array` columns under the core's column names, a core
+  error is a thrown `Error`, and a seed gives the same draws as in Rust,
+  Python and R. The npm package will be `prospicio`; it is not published
+  yet.
+
+### Examples
+
+- The weekly references rerun no longer fails on `sobol_scipy.csv` (only its SciPy
+  version label moved, now listed as a moved source) or on `hawkes_scipy.csv`
+  (an optimiser's last digits: the fitted parameters are now compared to 1e-6
+  relative, where the Rust test allows 1e-4, and the log-likelihood to 1e-7
+  absolute, inside the Rust test's 1e-6) (#935, #1017).
+- `cargo xtask check [--changed] [--fast]` runs the checks CI runs on a pull
+  request in one command: formatting, the Python governance scripts, clippy,
+  tests, rustdoc, the WASM check and, when bindings change, `generated --check`.
+  `--changed` runs only what CI's change filters ask for. AGENTS.md "Checks"
+  names it and now lists `check_okf.py` and `bayes_shards.py` (#968, #1027).
+
+### Bindings
+
+- Python: `fit_curves`, `Grid.local_moment`, `Grid.rounding`, `Grid.lower`,
+  `ParetoAnchor.fit` and `PredictiveDistribution.join` release the GIL
+  while they compute, so other Python threads keep running (#1001).
+
+### Packaging
+
+- The release workflow builds and tests the JavaScript package on every
+  run and publishes it to npm as `prospicio` on a version tag, by npm's
+  trusted publishing, once the repository variable `NPM_PUBLISH` is set
+  (#576, #1040; `docs/release.md`, one-time setup, step 4).
+
 ## 0.2.0 (2026-11-20)
 
 ### Distributions and probability
