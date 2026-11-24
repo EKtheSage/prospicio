@@ -6,7 +6,11 @@ recorded as decisions 11 to 16. **PR 1 is built** (branch
 `claude/inflation-index`, 2026-11-24): `CalendarIndex`, `Indexation`
 (`factor`, `restate`, `inflate`, `reinflate`), `FutureCells` and
 `Reinflated`, in Rust, with Taylor's re-inflation of Example 1
-reproduced; the bindings are PR 2. Lane: Reserving (`crates/prospicio-reserving/`; the
+reproduced; the bindings are PR 2. **PR 3 is built** (branch
+`claude/separation-arithmetic`, 2026-11-24): `Separation` with the
+arithmetic method, a normaliser, `FutureInflation` (`Rate`, `Index`,
+`Trend`), `fit_segments` and `SeparationFit`, in Rust, at parity with
+statsmodels' Poisson GLM (1e-9) and Taylor's Example 1. Lane: Reserving (`crates/prospicio-reserving/`; the
 bindings in new module files of `prospicio-python` and `prospicio-r`) ·
 Depends on: `triangle.md` (calendar periods, decision 2),
 `reserving-v02.md` (the chain ladder, `OdpGlm` and its designs, the
