@@ -47,10 +47,10 @@ fn parse_period(text: &str) -> Option<Period> {
 }
 
 fn period_of(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Period> {
-    if !obj.is_instance_of::<PyBool>() {
-        if let Ok(year) = obj.extract::<i32>() {
-            return Ok(Period::year(year));
-        }
+    if !obj.is_instance_of::<PyBool>()
+        && let Ok(year) = obj.extract::<i32>()
+    {
+        return Ok(Period::year(year));
     }
     obj.extract::<String>()
         .ok()
@@ -69,10 +69,10 @@ fn period_of(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Period> {
 fn month_of(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Month> {
     if obj.is_instance_of::<PyString>() {
         let text: String = obj.extract()?;
-        if let Some((y, m)) = text.trim().split_once('-') {
-            if let (Ok(y), Ok(m)) = (y.parse::<i32>(), m.parse::<u8>()) {
-                return Month::new(y, m).map_err(|e| PyValueError::new_err(e.to_string()));
-            }
+        if let Some((y, m)) = text.trim().split_once('-')
+            && let (Ok(y), Ok(m)) = (y.parse::<i32>(), m.parse::<u8>())
+        {
+            return Month::new(y, m).map_err(|e| PyValueError::new_err(e.to_string()));
         }
     } else if obj.hasattr("year")? && obj.hasattr("month")? {
         let year: i32 = obj.getattr("year")?.extract()?;

@@ -10,7 +10,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_reserving::{
-    CalendarIndex, FutureCell, FutureCells, Grain, Indexation, Month, Period,
+    CalendarIndex, FutureCell, FutureCells, Grain, Indexation, Month, Period, Reinflated,
 };
 
 use crate::odp_glm::OdpGlmFit;
@@ -285,7 +285,7 @@ fn reinflate_rust(
 ) -> Result<List> {
     let ix = indexation(first, values, rate, base)?;
     let cells = cells_from(&origins, &origin, &age, &valuation, &value)?;
-    let out = ix.reinflate(&cells).map_err(to_r)?;
+    let out: Reinflated = ix.reinflate(&cells).map_err(to_r)?;
     let cols = cells_list(&out.cells);
     Ok(list!(
         origins = cols.elt(0)?,
