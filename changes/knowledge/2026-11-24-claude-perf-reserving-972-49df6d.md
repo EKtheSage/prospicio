@@ -1,0 +1,1 @@
+* **Update**: [Automatic differentiation for small Bayesian reserving models](/findings/autodiff-benchmark.md), from #972 (branch claude/perf-reserving-972-49df6d): `HierarchicalBf` dropped the chunked dual for a hand-written gradient in one pass, the generic density kept as its oracle; the value matches bit for bit, the gradient to 1e-10 relative.
