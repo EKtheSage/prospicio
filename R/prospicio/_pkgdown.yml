@@ -410,6 +410,7 @@ reference:
       - frequency_severity
       - future_cells
       - indexation
+      - separation_fit
       - disposal_method
       - case_outstanding
       - development_method

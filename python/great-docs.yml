@@ -414,6 +414,8 @@ reference:
       - reserving.RatioDevelopment
       - reserving.RatioDevelopmentFit
       - reserving.Reinflated
+      - reserving.Separation
+      - reserving.SeparationFit
       - reserving.RiskAdjustmentResult
       - reserving.SegmentRiskAdjustment
       - reserving.UlaeEstimate

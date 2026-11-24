@@ -64,7 +64,7 @@ fn month(text: &str, what: &str) -> Result<Month> {
     parsed.ok_or_else(|| Error::Other(format!("{what} must be a month \"YYYY-MM\", got {text:?}")))
 }
 
-fn index(first: &str, values: Vec<f64>, rate: Nullable<f64>) -> Result<CalendarIndex> {
+pub(crate) fn index(first: &str, values: Vec<f64>, rate: Nullable<f64>) -> Result<CalendarIndex> {
     let mut index = CalendarIndex::new(period(first, "first")?, values).map_err(to_r)?;
     if let Nullable::NotNull(rate) = rate {
         index = index.with_future_rate(rate).map_err(to_r)?;
@@ -204,7 +204,7 @@ fn cells_from(
 }
 
 /// The cells as a list of columns.
-fn cells_list(cells: &FutureCells) -> List {
+pub(crate) fn cells_list(cells: &FutureCells) -> List {
     let labels: Vec<String> = cells.origins.iter().map(ToString::to_string).collect();
     let c = &cells.cells;
     list!(
