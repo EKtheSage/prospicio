@@ -325,7 +325,11 @@ pub struct RetroPlan {
 /// A balanced plan: [`RetroPlan::balance`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BalancedPlan {
-    /// The basic premium `b`, before the tax multiplier.
+    /// The basic premium `b`, before the tax multiplier. It is negative
+    /// when the minimum premium is high enough to collect more than the
+    /// expenses on its own; such a plan balances on paper and would not be
+    /// sold, and [`LossSensitivePremium`](prospicio_aggregate::LossSensitivePremium)
+    /// refuses a negative basic premium.
     pub basic: f64,
     /// The entry ratio `r_H` at and below which the minimum premium
     /// applies. Negative when the minimum is below `T b`, so that it never

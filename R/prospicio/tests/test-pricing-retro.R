@@ -24,20 +24,21 @@ stopifnot(near_abs(attr(tl, "loss_elimination"), k, 1e-15), attr(tl, "expected")
 stopifnot(near_abs(tl$charge, c(1, (67.5 / 4 + 30) / 132.5, k), 1e-15))
 stopifnot(near_abs(tl$charge - tl$savings, 1 - c(0, 1, 10), 1e-14))
 
-# A balanced plan collects the guaranteed-cost premium on average. The
-# premium is the reinsurance module's retro_premium(), with the tax
-# multiplier in its basic and lcm.
-prem <- function(b, x, minimum, maximum) {
-  retro_premium(x, basic = 1.03 * b$basic, lcm = 1.03 * 1.1, minimum = minimum, maximum = maximum)
-}
+# A balanced plan collects the guaranteed-cost premium on average.
+prem <- function(b, x, minimum, maximum) pmin(pmax(1.03 * (b$basic + 1.1 * x), minimum), maximum)
 losses <- c(0, 10, 30, 50, 70, 90, 120, 150, 200, 280)
 b <- retro_balance(losses, 100, 30, loss_conversion = 1.1, tax_multiplier = 1.03, minimum = 80, maximum = 220)
+# The premium is the reinsurance module's retro_premium(), with the tax
+# multiplier in its basic and lcm.
+stopifnot(near_abs(retro_premium(losses, basic = 1.03 * b$basic, lcm = 1.03 * 1.1, minimum = 80, maximum = 220),
+                   prem(b, losses, 80, 220), 1e-12))
 stopifnot(near_abs(mean(prem(b, losses, 80, 220)), 1.03 * 130, 1e-9))
 stopifnot(near_abs(b$expected_premium, 1.03 * 130, 1e-12))
 stopifnot(near_abs(b$basic, 30 - 0.1 * 100 + 1.1 * 100 * b$net_insurance_charge, 1e-9))
 # No maximum, and a plan that never binds.
+# A high minimum with no maximum balances with a negative basic premium.
 b <- retro_balance(losses, 100, 30, 1.1, 1.03, minimum = 120)
-stopifnot(is.infinite(b$entry_ratio_maximum))
+stopifnot(is.infinite(b$entry_ratio_maximum), b$basic < 0)
 stopifnot(near_abs(mean(prem(b, losses, 120, Inf)), 1.03 * 130, 1e-9))
 b <- retro_balance(losses, 100, 30, 1.1, 1.03, minimum = 0, maximum = 1000)
 stopifnot(near_abs(b$basic, 20, 1e-9), b$entry_ratio_minimum < 0)
