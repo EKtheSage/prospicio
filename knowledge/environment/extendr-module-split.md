@@ -34,8 +34,9 @@ sources:
   of `R/prospicio/R/extendr-wrappers.R` by name, and extendr's
   `make_r_wrappers` skips the `hidden` metadata functions
   (`get_<mod>_metadata`, `make_<mod>_wrappers`) that each nested module
-  adds. Splitting the R bindings' 8,265-line `reserving.rs` into 23 nested
-  modules left `extendr-wrappers.R`, `NAMESPACE` and `man/` unchanged, and
+  adds. Splitting the R bindings' 8,265-line `reserving.rs` into 23 Rust
+  modules, 21 of them nested extendr modules (`common.rs` and
+  `bayes_models.rs` hold no `#[extendr]` item and register nothing), left `extendr-wrappers.R`, `NAMESPACE` and `man/` unchanged, and
   the 36 R reserving test files passed.
 * Each nested module also exports `#[no_mangle]` symbols named after it
   (`R_init_<mod>_extendr`, `wrap__get_<mod>_metadata`,
