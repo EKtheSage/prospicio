@@ -29,6 +29,9 @@ const GROSS_SEED: u64 = 980;
 /// The default draws' seed, the same for every case.
 const DEFAULT_SEED: u64 = 2026;
 /// A simulated value passes within this many of its own standard errors.
+/// The iid standard errors are conservative for the default frequencies
+/// (U is stratified by rank, so only the Bernoulli part varies) and
+/// approximate for the credit-loss mean with `rho > 0`.
 const MAX_Z: f64 = 4.0;
 /// The tower's layers, as the generator names them.
 const LAYERS: [&str; 2] = ["A", "B"];
