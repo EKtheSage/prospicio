@@ -871,6 +871,44 @@ impl Triangle {
         })
     }
 
+    /// A copy with the increments of `column` each multiplied by
+    /// `factor(valuation month of its cell)`, in the triangle's basis: a
+    /// cumulative row is differenced, scaled and cumulated again, touching
+    /// no other column, in every index position. The mask is unchanged; an
+    /// increment after a hole is scaled at its own cell's month
+    /// (`reserving-inflation.md` decision 2).
+    pub(crate) fn scale_increments(
+        &self,
+        column: &str,
+        mut factor: impl FnMut(Month) -> Result<f64>,
+    ) -> Result<Self> {
+        let c = self.column_position(column)?;
+        let [ni, _, no, nd] = self.shape;
+        let mut out = self.clone();
+        for i in 0..ni {
+            for o in 0..no {
+                let (mut before, mut total) = (0.0, 0.0);
+                for d in 0..nd {
+                    let at = self.offset(i, c, o, d);
+                    if !self.mask[at] {
+                        continue;
+                    }
+                    let value = self.values[at];
+                    let increment = if self.cumulative {
+                        value - before
+                    } else {
+                        value
+                    };
+                    before = value;
+                    let scaled = increment * factor(self.valuation_of(o, d))?;
+                    total += scaled;
+                    out.values[at] = if self.cumulative { total } else { scaled };
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// The cumulative cells of `column` in the only index position, origin
     /// by origin (each row one value per development age, `None` where
     /// unobserved), over every origin and age of the triangle. The count and

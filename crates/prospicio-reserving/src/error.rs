@@ -126,6 +126,10 @@ pub enum Error {
     ExclusionsMismatch { bootstrap: String, method: String },
     /// The ODP GLM cannot be fitted to this triangle.
     OdpGlm(String),
+    /// A triangle cannot be indexed or a projection re-inflated as asked
+    /// (`reserving-inflation.md`): the index misses a payment period, or a
+    /// future cell's origin is unknown.
+    Inflation(String),
     /// A Bayesian reserving model cannot be fitted to this triangle, for
     /// example an origin whose observed increments sum to zero or less,
     /// which leaves the log-linear mean undefined, or its sampler or mode
@@ -304,6 +308,7 @@ impl fmt::Display for Error {
                 "bootstrap: the bootstrap's exclusions ({bootstrap}) must be the re-reserving method's ({method}), or none"
             ),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
+            Self::Inflation(why) => write!(f, "inflation: {why}"),
             Self::Bayes(why) => write!(f, "Bayesian reserving: {why}"),
             Self::Apriori(why) => write!(f, "apriori: {why}"),
             Self::Excess(why) => write!(f, "excess layer: {why}"),
