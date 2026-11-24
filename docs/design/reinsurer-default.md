@@ -1,7 +1,7 @@
 # Design note: reinsurer default on a tower
 
 Status: **Accepted** (#980; decisions (a) to (l) accepted by the user on
-2026-11-24 as recommended; PR 2 built) · v0.3 ·
+2026-11-24 as recommended; PRs 2 and 3 built) · v0.3 ·
 Depends on: `aggregate.md` (`Tower`, `EventSet`, the tower's simulated years
 in parallel, #970), `predictive-distribution.md`, `rng.md` · Lane: Aggregate
 
