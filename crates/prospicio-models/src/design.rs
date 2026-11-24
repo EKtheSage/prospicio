@@ -9,6 +9,8 @@
 
 use std::collections::BTreeSet;
 
+use rayon::prelude::*;
+
 use prospicio_core::{Error, Result};
 
 /// A named column of data.
@@ -950,13 +952,27 @@ impl Design {
 
     /// `X β + offset`.
     pub fn linear_predictor(&self, beta: &[f64]) -> Vec<f64> {
-        let mut eta = self.offset.clone();
-        for (col, b) in self.columns.iter().zip(beta) {
-            for (e, x) in eta.iter_mut().zip(col) {
-                *e += b * x;
-            }
-        }
+        let mut eta = vec![0.0; self.n_rows];
+        self.linear_predictor_into(beta, &mut eta);
         eta
+    }
+
+    /// `X β + offset` written into `eta` (one value per row), for loops that
+    /// evaluate it many times. Rows are filled in parallel blocks; each
+    /// row's sum runs over the columns in order, so the result does not
+    /// depend on the number of threads.
+    pub fn linear_predictor_into(&self, beta: &[f64], eta: &mut [f64]) {
+        const BLOCK: usize = 8192;
+        assert_eq!(eta.len(), self.n_rows, "eta needs one value per row");
+        eta.par_chunks_mut(BLOCK).enumerate().for_each(|(k, out)| {
+            let start = k * BLOCK;
+            out.copy_from_slice(&self.offset[start..start + out.len()]);
+            for (col, b) in self.columns.iter().zip(beta) {
+                for (e, x) in out.iter_mut().zip(&col[start..]) {
+                    *e += b * x;
+                }
+            }
+        });
     }
 
     /// The rows in `rows`, in that order, with their offsets and weights.
