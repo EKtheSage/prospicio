@@ -225,7 +225,11 @@ applied (a layer the result does not have, a named layer's lines not
 summing to 1, a driver of the wrong length), since a panel is built
 before it meets a tower. `apply` refuses a result a panel was already
 applied to, and a term's paths (a `"year"` dimension with integer years)
-until `apply_term` exists. The provenance also records the driver
+until `apply_term` exists; this check reads the result's shape, so it does
+not catch a one-year result labelled by year, whose labels are text. The
+draw of `U` is kept below 1 and a probability of default of 1 defaults on
+any uniform, since `StreamRng::next_open01` can return exactly 1.0 (with
+chance about `2^-53`). The provenance also records the driver
 (`default_driver`) and each reinsurer's terms and lines
 (`reinsurer:<name>`), and `Panel::reinsurers` lists the panel.
 

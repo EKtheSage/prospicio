@@ -1,3 +1,9 @@
+### Breaking changes
+
+- `credit_loss`, `recovered` and `net_after_default` are reserved names in
+  `prospicio_aggregate`, like `brokerage` and `margin`: a deduction with one
+  of these labels, in Rust or in a tower's JSON, is now refused (#980).
+
 ### Aggregate and reinsurance
 
 - Reinsurer default on a tower's simulated years: `Panel` and `Reinsurer`

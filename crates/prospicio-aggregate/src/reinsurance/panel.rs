@@ -4,33 +4,7 @@
 //! result ([`Tower::apply`], [`Tower::apply_aggregate`],
 //! [`Tower::apply_annual`]).
 //!
-//! Reinsurer `r`'s exposure in year `i` is `E = sum over l of s_rl X_l`,
-//! with `X_l` layer `l`'s ceded loss and `s_rl` its line; if it defaults,
-//! the cedant loses `(1 - R_r) (E - C_r)^+`, with `R_r` its recovery rate
-//! and `C_r` its collateral. Defaults follow Vasicek's one-factor model:
-//! given the year's factor `z`, reinsurer `r` defaults with probability
-//! `p_r(z) = Phi((Phi^{-1}(p_r) - sqrt(rho_r) z) / sqrt(1 - rho_r))`, and
-//! the factor is `z = -Phi^{-1}(U_i)`, where `U_i` is year `i`'s rank by
-//! its driver (the gross loss, or [`Panel::driver`]), so the worst years
-//! have the highest probability of default (wrong-way risk). With `b_i`
-//! years strictly below year `i`'s driver and `t_i` tied with it (itself
-//! included), `U_i = (b_i + v_i t_i) / n`, so ties are broken at random
-//! and `U` is uniform over the years.
-//!
-//! # Random numbers
-//!
-//! Year `i` draws from its own stream, `StreamRng::new(seed,
-//! DEFAULT_STREAM + i)` with `DEFAULT_STREAM = 3 << 62`, apart from the
-//! events' streams (`i` for the losses, `1 << 63` plus `i` for event
-//! times) even when the caller passes the events' seed. The year draws, in
-//! this order, `v_i` for the rank, then one uniform per reinsurer in panel
-//! order, drawn whether or not the reinsurer has an exposure that year;
-//! reinsurer `r` defaults when its uniform is below `p_r(z)`. The ranks
-//! are computed once before the years, and each year depends only on its
-//! index and its rank, so the result has the same bits on any number of
-//! threads. The result keeps the tower result's provenance (so `join` sees
-//! that it shares the events' streams) and adds the parameters
-//! `default_seed` and `default_streams`.
+//! The model and the order of the random draws are documented on [`Panel`].
 
 use prospicio_core::StreamRng;
 use prospicio_math::special::{norm_cdf, norm_quantile};
@@ -41,6 +15,9 @@ use super::*;
 /// Year `i` draws from stream `DEFAULT_STREAM + i`, apart from the events'
 /// streams (the year's own index, and `TIME_STREAM = 1 << 63` plus it).
 const DEFAULT_STREAM: u64 = 3 << 62;
+
+/// The largest `f64` below 1, the cap on a year's rank `U`.
+const BELOW_ONE: f64 = 1.0 - f64::EPSILON / 2.0;
 
 /// How far a layer's lines may sum from 1.
 const LINES_TOLERANCE: f64 = 1e-9;
@@ -609,14 +586,19 @@ impl<'a> Overlay<'a> {
         let mut rng = StreamRng::new(self.seed, DEFAULT_STREAM + i as u64);
         let (b, t) = self.ranks[i];
         let v = rng.next_open01();
-        let u = (b as f64 + v * t as f64) / self.ranks.len() as f64;
+        // `next_open01` can return exactly 1.0 (`k + 0.5` rounds up for
+        // `k >= 2^52`), and `(b + v t) / n` can round to 1: keep `U` below 1
+        // so the factor stays finite.
+        let u = ((b as f64 + v * t as f64) / self.ranks.len() as f64).min(BELOW_ONE);
         let z = -norm_quantile(u);
         w.exposure.clear();
         w.default.clear();
         w.credit.clear();
         for (r, re) in self.panel.reinsurers.iter().enumerate() {
             let draw = rng.next_open01();
-            let defaults = draw < re.given(self.quantiles[r], z);
+            // A probability of 1 defaults even on a draw of exactly 1.0.
+            let pz = re.given(self.quantiles[r], z);
+            let defaults = pz >= 1.0 || draw < pz;
             let e: f64 = self.lines[r].iter().map(|&(l, s)| s * w.x[l]).sum();
             w.exposure.push(e);
             w.default.push(defaults);
