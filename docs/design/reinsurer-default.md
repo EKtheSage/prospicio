@@ -1,7 +1,7 @@
 # Design note: reinsurer default on a tower
 
 Status: **Accepted** (#980; decisions (a) to (l) accepted by the user on
-2026-11-24 as recommended; PRs 2 and 3 built) · v0.3 ·
+2026-11-24 as recommended; PRs 2 to 4 built) · v0.3 ·
 Depends on: `aggregate.md` (`Tower`, `EventSet`, the tower's simulated years
 in parallel, #970), `predictive-distribution.md`, `rng.md` · Lane: Aggregate
 
@@ -233,6 +233,33 @@ chance about `2^-53`). The provenance also records the driver
 (`default_driver`) and each reinsurer's terms and lines
 (`reinsurer:<name>`), and `Panel::reinsurers` lists the panel.
 
+As built in PR 4 (`crates/prospicio-aggregate/src/solvency2.rs`, the
+public module `prospicio_aggregate::solvency2`, its items not re-exported
+at the crate root since their names are generic), where the note left a
+choice open: `probability_by_ratio` takes the ratio as a fraction (1.5 for
+150 %), so a ratio given in percent lands above 1.96 and gives 0.01 %; it
+refuses NaN and a negative ratio, and returns the table's own numbers
+exactly at its points. `reinsurance_lgd` accepts any share and factor in
+[0, 1] rather than only 0.5 or 0.9 and the factors of Art 197(7), so that
+an amendment or a supervisor's reading of F' needs no new version; the
+regulatory values are documented on it. It refuses recoverables or `RM_re`
+that are not finite and negative collateral, and floors the result at 0.
+`type1` groups by exactly equal probabilities of default (the result does
+not depend on how a group is split, since `V_inter` is bilinear in the
+groups' totals), refuses a probability outside [0, 1] or a negative or
+infinite loss given default, and returns `Type1 { v_inter, v_intra, sigma,
+total_lgd, scr }` (`#[non_exhaustive]`). No exposures, or only ones with a
+probability of 0 or 1, give `sigma = 0` and a charge of 0. The Solvency II
+cases are in a file of their own, `reinsurer_default_solvency2.csv`, from
+the same generator: the panel's test reads every row of
+`reinsurer_default.csv` as one tower. Python binds them as
+`prospicio.reinsurance.solvency2_probability_by_step`, `_by_ratio`,
+`solvency2_reinsurance_lgd` (share 0.5 and factor 1 by default) and
+`solvency2_type1` (a list of `(pd, lgd)` pairs, returning
+`Solvency2Type1`), R as `solvency2_probability_by_step()`, `_by_ratio()`,
+`solvency2_reinsurance_lgd()` and `solvency2_type1(pd, lgd)` (a list), in
+the reinsurance module files; PR 5 is left with the panel's bindings.
+
 ## Decisions
 
 Accepted by the user on 2026-11-24 as the lane recommended them:
@@ -366,16 +393,18 @@ result as for any other component.
 - **Joint default**: the frequency of two reinsurers defaulting together
   against SciPy's `multivariate_normal.cdf` in the generator (independent
   of the Rust's `bivariate_norm_cdf`), within four standard errors.
-- **Solvency II**: `type1` and `reinsurance_lgd` against an independent
-  implementation of Articles 192, 199, 200 and 201 in the generator, to
-  1e-12.
+- **Solvency II**: `probability_by_step`, `probability_by_ratio`,
+  `reinsurance_lgd` and `type1` against an independent implementation of
+  Articles 192, 199, 200 and 201 in the generator, to 1e-12 relative.
 - **Reference generator**: `validation/scripts/aggregate_reinsurer_default.py`
   (PEP 723 metadata, NumPy and SciPy pinned, `exclude-newer` set), writing
   `validation/reference/reinsurer_default.csv` (the CSV layout of
   `reinsurance_aggregate.csv`: closed-form means and variances, the
-  quadrature for the factor case, the joint default probabilities, the
-  Solvency II cases) with its `MANIFEST.toml` entry; the test is
-  `validation/tests/aggregate_reinsurer_default.rs`. The generator computes
+  quadrature for the factor case, the joint default probabilities) and
+  `validation/reference/reinsurer_default_solvency2.csv` (the Solvency II
+  cases), each with its `MANIFEST.toml` entry; the tests are
+  `validation/tests/aggregate_reinsurer_default.rs` and
+  `aggregate_reinsurer_default_solvency2.rs`. The generator computes
   everything from the formulas, with no simulation, so it does not mirror
   the Rust.
 
