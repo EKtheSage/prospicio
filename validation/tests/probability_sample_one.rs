@@ -72,7 +72,7 @@ fn sample_one_matches_sample_on_the_default_inverse_transform() {
     agrees("dist lognormal", &Dist::from(lognormal.clone()));
     agrees(
         "affine lognormal",
-        &Affine::new(severity(lognormal), 0.5, -1.0).unwrap(),
+        &Affine::new(severity(lognormal), 0.5, 1.0).unwrap(),
     );
     agrees("normal", &Normal::new(1.0, 2.0).unwrap());
     agrees("pareto", &Pareto::new(10.0, 2.0).unwrap());
