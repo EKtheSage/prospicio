@@ -20,6 +20,7 @@ use prospicio_math::optimize::{brent, golden_section_by};
 use prospicio_math::roots::illinois;
 use prospicio_models::{Design, Family, Fitted, Link, Model};
 use prospicio_prob::PredictiveDistribution;
+use rayon::prelude::*;
 
 use crate::{Dispersion, Glm, GlmFit};
 
@@ -85,10 +86,16 @@ pub fn tweedie_profile(
         let (phi, ll) = max_over_phi(p, y, fit.fitted(), design.weights(), fit.dispersion())?;
         Ok((ll, phi, fit))
     };
+    // The grid's fits are independent: run them in parallel, then report
+    // the first failure in grid order, as a loop over the grid would.
+    let grid: Vec<Result<(f64, f64)>> = powers
+        .par_iter()
+        .map(|&p| point(p).map(|(ll, phi, _)| (ll, phi)))
+        .collect();
     let mut lls = Vec::with_capacity(powers.len());
     let mut phis = Vec::with_capacity(powers.len());
-    for &p in powers {
-        let (ll, phi, _) = point(p)?;
+    for r in grid {
+        let (ll, phi) = r?;
         lls.push(ll);
         phis.push(phi);
     }

@@ -13,6 +13,12 @@ recorded as decisions 11 to 16.
   `FutureInflation` (`Rate`, `Index`, `Trend`), `fit_segments` and
   `SeparationFit`, in Rust, at parity with statsmodels' Poisson GLM
   (1e-9) and Taylor's Example 1.
+* **PR 4 is built** (branch `claude/separation-geometric`, 2026-11-24):
+  `SeparationKind::Geometric(Retransformation)`, least squares on the
+  logs with proportions summing to 1, geometric means by default or
+  lognormal means (decisions 12 and 13; at least 3 origins),
+  `SeparationFit::log_variance`, in Rust, at parity with statsmodels'
+  OLS (1e-9).
 
 Lane: Reserving (`crates/prospicio-reserving/`; the
 bindings in new module files of `prospicio-python` and `prospicio-r`) ·
@@ -126,9 +132,11 @@ C(c), Poisson)` differ by at most 2.3e-13.
 least squares on the logs (a two-way additive model on a triangle: its
 normal equations set the column and diagonal sums of the fitted logs to
 those of the data). Its fitted values differ from the arithmetic ones
-(on Example 1, 28.39 against 28.53 in the cell (0, 1)). How to normalise
-its `r_j` and whether to correct the retransformation bias are open
-decisions 2 and 3; the arithmetic method comes first.
+(on Example 1, 28.39 against 28.53 in the cell (0, 1)). Its `r_j` sum
+to 1 as the arithmetic method's (decision 12), and the fit returns to
+amounts by the geometric means or, on request, the lognormal means
+`exp(sigma^2 / 2)` times larger, which need at least 3 origins for a
+residual variance (decision 13).
 
 **Projection.** Future `lambda_h` (`h > k`) are not fitted: Taylor
 chooses them. The fit takes them as a constant annual rate from the last

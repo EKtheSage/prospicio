@@ -199,9 +199,10 @@ mod prospicio_native {
     #[pymodule_export]
     use super::reinsurance::{
         PyAggregateLayerStatistics, PyAnnualGrids, PyCessionStatistics, PyLayer, PyLayerStatistics,
-        PyLossSensitivePremium, PyTower, PyTowerGrids, PyTowerPrice, PyViewPrice,
+        PyLossSensitivePremium, PySolvency2Type1, PyTower, PyTowerGrids, PyTowerPrice, PyViewPrice,
         aggregate_layer_statistics, occurrence_cession_statistics, occurrence_layer_statistics,
-        per_risk_inuring,
+        per_risk_inuring, solvency2_probability_by_ratio, solvency2_probability_by_step,
+        solvency2_reinsurance_lgd, solvency2_type1,
     };
     #[pymodule_export]
     use super::reserving::NotSupportedError;

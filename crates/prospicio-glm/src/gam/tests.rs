@@ -58,3 +58,90 @@ fn the_log_likelihood_is_the_familys_at_the_fit_and_round_trips() {
     let back = GamFit::from_json(&fit.to_json()).unwrap();
     assert_eq!(back.log_likelihood(), fit.log_likelihood());
 }
+
+#[test]
+fn canonical_links_have_the_expected_information_as_observed() {
+    // REML reuses IRLS's expected information for these pairs (#969):
+    // check it equals the observed information, with weights and an offset.
+    let n = 200;
+    let x: Vec<f64> = (0..n).map(|i| f64::from(i) / 50.0).collect();
+    let w: Vec<f64> = (0..n).map(|i| 0.5 + f64::from(i % 5) / 4.0).collect();
+    let offset: Vec<f64> = (0..n).map(|i| 0.1 * f64::from(i % 3)).collect();
+    let u = |i: i32| (f64::from(i) * 0.618_034).fract();
+    let cases: [(Family, Link, Vec<f64>); 5] = [
+        (
+            Family::Gaussian,
+            Link::Identity,
+            (0..n).map(|i| 1.0 + u(i)).collect(),
+        ),
+        (
+            Family::Poisson,
+            Link::Log,
+            (0..n).map(|i| (2.0 * u(i)).floor()).collect(),
+        ),
+        (
+            Family::Binomial,
+            Link::Logit,
+            (0..n).map(|i| f64::from(u(i) > 0.4)).collect(),
+        ),
+        (
+            Family::Gamma,
+            Link::Inverse,
+            (0..n).map(|i| 2.0 + u(i)).collect(),
+        ),
+        (
+            Family::InverseGaussian,
+            Link::InverseSquared,
+            (0..n).map(|i| 2.0 + u(i)).collect(),
+        ),
+    ];
+    for (family, link, y) in cases {
+        assert!(canonical(family, link));
+        let glm = Glm::new(family, link);
+        let d = Design::new(
+            vec!["(Intercept)".into(), "x".into()],
+            vec![vec![1.0; 200], x.clone()],
+        )
+        .unwrap()
+        .with_weights(w.clone())
+        .unwrap()
+        .with_offset(if link == Link::Log {
+            offset.clone()
+        } else {
+            vec![0.0; 200]
+        })
+        .unwrap();
+        let fit = irls(&glm, &d, &y, |i| family.initial_mu(y[i], w[i], 2.0), None).unwrap();
+        let observed = observed_information(&glm, &d, &y, &fit.mu);
+        let scale = observed.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
+        for (a, b) in observed.iter().zip(&fit.information) {
+            assert!(
+                (a - b).abs() <= 1e-9 * scale,
+                "{family:?} {link:?}: {a} vs {b}"
+            );
+        }
+    }
+    assert!(!canonical(Family::Gamma, Link::Log));
+    assert!(!canonical(
+        Family::NegativeBinomial { theta: 1.0 },
+        Link::Log
+    ));
+}
+
+#[test]
+fn saturated_gamma_by_weight_groups_matches_the_row_sum() {
+    let y: Vec<f64> = (0..300).map(|i| 0.5 + f64::from(i % 17) / 3.0).collect();
+    let w: Vec<f64> = (0..300).map(|i| [1.0, 2.5, 0.0, 1.0][i % 4]).collect();
+    for family in [Family::Gamma, Family::Gaussian, Family::Poisson] {
+        let sat = Saturated::new(family, &y, &w).unwrap();
+        for phi in [0.01, 0.3, 1.0, 7.0] {
+            let want = saturated_log_likelihood(family, &y, &w, phi).unwrap();
+            let got = sat.at(&y, &w, phi);
+            assert!(
+                (got - want).abs() <= 1e-11 * want.abs(),
+                "{family:?} {phi}: {got} vs {want}"
+            );
+        }
+    }
+    assert!(Saturated::new(Family::Tweedie { power: 1.5 }, &y, &w).is_err());
+}
