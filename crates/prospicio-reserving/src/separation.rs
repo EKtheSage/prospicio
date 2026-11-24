@@ -89,7 +89,10 @@ pub enum FutureInflation {
     /// least-squares line through their logarithms), continued from the
     /// last fitted index: `lambda_{k+t} = lambda_k exp(b t)`, `b` the
     /// line's slope. `periods` is at least 2 and at most the number of
-    /// calendar periods; there is no default (decision 14).
+    /// calendar periods; there is no default (decision 14). Every
+    /// continuation starts from `lambda_k`, which rests on one cell (the
+    /// last origin's first) and is the noisiest index: check it before
+    /// projecting with any of the three.
     Trend {
         /// How many of the last fitted indices the trend is fitted to.
         periods: usize,
@@ -162,7 +165,8 @@ pub struct SeparationFit {
     pub fitted: Vec<Vec<Option<f64>>>,
     /// `n_i r_j lambda_{i+j}` on the future cells.
     pub future: FutureCells,
-    /// The sum of each origin's future cells.
+    /// The sum of each origin's future cells. The first origin's is 0: the
+    /// method has no tail past the oldest age.
     pub reserves: Vec<f64>,
     /// The geometric method's residual variance on the log scale, `sigma^2`
     /// (NaN with no degrees of freedom left, as on 2 origins); `None` for
@@ -208,7 +212,7 @@ impl Separation {
         let step = seg.origins[0].grain().months();
         if seg.n_dev != n {
             return sep_err(format!(
-                "a full triangle has as many ages as origins; this has {} ages and {n} origins                  with a value (an origin with no value yet is left out)",
+                "a full triangle has as many ages as origins; this has {} ages and {n} origins with a value (an origin with no value yet is left out)",
                 seg.n_dev
             ));
         }
@@ -501,6 +505,12 @@ fn arithmetic(s: &[Vec<f64>]) -> Result<(Vec<f64>, Vec<f64>)> {
             ));
         }
         lambda[h] = diagonal(h) / left;
+        if lambda[h] <= 0.0 || !lambda[h].is_finite() {
+            return sep_err(format!(
+                "calendar period {h}'s increments sum to {}: every diagonal needs a positive sum",
+                diagonal(h)
+            ));
+        }
         lambda_from += lambda[h];
         if lambda_from <= 0.0 || !lambda_from.is_finite() {
             return sep_err(format!(
@@ -773,6 +783,42 @@ mod tests {
                 .fit(&two, "values")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn a_diagonal_must_sum_to_more_than_zero() {
+        // The middle diagonal (2002) sums to 0, then to -1, with a positive
+        // last diagonal; then the last diagonal sums to 0.
+        let cases: [[&[f64]; 3]; 3] = [
+            [&[10.0, 10.0, 15.0], &[0.0, 5.0], &[4.0]],
+            [&[10.0, 9.5, 15.0], &[-0.5, 5.0], &[4.0]],
+            [&[10.0, 15.0, 15.0], &[11.0, 11.0], &[0.0]],
+        ];
+        for rows in cases {
+            let tri = annual(2001, &rows);
+            let err = arithmetic_at(0.0).fit(&tri, "values").unwrap_err();
+            assert!(matches!(err, Error::Inflation(_)), "{err}");
+        }
+    }
+
+    #[test]
+    fn one_segment_per_fit_and_every_segment_with_fit_segments() {
+        let stacked = Triangle::stack(
+            &[("A", &taylor()), ("B", &taylor())],
+            "program",
+            &["values"],
+        )
+        .unwrap();
+        assert!(matches!(
+            arithmetic_at(0.1).fit(&stacked, "values"),
+            Err(Error::MultipleSegments(2))
+        ));
+        let fits = arithmetic_at(0.1).fit_segments(&stacked, "values").unwrap();
+        assert_eq!(fits.len(), 2);
+        let alone = arithmetic_at(0.1).fit(&taylor(), "values").unwrap();
+        for (_, fit) in fits.iter() {
+            assert_eq!(fit, &alone);
+        }
     }
 
     #[test]
