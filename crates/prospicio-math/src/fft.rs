@@ -5,13 +5,14 @@
 //! transform followed by the inverse multiplies the signal by its length,
 //! so the caller divides by the length once.
 //!
-//! A plan (the twiddle factors of one length) and the scratch buffer are
-//! built on a thread's first transform of that length and reused by its
-//! later ones, so a caller that transforms the same length many times
-//! (one grid per risk, one buffer per audit cell) pays for the planning
-//! once. Plans for lengths above [`CACHED_LEN`] are built per call and
-//! dropped, so that no thread holds on to tens of megabytes after one
-//! large transform; planning is a small part of a transform that long.
+//! A plan (the twiddle factors of one length) costs two to four times the
+//! transform it serves, so it is worth keeping. The free functions build a
+//! plan and the scratch buffer on a thread's first transform of a length
+//! and reuse them in its later ones, for lengths up to [`CACHED_LEN`]; a
+//! longer transform through them plans for itself and drops the plan, so
+//! that no thread holds on to tens of megabytes after one large transform.
+//! A caller that transforms one length several times, of any size, takes a
+//! [`Plan`] or a [`RealPlan`] and keeps it for as long as it needs it.
 //!
 //! The real transforms take a real signal of length `n` to the first
 //! `n / 2 + 1` coefficients of its transform (the rest are their complex
@@ -40,7 +41,7 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use realfft::RealFftPlanner;
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::{Fft, FftPlanner};
 
 pub use rustfft::num_complex::Complex64;
@@ -198,6 +199,208 @@ pub fn real_inverse(spectrum: &mut [Complex64], signal: &mut [f64]) {
     });
 }
 
+/// The complex transforms of one length, planned once.
+///
+/// For a caller that transforms the same length several times: planning
+/// costs more than a transform, and the free functions keep a plan only up
+/// to [`CACHED_LEN`]. Each direction is planned at its first use.
+///
+/// ```
+/// use prospicio_math::fft::{Complex64, Plan};
+///
+/// let mut plan = Plan::new(6);
+/// let mut buffer = vec![Complex64::new(1.0, 0.0); 6];
+/// plan.forward(&mut buffer);
+/// assert!((buffer[0].re - 6.0).abs() < 1e-15 && buffer[1].norm() < 1e-15);
+/// plan.inverse(&mut buffer);
+/// assert!((buffer[3].re - 6.0).abs() < 1e-14);
+/// ```
+pub struct Plan {
+    len: usize,
+    forward: Option<Arc<dyn Fft<f64>>>,
+    inverse: Option<Arc<dyn Fft<f64>>>,
+    scratch: Vec<Complex64>,
+}
+
+impl Plan {
+    /// A plan for buffers of `len` points.
+    pub fn new(len: usize) -> Self {
+        Self {
+            len,
+            forward: None,
+            inverse: None,
+            scratch: Vec::new(),
+        }
+    }
+
+    /// The length of the buffers this plan transforms.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether the plan is for empty buffers.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// [`forward`] on every `len` points of `buffer` in turn, so a matrix
+    /// stored row by row has each row transformed.
+    ///
+    /// # Panics
+    ///
+    /// If `buffer.len()` is not a multiple of the plan's length.
+    pub fn forward(&mut self, buffer: &mut [Complex64]) {
+        let len = self.len;
+        let fft = self
+            .forward
+            .get_or_insert_with(|| with_plans(len, |plans| plans.complex.plan_fft_forward(len)));
+        Self::run(fft.as_ref(), &mut self.scratch, len, buffer);
+    }
+
+    /// [`inverse`] on every `len` points of `buffer` in turn.
+    ///
+    /// # Panics
+    ///
+    /// If `buffer.len()` is not a multiple of the plan's length.
+    pub fn inverse(&mut self, buffer: &mut [Complex64]) {
+        let len = self.len;
+        let fft = self
+            .inverse
+            .get_or_insert_with(|| with_plans(len, |plans| plans.complex.plan_fft_inverse(len)));
+        Self::run(fft.as_ref(), &mut self.scratch, len, buffer);
+    }
+
+    fn run(fft: &dyn Fft<f64>, scratch: &mut Vec<Complex64>, len: usize, buffer: &mut [Complex64]) {
+        if len == 0 {
+            assert!(
+                buffer.is_empty(),
+                "a plan of no points takes an empty buffer"
+            );
+            return;
+        }
+        assert!(
+            buffer.len().is_multiple_of(len),
+            "a buffer of {} points is not a whole number of transforms of {len}",
+            buffer.len()
+        );
+        let scratch = Plans::scratch(scratch, fft.get_inplace_scratch_len());
+        fft.process_with_scratch(buffer, scratch);
+    }
+}
+
+/// The real transforms of one length, planned once: [`real_forward`] and
+/// [`real_inverse`] for a caller that transforms the same length several
+/// times. Each direction is planned at its first use.
+///
+/// ```
+/// use prospicio_math::fft::{Complex64, RealPlan};
+///
+/// // The 3-fold convolution of a probability vector, one plan for both
+/// // directions.
+/// let mut plan = RealPlan::new(8);
+/// let mut signal = vec![0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+/// let mut spectrum = vec![Complex64::new(0.0, 0.0); plan.spectrum_len()];
+/// plan.forward(&mut signal, &mut spectrum);
+/// for z in &mut spectrum {
+///     *z = *z * *z * *z;
+/// }
+/// plan.inverse(&mut spectrum, &mut signal);
+/// for (p, exact) in signal.iter().zip([0.125, 0.375, 0.375, 0.125]) {
+///     assert!((p / 8.0 - exact).abs() < 1e-15);
+/// }
+/// ```
+pub struct RealPlan {
+    len: usize,
+    forward: Option<Arc<dyn RealToComplex<f64>>>,
+    inverse: Option<Arc<dyn ComplexToReal<f64>>>,
+    scratch: Vec<Complex64>,
+}
+
+impl RealPlan {
+    /// A plan for signals of `len` points.
+    pub fn new(len: usize) -> Self {
+        Self {
+            len,
+            forward: None,
+            inverse: None,
+            scratch: Vec::new(),
+        }
+    }
+
+    /// The length of the signals this plan transforms.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether the plan is for empty signals.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// The number of coefficients of a signal of this length,
+    /// [`spectrum_len`]`(len)`.
+    pub fn spectrum_len(&self) -> usize {
+        spectrum_len(self.len)
+    }
+
+    /// [`real_forward`] with this plan.
+    ///
+    /// # Panics
+    ///
+    /// If `signal.len()` is not the plan's length or `spectrum.len()` is
+    /// not [`RealPlan::spectrum_len`].
+    pub fn forward(&mut self, signal: &mut [f64], spectrum: &mut [Complex64]) {
+        let len = self.len;
+        check_real(len, signal.len(), spectrum.len());
+        if len == 0 {
+            spectrum[0] = Complex64::new(0.0, 0.0);
+            return;
+        }
+        let fft = self
+            .forward
+            .get_or_insert_with(|| with_plans(len, |plans| plans.real.plan_fft_forward(len)));
+        let scratch = Plans::scratch(&mut self.scratch, fft.get_scratch_len());
+        fft.process_with_scratch(signal, spectrum, scratch)
+            .expect("the lengths were checked");
+    }
+
+    /// [`real_inverse`] with this plan.
+    ///
+    /// # Panics
+    ///
+    /// If `signal.len()` is not the plan's length or `spectrum.len()` is
+    /// not [`RealPlan::spectrum_len`].
+    pub fn inverse(&mut self, spectrum: &mut [Complex64], signal: &mut [f64]) {
+        let len = self.len;
+        check_real(len, signal.len(), spectrum.len());
+        if len == 0 {
+            return;
+        }
+        spectrum[0].im = 0.0;
+        if len.is_multiple_of(2) {
+            spectrum[len / 2].im = 0.0;
+        }
+        let fft = self
+            .inverse
+            .get_or_insert_with(|| with_plans(len, |plans| plans.real.plan_fft_inverse(len)));
+        let scratch = Plans::scratch(&mut self.scratch, fft.get_scratch_len());
+        fft.process_with_scratch(spectrum, signal, scratch)
+            .expect("the lengths were checked, and the two real coefficients made real");
+    }
+}
+
+/// Panics unless a signal of `signal` points and `spectrum` coefficients
+/// suit a real plan of `len` points.
+fn check_real(len: usize, signal: usize, spectrum: usize) {
+    assert_eq!(signal, len, "the plan is for signals of {len} points");
+    assert_eq!(
+        spectrum,
+        spectrum_len(len),
+        "a real signal of {len} points has {} coefficients",
+        spectrum_len(len)
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,5 +532,71 @@ mod tests {
     #[should_panic(expected = "has 5 coefficients")]
     fn a_spectrum_of_the_wrong_length_panics() {
         real_forward(&mut [0.0; 8], &mut [Complex64::new(0.0, 0.0); 8]);
+    }
+
+    #[test]
+    fn the_plans_give_the_free_functions_transforms() {
+        for len in [1, 5, 8, 64, 2 * CACHED_LEN] {
+            let x = signal(len);
+            let mut real = RealPlan::new(len);
+            assert_eq!((real.len(), real.spectrum_len()), (len, spectrum_len(len)));
+            let mut spectrum = vec![Complex64::new(0.0, 0.0); spectrum_len(len)];
+            let mut free = spectrum.clone();
+            // Twice, so the second use is of a kept plan.
+            for _ in 0..2 {
+                real.forward(&mut x.clone(), &mut spectrum);
+                real_forward(&mut x.clone(), &mut free);
+                assert_eq!(spectrum, free);
+                let (mut back, mut free_back) = (vec![0.0; len], vec![0.0; len]);
+                real.inverse(&mut spectrum.clone(), &mut back);
+                real_inverse(&mut free.clone(), &mut free_back);
+                assert_eq!(back, free_back);
+            }
+            let mut plan = Plan::new(len);
+            assert_eq!(plan.len(), len);
+            let (mut a, mut b) = (lift(&x), lift(&x));
+            for _ in 0..2 {
+                plan.forward(&mut a);
+                forward(&mut b);
+                assert_eq!(a, b);
+                plan.inverse(&mut a);
+                inverse(&mut b);
+                assert_eq!(a, b);
+            }
+        }
+    }
+
+    #[test]
+    fn a_plan_transforms_each_row_of_a_matrix() {
+        let (rows, cols) = (3, 8);
+        let mut matrix: Vec<Complex64> = lift(&signal(rows * cols));
+        let mut by_row = matrix.clone();
+        Plan::new(cols).forward(&mut matrix);
+        by_row.chunks_mut(cols).for_each(forward);
+        assert_eq!(matrix, by_row);
+    }
+
+    #[test]
+    fn empty_plans_do_nothing() {
+        let mut plan = Plan::new(0);
+        assert!(plan.is_empty() && RealPlan::new(0).is_empty() && !Plan::new(2).is_empty());
+        plan.forward(&mut []);
+        plan.inverse(&mut []);
+        let mut spectrum = [Complex64::new(1.0, 1.0)];
+        RealPlan::new(0).forward(&mut [], &mut spectrum);
+        assert_eq!(spectrum[0], Complex64::new(0.0, 0.0));
+        RealPlan::new(0).inverse(&mut spectrum, &mut []);
+    }
+
+    #[test]
+    #[should_panic(expected = "not a whole number of transforms of 4")]
+    fn a_buffer_that_is_no_multiple_of_the_plan_panics() {
+        Plan::new(4).forward(&mut [Complex64::new(0.0, 0.0); 6]);
+    }
+
+    #[test]
+    #[should_panic(expected = "the plan is for signals of 8 points")]
+    fn a_signal_of_another_length_panics() {
+        RealPlan::new(8).forward(&mut [0.0; 4], &mut [Complex64::new(0.0, 0.0); 5]);
     }
 }

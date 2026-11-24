@@ -1138,12 +1138,15 @@ pub fn audit_portfolio_grid(
 
 /// The circular convolution of two buffers of the same length, by FFT.
 fn circular(a: &[f64], b: &[f64]) -> Vec<f64> {
-    use prospicio_math::fft::{Complex64, real_forward, real_inverse, spectrum_len};
+    use prospicio_math::fft::{Complex64, RealPlan};
     let len = a.len();
-    let transform = |v: &[f64]| {
+    // Three transforms of one length.
+    let mut plan = RealPlan::new(len);
+    let half = plan.spectrum_len();
+    let mut transform = |v: &[f64]| {
         let mut signal = v.to_vec();
-        let mut spectrum = vec![Complex64::new(0.0, 0.0); spectrum_len(len)];
-        real_forward(&mut signal, &mut spectrum);
+        let mut spectrum = vec![Complex64::new(0.0, 0.0); half];
+        plan.forward(&mut signal, &mut spectrum);
         (signal, spectrum)
     };
     let (mut out, mut x) = transform(a);
@@ -1151,7 +1154,7 @@ fn circular(a: &[f64], b: &[f64]) -> Vec<f64> {
     for (u, v) in x.iter_mut().zip(&y) {
         *u *= v;
     }
-    real_inverse(&mut x, &mut out);
+    plan.inverse(&mut x, &mut out);
     out.iter_mut().for_each(|p| *p = (*p / len as f64).max(0.0));
     out
 }
