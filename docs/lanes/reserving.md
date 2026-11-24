@@ -7,6 +7,7 @@
 Finished items are in [done/reserving.md](done/reserving.md), which agents read when they need the lane's history; it is not imported into every session (#846).
 
 ## Next
+- [split-r-reserving] #963 the R half: `crates/prospicio-r/src/reserving.rs` (8,265 lines) split into a `reserving/` module tree the same way as the Python bindings, with no change to the R API
 
 - [inflation-index] #979 indexation, Rust (`reserving-inflation.md` PR 1): `CalendarIndex`, `Indexation` (`restate`, `inflate`, `reinflate`), `FutureCells` from a chain ladder or an `OdpGlm` fit, exact-identity validation
 - [inflation-index-bindings] #979 Python and R bindings for the indexation (`reserving-inflation.md` PR 2), in new module files
