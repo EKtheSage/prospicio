@@ -58,11 +58,11 @@ const NET_AFTER_DEFAULT: &str = "net_after_default";
 /// use prospicio_aggregate::Reinsurer;
 ///
 /// let r = Reinsurer::new("Re A", 0.002, 0.4)
-///    .unwrap()
-///    .collateral(1e6)
-///    .unwrap()
-///    .correlation(0.3)
-///    .unwrap();
+///     .unwrap()
+///     .collateral(1e6)
+///     .unwrap()
+///     .correlation(0.3)
+///     .unwrap();
 /// assert_eq!(r.collateral, 1e6);
 /// assert!(Reinsurer::new("Re B", 1.5, 0.4).is_err());
 /// ```
@@ -217,8 +217,8 @@ struct Line {
 /// let years = tower.apply_annual(&[5.0, 15.0, 30.0]).unwrap();
 /// // Re A certainly defaults and pays back 40% of what it owes.
 /// let panel = Panel::new(vec![
-///    Reinsurer::new("Re A", 1.0, 0.4).unwrap(),
-///    Reinsurer::new("Re B", 0.0, 0.4).unwrap(),
+///     Reinsurer::new("Re A", 1.0, 0.4).unwrap(),
+///     Reinsurer::new("Re B", 0.0, 0.4).unwrap(),
 /// ])
 /// .unwrap()
 /// .line("Re A", "10x10", 0.5)
