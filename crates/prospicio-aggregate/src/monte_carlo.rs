@@ -121,7 +121,6 @@ impl Labels {
         )
     }
 
-    /// Loss `k`'s values, one per dimension.
     /// The labels of some of these losses, `of_loss[k]` the combination
     /// of each in turn, with columns of combinations `columns`: only the
     /// combinations used, still sorted, so the same labels as
@@ -150,6 +149,7 @@ impl Labels {
         )
     }
 
+    /// Loss `k`'s values, one per dimension.
     fn values(&self, k: usize) -> &[String] {
         &self.combinations[self.of_loss[k]]
     }

@@ -827,7 +827,10 @@ mod tests {
             tune: 1000,
             draws: 2000,
             seed: 11,
-            target_accept: 0.9,
+            // Eight levels leave a funnel at small s: at 0.9, about one
+            // seed in five has a divergence or more, whichever start the
+            // last bits give; at 0.95, none of seeds 0 to 39 has one.
+            target_accept: 0.95,
             ..Sampler::default()
         });
         let fit = spec

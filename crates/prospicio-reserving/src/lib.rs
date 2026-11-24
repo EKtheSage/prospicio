@@ -72,6 +72,7 @@ pub mod expense;
 pub mod frame;
 pub mod frequency_severity;
 pub mod industry_prior;
+pub mod inflation;
 #[cfg(feature = "io")]
 pub mod io;
 pub mod latest_diagonal;
@@ -86,6 +87,7 @@ pub mod paid_incurred;
 pub mod pattern;
 pub mod pattern_draws;
 pub mod segments;
+pub mod separation;
 pub mod tail;
 pub mod triangle;
 pub mod view;
@@ -142,6 +144,7 @@ pub use frequency_severity::{
     case_development_factor, exponential_trend, pooled_trend, ratio_column, trend_by_age,
 };
 pub use industry_prior::{IndustryPrior, IndustryPriorSettings, PatternPrior, PriorReport};
+pub use inflation::{CalendarIndex, FutureCell, FutureCells, Indexation, Reinflated};
 #[cfg(feature = "io")]
 pub use io::FileLayout;
 pub use latest_diagonal::{
@@ -166,6 +169,7 @@ pub use pattern::{OneYearPattern, PatternKind, PatternWeight, SelectedPattern, U
 pub use pattern_draws::{DevelopmentPatterns, Monotone, MonthlyBasis, SegmentPatterns};
 pub use prospicio_core::{Grain, Lag, Month, Period};
 pub use segments::{FitTable, ReserveFit, SegmentFits};
+pub use separation::{FutureInflation, Separation, SeparationFit, SeparationKind};
 pub use tail::{CurveShape, Tail, TailBondy, TailConstant, TailCurve, TailFit};
 pub use triangle::{CalendarView, DevelopmentColumn, Diagonal, Label, Long, LongTable, Triangle};
 pub use view::{SummaryRow, TriangleSummary, TriangleView};
