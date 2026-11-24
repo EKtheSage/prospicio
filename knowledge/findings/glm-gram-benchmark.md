@@ -13,11 +13,11 @@ sources:
     resource: ../crates/prospicio-glm/src/gram.rs
     title: gram::weighted_gram
   - id: bench
-    resource: ../crates/prospicio-glm/benches/glm.rs
-    title: cargo bench -p prospicio-glm
+    resource: ../crates/prospicio-glm/examples/glm_bench.rs
+    title: cargo run --release -p prospicio-glm --example glm_bench
   - id: bayes-bench
-    resource: ../crates/prospicio-bayes/benches/bayes_glm.rs
-    title: cargo bench -p prospicio-bayes
+    resource: ../crates/prospicio-bayes/examples/bayes_glm_bench.rs
+    title: cargo run --release -p prospicio-bayes --example bayes_glm_bench
   - id: design
     resource: ../docs/design/models.md
     title: models.md, decision "Row sums run in fixed blocks (#969)"
@@ -74,6 +74,13 @@ sources:
   blocks of 4096 inside `logp`, the 12 cores the four chains leave idle
   take part, and the run is 5 times faster. Most of a step's cost is the
   per-row `exp` and log density, not the gradient.
+- `BayesGlmm`'s small-book test (eight levels, one random intercept,
+  Poisson) sits on a funnel at small `s`: at `target_accept` 0.9 about
+  one seed in five gave one or more divergences in 4 chains of 2000
+  draws (8 of seeds 0 to 39, up to 22), so its seed 11 giving none on
+  0.2 was luck that the last-bit move of the Laplace start undid on
+  Linux. At 0.95 none of seeds 0 to 39 diverged, and the test runs there
+  (`glmm::tests::the_posterior_is_the_exact_one_on_a_small_book`).
 - Benchmarks on this machine are noisy whenever other sessions build or
   test: compare old and new binaries interleaved, copied out of `target/`
   so a rebuild cannot replace them, and report the median and the best.

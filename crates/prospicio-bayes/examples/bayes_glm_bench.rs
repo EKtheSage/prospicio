@@ -1,7 +1,8 @@
 //! Benchmark of the Bayesian GLM's NUTS sampling (#969): every leapfrog
 //! step evaluates the log posterior and its gradient over all rows.
 //!
-//! `cargo bench -p prospicio-bayes` prints the median wall time.
+//! `cargo run --release -p prospicio-bayes --example bayes_glm_bench`
+//! prints the median wall time.
 //! Set `BENCH_QUICK=1` for one timed run.
 
 use prospicio_bayes::glm::BayesGlm;
