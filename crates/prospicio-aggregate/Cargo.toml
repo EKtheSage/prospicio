@@ -14,9 +14,8 @@ categories.workspace = true
 
 [dependencies]
 prospicio-core.workspace = true
-# Bisection for the occurrence PML (pml).
+# Bisection for the occurrence PML (pml) and every FFT (#973).
 prospicio-math.workspace = true
 prospicio-prob.workspace = true
 rayon.workspace = true
-rustfft.workspace = true
 serde_json.workspace = true

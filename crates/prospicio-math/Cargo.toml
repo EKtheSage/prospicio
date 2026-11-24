@@ -1,6 +1,6 @@
 [package]
 name = "prospicio-math"
-description = "Numerical engine: special functions, small dense linear algebra, root finding, quadrature, optimization."
+description = "Numerical engine: special functions, small dense linear algebra, fast Fourier transforms, root finding, quadrature, optimization."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,3 +14,5 @@ categories.workspace = true
 
 [dependencies]
 libm.workspace = true
+realfft.workspace = true
+rustfft.workspace = true
