@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: Reinsurer default on a lognormal year has closed forms in one integral over the normal score
-description: With the annual gross loss lognormal and the defaults ranked on it, every expected credit loss, default frequency and joint default of Panel's one-factor model is one integral over the gross loss's normal score, split at the layers' and collaterals' kinks; 300,000 simulated years of Panel::apply and by_reinsurer agree with all 30 reference values within 2.1 standard errors.
+description: With the annual gross loss lognormal and the defaults ranked on it, every expected credit loss, default frequency and joint default of Panel's one-factor model is one integral over the gross loss's normal score, split at the layers' and collaterals' kinks; 300,000 simulated years of Panel::apply and by_reinsurer agree with all 30 reference values within 2.03 standard errors.
 tags: [reinsurance, credit-risk, reinsurer-default, vasicek, quadrature, parity]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-11-24T00:00:00Z }
@@ -30,8 +30,9 @@ sources:
   each layer's attachment and exhaustion and where the exposure meets the
   collateral, `scipy.integrate.quad` holds every self-check (the lognormal
   limited expected value, `E[p(x)] = p`, the bivariate normal forms) to
-  1e-10, and the weekly rerun reproduces the file under the pinned and
-  the newest releases.[^script]
+  1e-10; the file is rerun every week (`references.yml`) under the pinned
+  and the newest releases, and a local rerun reproduced it byte for byte
+  under both on 2026-11-24.[^script]
 * The joint default of two reinsurers, `Phi_2(Phi^{-1}(p_1),
   Phi^{-1}(p_2); sqrt(rho_1 rho_2))`, and the default given the top 1 % of
   years, `Phi_2(Phi^{-1}(p), -Phi^{-1}(0.99); sqrt(rho)) / 0.01`: SciPy
@@ -45,8 +46,9 @@ sources:
   and `rho = 0.3, 0.6` default together with probability 0.0457 against
   0.02 independently.[^script]
 * 300,000 simulated years with the panel applied to `Tower::apply_annual`
-  match all 30 values within 2.1 standard errors at seed 2026 (within
-  1.6 at seeds 7 and 31). The test runs in about 1 s in
+  match all 30 values within 2.03 standard errors at seed 2026 (local
+  runs at other seeds also passed; CI runs only seed 2026). The test runs
+  in about 1 s in
   a debug build.[^test]
 * Panels applied with the same seed draw the same uniforms by position: a
   reinsurer first on the panel draws the same default uniforms in every
