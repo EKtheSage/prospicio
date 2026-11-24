@@ -27,10 +27,12 @@ fn check_losses(losses: &[f64]) -> Result<()> {
 }
 
 mod layer;
+mod panel;
 mod terms;
 mod tower;
 
 pub use layer::*;
+pub use panel::*;
 pub use terms::*;
 pub use tower::*;
 
