@@ -20,8 +20,9 @@ use prospicio_core::StreamRng;
 use prospicio_prob::{Distribution, Empirical, KeyValue, Lognormal, PredictiveDistribution};
 use prospicio_validation::{Case, check, reference};
 
-/// Simulated years: enough that the smallest probability, 5 %, and the
-/// 1 % of years above the gross loss's 99th percentile are resolved.
+/// Simulated years: enough that the probabilities of default (10 % to
+/// 25 %, the joint default about 4.6 %) and the 1 % of years above the
+/// gross loss's 99th percentile are resolved.
 const N_YEARS: usize = 300_000;
 /// The gross losses' seed (stream 0), apart from the panels' seed.
 const GROSS_SEED: u64 = 980;
@@ -177,17 +178,19 @@ fn reinsurer_default_matches_the_closed_forms() {
             }
         });
         let default = |r: &str| column(&a.by, "default", r);
+        // The year's credit loss over every layer.
+        let total = || -> Vec<f64> {
+            let by_layer: Vec<Vec<f64>> = LAYERS
+                .iter()
+                .map(|l| column(&a.after, "credit_loss", l))
+                .collect();
+            (0..N_YEARS)
+                .map(|i| by_layer.iter().map(|c| c[i]).sum())
+                .collect()
+        };
         match (case.get("quantity"), arg) {
-            ("credit_loss_mean", "total") => {
-                let by_layer: Vec<Vec<f64>> = LAYERS
-                    .iter()
-                    .map(|l| column(&a.after, "credit_loss", l))
-                    .collect();
-                let total: Vec<f64> = (0..N_YEARS)
-                    .map(|i| by_layer.iter().map(|c| c[i]).sum())
-                    .collect();
-                Some(mean(&total))
-            }
+            ("credit_loss_mean", "total") => Some(mean(&total())),
+            ("credit_loss_var", "total") => Some(variance(&total())),
             ("credit_loss_mean", r) => Some(mean(&column(&a.by, "credit_loss", r))),
             ("credit_loss_var", r) => Some(variance(&column(&a.by, "credit_loss", r))),
             ("credit_loss_mean_by_layer", l) => Some(mean(&column(&a.after, "credit_loss", l))),

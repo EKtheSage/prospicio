@@ -37,7 +37,10 @@ names the case, `quantity` and `arg` the value:
   `default_frequency`.
 - `b_collateral`: the same with collateral.
 - `c_two_reinsurers`: two reinsurers sharing both layers with collateral:
-  `credit_loss_mean` by reinsurer and in total, `credit_loss_mean_by_layer`
+  `credit_loss_mean` by reinsurer and in total, `credit_loss_var` in total
+  (the two defaults independent but their exposures sharing `G`, so the
+  cross term `2 p_1 p_2 (1 - R_1) (1 - R_2) E[Y_1 Y_2]` enters),
+  `credit_loss_mean_by_layer`
   (a reinsurer's credit loss split over its layers in proportion to its
   exposure on each), `net_after_default_minus_net_mean`.
 - `d_factor`: one reinsurer on the factor, `rho = 0.5`, with collateral, on
@@ -56,8 +59,8 @@ which `rerun_references.py` compares a rerun against. They are not the Rust
 test's tolerance: the test simulates the years, so its error is Monte Carlo
 noise, and it accepts a simulated value within four of its own standard
 errors of `expected` (`validation/tests/aggregate_reinsurer_default.rs`).
-The probabilities of default are 5 % to 30 %, so a few hundred thousand
-simulated years resolve them.
+The probabilities of default are 10 % to 25 % (the joint default about
+4.6 %), so a few hundred thousand simulated years resolve them.
 """
 
 import csv
@@ -240,6 +243,30 @@ means = [credit_mean(r, pts) for r in panel]
 for r, m in zip(panel, means):
     row("c_two_reinsurers", panel, "credit_loss_mean", r.name, m)
 row("c_two_reinsurers", panel, "credit_loss_mean", "total", sum(means))
+# Var of the total: E[CL^2] = sum_r p_r (1 - R_r)^2 E[Y_r^2]
+# + 2 p_1 p_2 (1 - R_1)(1 - R_2) E[Y_1 Y_2], the defaults independent.
+r1, r2 = panel
+k1, k2 = 1 - r1.rec, 1 - r2.rec
+ey1 = expect(lambda x: r1.after(gross(x)), pts)
+ey2 = expect(lambda x: r2.after(gross(x)), pts)
+close(r1.p * k1 * ey1, means[0])
+close(r2.p * k2 * ey2, means[1])
+second = (
+    r1.p * k1**2 * expect(lambda x: r1.after(gross(x)) ** 2, pts)
+    + r2.p * k2**2 * expect(lambda x: r2.after(gross(x)) ** 2, pts)
+    + 2 * r1.p * r2.p * k1 * k2 * expect(lambda x: r1.after(gross(x)) * r2.after(gross(x)), pts)
+)
+# The same second moment from the joint default probabilities by year.
+close(
+    second,
+    expect(
+        lambda x: (1 - r1.pd(x)) * r2.pd(x) * (k2 * r2.after(gross(x))) ** 2
+        + r1.pd(x) * (1 - r2.pd(x)) * (k1 * r1.after(gross(x))) ** 2
+        + r1.pd(x) * r2.pd(x) * (k1 * r1.after(gross(x)) + k2 * r2.after(gross(x))) ** 2,
+        pts,
+    ),
+)
+row("c_two_reinsurers", panel, "credit_loss_var", "total", second - sum(means) ** 2)
 layers = [by_layer(panel, l, pts) for l in LAYERS]
 close(sum(layers), sum(means))
 for l, v in zip(LAYERS, layers):
