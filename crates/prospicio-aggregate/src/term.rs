@@ -19,7 +19,7 @@ use prospicio_prob::portfolio::CorrelationKind;
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::monte_carlo::EventSet;
-use crate::reinsurance::{Columns, ScopeView, Tower};
+use crate::reinsurance::{Carried, Columns, ScopeView, Tower, YearScratch, fill_rows};
 
 impl Tower {
     /// Applies the tower over a contract term of `years.len()` years, each
@@ -184,30 +184,26 @@ impl Tower {
         &self,
         n_years: usize,
         n_sims: usize,
-        year: impl Fn(usize, usize) -> YearInputs<'a>,
+        year: impl Fn(usize, usize) -> YearInputs<'a> + Sync,
         base: Provenance,
     ) -> Result<PredictiveDistribution> {
         let columns = Columns::new(self);
         let width = columns.len(self);
-        let mut draws = Vec::with_capacity(n_sims * n_years * width);
-        for j in 0..n_sims {
-            let mut carried = self.carries();
-            for t in 0..n_years {
-                let (aggregate, losses, si, times, lf, scope) = year(t, j);
-                self.push_year(
-                    &columns,
-                    &mut draws,
-                    aggregate,
-                    losses,
-                    si,
-                    times,
-                    lf,
-                    scope,
-                    t,
-                    &mut carried,
-                );
-            }
-        }
+        // One row per path, its years in turn: the paths run in parallel,
+        // the years of a path in order, since each carries into the next.
+        let draws = fill_rows(
+            n_sims,
+            n_years * width,
+            |(w, carried): &mut (YearScratch, Vec<Carried>), row, j| {
+                self.reset_carries(carried);
+                for t in 0..n_years {
+                    let (aggregate, losses, si, times, lf, scope) = year(t, j);
+                    self.push_year(
+                        &columns, row, w, aggregate, losses, si, times, lf, scope, t, carried,
+                    );
+                }
+            },
+        );
         let keys = columns.keys(self);
         let components: Vec<ComponentKey> = (0..n_years)
             .flat_map(|t| {
