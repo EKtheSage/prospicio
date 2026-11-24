@@ -73,7 +73,7 @@ def main():
         a = build(decl, normalize=False)
         assert float(a.bs) == bs
         # aggregate's bucket and its grid mean (est_m), for the record.
-        p = f"{params};agg_bs={bs!r};agg_grid_mean={float(a.est_m)!r}"
+        p = f"{params};agg_bs={bs!r};agg_grid_mean={float(a.est_m):.3f}"
         rows.append((name, p, "mean", "", mean, 0.0, 1e-3))
         for q in [0.5, 0.99, 0.999, 0.9999]:
             rows.append((name, p, "quantile", q, float(a.q(q)), 2 * bs, 0.0))
