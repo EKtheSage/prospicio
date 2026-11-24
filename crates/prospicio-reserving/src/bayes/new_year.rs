@@ -131,5 +131,5 @@ where
 pub(crate) fn gamma_draw(shape: f64, scale: f64, rng: &mut StreamRng) -> f64 {
     Gamma::new(shape, scale)
         .expect("shape and scale are finite and positive")
-        .sample(rng, 1)[0]
+        .sample_one(rng)
 }
