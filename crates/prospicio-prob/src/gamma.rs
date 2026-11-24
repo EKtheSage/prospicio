@@ -166,17 +166,16 @@ impl Distribution for Gamma {
         Ok(bisect(0.0, hi, below))
     }
 
-    /// `n` draws by Marsaglia and Tsang (2000), not inverse transform:
-    /// each is `θ` times a Gamma(`α`, 1) draw from `rng` (for `α < 1`, a
-    /// draw at `α + 1` times `U^(1/α)`), so draws stay a pure function of
+    /// A draw by Marsaglia and Tsang (2000), not inverse transform: `θ`
+    /// times a Gamma(`α`, 1) draw from `rng` (for `α < 1`, a draw at
+    /// `α + 1` times `U^(1/α)`), so draws stay a pure function of
     /// `(seed, stream)` but are not monotone in one uniform. The quantile
     /// function costs a bisection on the incomplete gamma function, whose
     /// series grows with the shape, where this costs about one normal and
-    /// one uniform at any shape.
-    fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
-        (0..n)
-            .map(|_| self.scale * standard_gamma(rng, self.shape))
-            .collect()
+    /// one uniform at any shape. [`sample`](Distribution::sample) draws
+    /// `n` of these.
+    fn sample_one(&self, rng: &mut StreamRng) -> f64 {
+        self.scale * standard_gamma(rng, self.shape)
     }
 }
 

@@ -910,6 +910,10 @@ impl Distribution for PredictiveDistribution {
         self.total().quantile(p)
     }
 
+    fn sample_one(&self, rng: &mut StreamRng) -> f64 {
+        self.total().sample_one(rng)
+    }
+
     fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
         self.total().sample(rng, n)
     }
@@ -1489,8 +1493,8 @@ mod tests {
             5,
             Provenance::new("test"),
             |rng, row| {
-                let x = a.sample(rng, 1)[0];
-                let y = b.sample(rng, 1)[0];
+                let x = a.sample_one(rng);
+                let y = b.sample_one(rng);
                 // Some dependence: the second line moves with the first.
                 row.copy_from_slice(&[x, y + 0.5 * x]);
             },
