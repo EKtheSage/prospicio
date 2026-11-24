@@ -1,7 +1,7 @@
 # Design note: reinsurer default on a tower
 
 Status: **Accepted** (#980; decisions (a) to (l) accepted by the user on
-2026-11-24 as recommended; PRs 2 to 4 built) · v0.3 ·
+2026-11-24 as recommended; PRs 2 to 5 built) · v0.3 ·
 Depends on: `aggregate.md` (`Tower`, `EventSet`, the tower's simulated years
 in parallel, #970), `predictive-distribution.md`, `rng.md` · Lane: Aggregate
 
@@ -259,6 +259,26 @@ the same generator: the panel's test reads every row of
 `Solvency2Type1`), R as `solvency2_probability_by_step()`, `_by_ratio()`,
 `solvency2_reinsurance_lgd()` and `solvency2_type1(pd, lgd)` (a list), in
 the reinsurance module files; PR 5 is left with the panel's bindings.
+
+As built in PR 5 (the reinsurance module files of both bindings), where
+the note left a choice open: Python binds `prospicio.reinsurance.Reinsurer(name,
+probability, recovery, collateral=0.0, correlation=0.0)` and
+`Panel(reinsurers)`, frozen like `Layer` and `Tower`, so the builders
+return a new panel and take the crate's `with_` prefix:
+`Panel.with_line(reinsurer, layer, line)` and `with_driver(by_year)` for
+the Rust `line` and `driver`; `apply(result, seed=0)` and
+`by_reinsurer(result, seed=0)` take and return a `PredictiveDistribution`,
+and `Panel.reinsurers` lists the panel. R binds `reinsurer(name,
+probability, recovery, collateral = 0, correlation = 0)` and
+`reinsurer_panel(reinsurers)` as S7 classes, with `panel_line(panel,
+reinsurer, layer, line)` (vectorised: equal lengths or length 1, one line
+each), `panel_driver(panel, by_year)`, `apply_panel(panel, result, seed =
+0)` and `panel_by_reinsurer(panel, result, seed = 0)`; the names carry
+`panel` because R's namespace is flat. The seed defaults to 0 in both, as
+`per_risk_inuring`'s does. The Python and R tests check the reference
+file's means and default frequencies on stratified years (the gross loss
+at the lognormal's quantiles `(i + 1/2) / n`, 100,000 of them), so the
+only sampling error is the default draws', at five standard errors.
 
 ## Decisions
 

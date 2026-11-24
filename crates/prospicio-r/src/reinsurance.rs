@@ -5,7 +5,8 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::pnl::ExpenseBasis;
 use prospicio_aggregate::{
-    Commission, DealScale, Deduction, Layer, LimitAllocation, LossSensitivePremium, Tower,
+    Commission, DealScale, Deduction, Layer, LimitAllocation, LossSensitivePremium, Panel,
+    Reinsurer, Tower,
 };
 
 use crate::aggregate::{AnyCount, EventSet, compound_list};
@@ -1170,6 +1171,117 @@ fn solvency2_type1_rust(pd: &[f64], lgd: &[f64]) -> Result<List> {
     ))
 }
 
+/// A reinsurer on a panel: probability of default, recovery rate,
+/// collateral and loading on the systematic factor.
+#[extendr]
+pub(crate) struct PanelReinsurer {
+    pub(crate) inner: Reinsurer,
+}
+
+#[extendr]
+impl PanelReinsurer {
+    fn new(
+        name: &str,
+        probability: f64,
+        recovery: f64,
+        collateral: f64,
+        correlation: f64,
+    ) -> Result<Self> {
+        let inner = Reinsurer::new(name, probability, recovery)
+            .and_then(|r| r.collateral(collateral))
+            .and_then(|r| r.correlation(correlation))
+            .map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn name(&self) -> String {
+        self.inner.name.clone()
+    }
+
+    fn probability(&self) -> f64 {
+        self.inner.probability
+    }
+
+    fn recovery(&self) -> f64 {
+        self.inner.recovery
+    }
+
+    fn collateral(&self) -> f64 {
+        self.inner.collateral
+    }
+
+    fn correlation(&self) -> f64 {
+        self.inner.correlation
+    }
+}
+
+/// The reinsurers on a tower and their signed lines.
+#[extendr]
+pub(crate) struct ReinsurerPanel {
+    pub(crate) inner: Panel,
+}
+
+/// The tower result an R caller passed.
+fn tower_result(result: &Robj) -> Result<&PredictiveDistribution> {
+    <&PredictiveDistribution>::try_from(result)
+        .map_err(|_| Error::Other("result must be a predictive_distribution".into()))
+}
+
+#[extendr]
+impl ReinsurerPanel {
+    /// `reinsurers` is a list of reinsurers.
+    fn new(reinsurers: List) -> Result<Self> {
+        let rs = reinsurers
+            .values()
+            .map(|r| {
+                <&PanelReinsurer>::try_from(&r)
+                    .map(|r| r.inner.clone())
+                    .map_err(|_| Error::Other("reinsurers must all be reinsurer objects".into()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let inner = Panel::new(rs).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn line(&self, reinsurer: &str, layer: &str, line: f64) -> Result<Self> {
+        let inner = self
+            .inner
+            .clone()
+            .line(reinsurer, layer, line)
+            .map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn driver(&self, by_year: &[f64]) -> Result<Self> {
+        let inner = self.inner.clone().driver(by_year.to_vec()).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn reinsurer_names(&self) -> Vec<String> {
+        self.inner
+            .reinsurers()
+            .iter()
+            .map(|r| r.name.clone())
+            .collect()
+    }
+
+    fn apply(&self, result: Robj, seed: f64) -> Result<PredictiveDistribution> {
+        let inner = self
+            .inner
+            .apply(&tower_result(&result)?.inner, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+
+    fn by_reinsurer(&self, result: Robj, seed: f64) -> Result<PredictiveDistribution> {
+        let inner = self
+            .inner
+            .by_reinsurer(&tower_result(&result)?.inner, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
 extendr_module! {
     mod reinsurance;
     fn per_risk_inuring_rust;
@@ -1183,4 +1295,6 @@ extendr_module! {
     fn solvency2_type1_rust;
     impl XolLayer;
     impl ReinsuranceTower;
+    impl PanelReinsurer;
+    impl ReinsurerPanel;
 }

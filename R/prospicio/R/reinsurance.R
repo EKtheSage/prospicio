@@ -1585,3 +1585,178 @@ solvency2_reinsurance_lgd <- function(recoverables, risk_mitigation, collateral,
 solvency2_type1 <- function(pd, lgd) {
   rust_result(solvency2_type1_rust(as.double(pd), as.double(lgd)))
 }
+
+#' A reinsurer on a panel
+#'
+#' A reinsurer's one-year probability of default, the recovery rate on what
+#' it owes when it defaults, the collateral held against it and its loading
+#' on the systematic factor, for a [reinsurer_panel()].
+#'
+#' @param name The reinsurer's name, unique on a panel.
+#' @param probability One-year probability of default, in `[0, 1]`.
+#' @param recovery Share of the uncollateralised exposure recovered on
+#'   default, in `[0, 1]`.
+#' @param collateral Collateral held against this reinsurer (a trust fund or
+#'   letter of credit), netted once across all its layers: finite and
+#'   non-negative.
+#' @param correlation The loading `rho` on the systematic factor, in
+#'   `[0, 1)`: 0 is independent default, and a larger `rho` moves the
+#'   defaults into the years with the largest driver without changing how
+#'   often the reinsurer defaults.
+#' @param ptr Internal: an existing reinsurer to wrap.
+#' @returns A `reinsurer` object, with properties `name`, `probability`,
+#'   `recovery`, `collateral` and `correlation`.
+#' @seealso [reinsurer_panel()] to put reinsurers on a tower's layers.
+#' @export
+#' @examples
+#' r <- reinsurer("Re A", 0.002, 0.4, collateral = 1e6, correlation = 0.3)
+#' r@probability
+#' r@collateral
+reinsurer <- S7::new_class(
+  "reinsurer",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("PanelReinsurer"),
+    name = S7::new_property(S7::class_character, getter = function(self) self@ptr$name()),
+    probability = S7::new_property(S7::class_double, getter = function(self) self@ptr$probability()),
+    recovery = S7::new_property(S7::class_double, getter = function(self) self@ptr$recovery()),
+    collateral = S7::new_property(S7::class_double, getter = function(self) self@ptr$collateral()),
+    correlation = S7::new_property(S7::class_double, getter = function(self) self@ptr$correlation())
+  ),
+  constructor = function(name, probability, recovery, collateral = 0, correlation = 0, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(PanelReinsurer$new(
+        as.character(name), as.double(probability), as.double(recovery),
+        as.double(collateral), as.double(correlation)
+      ))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(print, reinsurer) <- function(x, ...) {
+  cat(sprintf("<reinsurer> %s: probability %s, recovery %s, collateral %s, correlation %s\n",
+              x@name, format(x@probability), format(x@recovery), format(x@collateral),
+              format(x@correlation)))
+  invisible(x)
+}
+
+#' Reinsurer default on a tower
+#'
+#' A panel holds the reinsurers on a tower and their signed lines, and
+#' draws which reinsurers default in each of a tower's simulated years
+#' (`docs/design/reinsurer-default.md`). `reinsurer_panel()` builds a panel
+#' with no lines; `panel_line()` adds lines, each a share of a layer's
+#' ceded loss (after the layer's `share`); `panel_driver()` ranks the years
+#' by another quantity than the gross loss; `apply_panel()` gives the
+#' tower's result after default and `panel_by_reinsurer()` each reinsurer's
+#' credit loss, exposure and default.
+#'
+#' Reinsurer `r`'s exposure in a year is `E = sum over l of s_rl X_l`, with
+#' `X_l` layer `l`'s ceded loss and `s_rl` its line; if it defaults, the
+#' cedant loses `(1 - R_r) (E - C_r)^+`, with `R_r` its recovery rate and
+#' `C_r` its collateral. Defaults follow Vasicek's one-factor model: given
+#' the year's factor `z`, reinsurer `r` defaults with probability
+#' `pnorm((qnorm(p_r) - sqrt(rho_r) z) / sqrt(1 - rho_r))`, and
+#' `z = -qnorm(U)`, where `U` is the year's rank by its driver (the gross
+#' loss, or `panel_driver()`), ties broken at random, so the worst years
+#' have the highest probability of default. Each year draws from its own
+#' random stream, so the result has the same bits on any number of threads.
+#'
+#' The lines of a layer the panel names must sum to 1 (to 1e-9), and every
+#' layer a line names must be in the result; both are checked when the
+#' panel is applied, since a panel is built before it meets a tower. A
+#' layer the panel does not name carries no credit risk.
+#'
+#' @param reinsurers A list of [reinsurer] objects with unique names.
+#' @param panel A `reinsurer_panel`.
+#' @param reinsurer,layer,line The reinsurer's name, the layer's name and
+#'   the line, in `(0, 1]`; equal lengths (or length 1), one line each.
+#' @param by_year One finite value per simulated year, in the order of the
+#'   tower's result.
+#' @param result A tower's one-year result from [apply_tower()] (on an
+#'   [event_set], a [predictive_distribution] or annual losses).
+#' @param seed The default draws' seed, a non-negative whole number; their
+#'   streams are apart from the events' even with the events' seed.
+#' @param ptr Internal: an existing panel to wrap.
+#' @returns `reinsurer_panel()`, `panel_line()` and `panel_driver()`: a
+#'   `reinsurer_panel`, whose `reinsurer_names` property lists its
+#'   reinsurers in panel order. `apply_panel()`: a [predictive_distribution]
+#'   with the result's components, copied bit for bit, then
+#'   `("credit_loss", <layer>)` for every layer of the result (zero on a
+#'   layer the panel does not name), `("recovered", <layer>)`, the layer's
+#'   ceded loss less its credit loss, and `("net_after_default",
+#'   "retained")`, the net loss plus the year's credit loss; a reinsurer's
+#'   credit loss is split over its layers in proportion to its exposure on
+#'   each, and on a labelled result the new components get `""` labels.
+#'   `panel_by_reinsurer()`: a [predictive_distribution] with dimensions
+#'   `kind` and `reinsurer`: `("credit_loss", r)`, `("exposure", r)` (after
+#'   collateral) and `("default", r)` (1 or 0) for every reinsurer, from the
+#'   same draws as `apply_panel()` with the same seed.
+#' @seealso [reinsurer()], [apply_tower()], [solvency2_type1()] for the
+#'   Solvency II standard formula's charge.
+#' @export
+#' @examples
+#' years <- apply_tower(reinsurance_tower(list(xol_layer("10x10", 10, 10))), c(5, 15, 30))
+#' # Re A certainly defaults and pays back 40% of what it owes.
+#' panel <- reinsurer_panel(list(reinsurer("Re A", 1, 0.4), reinsurer("Re B", 0, 0.4)))
+#' panel <- panel_line(panel, c("Re A", "Re B"), "10x10", c(0.5, 0.5))
+#' after <- apply_panel(panel, years, seed = 7)
+#' marginal(after, list("credit_loss", "10x10"))@draws
+#' marginal(after, list("net_after_default", "retained"))@draws
+#' draw_matrix(panel_by_reinsurer(panel, years, seed = 7))
+reinsurer_panel <- S7::new_class(
+  "reinsurer_panel",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("ReinsurerPanel"),
+    reinsurer_names = S7::new_property(
+      S7::class_character, getter = function(self) self@ptr$reinsurer_names()
+    )
+  ),
+  constructor = function(reinsurers, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(ReinsurerPanel$new(lapply(reinsurers, function(r) r@ptr)))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+S7::method(print, reinsurer_panel) <- function(x, ...) {
+  cat(sprintf("<reinsurer_panel> %s\n", paste(x@reinsurer_names, collapse = ", ")))
+  invisible(x)
+}
+
+#' @rdname reinsurer_panel
+#' @export
+panel_line <- function(panel, reinsurer, layer, line) {
+  args <- list(as.character(reinsurer), as.character(layer), as.double(line))
+  n <- max(lengths(args))
+  if (any(!lengths(args) %in% c(1L, n))) {
+    stop("reinsurer, layer and line must have equal lengths or length 1", call. = FALSE)
+  }
+  args <- lapply(args, rep_len, n)
+  ptr <- panel@ptr
+  for (k in seq_len(n)) {
+    ptr <- rust_result(ptr$line(args[[1]][k], args[[2]][k], args[[3]][k]))
+  }
+  reinsurer_panel(ptr = ptr)
+}
+
+#' @rdname reinsurer_panel
+#' @export
+panel_driver <- function(panel, by_year) {
+  reinsurer_panel(ptr = rust_result(panel@ptr$driver(as.double(by_year))))
+}
+
+#' @rdname reinsurer_panel
+#' @export
+apply_panel <- function(panel, result, seed = 0) {
+  predictive_distribution(ptr = rust_result(panel@ptr$apply(result@ptr, as.double(seed))))
+}
+
+#' @rdname reinsurer_panel
+#' @export
+panel_by_reinsurer <- function(panel, result, seed = 0) {
+  predictive_distribution(ptr = rust_result(panel@ptr$by_reinsurer(result@ptr, as.double(seed))))
+}
