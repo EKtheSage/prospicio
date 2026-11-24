@@ -751,7 +751,14 @@ tail mean of the quantiles to 1e-3 and the closed form to within a bucket.
 - (a) *The engine lives in `prospicio-prob`*, not `prospicio-aggregate`,
   so that the laws of #780 can be `Distribution`s through it
   (`prospicio-prob` cannot depend on the aggregate crate); `rustfft` joins
-  its dependencies (pure Rust, so the WASM build keeps it).
+  its dependencies (pure Rust, so the WASM build keeps it). Since #973 the
+  transforms come through `prospicio_math::fft`: the two-sided laws'
+  convolution is three real transforms on one plan, and the inversion
+  keeps its complex inverse of the spectrum filled by Hermitian symmetry.
+  A real inverse of the half spectrum (numpy's `irfft`) differs from it in
+  the last bits, which a tilt multiplies by up to `e^{θx}`: enough to take
+  a tilted stable law's outside mass past its 1e-9 parity with `aggregate`
+  (`knowledge/findings/fft-aliasing-from-one-transform.md`).
 - (b) *Tilting comes with the totally skewed stable law* (built in the
   second PR).
   `aggregate` tilts only a law with a power tail (its `tilt` is a
