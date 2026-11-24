@@ -50,6 +50,21 @@ sources:
 | Poisson GAM with REML, 50,000 rows | 26.8 s (10.4 s) | 1.79 s (1.70 s) |
 | Bayesian Poisson GLM, 4 chains x 600 draws, 20,000 rows, 20 columns | 7.0 s (6.3 s) | 1.34 s (1.28 s) |
 
+- The GAM's REML score (second #969 PR) needs the observed information at
+  every trial; for a canonical link it equals the expected information
+  IRLS already returns (tested for the Gaussian, Poisson, binomial, gamma
+  and inverse Gaussian with weights and an offset), so the pass is
+  skipped. The gamma dispersion search evaluated the saturated
+  log-likelihood, a sum over the rows, 20 to 40 times a trial; summed once
+  per distinct weight it costs one term per weight. A gamma GAM with REML
+  on 50,000 rows went from 58.9 s (43.6 s) to 32.5 s (30.4 s) with the
+  blocked Gram products alone and to 2.7 s (2.4 s) with both changes.
+- `tweedie_profile`'s grid of five powers in parallel saves little (15.1 s
+  to 14.3 s on 100,000 rows; 0.2 took 28.4 s (26.0 s)): the golden-section
+  search after the grid refits the GLM at each of its points in sequence
+  and dominates.
+- The edf trace `tr((X'WX + S)^-1 S)` still forms the inverse: it is
+  `O(p^3)` with `p` in the tens, not a measurable cost next to the fits.
 - A triangle-sized fit (100 rows) is faster too: it fits in one block, so
   rayon adds one task, and the old loop's per-row column hopping was a cost
   even there.

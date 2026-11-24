@@ -7,7 +7,8 @@
 # [tool.uv]
 # exclude-newer = "2026-11-24T00:00:00Z"
 # ///
-"""Regenerate validation/reference/reinsurer_default.csv.
+"""Regenerate validation/reference/reinsurer_default.csv and
+reinsurer_default_solvency2.csv.
 
     uv run validation/scripts/aggregate_reinsurer_default.py
 
@@ -61,6 +62,20 @@ noise, and it accepts a simulated value within four of its own standard
 errors of `expected` (`validation/tests/aggregate_reinsurer_default.rs`).
 The probabilities of default are 10 % to 25 % (the joint default about
 4.6 %), so a few hundred thousand simulated years resolve them.
+
+`reinsurer_default_solvency2.csv` holds the Solvency II standard formula's
+counterparty default module for type 1 exposures (Delegated Regulation (EU)
+2015/35, Arts 192, 199, 200 and 201), computed at the end of this script
+from the articles' text, not from the Rust: `probability_by_step` (every
+credit quality step), `probability_by_ratio` (the table's points, points
+between them and both clamps, `arg` the ratio as a fraction),
+`reinsurance_lgd` (the 50 % and 90 % shares, the factors 100 %, 50 % and
+18 %, and a loss given default floored at 0; `params` the inputs) and
+`type1` (`params` the exposures `pd_i` and `lgd_i`, `arg` the portfolio,
+`quantity` one of `v_inter`, `v_intra`, `sigma`, `total_lgd` and `scr`; the
+portfolios take all three of Art 200's branches, with repeated and zero
+probabilities of default). These are exact arithmetic, so the tests hold
+them to 1e-12 relative (`validation/tests/aggregate_reinsurer_default_solvency2.rs`).
 """
 
 import csv
@@ -311,3 +326,186 @@ with open(OUT, "w", newline="") as f:
     w.writerow(["distribution", "params", "quantity", "arg", "expected", "abs_tol", "rel_tol", "source"])
     w.writerows(rows)
 print(f"wrote {len(rows)} rows to {OUT}")
+
+
+# ---------------------------------------------------------------------------
+# Solvency II: validation/reference/reinsurer_default_solvency2.csv
+#
+# The standard formula's counterparty default module for type 1 exposures,
+# written here from the text of Delegated Regulation (EU) 2015/35
+# (knowledge/references/solvency2-counterparty-default.md), not from the
+# Rust: Art 192(2) (loss given default of a reinsurance arrangement), Art
+# 199(2) and (3) (probability of default by credit quality step and by
+# solvency ratio), Art 200 (SCR_def,1) and Art 201 (V_inter and V_intra).
+# Every value is plain arithmetic on the inputs, so the tolerance is 1e-12
+# relative; the values are written with 17 significant digits (`repr`) and
+# the inputs exactly as the tests parse them back.
+
+SII_OUT = OUT.with_name("reinsurer_default_solvency2.csv")
+SII_SOURCE = "Delegated Regulation (EU) 2015/35"
+SII_ABS_TOL, SII_REL_TOL = 0.0, 1e-12
+
+# Art 199(2): credit quality steps 0 to 6.
+SII_STEPS = [0.00002, 0.0001, 0.0005, 0.0024, 0.012, 0.042, 0.042]
+# Art 199(3): (solvency ratio, probability of default), the ratio as a fraction.
+SII_RATIO_TABLE = [
+    (1.96, 0.0001),
+    (1.75, 0.0005),
+    (1.50, 0.001),
+    (1.25, 0.002),
+    (1.22, 0.0024),
+    (1.00, 0.005),
+    (0.95, 0.012),
+    (0.75, 0.042),
+]
+
+
+def sii_by_ratio(ratio: float) -> float:
+    """Art 199(3): linear in the ratio between the points of the table,
+    0.01 % at or above 196 %, 4.2 % at or below 75 %."""
+    table = sorted(SII_RATIO_TABLE)  # ascending in the ratio
+    if ratio <= table[0][0]:
+        return table[0][1]
+    if ratio >= table[-1][0]:
+        return table[-1][1]
+    for (r0, p0), (r1, p1) in zip(table[:-1], table[1:]):
+        if r0 <= ratio <= r1:
+            if ratio == r0:
+                return p0
+            if ratio == r1:
+                return p1
+            return p0 + (p1 - p0) * (ratio - r0) / (r1 - r0)
+    raise AssertionError(ratio)
+
+
+def sii_lgd(recoverables, rm, collateral, share, factor) -> float:
+    """Art 192(2): max(share (Recoverables + 50 % RM_re) - F Collateral, 0)."""
+    return max(share * (recoverables + 0.5 * rm) - factor * collateral, 0.0)
+
+
+def sii_type1(exposures):
+    """Arts 200 and 201 on a list of (PD, LGD): exposures grouped by their
+    probability of default, V_inter over every ordered pair of groups (the
+    diagonal included; a term whose two PDs are both 0 is 0, Q&A 2530),
+    V_intra over the groups, and SCR_def,1 by the size of sigma against
+    the sum of the LGDs."""
+    groups: dict[float, list[float]] = {}
+    for pd, lgd in exposures:
+        groups.setdefault(pd, []).append(lgd)
+    v_inter = 0.0
+    for pj, lj in groups.items():
+        for pk, lk in groups.items():
+            if pj == 0.0 and pk == 0.0:
+                continue
+            u = pj * (1 - pj) * pk * (1 - pk) / (1.25 * (pj + pk) - pj * pk)
+            v_inter += u * sum(lj) * sum(lk)
+    v_intra = 0.0
+    for pj, lj in groups.items():
+        v_intra += 1.5 * pj * (1 - pj) / (2.5 - pj) * sum(x * x for x in lj)
+    sigma = math.sqrt(v_inter + v_intra)
+    total = sum(x for _, x in exposures)
+    if sigma <= 0.07 * total:
+        scr, branch = 3 * sigma, "3sigma"
+    elif sigma <= 0.2 * total:
+        scr, branch = 5 * sigma, "5sigma"
+    else:
+        scr, branch = total, "total"
+    values = {"v_inter": v_inter, "v_intra": v_intra, "sigma": sigma, "total_lgd": total, "scr": scr}
+    return values, branch, (sigma / total if total > 0 else 0.0)
+
+
+def sii_v_inter_by_exposure(exposures) -> float:
+    """V_inter over every ordered pair of single exposures, no grouping: the
+    same as by group, since each term is bilinear in the two LGDs."""
+    v = 0.0
+    for pi, li in exposures:
+        for pk, lk in exposures:
+            if pi == 0.0 and pk == 0.0:
+                continue
+            v += pi * (1 - pi) * pk * (1 - pk) / (1.25 * (pi + pk) - pi * pk) * li * lk
+    return v
+
+
+sii_rows = []
+
+
+def sii_row(case, params_, quantity, arg, value):
+    sii_rows.append(
+        [case, params_, quantity, arg, repr(float(value)), f"{SII_ABS_TOL:g}", f"{SII_REL_TOL:g}", SII_SOURCE]
+    )
+
+
+for step, p in enumerate(SII_STEPS):
+    sii_row("probability_by_step", "", "probability", str(step), p)
+
+for r, p in SII_RATIO_TABLE:
+    assert sii_by_ratio(r) == p
+SII_RATIOS = [
+    3.0, 1.96, 1.9, 1.855, 1.75, 1.6, 1.5, 1.3, 1.25, 1.234, 1.22, 1.1, 1.0, 0.975,
+    0.95, 0.85, 0.75, 0.6, 0.0,
+]
+for ratio in SII_RATIOS:
+    sii_row("probability_by_ratio", "", "probability", repr(ratio), sii_by_ratio(ratio))
+
+# name: (recoverables, RM_re, collateral, share, factor)
+SII_LGD_CASES = {
+    "plain": (100.0, 40.0, 30.0, 0.5, 1.0),
+    "factor_half": (100.0, 40.0, 30.0, 0.5, 0.5),
+    "no_mitigation_no_collateral": (250.0, 0.0, 0.0, 0.5, 1.0),
+    "collateral_above": (100.0, 40.0, 200.0, 0.5, 1.0),
+    "collateralised_90": (100.0, 40.0, 30.0, 0.9, 1.0),
+    "collateralised_90_f18": (100.0, 40.0, 30.0, 0.9, 0.18),
+    "zero_recoverables": (0.0, 20.0, 0.0, 0.5, 1.0),
+}
+close(sii_lgd(*SII_LGD_CASES["plain"]), 30.0, 0.0)
+close(sii_lgd(*SII_LGD_CASES["collateral_above"]), 0.0, 0.0)
+for name, (rec, rm, col, share, factor) in SII_LGD_CASES.items():
+    p = (
+        f"recoverables={rec!r};risk_mitigation={rm!r};collateral={col!r};"
+        f"lgd_share={share!r};factor={factor!r}"
+    )
+    sii_row("reinsurance_lgd", p, "lgd", name, sii_lgd(rec, rm, col, share, factor))
+
+# name: [(PD, LGD), ...]
+SII_PORTFOLIOS = {
+    "single_3sigma": [(0.002, 100.0)],
+    "single_5sigma": [(0.012, 50.0)],
+    "single_total": [(0.042, 10.0)],
+    "mixed_3sigma": [
+        (0.0005, 120.0), (0.0005, 80.0), (0.001, 200.0), (0.0024, 60.0),
+        (0.0, 300.0), (0.00002, 500.0), (0.0001, 150.0), (0.0005, 40.0),
+    ],
+    "mixed_5sigma": [(0.012, 40.0), (0.042, 30.0), (0.0024, 10.0), (0.012, 5.0), (0.0, 2.0)],
+    "mixed_total": [(0.3, 20.0), (0.3, 5.0), (0.0, 1.0), (0.0, 2.0), (0.1, 3.0)],
+    "with_certain_default": [(1.0, 50.0), (0.005, 80.0), (0.0024, 70.0), (0.0001, 400.0)],
+    "zeros_only": [(0.0, 10.0), (0.0, 20.0)],
+    "empty": [],
+}
+sii_branches = set()
+for name, exposures in SII_PORTFOLIOS.items():
+    values, branch, ratio = sii_type1(exposures)
+    if exposures:
+        # Clear of the 7 % and 20 % thresholds, so that a last-bit
+        # difference cannot flip the branch.
+        assert all(abs(ratio - t) > 1e-4 for t in (0.07, 0.2)), (name, ratio)
+    sii_branches.add(branch)
+    close(values["v_inter"], sii_v_inter_by_exposure(exposures), 1e-13)
+    if len(exposures) == 1:
+        # One exposure: V_inter + V_intra = PD (1 - PD) LGD^2.
+        ((pd, lgd),) = exposures
+        close(values["sigma"] ** 2, pd * (1 - pd) * lgd * lgd, 1e-13)
+    # The single_ and mixed_ portfolios name the branch they take.
+    assert not name.startswith(("single_", "mixed_")) or name.endswith(branch), (name, branch)
+    params_ = ";".join(
+        [f"n={len(exposures)}"]
+        + [f"pd_{i}={pd!r};lgd_{i}={lgd!r}" for i, (pd, lgd) in enumerate(exposures, 1)]
+    )
+    for quantity in ("v_inter", "v_intra", "sigma", "total_lgd", "scr"):
+        sii_row("type1", params_, quantity, name, values[quantity])
+assert sii_branches == {"3sigma", "5sigma", "total"}, sii_branches
+
+with open(SII_OUT, "w", newline="") as f:
+    w = csv.writer(f, lineterminator="\n")
+    w.writerow(["distribution", "params", "quantity", "arg", "expected", "abs_tol", "rel_tol", "source"])
+    w.writerows(sii_rows)
+print(f"wrote {len(sii_rows)} rows to {SII_OUT}")
