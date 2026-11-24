@@ -57,7 +57,10 @@ pub enum FutureInflation {
     Rate(f64),
     /// The relative changes of a [`CalendarIndex`] from the triangle's last
     /// calendar period: `lambda_h = lambda_k I(p_h) / I(p_k)`, `p_h` the
-    /// index period that holds the end of calendar period `h`.
+    /// index period that holds the end of calendar period `h`. An index
+    /// finer than the triangle is read at each period's last sub-period (a
+    /// monthly index on annual periods at December), not averaged; give
+    /// the index at the triangle's grain for an average.
     Index(CalendarIndex),
     /// The exponential trend of the last `periods` fitted indices (a
     /// least-squares line through their logarithms), continued from the
@@ -178,7 +181,7 @@ impl Separation {
         let step = seg.origins[0].grain().months();
         if seg.n_dev != n {
             return sep_err(format!(
-                "a full triangle has as many ages as origins; this has {} ages and {n} origins",
+                "a full triangle has as many ages as origins; this has {} ages and {n} origins                  with a value (an origin with no value yet is left out)",
                 seg.n_dev
             ));
         }
@@ -187,6 +190,12 @@ impl Separation {
                 needed: 2,
                 found: n,
             });
+        }
+        if seg.ages[0] != step {
+            return sep_err(format!(
+                "the first age must be one development period ({step} months), not {}",
+                seg.ages[0]
+            ));
         }
         if seg.ages[1] - seg.ages[0] != step {
             return sep_err(format!(
@@ -451,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn the_normaliser_scales_the_indices_only() {
+    fn the_normaliser_leaves_the_proportions_and_scales_the_reserves() {
         let n = vec![1.0, 2.0, 4.0, 8.0];
         let plain = arithmetic_at(0.05).fit(&taylor(), "values").unwrap();
         // Increments multiplied by n_i give back plain's s after division.
@@ -530,11 +539,8 @@ mod tests {
     }
 
     #[test]
-    fn a_triangle_with_no_calendar_effect_gives_flat_indices() {
-        // Increments r_j c_i: an origin effect and no calendar effect. The
-        // separation model has no origin factor, so this is a test of
-        // the recursion on an exactly separable triangle instead: r_j
-        // lambda_{i+j} with lambda geometric.
+    fn an_exactly_separable_triangle_is_recovered() {
+        // Increments r_j lambda_{i+j} with lambda growing 7% a year.
         let r = [0.5, 0.3, 0.15, 0.05];
         let rows: Vec<Vec<f64>> = (0..4)
             .map(|i| {
@@ -581,6 +587,18 @@ mod tests {
         })
         .unwrap();
         assert!(arithmetic_at(0.0).fit(&quarterly, "values").is_err());
+        // Ages from 24 on: the first increment would hold two years.
+        let late = Triangle::from_long(&crate::triangle::Long {
+            keys: &[],
+            origin: &[2001, 2001, 2002].map(Month::january),
+            development: crate::triangle::DevelopmentColumn::Age(&[24, 36, 24]),
+            values: &[("values", &[1.0, 2.0, 1.0])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        assert!(arithmetic_at(0.0).fit(&late, "values").is_err());
         let short = Separation {
             normaliser: Some(vec![1.0; 3]),
             ..arithmetic_at(0.0)
