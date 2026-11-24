@@ -72,6 +72,7 @@ pub mod expense;
 pub mod frame;
 pub mod frequency_severity;
 pub mod industry_prior;
+pub mod inflation;
 #[cfg(feature = "io")]
 pub mod io;
 pub mod latest_diagonal;
@@ -142,6 +143,7 @@ pub use frequency_severity::{
     case_development_factor, exponential_trend, pooled_trend, ratio_column, trend_by_age,
 };
 pub use industry_prior::{IndustryPrior, IndustryPriorSettings, PatternPrior, PriorReport};
+pub use inflation::{CalendarIndex, FutureCell, FutureCells, Indexation, Reinflated};
 #[cfg(feature = "io")]
 pub use io::FileLayout;
 pub use latest_diagonal::{
