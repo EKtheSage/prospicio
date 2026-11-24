@@ -16,6 +16,9 @@ sources:
   - id: natural
     resource: ../crates/prospicio-pricing/src/natural.rs
     title: prospicio_pricing::natural (Portfolio::from_independent, convolve)
+  - id: bayes
+    resource: ../crates/prospicio-bayes/src/lib.rs
+    title: prospicio_bayes (autocovariance, behind ess_bulk and ess_tail)
   - id: issue
     resource: https://github.com/EKtheSage/prospicio/issues/973
     title: "#973: consolidate rustfft into prospicio-math, reuse the planner and scratch, evaluate realfft and an optional aliasing check"
@@ -133,7 +136,23 @@ release build, cloud container:
 The convolution is the one behind the stand-alone prices' sum of two
 units.
 
+## The effective sample size
+
+Moved in the fourth PR of #973. `prospicio-bayes` computes each chain's
+autocovariances by FFT, once per chain and parameter for the bulk and the
+tail effective sample sizes, always at the same length. It built a
+planner for every one; with real transforms through the free functions
+the thread's plan is reused. Release build, cloud container:
+
+| Chain length | Before | After |
+|---|---|---|
+| 500 | 41.0 us | 4.6 us |
+| 1,000 | 87.3 us | 10.2 us |
+| 10,000 | 2.45 ms | 0.21 ms |
+
+Most of the gain is the plan, as the table under "Plans" predicts.
+
 ## Not yet moved
 
-`chf` in `prospicio-prob` and `prospicio-bayes` still build a planner per
-call. They are the Aggregate lane's next item under #973.
+`chf` in `prospicio-prob` still builds a planner per call. It is the
+Aggregate lane's next item under #973, after #972.
