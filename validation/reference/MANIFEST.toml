@@ -135,7 +135,7 @@ sha256 = "4cdfdc7268c59574b7e620f465b609155a59f2879187b8d28cd1eafc3bebbed7"
 [[file]]
 path = "bounds_aggregate.csv"
 generators = ["aggregate_bounds.py"]
-sha256 = "86c12902116ddf9fa0df0cfb48cfa4897ca2c16b2f38da066014a0b32ae81953"
+sha256 = "0b8914f013f0d4ae043fd92cb62f4ea318ef16102a20ef20a612590c0d2596c4"
 
 [[file]]
 path = "chf_aggregate.csv"
@@ -563,7 +563,7 @@ sha256 = "d3aa3e892c321b9b5f9bfb2cdb92925b9589b3540b9c379bc7c20ae7c89a5007"
 [[file]]
 path = "pnl_variable_aggregate.csv"
 generators = ["aggregate_pnl_variable.py"]
-sha256 = "64e3746f9f52a0fb610e61594f88b02b5376398217d99b70031838e564ac66de"
+sha256 = "048156725aae53055a4424c267b6e4093eb3555d740d628e96e6006954ff4d85"
 
 [[file]]
 path = "predictive_distribution_v1.arrow"
