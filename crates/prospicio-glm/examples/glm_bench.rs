@@ -2,7 +2,7 @@
 //! freMTPL2-sized portfolio and on a triangle-sized one, a GAM with REML
 //! smoothing and the Tweedie power profile.
 //!
-//! `cargo bench -p prospicio-glm` prints the median wall time of each case.
+//! `cargo run --release -p prospicio-glm --example glm_bench` prints the median wall time of each case.
 //! Set `BENCH_QUICK=1` for one timed run per case.
 
 use prospicio_glm::Glm;

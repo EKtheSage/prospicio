@@ -1563,8 +1563,11 @@ indicators (0.317480 against 0.317189 after 15 epochs).
   Bayesian draws move within rounding, noted under "Breaking changes" for
   0.3.0. IRLS reuses its `n`-long buffers across iterations and step
   halvings (`Design::linear_predictor_into`). Benchmarks:
-  `cargo bench -p prospicio-glm` and `-p prospicio-bayes`, plain
-  `harness = false` targets with no dependency
+  `cargo run --release -p prospicio-glm --example glm_bench` and
+  `-p prospicio-bayes --example bayes_glm_bench`, plain examples with no
+  dependency (examples rather than `[[bench]]` targets, since the R
+  package's `bootstrap.R` copies no `benches/` and an explicit
+  `[[bench]]` entry then fails to parse, as in #1053)
   (`knowledge/findings/glm-gram-benchmark.md`).
 
 ## Open questions
