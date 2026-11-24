@@ -2,7 +2,7 @@
 
 - `credit_loss`, `recovered` and `net_after_default` are reserved names in
   `prospicio_aggregate`, like `brokerage` and `margin`: a deduction with one
-  of these labels, in Rust or in a tower's JSON, is now refused (#980).
+  of these labels, in Rust or in a tower's JSON, is now refused (#980, #1068).
 
 ### Aggregate and reinsurance
 
@@ -16,4 +16,4 @@
   on the year's gross loss (or a driver given), so they gather in the worst
   years without changing each reinsurer's probability of default; the
   result has the same bits on any number of threads. Rust only for now
-  (#980).
+  (#980, #1068).
