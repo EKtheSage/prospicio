@@ -143,19 +143,31 @@ fn main() {
     let term_years: Vec<EventSet> = (0..5).map(|t| events(n_sims / 5, 100 + t)).collect();
 
     let report = |name: &str, (d, c): (Duration, u64)| {
-        println!("{name:<22} {:>10.1} ms  checksum {c:016x}", d.as_secs_f64() * 1e3);
+        println!(
+            "{name:<22} {:>10.1} ms  checksum {c:016x}",
+            d.as_secs_f64() * 1e3
+        );
     };
     if run("apply_single") {
         let t = single();
-        report("apply_single", time(|| t.apply(&plain).unwrap(), pd_checksum));
+        report(
+            "apply_single",
+            time(|| t.apply(&plain).unwrap(), pd_checksum),
+        );
     }
     if run("apply_inuring") {
         let t = inuring();
-        report("apply_inuring", time(|| t.apply(&plain).unwrap(), pd_checksum));
+        report(
+            "apply_inuring",
+            time(|| t.apply(&plain).unwrap(), pd_checksum),
+        );
     }
     if run("apply_labelled") {
         let t = inuring();
-        report("apply_labelled", time(|| t.apply(&tagged).unwrap(), pd_checksum));
+        report(
+            "apply_labelled",
+            time(|| t.apply(&tagged).unwrap(), pd_checksum),
+        );
     }
     if run("ceded_events") {
         let t = inuring();
@@ -169,10 +181,16 @@ fn main() {
     }
     if run("apply_annual") {
         let t = single();
-        report("apply_annual", time(|| t.apply_annual(&totals).unwrap(), pd_checksum));
+        report(
+            "apply_annual",
+            time(|| t.apply_annual(&totals).unwrap(), pd_checksum),
+        );
     }
     if run("apply_term") {
         let t = term_tower();
-        report("apply_term", time(|| t.apply_term(&term_years).unwrap(), pd_checksum));
+        report(
+            "apply_term",
+            time(|| t.apply_term(&term_years).unwrap(), pd_checksum),
+        );
     }
 }

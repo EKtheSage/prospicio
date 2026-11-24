@@ -1791,6 +1791,37 @@ Decisions:
 - (e) *Without a change of measure the years are `simulate_events`'s*, by
   seed, and every weight is 1.
 
+### The tower's simulated years in parallel (#970)
+
+Status: built for the tower's paths (`Tower::apply`, `apply_aggregate`,
+`apply_annual`, `ceded_events`, `apply_term`, `apply_aggregate_term` and
+`apply_timeline` through them); the other simulation loops the issue lists
+are the lane's Next item `[970-other-loops]`.
+
+Decisions:
+
+- (a) *A year is a row filled in parallel.* Each simulated year (a path of
+  years for a term) writes a row of fixed width into its own slice of the
+  result, from its own inputs only, so the result is the same bits for any
+  number of threads (`validation/tests/aggregate_tower_threads.rs`) and the
+  same as before the change: no seeded number moved. A term's years stay in
+  order within a path, since each carries into the next.
+- (b) *Buffers per task, not per year.* A year's work (each stage's
+  entries net of the earlier ones, the masks of scoped layers, each
+  layer's ceded loss by event) lives in buffers one task reuses from year
+  to year, and a layer's recoveries are summed as they are computed, in
+  the same order, without a vector. A stage's split by event is computed
+  only when a later stage or the caller needs it.
+- (c) *Rayon stays a plain dependency.* The crate used it already
+  (`simulate_events`), and on `wasm32-unknown-unknown` its pool runs on
+  the calling thread (`wasm.md` decision 7), so the WASM build needs no
+  feature or `cfg`. A task takes at least 256 years, so a year of one
+  loss (`apply_annual`) is not swamped by the scheduling.
+- (d) *`ceded_events` keeps the labels' indices.* The events that cede
+  keep their label combinations by index into the original set's sorted
+  combinations, so no label string is copied or sorted per event; the
+  result is the same set.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
