@@ -4068,7 +4068,6 @@ dependencies = [
  "prospicio-math",
  "prospicio-prob",
  "rayon",
- "rustfft",
  "serde_json",
 ]
 

@@ -28,10 +28,9 @@
 //! grid the counts match `aggregate` 2.1.0 (`validation/tests/aggregate.rs`).
 
 use prospicio_core::{Error, Result};
+use prospicio_math::fft::{Complex64, RealPlan};
 use prospicio_prob::Distribution;
 use prospicio_prob::count_families::EmpiricalCount;
-use rustfft::FftPlanner;
-use rustfft::num_complex::Complex64;
 
 /// Contributions below this are dropped when the count's support is sized.
 const TAIL_EPS: f64 = 1e-17;
@@ -425,18 +424,18 @@ pub fn renewal_count_pmf(
     }
     // Two transforms, not one packed: the tilted indicator is up to e^15
     // times the wait, and packing them would share its round-off.
-    let fft = FftPlanner::<f64>::new().plan_fft_forward(m);
-    let half = m / 2 + 1;
-    let transform = |x: &[f64]| {
-        let mut z: Vec<Complex64> = x.iter().map(|&v| Complex64::new(v, 0.0)).collect();
-        fft.process(&mut z);
-        z.truncate(half);
+    // Both are real, and Plancherel below reads half the spectrum.
+    let mut plan = RealPlan::new(m);
+    let half = plan.spectrum_len();
+    let mut transform = |mut x: Vec<f64>| {
+        let mut z = vec![Complex64::new(0.0, 0.0); half];
+        plan.forward(&mut x, &mut z);
         z
     };
-    let phat = transform(&tilted);
+    let phat = transform(tilted);
     // Plancherel over the half spectrum of real sequences:
     // sum a_j b_j = Re(sum_w c_w A_w conj B_w) / m, c = 1, 2, …, 2, 1.
-    let weight: Vec<Complex64> = transform(&indicator)
+    let weight: Vec<Complex64> = transform(indicator)
         .into_iter()
         .enumerate()
         .map(|(w, b)| {

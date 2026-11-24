@@ -65,6 +65,8 @@
 "zero::VuongStatistic" = "a (statistic, p-value) pair inside vuong's result"
 
 [python.prospicio_math]
+"fft::Plan" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
+"fft::RealPlan" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
 "fft::forward" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
 "fft::inverse" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
 "fft::real_forward" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
@@ -348,6 +350,8 @@
 "zero::VuongStatistic" = "a (statistic, p-value) pair inside vuong_test()'s result"
 
 [r.prospicio_math]
+"fft::Plan" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
+"fft::RealPlan" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
 "fft::forward" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
 "fft::inverse" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
 "fft::real_forward" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"

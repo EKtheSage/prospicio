@@ -21,9 +21,8 @@
 //! compounded by [`fft`](crate::fft()) with its aliasing check.
 
 use prospicio_core::{Error, Result};
+use prospicio_math::fft::{Complex64, Plan, RealPlan};
 use prospicio_prob::{Counting, Distribution, Grid, NegativeBinomial, Poisson};
-use rustfft::FftPlanner;
-use rustfft::num_complex::Complex64;
 
 use crate::compound::CompoundReport;
 
@@ -388,15 +387,13 @@ pub fn wiener_hopf(
     for (k, &p) in fcw.iter().enumerate().skip(1) {
         w[m - k].re = p;
     }
-    let mut planner = FftPlanner::<f64>::new();
-    let fft = planner.plan_fft_forward(m);
-    let ifft = planner.plan_fft_inverse(m);
-    fft.process(&mut x);
-    fft.process(&mut w);
+    let mut plan = Plan::new(m);
+    plan.forward(&mut x);
+    plan.forward(&mut w);
     let scale = 1.0 / m as f64;
     let mut fy: Vec<Complex64> = x.iter().zip(&w).map(|(a, b)| a * b).collect();
     drop((x, w));
-    ifft.process(&mut fy);
+    plan.inverse(&mut fy);
     let fy: Vec<f64> = fy.iter().map(|z| z.re * scale).collect();
     let mean_y: f64 = fy
         .iter()
@@ -410,7 +407,7 @@ pub fn wiener_hopf(
             mean_y * h
         )));
     }
-    let maximum = ruin_cepstral(&fy, mean_y, &mut planner)?;
+    let maximum = ruin_cepstral(&fy, mean_y, &mut plan)?;
     let mut psi = Vec::with_capacity(n);
     let mut cum = 0.0;
     for &p in &maximum[..n] {
@@ -437,13 +434,11 @@ pub fn wiener_hopf(
 /// step is a multiple of some `d > 1` grid points (a severity on a
 /// sub-lattice and a wait that rounds to one point of it): its logarithm
 /// is then `−∞` and every probability would be NaN (#960).
-fn ruin_cepstral(fy: &[f64], mean_y: f64, planner: &mut FftPlanner<f64>) -> Result<Vec<f64>> {
+fn ruin_cepstral(fy: &[f64], mean_y: f64, plan: &mut Plan) -> Result<Vec<f64>> {
     let m = fy.len();
-    let fft = planner.plan_fft_forward(m);
-    let ifft = planner.plan_fft_inverse(m);
     let scale = 1.0 / m as f64;
     let mut g: Vec<Complex64> = fy.iter().map(|&v| Complex64::new(v, 0.0)).collect();
-    fft.process(&mut g);
+    plan.forward(&mut g);
     // G = 1 − φ_Y, divided by d = 1 − e^{2πik/m}; −E[Y] at k = 0.
     let mut gt: Vec<Complex64> = g
         .iter()
@@ -471,18 +466,18 @@ fn ruin_cepstral(fy: &[f64], mean_y: f64, planner: &mut FftPlanner<f64>) -> Resu
     for (z, ph) in gt.iter_mut().zip(phase) {
         *z = Complex64::new(z.norm().ln(), ph);
     }
-    ifft.process(&mut gt);
+    plan.inverse(&mut gt);
     let mut cplus = vec![Complex64::new(0.0, 0.0); m];
     for k in 1..m / 2 {
         cplus[k].re = gt[k].re * scale;
     }
     let total: f64 = cplus.iter().map(|z| z.re).sum();
-    fft.process(&mut cplus);
+    plan.forward(&mut cplus);
     let mut phi_m: Vec<Complex64> = cplus
         .iter()
         .map(|z| (Complex64::new(total, 0.0) - z).exp())
         .collect();
-    ifft.process(&mut phi_m);
+    plan.inverse(&mut phi_m);
     Ok(phi_m.iter().map(|z| z.re * scale).collect())
 }
 
@@ -707,32 +702,30 @@ fn recursion<N: Counting + ?Sized>(
         survival.push((1.0 - cum).max(0.0));
     }
 
+    // Every sequence here is real, so the transforms are real ones.
     let n = (2 * longest).next_power_of_two();
-    let mut planner = FftPlanner::<f64>::new();
-    let forward = planner.plan_fft_forward(n);
-    let inverse = planner.plan_fft_inverse(n);
-    let mut p_hat: Vec<Complex64> = p.iter().map(|&v| Complex64::new(v, 0.0)).collect();
-    p_hat.resize(n, Complex64::new(0.0, 0.0));
-    forward.process(&mut p_hat);
+    let mut plan = RealPlan::new(n);
+    let mut buffer = vec![0.0; n];
+    buffer[..longest].copy_from_slice(p);
+    let mut p_hat = vec![Complex64::new(0.0, 0.0); plan.spectrum_len()];
+    plan.forward(&mut buffer, &mut p_hat);
 
     let mut previous = vec![0.0; longest];
     let mut psi = Vec::with_capacity(periods);
-    let mut buffer = vec![Complex64::new(0.0, 0.0); n];
+    let mut spectrum = vec![Complex64::new(0.0, 0.0); plan.spectrum_len()];
     for stage in 1..=stages {
         let len = points + (stages - stage) * m;
         let read = len + m;
-        for (b, &v) in buffer.iter_mut().zip(&previous[..read]) {
-            *b = Complex64::new(v, 0.0);
-        }
-        buffer[read..].fill(Complex64::new(0.0, 0.0));
-        forward.process(&mut buffer);
-        for (b, q) in buffer.iter_mut().zip(&p_hat) {
+        buffer[..read].copy_from_slice(&previous[..read]);
+        buffer[read..].fill(0.0);
+        plan.forward(&mut buffer, &mut spectrum);
+        for (b, q) in spectrum.iter_mut().zip(&p_hat) {
             *b *= q;
         }
-        inverse.process(&mut buffer);
+        plan.inverse(&mut spectrum, &mut buffer);
         let scale = 1.0 / n as f64;
         let current: Vec<f64> = (0..len)
-            .map(|u| (survival[u + m] + buffer[u + m].re * scale).clamp(0.0, 1.0))
+            .map(|u| (survival[u + m] + buffer[u + m] * scale).clamp(0.0, 1.0))
             .collect();
         if stage % sub_periods == 0 {
             psi.push(current[..points].to_vec());
