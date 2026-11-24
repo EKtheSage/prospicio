@@ -61,10 +61,10 @@ use std::fmt;
 use std::sync::Arc;
 
 use prospicio_core::{Error, Result};
-use prospicio_math::optimize::brent;
-use rustfft::FftPlanner;
 /// The complex type of [`ChfLaw::chf`] and a user's [`ChfFn`].
-pub use rustfft::num_complex::Complex64;
+pub use prospicio_math::fft::Complex64;
+use prospicio_math::fft::{RealPlan, inverse};
+use prospicio_math::optimize::brent;
 
 use crate::dist::Dist;
 use crate::distribution::{Distribution, check_probability};
@@ -1021,7 +1021,11 @@ fn invert_fn(
         *cj *= (i * tj * x0).exp();
     }
     // numpy's irfft: the spectrum filled by Hermitian symmetry, the
-    // imaginary parts at 0 and n/2 dropped.
+    // imaginary parts at 0 and n/2 dropped. The transform stays the
+    // complex one: a real inverse differs from it in the last bits, which
+    // a tilt multiplies by up to `e^{θ x}`, enough to move a tilted stable
+    // law's outside mass by 3e-10 of itself against a parity tolerance of
+    // 1e-9 (#973).
     let mut buffer = vec![Complex64::new(0.0, 0.0); n];
     for j in 0..=half {
         let mut cj = c[j];
@@ -1033,8 +1037,7 @@ fn invert_fn(
             buffer[n - j] = cj.conj();
         }
     }
-    let mut planner = FftPlanner::<f64>::new();
-    planner.plan_fft_inverse(n).process(&mut buffer);
+    inverse(&mut buffer);
     let mut p: Vec<f64> = buffer
         .iter()
         .enumerate()
@@ -1541,19 +1544,26 @@ struct TwoSided {
 /// The linear convolution of `a` and `b`, by FFT on `len ≥ a.len() +
 /// b.len() − 1` points.
 fn convolve(a: &[f64], b: &[f64], len: usize) -> Vec<f64> {
-    let mut planner = FftPlanner::<f64>::new();
-    let fwd = planner.plan_fft_forward(len);
-    let mut fa: Vec<Complex64> = (0..len)
-        .map(|k| Complex64::new(a.get(k).copied().unwrap_or(0.0), 0.0))
-        .collect();
-    let mut fb: Vec<Complex64> = (0..len)
-        .map(|k| Complex64::new(b.get(k).copied().unwrap_or(0.0), 0.0))
-        .collect();
-    fwd.process(&mut fa);
-    fwd.process(&mut fb);
-    let mut prod: Vec<Complex64> = fa.iter().zip(&fb).map(|(x, y)| x * y).collect();
-    planner.plan_fft_inverse(len).process(&mut prod);
-    prod.iter().map(|z| z.re / len as f64).collect()
+    // Both are real: three real transforms on one plan.
+    let mut plan = RealPlan::new(len);
+    let half = plan.spectrum_len();
+    let mut signal = vec![0.0; len];
+    let mut transform = |v: &[f64], signal: &mut [f64]| {
+        let kept = v.len().min(len);
+        signal[..kept].copy_from_slice(&v[..kept]);
+        signal[kept..].fill(0.0);
+        let mut spectrum = vec![Complex64::new(0.0, 0.0); half];
+        plan.forward(signal, &mut spectrum);
+        spectrum
+    };
+    let mut prod = transform(a, &mut signal);
+    let other = transform(b, &mut signal);
+    for (x, y) in prod.iter_mut().zip(&other) {
+        *x *= y;
+    }
+    plan.inverse(&mut prod, &mut signal);
+    signal.iter_mut().for_each(|v| *v /= len as f64);
+    signal
 }
 
 /// A stable law with `|β| < 1` under the tilt (`aggregate`'s
