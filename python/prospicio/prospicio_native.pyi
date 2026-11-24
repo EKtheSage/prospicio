@@ -32669,29 +32669,65 @@ class SeparationFit:
     def __eq__(self, other: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
     @property
-    def ages(self, /) -> list[int]: ...
+    def ages(self, /) -> list[int]:
+        """
+        The development ages in months; ``proportions`` and the columns of ``fitted`` follow them.
+        """
     @property
-    def calendar(self, /) -> list[str]: ...
+    def calendar(self, /) -> list[str]:
+        """
+        The triangle's calendar periods, at the origins' grain.
+        """
     @property
-    def fitted(self, /) -> list[list[float |None]]: ...
+    def fitted(self, /) -> list[list[float |None]]:
+        """
+        ``n_i r_j lambda_(i+j)`` on the observed cells, ``None`` on the future ones.
+        """
     @property
-    def future(self, /) -> FutureCells: ...
+    def future(self, /) -> FutureCells:
+        """
+        The future cells, ``n_i r_j lambda_(i+j)``, as ``FutureCells``.
+        """
     @property
-    def future_indices(self, /) -> dict: ...
+    def future_indices(self, /) -> dict:
+        """
+        The periods after the triangle's last, as ``{"period": [...], "index": [...]}``.
+        """
     @property
-    def indices(self, /) -> list[float]: ...
+    def indices(self, /) -> list[float]:
+        """
+        The index ``lambda_h`` of each calendar period.
+        """
     @property
-    def log_variance(self, /) -> float |None: ...
+    def log_variance(self, /) -> float |None:
+        """
+        The geometric methods' residual variance on the log scale, or ``None``.
+        """
     @property
-    def normaliser(self, /) -> list[float]: ...
+    def normaliser(self, /) -> list[float]:
+        """
+        The normaliser ``n_i``, one per origin (1 when none was given).
+        """
     @property
-    def origins(self, /) -> list[str]: ...
+    def origins(self, /) -> list[str]:
+        """
+        The origin periods; ``normaliser``, ``fitted`` and ``reserves`` follow them.
+        """
     @property
-    def proportions(self, /) -> list[float]: ...
+    def proportions(self, /) -> list[float]:
+        """
+        The development proportions ``r_j``, one per age, summing to 1.
+        """
     @property
-    def reserves(self, /) -> list[float]: ...
+    def reserves(self, /) -> list[float]:
+        """
+        The sum of each origin's future cells; the first origin's is 0.
+        """
     @property
-    def total_reserve(self, /) -> float: ...
+    def total_reserve(self, /) -> float:
+        """
+        The total reserve.
+        """
 
 @final
 class SeverityFit:

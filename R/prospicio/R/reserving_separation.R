@@ -43,6 +43,10 @@ NULL
 #' @param segment The key values of the one segment of a triangle with
 #'   several, as a named list or character vector (`c(lob = "auto")`);
 #'   the default needs a triangle of one segment.
+#' @param origins,ages,proportions,calendar,indices,future_indices,fitted,future,reserves,log_variance
+#'   The fields of a `separation_fit`, as described under Value. A fit is
+#'   made by `separation()`; the `separation_fit()` constructor only holds
+#'   its fields.
 #' @returns A `separation_fit` with the properties `origins`, `ages`
 #'   (months), `normaliser` (per origin), `proportions` (per age, summing to
 #'   1), `calendar` (the triangle's calendar periods), `indices` (per
@@ -84,7 +88,16 @@ separation_fit <- S7::new_class(
     reserves = S7::class_double,
     log_variance = S7::new_union(S7::class_double, NULL),
     total_reserve = S7::new_property(S7::class_double, getter = function(self) sum(self@reserves))
-  )
+  ),
+  constructor = function(origins, ages, normaliser, proportions, calendar, indices, future_indices,
+                         fitted, future, reserves, log_variance = NULL) {
+    S7::new_object(
+      S7::S7_object(),
+      origins = origins, ages = ages, normaliser = normaliser, proportions = proportions,
+      calendar = calendar, indices = indices, future_indices = future_indices, fitted = fitted,
+      future = future, reserves = reserves, log_variance = log_variance
+    )
+  }
 )
 
 S7::method(print, separation_fit) <- function(x, ...) {

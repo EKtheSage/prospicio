@@ -155,6 +155,8 @@ def test_the_settings_are_checked():
         Separation(future_rate=0.05, trend_periods=3)
     with pytest.raises(ValueError, match="kind"):
         Separation(kind="harmonic", future_rate=0.05)
+    with pytest.raises(ValueError, match="trend_periods"):
+        Separation(trend_periods=-3)
     sep = Separation("geometric_lognormal", [1.0, 2.0], trend_periods=2)
     assert sep.kind == "geometric_lognormal"
     assert sep.normaliser == [1.0, 2.0]

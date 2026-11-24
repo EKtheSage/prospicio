@@ -5,6 +5,20 @@
 \alias{separation}
 \title{Taylor's separation method}
 \usage{
+separation_fit(
+  origins,
+  ages,
+  normaliser,
+  proportions,
+  calendar,
+  indices,
+  future_indices,
+  fitted,
+  future,
+  reserves,
+  log_variance = NULL
+)
+
 separation(
   triangle,
   column = NULL,
@@ -17,15 +31,19 @@ separation(
 )
 }
 \arguments{
+\item{origins, ages, proportions, calendar, indices, future_indices, fitted, future, reserves, log_variance}{The fields of a \code{separation_fit}, as described under Value. A fit is
+made by \code{separation()}; the \code{separation_fit()} constructor only holds
+its fields.}
+
+\item{normaliser}{\code{n_i}, one per origin: finite and positive (claim
+counts, premium, exposure). \code{NULL} (the default) is 1 for every origin.}
+
 \item{triangle}{A \code{\link[=triangle]{triangle()}}.}
 
 \item{column}{The column to fit; \code{NULL} for the triangle's only one.}
 
 \item{kind}{\code{"arithmetic"} (the default), \code{"geometric"} or
 \code{"geometric_lognormal"}.}
-
-\item{normaliser}{\code{n_i}, one per origin: finite and positive (claim
-counts, premium, exposure). \code{NULL} (the default) is 1 for every origin.}
 
 \item{future_rate}{A constant annual rate from the last fitted index,
 compounded by months: above -1.}
@@ -48,7 +66,7 @@ A \code{separation_fit} with the properties \code{origins}, \code{ages}
 1), \code{calendar} (the triangle's calendar periods), \code{indices} (per
 calendar period), \code{future_indices} (a data frame of the \code{period}s after
 the triangle's last, up to the last future cell's, and their \code{index}),
-\code{fitted} (a matrix of \code{n_i r_j lambda_(i+j)} on the observed cells,
+\code{fitted} (a matrix of \verb{n_i r_j lambda_(i+j)} on the observed cells,
 origins by ages, \code{NA} on the future ones), \code{future} (the future cells as
 \code{\link[=future_cells]{future_cells()}}, with no tail past the oldest age), \code{reserves} (the sum
 of each origin's future cells; the first origin's is 0), \code{log_variance}

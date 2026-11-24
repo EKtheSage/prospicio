@@ -88,7 +88,7 @@ near_abs(taylor@proportions, c(0.5835, 0.2878, 0.0866, 0.0421), 5e-5)
 near_abs(taylor@indices, c(86.4, 98.9, 102.0, 113.9), 0.05)
 printed <- rbind(c(50.4, 28.5, 8.8, 4.8), c(57.7, 29.4, 9.9, NA), c(59.5, 32.8, NA, NA),
                  c(66.5, NA, NA, NA))
-stopifnot(identical(is.na(taylor@fitted), is.na(printed)))
+stopifnot(identical(unname(is.na(taylor@fitted)), is.na(printed)))
 near_abs(taylor@fitted[!is.na(printed)], printed[!is.na(printed)], 0.06)
 near_abs(taylor@future@cells$value, c(5.3, 10.8, 5.8, 36.1, 11.9, 6.4), 0.06)
 

@@ -414,10 +414,10 @@ reference:
       - reserving.RatioDevelopment
       - reserving.RatioDevelopmentFit
       - reserving.Reinflated
-      - reserving.Separation
-      - reserving.SeparationFit
       - reserving.RiskAdjustmentResult
       - reserving.SegmentRiskAdjustment
+      - reserving.Separation
+      - reserving.SeparationFit
       - reserving.UlaeEstimate
       - reserving.ulae_classical
       - reserving.ulae_kittel

@@ -103,13 +103,19 @@ impl PySeparation {
         normaliser: Option<Vec<f64>>,
         future_rate: Option<f64>,
         future_index: Option<PyRef<'_, PyCalendarIndex>>,
-        trend_periods: Option<usize>,
+        trend_periods: Option<i64>,
     ) -> PyResult<Self> {
         let kind = kind_of(kind)?;
         let future = match (future_rate, future_index, trend_periods) {
             (Some(rate), None, None) => FutureInflation::Rate(rate),
             (None, Some(index), None) => FutureInflation::Index(index.inner.clone()),
-            (None, None, Some(periods)) => FutureInflation::Trend { periods },
+            (None, None, Some(periods)) => FutureInflation::Trend {
+                periods: usize::try_from(periods).map_err(|_| {
+                    PyValueError::new_err(format!(
+                        "trend_periods must be a whole number of at least 2, got {periods}"
+                    ))
+                })?,
+            },
             (None, None, None) => {
                 return Err(PyValueError::new_err(
                     "give the future indices: one of future_rate, future_index or trend_periods",
@@ -295,26 +301,31 @@ pub(crate) struct PySeparationFit {
 
 #[pymethods]
 impl PySeparationFit {
+    /// The origin periods; ``normaliser``, ``fitted`` and ``reserves`` follow them.
     #[getter]
     fn origins(&self) -> Vec<String> {
         self.inner.origins.iter().map(ToString::to_string).collect()
     }
 
+    /// The development ages in months; ``proportions`` and the columns of ``fitted`` follow them.
     #[getter]
     fn ages(&self) -> Vec<u32> {
         self.inner.ages.clone()
     }
 
+    /// The normaliser ``n_i``, one per origin (1 when none was given).
     #[getter]
     fn normaliser(&self) -> Vec<f64> {
         self.inner.normaliser.clone()
     }
 
+    /// The development proportions ``r_j``, one per age, summing to 1.
     #[getter]
     fn proportions(&self) -> Vec<f64> {
         self.inner.proportions.clone()
     }
 
+    /// The triangle's calendar periods, at the origins' grain.
     #[getter]
     fn calendar(&self) -> Vec<String> {
         self.inner
@@ -324,11 +335,13 @@ impl PySeparationFit {
             .collect()
     }
 
+    /// The index ``lambda_h`` of each calendar period.
     #[getter]
     fn indices(&self) -> Vec<f64> {
         self.inner.indices.clone()
     }
 
+    /// The periods after the triangle's last, as ``{"period": [...], "index": [...]}``.
     #[getter]
     fn future_indices<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let out = PyDict::new(py);
@@ -351,26 +364,31 @@ impl PySeparationFit {
         Ok(out)
     }
 
+    /// ``n_i r_j lambda_(i+j)`` on the observed cells, ``None`` on the future ones.
     #[getter]
     fn fitted(&self) -> Vec<Vec<Option<f64>>> {
         self.inner.fitted.clone()
     }
 
+    /// The future cells, ``n_i r_j lambda_(i+j)``, as ``FutureCells``.
     #[getter]
     fn future(&self) -> PyFutureCells {
         cells_of(self.inner.future.clone())
     }
 
+    /// The sum of each origin's future cells; the first origin's is 0.
     #[getter]
     fn reserves(&self) -> Vec<f64> {
         self.inner.reserves.clone()
     }
 
+    /// The geometric methods' residual variance on the log scale, or ``None``.
     #[getter]
     fn log_variance(&self) -> Option<f64> {
         self.inner.log_variance
     }
 
+    /// The total reserve.
     #[getter]
     fn total_reserve(&self) -> f64 {
         self.inner.total_reserve()
