@@ -45,6 +45,13 @@ copulas' tests are unchanged. A draw now costs 0.13 to 0.22 µs at every
 shape from `1e-3` to `1e6`, and ABC's lifetime view with the Gamma 0.02
 s.[^code]
 
+Since #972 the draw is `Distribution::sample_one`, which `Gamma` and
+`InverseGamma` (`theta / G`) override, and `sample(n)` is `n` calls of it:
+the same uniforms in the same order, so every seeded Gamma draw is
+unchanged bit for bit, and a caller that wants one draw no longer
+allocates a one-element vector for it
+(`validation/tests/probability_sample_one.rs`).[^code]
+
 # Validation
 
 At 100,000 draws for each of twelve shapes (`1e-3`, 0.01, 0.1, 0.5,

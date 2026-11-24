@@ -108,6 +108,10 @@ impl Distribution for Affine {
         Ok(self.scale * self.inner.quantile(p)? + self.shift)
     }
 
+    fn sample_one(&self, rng: &mut StreamRng) -> f64 {
+        self.scale * self.inner.sample_one(rng) + self.shift
+    }
+
     fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
         self.inner
             .sample(rng, n)

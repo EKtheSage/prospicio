@@ -13,8 +13,11 @@ conversion reports the error it introduces.
 ## What exists
 
 - `prospicio_prob::Distribution`: `mean`, `variance`, `std_dev`, `cdf`,
-  `quantile -> Result<f64>`, and `sample(&mut StreamRng, n)` defaulting to
-  inverse transform.
+  `quantile -> Result<f64>`, `sample_one(&mut StreamRng)` defaulting to
+  inverse transform, and `sample(&mut StreamRng, n)`, `n` of those draws
+  (#972: a family that overrides the draw, as `Gamma` and `InverseGamma`
+  do, overrides `sample_one`, and `k` calls of it give `sample(k)`'s
+  numbers bit for bit).
 - `prospicio_prob::Lognormal`, parameterized as SciPy / R (`meanlog`, `sdlog`),
   plus `from_mean_cv`. Parity with SciPy is checked by
   `validation/tests/distributions.rs` against

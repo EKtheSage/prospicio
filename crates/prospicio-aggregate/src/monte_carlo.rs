@@ -121,6 +121,34 @@ impl Labels {
         )
     }
 
+    /// The labels of some of these losses, `of_loss[k]` the combination
+    /// of each in turn, with columns of combinations `columns`: only the
+    /// combinations used, still sorted, so the same labels as
+    /// [`with_columns`](Self::with_columns) on their values, without
+    /// copying or sorting a string per loss (#970).
+    fn subset(&self, of_loss: &[usize], columns: &[usize]) -> (Self, Vec<usize>) {
+        let mut used = vec![false; self.combinations.len()];
+        for &c in of_loss.iter().chain(columns) {
+            used[c] = true;
+        }
+        let mut new_index = vec![usize::MAX; self.combinations.len()];
+        let mut combinations = Vec::new();
+        for (c, combination) in self.combinations.iter().enumerate() {
+            if used[c] {
+                new_index[c] = combinations.len();
+                combinations.push(combination.clone());
+            }
+        }
+        (
+            Self {
+                dims: self.dims.clone(),
+                combinations,
+                of_loss: of_loss.iter().map(|&c| new_index[c]).collect(),
+            },
+            columns.iter().map(|&c| new_index[c]).collect(),
+        )
+    }
+
     /// Loss `k`'s values, one per dimension.
     fn values(&self, k: usize) -> &[String] {
         &self.combinations[self.of_loss[k]]
@@ -1336,23 +1364,26 @@ impl EventSet {
         })
     }
 
-    /// This set with each entry's amount replaced: `by_year[i]` holds year
-    /// `i`'s aggregate part's columns (when `aggregate` is set and the set
-    /// has one), then its events. Events whose new amount is 0 are dropped
-    /// with their times and labels; sums insured are dropped, since they
-    /// belong to the original losses; the samplers are cleared.
-    pub(crate) fn with_amounts(&self, by_year: &[Vec<f64>], aggregate: bool) -> Self {
+    /// This set with each entry's amount replaced: year `i`'s amounts are
+    /// `amounts[start[i]..start[i + 1]]`, its aggregate part's columns
+    /// (when `aggregate` is set and the set has one), then its events.
+    /// Events whose new amount is 0 are dropped with their times and
+    /// labels; sums insured are dropped, since they belong to the original
+    /// losses; the samplers are cleared.
+    pub(crate) fn with_amounts(&self, amounts: &[f64], start: &[usize], aggregate: bool) -> Self {
         let m = self.aggregate.as_ref().map_or(0, |a| a.of_column.len());
         let keep_aggregate = aggregate && m > 0;
         let mut offsets = Vec::with_capacity(self.offsets.len());
         offsets.push(0);
         let mut losses = Vec::new();
         let mut times = Vec::new();
-        let mut per_loss = Vec::new();
-        let mut amounts = Vec::new();
-        for (y, row) in by_year.iter().enumerate() {
+        // Each kept loss's combination, an index into this set's.
+        let mut kept_of = Vec::new();
+        let mut part = Vec::new();
+        for (y, w) in start.windows(2).enumerate() {
+            let row = &amounts[w[0]..w[1]];
             if keep_aggregate {
-                amounts.extend_from_slice(&row[..m]);
+                part.extend_from_slice(&row[..m]);
             }
             for (j, k) in (self.offsets[y]..self.offsets[y + 1]).enumerate() {
                 let x = row[m + j];
@@ -1364,23 +1395,24 @@ impl EventSet {
                     times.push(t[k]);
                 }
                 if let Some(l) = &self.labels {
-                    per_loss.push(l.values(k).to_vec());
+                    kept_of.push(l.of_loss[k]);
                 }
             }
             offsets.push(losses.len());
         }
+        let amounts = part;
         let (labels, aggregate) = match &self.labels {
             Some(l) => {
-                let columns: Vec<Vec<String>> = if keep_aggregate {
-                    let a = self.aggregate.as_ref().expect("an aggregate part");
-                    a.of_column
-                        .iter()
-                        .map(|&c| l.combinations[c].clone())
-                        .collect()
+                let columns: &[usize] = if keep_aggregate {
+                    &self
+                        .aggregate
+                        .as_ref()
+                        .expect("an aggregate part")
+                        .of_column
                 } else {
-                    Vec::new()
+                    &[]
                 };
-                let (labels, of_column) = Labels::with_columns(l.dims.clone(), per_loss, &columns);
+                let (labels, of_column) = l.subset(&kept_of, columns);
                 (
                     Some(labels),
                     keep_aggregate.then_some(AggregatePart { of_column, amounts }),

@@ -11,7 +11,6 @@ use prospicio_prob::{
 };
 
 use super::bf_normalised::{column_error, origin_error};
-use super::dual::{CHUNK, gradient};
 use super::laplace::{Posterior, Whitened};
 use super::one_year::{self, BayesOneYear, BayesOneYearFit, LightRefit, OneYearRefit, YearModel};
 use super::scalar::Scalar;
@@ -1359,6 +1358,93 @@ impl Model {
         }
         f
     }
+
+    /// [`log_density`](Self::log_density) at `theta` and its gradient,
+    /// written into `grad`, by hand in one pass (#972): every term depends on
+    /// a few parameters, so the reverse sweep is a handful of products per
+    /// cell, where the chunked dual ran the whole density `ceil(p / CHUNK)`
+    /// times on 32 tangents. The value is the generic one's, operation for
+    /// operation; the gradient agrees with the dual's to rounding (a unit
+    /// test checks both).
+    fn log_density_gradient(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
+        grad.fill(0.0);
+        let mut f = 0.0;
+        let e = theta[0];
+        if !self.level_free {
+            f -= e * e * 0.5;
+            grad[0] -= e;
+        }
+        let shift = e * self.level_sd + (self.level_mean - self.log_apriori);
+        let mut d_shift = 0.0;
+        let log_tau = theta[1];
+        let tau = log_tau.exp();
+        f += log_tau - tau * tau * (0.5 * self.tau_precision);
+        grad[1] += 1.0 - tau * tau * self.tau_precision;
+        let lo = self.log_omega();
+        let log_omega = theta[lo];
+        let omega = log_omega.exp();
+        f += log_omega - omega * omega * (0.5 * self.omega_precision);
+        grad[lo] += 1.0 - omega * omega * self.omega_precision;
+        for d in 1..self.n_dev {
+            let centred = theta[self.beta(d)] - self.development_mean[d - 1];
+            f -= centred * centred * (0.5 * self.development_precision[d - 1]);
+            grad[self.beta(d)] -= centred * self.development_precision[d - 1];
+        }
+        let half_tau_squared = tau * tau * 0.5;
+        let mut beta = vec![0.0; self.n_dev];
+        // The derivative by each `beta[d]` of the program's terms.
+        let mut d_beta = vec![0.0; self.n_dev];
+        for (c, program) in self.programs.iter().enumerate() {
+            let z = theta[self.z(c)];
+            f -= z * z * 0.5;
+            grad[self.z(c)] -= z;
+            let log_s = tau * z - half_tau_squared;
+            let mut d_log_s = 0.0;
+            let mut sum = 1.0;
+            for d in 1..self.n_dev {
+                let delta = theta[self.delta(c, d)];
+                f -= delta * delta * 0.5;
+                grad[self.delta(c, d)] -= delta;
+                beta[d] = theta[self.beta(d)] + omega * delta;
+                sum += beta[d].exp();
+            }
+            let log_sum = sum.ln();
+            for w in 0..program.n_origins() {
+                let v = theta[self.u(program, w)] - shift - log_s;
+                let expm1 = v.exp_m1();
+                f += (v - expm1) * self.shape;
+                let g = -self.shape * expm1;
+                grad[self.u(program, w)] += g;
+                d_shift -= g;
+                d_log_s -= g;
+            }
+            d_beta.fill(0.0);
+            let mut d_log_sum = 0.0;
+            for &(w, d, x) in &program.cells {
+                let eta = theta[self.u(program, w)] + program.log_prior[w] + beta[d] - log_sum;
+                let mu = eta.exp();
+                f += (eta * x - mu) / program.phi;
+                let g = (x - mu) / program.phi;
+                grad[self.u(program, w)] += g;
+                d_beta[d] += g;
+                d_log_sum -= g;
+            }
+            // `log_sum = ln(1 + sum_d exp(beta_d))`, and `beta_d = beta_d +
+            // omega delta_cd` from position 1 on (position 0 is fixed at 0).
+            for d in 1..self.n_dev {
+                let g = d_beta[d] + d_log_sum * beta[d].exp() / sum;
+                let delta = theta[self.delta(c, d)];
+                grad[self.beta(d)] += g;
+                grad[self.delta(c, d)] += g * omega;
+                grad[lo] += g * omega * delta;
+            }
+            // `log_s = tau z - tau^2 / 2`, `tau = exp(log tau)`.
+            grad[self.z(c)] += d_log_s * tau;
+            grad[1] += d_log_s * (tau * z - tau * tau);
+        }
+        grad[0] += d_shift * self.level_sd;
+        f
+    }
 }
 
 impl Posterior for Model {
@@ -1370,7 +1456,7 @@ impl Posterior for Model {
     }
 
     fn log_posterior(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
-        gradient::<CHUNK>(theta, grad, |x| self.log_density(x))
+        self.log_density_gradient(theta, grad)
     }
 }
 
@@ -1927,6 +2013,7 @@ impl YearModel for HierarchicalYear<'_> {
 mod tests {
     use super::*;
     use crate::bayes::BayesBfNormalised;
+    use crate::bayes::dual::{CHUNK, gradient};
     use crate::bayes::laplace::tests::assert_gradient;
     use crate::bootstrap::component_sums;
     use crate::triangle::tests::GENINS;
@@ -2058,6 +2145,64 @@ mod tests {
             for k in 0..3 {
                 let theta = near(&p.start, k, 0.2);
                 assert_gradient(|t, g| p.model.log_posterior(t, g), &theta);
+            }
+        }
+    }
+
+    /// The hand gradient against the chunked dual over the generic
+    /// density (#972): the same value bit for bit, the same gradient to
+    /// rounding, with and without the hyperprior on the level, at points
+    /// near the start, far from it and at the edges, and on a model
+    /// extended by a year's cells as a refit sees it.
+    #[test]
+    fn the_hand_gradient_matches_the_dual() {
+        for model in [
+            quick(1),
+            HierarchicalBf {
+                level_cv: None,
+                ..quick(1)
+            },
+            // The tight hyperpriors of the reduction to the normalised
+            // model, where tau and omega sit near 1e-6.
+            HierarchicalBf {
+                level_cv: Some(1e-6),
+                tau_scale: 1e-6,
+                omega_scale: 1e-6,
+                ..quick(1)
+            },
+        ] {
+            let p = prepared(&three_programs(), &model);
+            let mut extended = p.model.clone();
+            for program in &mut extended.programs {
+                let (w, d, x) = program.cells[0];
+                program.cells.push((w, d, 1.5 * x));
+            }
+            // Points near the start, far from it, and at the edges: tau
+            // and omega underflowing towards 0 and shares near 0 and 1.
+            let mut points: Vec<Vec<f64>> = (0..4).map(|k| near(&p.start, k, 0.3)).collect();
+            points.extend((4..7).map(|k| near(&p.start, k, 2.0)));
+            let m = &p.model;
+            let mut edge = near(&p.start, 7, 0.3);
+            edge[1] = -20.0;
+            edge[m.log_omega()] = -20.0;
+            for d in 1..m.n_dev {
+                edge[m.beta(d)] = if d % 2 == 0 { 8.0 } else { -8.0 };
+            }
+            points.push(edge);
+            for m in [&p.model, &extended] {
+                let n = m.dim();
+                for theta in &points {
+                    let (mut hand, mut dual) = (vec![0.0; n], vec![0.0; n]);
+                    let v = m.log_density_gradient(theta, &mut hand);
+                    let w = gradient::<CHUNK>(theta, &mut dual, |x| m.log_density(x));
+                    assert_eq!(v.to_bits(), w.to_bits(), "the value moved");
+                    for (j, (h, d)) in hand.iter().zip(&dual).enumerate() {
+                        assert!(
+                            (h - d).abs() <= 1e-10 * (1.0 + d.abs()),
+                            "parameter {j}: hand {h}, dual {d}"
+                        );
+                    }
+                }
             }
         }
     }
@@ -3305,7 +3450,7 @@ mod tests {
             n_sims: 100,
             ..quick(841)
         };
-        crate::bayes::pins::check("HierarchicalBf", 0xb2df_4618_3823_c08e, || {
+        crate::bayes::pins::check("HierarchicalBf", 0xc90c_430e_1977_8257, || {
             let fit = model.fit(&three_programs(), "values", "premium").unwrap();
             crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
         });
