@@ -19,6 +19,9 @@ sources:
   - id: bayes
     resource: ../crates/prospicio-bayes/src/lib.rs
     title: prospicio_bayes (autocovariance, behind ess_bulk and ess_tail)
+  - id: chf
+    resource: ../crates/prospicio-prob/src/chf.rs
+    title: prospicio_prob::chf (invert_fn, convolve), and validation/tests/probability_chf_split.rs
   - id: issue
     resource: https://github.com/EKtheSage/prospicio/issues/973
     title: "#973: consolidate rustfft into prospicio-math, reuse the planner and scratch, evaluate realfft and an optional aliasing check"
@@ -152,7 +155,36 @@ the thread's plan is reused. Release build, cloud container:
 
 Most of the gain is the plan, as the table under "Plans" predicts.
 
-## Not yet moved
+## The characteristic-function inversion
 
-`chf` in `prospicio-prob` still builds a planner per call. It is the
-Aggregate lane's next item under #973, after #972.
+Moved in the fifth and last PR of #973. A two-sided stable law's halves
+are combined by a linear convolution, now three real transforms on one
+plan. Release build, cloud container, whose timings vary by a quarter
+between runs:
+
+| Calculation | Before | After |
+|---|---|---|
+| convolution of two `2^10`-point halves | 79 us | 11 to 18 us |
+| convolution of two `2^16`-point halves | 10.5 ms | 4.6 to 5.4 ms |
+| convolution of two `2^20`-point halves | 289 ms | 149 to 155 ms |
+
+The inversion itself keeps its complex inverse transform of the spectrum
+filled by Hermitian symmetry, through `prospicio_math::fft::inverse`, so
+its masses are the same bits as before. A real inverse of the half
+spectrum is the same transform (numpy's `irfft`) and was tried: it
+differs in the last bits, and a tilted inversion multiplies those by up
+to `e^{theta x}`. On the stable law with `alpha = 0.8`, `beta = 0.2` at
+`2^12` buckets under the automatic tilt, the mass above the window moved
+from 3.7694639231e-2 to 3.7694639244e-2, against aggregate 2.1.0's
+3.7694639203e-2: from 7.4e-10 of itself away to 1.08e-9, past the parity
+test's 1e-9 (`validation/tests/probability_chf_split.rs`). Neither is
+more right, both being round-off under the tilt, so the complex transform
+stayed and the parity test with it. The inversion's time is mostly the
+characteristic function at `n / 2 + 1` points, so little was given up;
+below `2^16` buckets it now reuses the thread's plan (54 us to 36 us on
+`2^10` buckets).
+
+## Where the transforms are
+
+After #973 only `prospicio-math` depends on `rustfft` and `realfft`. Every
+other crate reaches a transform through `prospicio_math::fft`.

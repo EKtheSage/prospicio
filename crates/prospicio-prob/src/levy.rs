@@ -10,8 +10,8 @@
 //! at `mu`, which the engine takes out of `φ` before inversion.
 
 use prospicio_core::{Error, Result};
+use prospicio_math::fft::Complex64;
 use prospicio_math::special::ln_gamma;
-use rustfft::num_complex::Complex64;
 
 use std::f64::consts::PI;
 
