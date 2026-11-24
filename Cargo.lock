@@ -4068,7 +4068,6 @@ dependencies = [
  "prospicio-math",
  "prospicio-prob",
  "rayon",
- "rustfft",
  "serde_json",
 ]
 
@@ -4083,7 +4082,6 @@ dependencies = [
  "prospicio-models",
  "prospicio-prob",
  "rayon",
- "rustfft",
 ]
 
 [[package]]
@@ -4112,6 +4110,8 @@ name = "prospicio-math"
 version = "0.2.1"
 dependencies = [
  "libm",
+ "realfft",
+ "rustfft",
 ]
 
 [[package]]
@@ -4146,7 +4146,6 @@ dependencies = [
  "prospicio-core",
  "prospicio-math",
  "prospicio-prob",
- "rustfft",
 ]
 
 [[package]]
@@ -4686,6 +4685,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "realfft"
+version = "3.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "538895ccf2006b473aafbe8d72770e21038961ab67aae34f3c577485fc703a7d"
+dependencies = [
+ "rustfft",
 ]
 
 [[package]]

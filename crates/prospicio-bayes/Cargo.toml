@@ -20,7 +20,6 @@ prospicio-models.workspace = true
 prospicio-prob.workspace = true
 nuts-rs.workspace = true
 rayon.workspace = true
-rustfft.workspace = true
 
 [[bench]]
 name = "bayes_glm"

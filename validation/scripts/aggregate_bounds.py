@@ -134,8 +134,8 @@ def main():
             add("envelope", f"premium={PREMIUM!r}", side, float(s), row[side], "1e-12", "0.0")
     grid = Bounds(X, PREMIUM)
     for s in LEVELS + [0.05, 0.4, 0.6, 0.8]:
-        add("bounds_min", f"premium={PREMIUM!r}", "lower", s, grid.min_envelope.g(s), "0.0", "0.0")
-        add("bounds_max", f"premium={PREMIUM!r}", "upper", s, grid.max_envelope(s), "0.0", "0.0")
+        add("bounds_min", f"premium={PREMIUM!r}", "lower", s, grid.min_envelope.g(s), "0.0", "1e-12")
+        add("bounds_max", f"premium={PREMIUM!r}", "upper", s, grid.max_envelope(s), "0.0", "1e-12")
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(["distribution", "params", "quantity", "arg", "arg2", "expected",

@@ -40,8 +40,6 @@ pub mod stan_csv;
 
 use prospicio_core::{Error, Result};
 use prospicio_math::special::norm_quantile;
-use rustfft::FftPlanner;
-use rustfft::num_complex::Complex64;
 
 /// Rank-normalized split R̂: the larger of the R̂ of the rank-normalized
 /// split chains and of their folded draws `|x - median|`. Values above
@@ -178,19 +176,27 @@ fn sample_variance(x: &[f64]) -> f64 {
 /// Biased autocovariances `(1/N) Σ_i (x_i - x̄)(x_{i+k} - x̄)`, `k < N`,
 /// by FFT with enough zero padding to make them exact.
 fn autocovariance(x: &[f64]) -> Vec<f64> {
+    use prospicio_math::fft::{Complex64, real_forward, real_inverse, spectrum_len};
     let n = x.len();
     let mean = x.iter().sum::<f64>() / n as f64;
     let len = (2 * n).next_power_of_two();
-    let mut buf: Vec<Complex64> = (0..len)
-        .map(|i| Complex64::new(if i < n { x[i] - mean } else { 0.0 }, 0.0))
-        .collect();
-    let mut planner = FftPlanner::<f64>::new();
-    planner.plan_fft_forward(len).process(&mut buf);
-    for z in &mut buf {
+    // The chain is real and so is its power spectrum, so both transforms
+    // are real ones. Every chain of a fit has this length, and the
+    // thread's plan for it is kept between calls.
+    let mut signal = vec![0.0; len];
+    for (s, v) in signal.iter_mut().zip(x) {
+        *s = v - mean;
+    }
+    let mut spectrum = vec![Complex64::new(0.0, 0.0); spectrum_len(len)];
+    real_forward(&mut signal, &mut spectrum);
+    for z in &mut spectrum {
         *z = Complex64::new(z.norm_sqr(), 0.0);
     }
-    planner.plan_fft_inverse(len).process(&mut buf);
-    buf[..n].iter().map(|z| z.re / (len * n) as f64).collect()
+    real_inverse(&mut spectrum, &mut signal);
+    signal.truncate(n);
+    let scale = 1.0 / (len * n) as f64;
+    signal.iter_mut().for_each(|v| *v *= scale);
+    signal
 }
 
 /// Effective sample size of chains already split, by Geyer's initial

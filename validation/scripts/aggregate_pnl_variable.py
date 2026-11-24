@@ -151,7 +151,7 @@ for key, (prog, kw) in PROGRAMS.items():
                 add('program', 'input', row, 'stated', share * existing[i][1])
             else:
                 ceded = float(stats.loc[('agg', 'mean'), (k, f'layer.{i + 1}')])
-                add('program', 'input', row, 'ceded_loss', ceded)
+                add('program', 'input', row, 'ceded_loss', ceded, 1e-12, 1e-12)
                 add('program', 'input', row, 'combined_ratio', ratio)
                 add('program', 'rate', row, 'rate', rated[i][1], 0.0)
             add('program', 'deposit', row, 'deposit', entries[i][1], 0.0)
