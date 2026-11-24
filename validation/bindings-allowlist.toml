@@ -65,6 +65,11 @@
 "zero::VuongStatistic" = "a (statistic, p-value) pair inside vuong's result"
 
 [python.prospicio_math]
+"fft::forward" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
+"fft::inverse" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
+"fft::real_forward" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
+"fft::real_inverse" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
+"fft::spectrum_len" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
 "integrate::gauss_legendre" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "kolmogorov::kolmogorov_limit_sf" = "reached through goodness_of_fit's ks_p_value, Kolmogorov's limit for large samples (#805)"
 "kolmogorov::kolmogorov_sf" = "reached through goodness_of_fit's ks_p_value (#805)"
@@ -343,6 +348,11 @@
 "zero::VuongStatistic" = "a (statistic, p-value) pair inside vuong_test()'s result"
 
 [r.prospicio_math]
+"fft::forward" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
+"fft::inverse" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
+"fft::real_forward" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
+"fft::real_inverse" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
+"fft::spectrum_len" = "numerical building block shared by the crates (#973); the bindings do not depend on prospicio-math"
 "integrate::gauss_legendre" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "kolmogorov::kolmogorov_limit_sf" = "reached through goodness_of_fit's ks_p_value, Kolmogorov's limit for large samples (#805)"
 "kolmogorov::kolmogorov_sf" = "reached through goodness_of_fit's ks_p_value (#805)"

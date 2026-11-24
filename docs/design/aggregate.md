@@ -136,15 +136,25 @@ an `EventSet` keeps whatever dependence its events carry (#491).
   scaling tricks.
 - **The aggregate grid uses the severity grid's step.**
 - **FFT aliasing is measured, not estimated.** A finite FFT is circular, so
-  mass beyond the buffer wraps onto the start. `fft` runs at a power-of-two
-  buffer `L ≥ 2 · max(points, severity points)` and at `2L`, returns the `2L`
-  result, and reports the largest difference over the returned points as
-  `aliasing_error`. When it is not negligible, wrapped mass sits inside the
-  grid and `tail_mass` understates the truth (a test pins this), so callers
-  must check `aliasing_error`, not `tail_mass`, first.
+  mass beyond the buffer wraps onto the start. `fft` compares the result on
+  a power-of-two buffer `L ≥ 2 · max(points, severity points)` with the one
+  on `2L`, returns the `2L` result, and reports the largest difference over
+  the returned points as `aliasing_error`. When it is not negligible,
+  wrapped mass sits inside the grid and `tail_mass` understates the truth (a
+  test pins this), so callers must check `aliasing_error`, not `tail_mass`,
+  first. Only the `2L` buffer is transformed (#973): the `L` result is the
+  `2L` one folded onto its first half, `p_L[k] = p_2L[k] + p_2L[k + L]`,
+  because the `L` buffer's transform is every second coefficient of the
+  `2L` one's and the pgf acts on each coefficient alone. The audit therefore
+  costs one pass over the buffer, and stays a measurement.
 - **FFT applies the claim-count pgf at complex points** via
   `Counting::pgf_complex`, written with `(re, im)` pairs so `prospicio-prob` needs
-  no complex-number dependency; `rustfft` (pure Rust) does the transforms.
+  no complex-number dependency; `rustfft` (pure Rust) does the transforms,
+  behind `prospicio_math::fft` (#973), which keeps each thread's plans and
+  scratch space up to `2^16` points and has the real-input transforms
+  (`realfft`). A severity is real, so `fft` transforms half the
+  coefficients and evaluates the pgf at half the points, taking
+  `P(conj z) = conj P(z)`, which holds for any pgf.
 
 - **Monte Carlo keeps events.** Reinsurance terms apply per loss, so the
   simulation keeps every year's individual losses (stored compactly, one
