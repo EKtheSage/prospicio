@@ -173,16 +173,18 @@ identification:
 
 * `I2`: future second differences are zero (the last linear calendar
   trend continues);
-* `I1`: the next second difference makes the next first difference equal
-  to the mean of the fitted first differences, then zero;
-* `I0` (`apc`'s default): the calendar effect regressed on an intercept
-  and a demeaned trend, extrapolated two steps, the second differences
-  backed out, then zero.
+* `I1`: with `n = k - 2` fitted second differences `DD` and `D =
+  cumsum(DD)`, the next second difference is `mean(D) - D[n]` (the mean
+  over all `n` cumulated values), then zero;
+* `I0` (`apc`'s default): `y = cumsum(cumsum(DD))`, all `n` points
+  regressed on an intercept and a demeaned trend, extrapolated two steps,
+  the first two future second differences backed out as the second
+  differences of `y[n-1], y[n], f1, f2`, then zero.
 
-The fit builds the canonical design by hand (it is full rank, so
-`prospicio-glm` fits it unchanged) and the future design from the chosen
-rule, and reuses `OdpGlm`'s private `finish` path: reserves, prediction
-error by the delta method and `PredictiveDistribution` draws then cover
+The fit builds the canonical design by hand (it is full rank) with the
+extrapolation's weights on the period columns of the future rows (the
+rules are linear in the fitted second differences), and fits it through
+the public `OdpGlm::fit_design`: reserves, prediction error by the delta method and `PredictiveDistribution` draws then cover
 the extrapolated calendar effect as a deterministic function of the
 fitted parameters. Sub-models (`AP`, the separation model as a GLM; `AC`,
 the chain ladder; `PC`) are the same design with columns dropped.
@@ -432,8 +434,10 @@ takes the fit instead.
     on this triangle and has no `I1` or `I0`. Every reserve row of the
     reference is therefore the generator's own application of R `apc`'s
     rules (decision 17) to `apc`'s fitted coefficients, with the `I0`
-    total checked against R's documented number. The `I1` rule has no
-    independent numeric check beyond R's source.
+    total checked against R's documented number. The `I1` rule is confirmed
+    by R's source (cran/apc, `R/apc_forecast.R` line 673: `mean(cumsum(xi.per.dd)) -
+    cumsum(xi.per.dd)[length(xi.per.dd)]`; lines 586-596 document I1 and
+    I0), with the mean over the `n` cumulated second differences.
 
 ## Validation targets
 

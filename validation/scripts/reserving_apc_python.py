@@ -67,6 +67,7 @@ warnings.filterwarnings("ignore")
 import apc
 import numpy as np
 import pandas as pd
+import statsmodels.api as sm
 
 M = sys.modules["apc.Model"]
 
@@ -106,6 +107,74 @@ def extrapolate(dd, rule):
     slope, intercept = np.polyfit(np.arange(n), beta, 1)
     f1, f2 = intercept + slope * n, intercept + slope * (n + 1)
     return [f1 - 2 * beta[-1] + beta[-2], f2 - 2 * f1 + beta[-1]]
+
+
+def prediction_errors(emit, method, X, y, F, offset, origins, source):
+    """Delta-method prediction errors of the future cells' sums, as the Rust
+    `OdpGlmFit::prediction_error`: a Poisson GLM with Pearson's dispersion
+    on the observed design `X` (rows `y`); the future design `F` (and
+    `offset`); process variance `phi sum mu`, parameter variance
+    `g' Cov g` with `g = sum mu x`, by origin and in total."""
+    res = sm.GLM(y, X, family=sm.families.Poisson()).fit(scale="X2", tol=1e-14, maxiter=500)
+    beta, cov, phi = np.asarray(res.params), np.asarray(res.cov_params()), res.scale
+    mu = np.exp(F @ beta + offset)
+    origins = np.array(origins)
+    groups = [(int(o), origins == o) for o in sorted(set(origins))]
+    groups.append(("", np.ones(len(origins), dtype=bool)))
+    for arg, sel in groups:
+        g = (mu[sel, None] * F[sel]).sum(axis=0)
+        emit(method, "process_variance", arg, phi * mu[sel].sum(), source=source)
+        emit(method, "parameter_variance", arg, g @ cov @ g, source=source)
+    return mu
+
+
+SM = "statsmodels GLM (Poisson, Pearson scale)"
+
+
+def separation_cases(emit, genins, rate=0.05, trend=4):
+    """Taylor's arithmetic separation as the Poisson GLM on development and
+    calendar factors, with a rate future (an offset on the last calendar
+    column) and a trend future (the log slope of the last `trend` calendar
+    effects)."""
+    d = genins.copy()
+    origins = sorted(d.origin.unique())
+    ages = sorted(d.development.unique())
+    k = len(origins)
+    d["i"] = d.origin.map({o: i for i, o in enumerate(origins)})
+    d["j"] = d.development.map({a: j for j, a in enumerate(ages)})
+    d["h"] = d.i + d.j
+
+    def row(j, h, tw=None):
+        r = np.zeros(1 + 2 * (k - 1))
+        r[0] = 1.0
+        if j > 0:
+            r[j] = 1.0
+        if h < k:
+            if h > 0:
+                r[k - 1 + h] = 1.0
+        else:
+            r[k - 1 + (k - 1)] += 1.0
+            if tw is not None:
+                for hh in range(1, k):
+                    r[k - 1 + hh] += (h - k + 1) * tw[hh]
+        return r
+
+    X = np.array([row(j, h) for j, h in zip(d.j, d.h)])
+    y = d.inc.values.astype(float)
+    w = np.zeros(k)
+    for hh in range(k - trend, k):
+        e = np.zeros(trend)
+        e[hh - (k - trend)] = 1.0
+        w[hh] = np.polyfit(np.arange(trend), e, 1)[0]
+    fut = [(i, j) for i in range(k) for j in range(k) if i + j >= k]
+    fo = [origins[i] for i, _ in fut]
+    for method, tw, off in (
+        ("separation_rate", None, np.array([np.log1p(rate) * (i + j - k + 1) for i, j in fut])),
+        ("separation_trend", w, np.zeros(len(fut))),
+    ):
+        F = np.array([row(j, i + j, tw) for i, j in fut])
+        mu = prediction_errors(emit, method, X, y, F, off, fo, SM)
+        emit(method, "total_reserve", "", float(mu.sum()), source=SM)
 
 
 def main():
@@ -160,12 +229,26 @@ def main():
                 by_origin[o] += v
             for o, v in by_origin.items():
                 emit(fm, "reserve", o, v, source=FC)
+            F = fc.values.astype(float).copy()
+            if len(dd_per):
+                n = len(dd_per)
+                cols = [i for i, c in enumerate(coef.index) if c.startswith("dd_per_")]
+                for t in range(2):
+                    for mm, ci in enumerate(cols):
+                        wt = extrapolate(np.eye(n)[mm], rule)[t]
+                        F[:, ci] += wt * np.maximum(hs - (k + t) + 1, 0)
+            prediction_errors(
+                emit, fm, m.design.values.astype(float), m.data_vector["response"].values.astype(float),
+                F, 0.0, [o for o, _ in cells], SM + " on apc's design",
+            )
             total = float(mu.sum())
             emit(fm, "total_reserve", "", total, source=FC)
             if name == "apc" and rule == "I0":
                 assert abs(total - R_DOCUMENTED_I0_TOTAL) < 1.0, total
                 emit(fm, "documented_total", "", R_DOCUMENTED_I0_TOTAL, abs_tol=1.0, rel_tol=0.0,
                      source="R apc documentation, apc.forecast.apc (Taylor-Ashe)")
+
+    separation_cases(emit, genins)
 
     with open(OUT, "w", newline="") as f:
         f.write(

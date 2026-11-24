@@ -812,6 +812,15 @@ mod tests {
             .parameter_variance
         };
         assert!(rmsep(FutureInflation::Trend { periods: 3 }) != rmsep(FutureInflation::Rate(0.0)));
+        // A trend over one period has no slope; `fit` refuses it first.
+        let one = Separation {
+            future: FutureInflation::Trend { periods: 1 },
+            ..arithmetic_at(0.0)
+        };
+        assert!(matches!(
+            one.glm(&tri, "values"),
+            Err(Error::InvalidSetting { .. })
+        ));
         // What it does not build.
         let geometric = Separation {
             kind: SeparationKind::Geometric(Retransformation::GeometricMean),

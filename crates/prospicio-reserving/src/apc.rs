@@ -25,8 +25,11 @@
 //!   linear trend of the period effect continues.
 //! * [`Extrapolation::I1`]: with `D = cumsum(DD)`, the first future second
 //!   difference is `mean(D) - D[n]`, then 0: the future first difference of
-//!   the period effect is the mean of the fitted ones (the first
-//!   difference, which is not identified, left out).
+//!   the period effect is the mean of the fitted ones, with the
+//!   first difference left out of the mean. That is R `apc`'s convention
+//!   (`apc_forecast.R`, line 673), not an identification requirement: a
+//!   change of identification moves every first difference by the same
+//!   constant, so either mean would be invariant.
 //! * [`Extrapolation::I0`] (R `apc`'s default): with `y = cumsum(cumsum(DD))`
 //!   a straight line is fitted to `y` by least squares (an intercept and
 //!   a demeaned trend), extrapolated two steps to `f1` and `f2`, and the
@@ -415,7 +418,11 @@ impl ApcGlm {
         }
         let seg = triangle.segment(column)?;
         let k = check_full(&seg)?;
-        let calendar = self.effects.calendar();
+        let (age, accident, calendar) = (
+            self.effects.age(),
+            self.effects.accident(),
+            self.effects.calendar(),
+        );
         if calendar && self.extrapolation == Extrapolation::I0 && k < 4 {
             return Err(Error::TooFewAges {
                 needed: 4,
@@ -432,6 +439,13 @@ impl ApcGlm {
         }
 
         let n_dd = k - 2;
+        let n_params = 3 + n_dd * [age, accident, calendar].iter().filter(|b| **b).count();
+        if n_params >= k * (k + 1) / 2 {
+            return apc_err(format!(
+                "{n_params} parameters for {} observed cells leave no residual degrees of freedom;                  this model needs a larger triangle (4 origins for the full model)",
+                k * (k + 1) / 2
+            ));
+        }
         let w = if calendar {
             weights(self.extrapolation, n_dd)
         } else {
@@ -820,5 +834,61 @@ mod tests {
             apc(ApcEffects::Apc, Extrapolation::I2).fit(&two, "values"),
             Err(Error::TooFewAges { needed: 3, .. })
         ));
+    }
+
+    #[test]
+    fn a_saturated_model_is_refused_and_the_others_have_a_prediction_error() {
+        let tri = annual(2001, &[&[10.0, 15.0, 17.0], &[11.0, 16.0], &[12.0]]);
+        // The full model on 3 origins has 6 parameters for 6 cells.
+        assert!(matches!(
+            apc(ApcEffects::Apc, Extrapolation::I1).fit(&tri, "values"),
+            Err(Error::Inflation(_))
+        ));
+        for effects in [
+            ApcEffects::AgePeriod,
+            ApcEffects::AccidentPeriod,
+            ApcEffects::AccidentAge,
+        ] {
+            let fit = apc(effects, Extrapolation::I1).fit(&tri, "values").unwrap();
+            let e = fit.prediction_error().unwrap().total;
+            assert!(e.rmsep().is_finite() && e.rmsep() > 0.0, "{effects:?}");
+        }
+    }
+
+    #[test]
+    fn a_zero_increment_is_fitted_by_the_poisson_and_tweedie_not_the_gamma() {
+        let zero = genins_with_zero();
+        let fit = |family| {
+            ApcGlm {
+                family,
+                ..ApcGlm::default()
+            }
+            .fit(&zero, "values")
+        };
+        assert!(fit(Family::Poisson).unwrap().total_reserve().is_finite());
+        assert!(
+            fit(Family::Tweedie { power: 1.5 })
+                .unwrap()
+                .total_reserve()
+                .is_finite()
+        );
+        assert!(matches!(fit(Family::Gamma), Err(Error::OdpGlm(_))));
+    }
+
+    fn genins_with_zero() -> Triangle {
+        // Cumulative with a zero increment at origin 2001, age 24.
+        let mut rows: Vec<Vec<f64>> = crate::triangle::tests::GENINS
+            .iter()
+            .map(|r| r.to_vec())
+            .collect();
+        let first = rows[0][0];
+        let tail: Vec<f64> = rows[0][1..].to_vec();
+        let delta = rows[0][1] - first;
+        rows[0][1] = first;
+        for (v, t) in rows[0][2..].iter_mut().zip(&tail[1..]) {
+            *v = t - delta;
+        }
+        let refs: Vec<&[f64]> = rows.iter().map(|r| r.as_slice()).collect();
+        annual(2001, &refs)
     }
 }

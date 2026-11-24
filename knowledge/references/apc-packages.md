@@ -80,7 +80,7 @@ sources:
   gives 19,061,428.33 here; including a leading zero in the cumsums gives
   18.2 million or 16.5 million). The Poisson APC's totals on Taylor-Ashe
   are 27.63 million (`I2`), 19.65 million (`I1`) and 19.06 million
-  (`I0`); the deviance is 1,395,518. `I1` has no independent number.
+  (`I0`); the deviance is 1,395,518. `I1` is confirmed by the source (cran/apc `R/apc_forecast.R` line 673, `mean(cumsum(xi.per.dd)) - cumsum(xi.per.dd)[length(xi.per.dd)]`; lines 586-596 document I1 and I0); only its total has no independent number.
 * **Sign and scale.** The second differences are on the log scale of the
   mean (log link), so a positive `DD` is an accelerating effect; the
   period effect is identified only up to a linear trend, and the rules are

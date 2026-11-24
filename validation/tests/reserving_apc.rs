@@ -7,9 +7,12 @@
 //! differences: Python `apc` has no `I1` or `I0`), and R `apc`'s documented
 //! `I0` total of 19,061,428.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-use prospicio_reserving::{ApcEffects, ApcGlm, ApcGlmFit, Extrapolation, Period};
+use prospicio_reserving::{
+    ApcEffects, ApcGlm, ApcGlmFit, Extrapolation, FutureInflation, OdpGlmFit, Period, Separation,
+    SeparationKind,
+};
 use prospicio_validation::{check, reference, triangle};
 
 fn fit(method: &str) -> ApcGlmFit {
@@ -50,14 +53,69 @@ fn fit(method: &str) -> ApcGlmFit {
     .unwrap()
 }
 
+/// The separation methods of the prediction error rows: the arithmetic
+/// method as a Poisson GLM, with a 5% rate future and a trend over the last
+/// 4 calendar effects.
+fn separation(method: &str) -> OdpGlmFit {
+    let future = match method {
+        "separation_rate" => FutureInflation::Rate(0.05),
+        "separation_trend" => FutureInflation::Trend { periods: 4 },
+        other => panic!("unknown method {other}"),
+    };
+    Separation {
+        kind: SeparationKind::Arithmetic,
+        normaliser: None,
+        future,
+    }
+    .glm(&triangle("genins"), "values")
+    .unwrap()
+}
+
+/// A row of the prediction error: the process or parameter variance of an
+/// origin's reserve (arg: the year) or of the total (no arg).
+fn prediction_error(fit: &OdpGlmFit, quantity: &str, arg: &str) -> Option<f64> {
+    let error = fit.prediction_error().unwrap();
+    let sum = if arg.is_empty() {
+        error.total
+    } else {
+        let year: i32 = arg.parse().ok()?;
+        let o = fit.origins.iter().position(|&p| p == Period::year(year))?;
+        error.by_origin[o]
+    };
+    match quantity {
+        "process_variance" => Some(sum.process_variance),
+        "parameter_variance" => Some(sum.parameter_variance),
+        _ => None,
+    }
+}
+
 #[test]
 fn apc_matches_python_apc() {
     let mut fits: HashMap<String, ApcGlmFit> = HashMap::new();
+    let mut glms: HashMap<String, OdpGlmFit> = HashMap::new();
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    let mut methods: BTreeMap<(String, String), usize> = BTreeMap::new();
     check(&reference("reserving_apc_python.csv"), |case| {
         let method = case.get("method");
+        *seen.entry(case.get("quantity").into()).or_default() += 1;
+        *methods
+            .entry((method.into(), case.get("quantity").into()))
+            .or_default() += 1;
+        if method.starts_with("separation") {
+            let glm = glms
+                .entry(method.into())
+                .or_insert_with(|| separation(method));
+            return match case.get("quantity") {
+                "total_reserve" => Some(glm.total_reserve()),
+                quantity => prediction_error(glm, quantity, case.get("arg")),
+            };
+        }
         let fit = fits
             .entry(method.into())
             .or_insert_with(|| fit(method));
+        if let q @ ("process_variance" | "parameter_variance") = case.get("quantity") {
+            return prediction_error(&fit.fit, q, case.get("arg"));
+        }
         let origin = |year: f64| {
             fit.origins
                 .iter()
@@ -102,4 +160,43 @@ fn apc_matches_python_apc() {
             _ => None,
         }
     });
+
+    // A generator that drops a whole quantity or method must fail here.
+    let counts: Vec<(&str, usize)> = seen.iter().map(|(q, n)| (q.as_str(), *n)).collect();
+    assert_eq!(
+        counts,
+        [
+            ("dd_age", 24),
+            ("dd_cohort", 24),
+            ("dd_period", 24),
+            ("deviance", 4),
+            ("documented_total", 1),
+            ("fitted", 220),
+            ("future", 450),
+            ("level", 4),
+            ("parameter_variance", 120),
+            ("process_variance", 120),
+            ("reserve", 100),
+            ("slope_age", 4),
+            ("slope_cohort", 4),
+            ("total_reserve", 12),
+        ]
+    );
+    for (method, quantity) in [
+        ("poisson_apc", "dd_period"),
+        ("poisson_ap", "dd_period"),
+        ("poisson_pc", "dd_period"),
+        ("poisson_apc_i1", "total_reserve"),
+        ("poisson_apc_i0", "total_reserve"),
+        ("poisson_ac", "total_reserve"),
+        ("poisson_ac", "parameter_variance"),
+        ("poisson_apc_i0", "process_variance"),
+        ("separation_trend", "parameter_variance"),
+        ("separation_rate", "total_reserve"),
+    ] {
+        assert!(
+            methods.contains_key(&(method.to_string(), quantity.to_string())),
+            "{method} {quantity}"
+        );
+    }
 }

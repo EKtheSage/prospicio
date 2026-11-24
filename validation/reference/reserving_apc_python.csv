@@ -141,6 +141,26 @@ genins,poisson_apc_i2,reserve,2007,3313405.0546050733,1e-06,1e-06,apc 1.0.2 coef
 genins,poisson_apc_i2,reserve,2008,5917280.7284635371,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i2,reserve,2009,6334533.4429892516,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i2,reserve,2010,7099405.5661568958,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,poisson_apc_i2,process_variance,2002,5440228602.4191971,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,parameter_variance,2002,9064213552.6380177,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,process_variance,2003,28116639951.518467,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,parameter_variance,2003,44491571064.332352,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,process_variance,2004,45128701347.646576,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,parameter_variance,2004,122158883747.82718,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,process_variance,2005,68463411307.676529,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,parameter_variance,2005,339105682823.46442,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,process_variance,2006,104949658030.00931,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,parameter_variance,2006,1034385882170.7789,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,process_variance,2007,168364842281.5737,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,parameter_variance,2007,3078050630243.5322,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,process_variance,2008,300676198703.4812,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,parameter_variance,2008,10558778565177.709,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,process_variance,2009,321878160526.71887,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,parameter_variance,2009,13785688347665.547,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,process_variance,2010,360743790372.88202,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,parameter_variance,2010,25074795542246.469,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,process_variance,,1403761631123.926,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i2,parameter_variance,,217789537587061.12,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
 genins,poisson_apc_i2,total_reserve,,27625903.49027859,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i1,future,origin=2002;age=120,96217.844729646939,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i1,future,origin=2003;age=108,392081.94275937823,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
@@ -197,6 +217,26 @@ genins,poisson_apc_i1,reserve,2007,2405386.5067074047,1e-06,1e-06,apc 1.0.2 coef
 genins,poisson_apc_i1,reserve,2008,4245567.1079448117,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i1,reserve,2009,4380361.1246700296,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i1,reserve,2010,4682069.38553607,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,poisson_apc_i1,process_variance,2002,4889140321.0920229,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,parameter_variance,2002,7150029524.8122015,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,process_variance,2003,24726966812.47015,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,parameter_variance,2003,23488278537.515114,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,process_variance,2004,37310214631.459724,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,parameter_variance,2004,34783690137.287544,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,process_variance,2005,54107627280.074272,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,parameter_variance,2005,57773480832.114075,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,process_variance,2006,79037437396.166885,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,parameter_variance,2006,113169675147.99835,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,process_variance,2007,122225478972.19849,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,parameter_variance,2007,238296133877.67041,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,process_variance,2008,215731015298.44244,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,parameter_variance,2008,701444869497.99561,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,process_variance,2009,222580335859.13956,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,parameter_variance,2009,1022962680685.4707,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,process_variance,2010,237911109766.52878,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,parameter_variance,2010,3802057754364.0156,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,process_variance,,998519326337.57227,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i1,parameter_variance,,11110303144141.391,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
 genins,poisson_apc_i1,total_reserve,,19650771.135904621,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i0,future,origin=2002;age=120,91718.819836427094,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i0,future,origin=2003;age=108,373748.68632848543,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
@@ -253,6 +293,26 @@ genins,poisson_apc_i0,reserve,2007,2330768.4381331066,1e-06,1e-06,apc 1.0.2 coef
 genins,poisson_apc_i0,reserve,2008,4115906.5619103797,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i0,reserve,2009,4257958.2950416701,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i0,reserve,2010,4567231.8437960306,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,poisson_apc_i0,process_variance,2002,4660530294.8246069,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,parameter_variance,2002,6579269267.0199661,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,process_variance,2003,23610949815.619202,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,parameter_variance,2003,21661272551.855789,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,process_variance,2004,35802598632.306206,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,parameter_variance,2004,29968914078.339996,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,process_variance,2005,52100705642.171494,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,parameter_variance,2005,43706472090.696365,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,process_variance,2006,76385194830.711594,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,parameter_variance,2006,77410514258.714722,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,process_variance,2007,118433893234.91995,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,parameter_variance,2007,162944737793.75452,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,process_variance,2008,209142543009.82504,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,parameter_variance,2008,516440978839.0625,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,process_variance,2009,216360651647.40854,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,parameter_variance,2009,990213597125.4624,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,process_variance,2010,232075842334.85956,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,parameter_variance,2010,3824160445299.3071,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,process_variance,,968572909442.646,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_apc_i0,parameter_variance,,9685029508544.6406,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
 genins,poisson_apc_i0,total_reserve,,19061428.326786458,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_apc_i0,documented_total,,19061428,1.0,0.0,"R apc documentation, apc.forecast.apc (Taylor-Ashe)"
 genins,poisson_ac,deviance,,1903014.0044836442,1e-06,1e-06,Python apc 1.0.2
@@ -385,6 +445,26 @@ genins,poisson_ac,reserve,2007,2177640.6201353953,1e-06,1e-06,apc 1.0.2 coeffici
 genins,poisson_ac,reserve,2008,3920301.011952295,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ac,reserve,2009,4278972.263261457,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ac,reserve,2010,4625810.6944245985,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,poisson_ac,process_variance,2002,4977867490.2896338,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,parameter_variance,2002,7143983623.0055981,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,process_variance,2003,24696933102.382931,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,parameter_variance,2003,21977325815.121567,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,process_variance,2004,37327915555.447952,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,parameter_variance,2004,30725645842.404606,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,process_variance,2005,51806483351.1903,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,parameter_variance,2005,40335232809.676819,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,process_variance,2006,74665500083.330322,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,parameter_variance,2006,65968582833.115913,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,process_variance,2007,114546861501.80348,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,parameter_variance,2007,130850130968.30116,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,process_variance,2008,206213170763.48331,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,parameter_variance,2008,417818943735.74091,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,process_variance,2009,225079766917.37009,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,parameter_variance,2009,870099811463.24561,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,process_variance,2010,243323940621.05438,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,parameter_variance,2010,3677435335156.3984,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,process_variance,,982638439386.35278,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ac,parameter_variance,,7694193279061.959,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
 genins,poisson_ac,total_reserve,,18680855.611923255,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap,deviance,,1780576.627118008,1e-06,1e-06,Python apc 1.0.2
 genins,poisson_ap,level,,12.787863594217155,1e-06,1e-06,Python apc 1.0.2
@@ -516,6 +596,26 @@ genins,poisson_ap_i2,reserve,2007,3048871.4224950415,1e-06,1e-06,apc 1.0.2 coeff
 genins,poisson_ap_i2,reserve,2008,4767199.4826164106,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap_i2,reserve,2009,6722001.1453935541,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap_i2,reserve,2010,8910909.5256027244,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,poisson_ap_i2,process_variance,2002,3810516672.4260058,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,parameter_variance,2002,4430581496.5852251,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,process_variance,2003,23770478829.099155,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,parameter_variance,2003,27395209448.045746,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,process_variance,2004,41888029238.465904,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,parameter_variance,2004,89465648583.466675,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,process_variance,2005,69274181283.287064,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,parameter_variance,2005,288833270261.88306,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,process_variance,2006,102699486354.19254,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,parameter_variance,2006,820219614185.24646,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,process_variance,2007,150651468400.45822,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,parameter_variance,2007,2159070848550.0999,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,process_variance,2008,235557851641.48984,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,parameter_variance,2008,5669343716617.6074,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,process_variance,2009,332148917685.20923,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,parameter_variance,2009,13524928848737.387,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,process_variance,2010,440307713507.01117,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,parameter_variance,2010,29590890643215.258,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,process_variance,,1400108643611.6392,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i2,parameter_variance,,217661036426607.47,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
 genins,poisson_ap_i2,total_reserve,,28335277.957920384,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap_i1,future,origin=2002;age=120,70947.57138123535,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap_i1,future,origin=2003;age=108,362058.56816180819,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
@@ -572,6 +672,26 @@ genins,poisson_ap_i1,reserve,2007,2378468.2970714979,1e-06,1e-06,apc 1.0.2 coeff
 genins,poisson_ap_i1,reserve,2008,3685826.3902762188,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap_i1,reserve,2009,5055132.0545564406,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap_i1,reserve,2010,6457585.4472524924,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,poisson_ap_i1,process_variance,2002,3505676142.7094531,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,parameter_variance,2002,3664884451.826055,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,process_variance,2003,21550547792.755085,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,parameter_variance,2003,14843543115.191898,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,process_variance,2004,36219065620.338676,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,parameter_variance,2004,24840488385.894669,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,process_variance,2005,57813040804.045631,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,parameter_variance,2005,42823610051.029785,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,process_variance,2006,82516455423.887405,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,parameter_variance,2006,74303215964.031616,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,process_variance,2007,117525369831.61212,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,parameter_variance,2007,138674976165.25586,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,process_variance,2008,182124819652.07626,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,parameter_variance,2008,302505707446.54053,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,process_variance,2009,249785235729.59772,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,parameter_variance,2009,601199936357.75,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,process_variance,2010,319083554252.9679,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,parameter_variance,2010,1132334739031.1055,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,process_variance,,1070123765249.9904,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i1,parameter_variance,,10973870453311.797,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
 genins,poisson_ap_i1,total_reserve,,21657072.453689624,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap_i0,future,origin=2002;age=120,67039.250651722745,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap_i0,future,origin=2003;age=108,342113.68520533951,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
@@ -628,6 +748,26 @@ genins,poisson_ap_i0,reserve,2007,2239838.9313750523,1e-06,1e-06,apc 1.0.2 coeff
 genins,poisson_ap_i0,reserve,2008,3470613.3793949718,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap_i0,reserve,2009,4757397.626042868,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_ap_i0,reserve,2010,6072761.1136982953,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,poisson_ap_i0,process_variance,2002,3312557386.5242105,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,parameter_variance,2002,3300808141.2082267,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,process_variance,2003,20357128895.984116,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,parameter_variance,2003,13114415328.56144,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,process_variance,2004,34178884631.799129,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,parameter_variance,2004,20656791560.18222,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,process_variance,2005,54516787227.305367,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,parameter_variance,2005,31991551793.310547,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,process_variance,2006,77751503364.740982,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,parameter_variance,2006,49706122461.563538,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,process_variance,2007,110675386801.33354,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,parameter_variance,2007,84756328661.178223,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,process_variance,2008,171490669628.91483,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,parameter_variance,2008,177019682601.13501,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,process_variance,2009,235073520267.28024,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,parameter_variance,2009,358277410121.50049,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,process_variance,2010,300068534302.16895,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,parameter_variance,2010,660982994772.63574,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,process_variance,,1007424972506.0516,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_ap_i0,parameter_variance,,6633054720784.5078,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
 genins,poisson_ap_i0,total_reserve,,20388179.69445141,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc,deviance,,6862732.582219163,1e-06,1e-06,Python apc 1.0.2
 genins,poisson_pc,level,,12.787863594217255,1e-06,1e-06,Python apc 1.0.2
@@ -759,6 +899,26 @@ genins,poisson_pc_i2,reserve,2007,6877727.8129045144,1e-06,1e-06,apc 1.0.2 coeff
 genins,poisson_pc_i2,reserve,2008,10248471.53014004,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc_i2,reserve,2009,8215724.7053983519,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc_i2,reserve,2010,4688695.0924580162,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,poisson_pc_i2,process_variance,2002,90859032980.587769,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,parameter_variance,2002,51910974317.981117,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,process_variance,2003,199019614438.60358,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,parameter_variance,2003,394780909080.50482,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,process_variance,2004,338250487651.3299,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,parameter_variance,2004,1703078813357.7622,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,process_variance,2005,481706297499.85016,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,parameter_variance,2005,4933157804681.0332,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,process_variance,2006,799966675177.11169,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,parameter_variance,2006,18463149796760.883,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,process_variance,2007,1246522268876.4773,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,parameter_variance,2007,58976501091327.375,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,process_variance,2008,1857437271695.6091,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,parameter_variance,2008,168471293048851.62,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,process_variance,2009,1489021385961.6604,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,parameter_variance,2009,140031565218980.17,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,process_variance,2010,849781061959.87952,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,parameter_variance,2010,56346876691283.727,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,process_variance,,7352564096241.1094,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i2,parameter_variance,,2205935726565017.8,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
 genins,poisson_pc_i2,total_reserve,,40568015.384481736,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc_i1,future,origin=2002;age=120,442201.81011167541,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc_i1,future,origin=2003;age=108,465215.39043915941,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
@@ -815,6 +975,26 @@ genins,poisson_pc_i1,reserve,2007,4407206.6802839972,1e-06,1e-06,apc 1.0.2 coeff
 genins,poisson_pc_i1,reserve,2008,6154381.7796334168,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc_i1,reserve,2009,4622049.2258009426,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc_i1,reserve,2010,2470366.4427757086,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,poisson_pc_i1,process_variance,2002,80144841237.748535,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,parameter_variance,2002,18500843383.156036,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,process_variance,2003,164792466700.26721,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,parameter_variance,2003,80843672407.571411,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,process_variance,2004,262825585991.85986,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,parameter_variance,2004,225725096050.66565,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,process_variance,2005,351118167275.26434,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,parameter_variance,2005,458599391162.25317,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,process_variance,2006,546813336039.00037,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,parameter_variance,2006,1190563258279.752,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,process_variance,2007,798763984263.46863,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,parameter_variance,2007,2731253365506.4961,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,process_variance,2008,1115422730903.512,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,parameter_variance,2008,5876136386545.8906,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,process_variance,2009,837702137178.85229,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,parameter_variance,2009,4873911002579.4062,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,process_variance,2010,447730248560.80292,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,parameter_variance,2010,3685055749129.6953,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,process_variance,,4605313498150.7764,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i1,parameter_variance,,61186359082864.375,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
 genins,poisson_pc_i1,total_reserve,,25409969.419899691,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc_i0,future,origin=2002;age=120,380073.93166779372,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc_i0,future,origin=2003;age=108,399854.18076856167,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
@@ -871,4 +1051,66 @@ genins,poisson_pc_i0,reserve,2007,3443781.9846813078,1e-06,1e-06,apc 1.0.2 coeff
 genins,poisson_pc_i0,reserve,2008,4724747.3819086747,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc_i0,reserve,2009,3487764.4623011928,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
 genins,poisson_pc_i0,reserve,2010,1833105.4011580183,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,poisson_pc_i0,process_variance,2002,68884758532.376434,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,parameter_variance,2002,11970923551.845753,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,process_variance,2003,138838282878.02933,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,parameter_variance,2003,54144962456.952942,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,process_variance,2004,217152451664.49625,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,parameter_variance,2004,131330653566.6499,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,process_variance,2005,284626951337.33649,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,parameter_variance,2005,239609752506.6355,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,process_variance,2006,435098071737.08557,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,parameter_variance,2006,557275860590.93262,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,process_variance,2007,624152488995.95129,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,parameter_variance,2007,1181144905280.6016,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,process_variance,2008,856315193996.91748,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,parameter_variance,2008,2468493802102.4902,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,process_variance,2009,632123891657.58264,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,parameter_variance,2009,2301800469890.3301,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,process_variance,2010,332232790523.36182,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,parameter_variance,2010,2022180621864.7461,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,process_variance,,3589424881323.1372,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
+genins,poisson_pc_i0,parameter_variance,,24759330049640.688,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale) on apc's design"
 genins,poisson_pc_i0,total_reserve,,19804770.404027887,1e-06,1e-06,apc 1.0.2 coefficients and forecast design; rule of R apc applied by the generator
+genins,separation_rate,process_variance,2002,3525333733.104239,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,parameter_variance,2002,3701600419.7595444,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,process_variance,2003,21692029955.981998,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,parameter_variance,2003,14640727862.937082,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,process_variance,2004,36570715254.448143,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,parameter_variance,2004,22988214744.745018,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,process_variance,2005,58506451488.935097,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,parameter_variance,2005,34823017369.310394,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,process_variance,2006,83707236166.733826,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,parameter_variance,2006,50433644874.676331,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,process_variance,2007,119434696743.7644,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,parameter_variance,2007,76702823569.485382,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,process_variance,2008,185150852453.83252,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,parameter_variance,2008,141151209209.79672,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,process_variance,2009,254363206068.9574,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,parameter_variance,2009,236449271267.21695,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,process_variance,2010,325679639670.02545,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,parameter_variance,2010,365407023014.25116,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,process_variance,,1088630161535.783,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,parameter_variance,,4999524448137.4404,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_rate,total_reserve,,22031603.305382557,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,process_variance,2002,3467241995.7896032,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,parameter_variance,2002,3589940689.6063757,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,process_variance,2003,21274589556.22858,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,parameter_variance,2003,14774935888.215298,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,process_variance,2004,35536999899.004707,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,parameter_variance,2004,26226154135.771008,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,process_variance,2005,56474845317.711388,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,parameter_variance,2005,51917256420.867821,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,process_variance,2006,80229842691.280075,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,parameter_variance,2006,102999349952.20782,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,process_variance,2007,113875511871.66635,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,parameter_variance,2007,213486414495.95123,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,process_variance,2008,176358911535.80777,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,parameter_variance,2008,497807857508.18829,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,process_variance,2009,241092298913.58777,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,parameter_variance,2009,1030220362103.2893,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,process_variance,2010,306608136059.74854,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,parameter_variance,2010,1933833889802.0132,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,process_variance,,1034918377840.8248,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,parameter_variance,,17725689497535.57,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
+genins,separation_trend,total_reserve,,20944588.860070463,1e-06,1e-06,"statsmodels GLM (Poisson, Pearson scale)"
