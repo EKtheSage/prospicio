@@ -36,10 +36,14 @@ events are Poisson(5) losses of a lognormal(12, 1.5) severity.
 | `apply_annual`, 1,000,000 years | 451.7 ms | 12.0 ms | 386.9 ms | 54.5 ms |
 | `apply_term`, 5 years of 40,000 paths | 130.9 ms | 5.4 ms | 94.6 ms | 24.0 ms |
 
-The checksums of every result's bits were the same before and after, on
-one thread and on sixteen; the test also checks a scoped layer,
+The benchmark's checksums of every result's bits were the same before
+and after, on one thread and on sixteen. The test
+(`validation/tests/aggregate_tower_threads.rs`) checks a scoped layer,
 reinstatements pro rata as to time, labels and a term on 1, 2, 3 and 8
-threads, and gave the same bits as the code before #970.
+threads against each other, not against the code before #970: a
+one-off run of its inputs on the code before #970 gave the same hash on
+Windows, but no checksum is pinned, since a seeded lognormal's bits may
+differ between platforms' `exp`.
 
 Where the time went on one thread:
 
