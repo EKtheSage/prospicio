@@ -1,7 +1,7 @@
 # Design note: reinsurer default on a tower
 
 Status: **Accepted** (#980; decisions (a) to (l) accepted by the user on
-2026-11-24 as recommended; PR 2 built) · v0.3 ·
+2026-11-24 as recommended; PRs 2 and 3 built) · v0.3 ·
 Depends on: `aggregate.md` (`Tower`, `EventSet`, the tower's simulated years
 in parallel, #970), `predictive-distribution.md`, `rng.md` · Lane: Aggregate
 
@@ -360,11 +360,12 @@ result as for any other component.
   `(s c(F_G^{-1}(u)) - C)^+ p(Phi^{-1}(u))` with
   `p(x) = Phi((Phi^{-1}(p) + sqrt(rho) x) / sqrt(1 - rho))` and `c` the
   layer's ceded loss, by quadrature. The simulated mean must fall within
-  four standard errors. The probabilities used here are large (5 % to
-  30 %) so that a few hundred thousand years resolve them; realistic
+  four standard errors. The probabilities used here are large (10 % to
+  25 %) so that a few hundred thousand years resolve them; realistic
   probabilities (0.05 %) are checked by the exact identities instead.
 - **Joint default**: the frequency of two reinsurers defaulting together
-  against `bivariate_norm_cdf`, within four standard errors.
+  against SciPy's `multivariate_normal.cdf` in the generator (independent
+  of the Rust's `bivariate_norm_cdf`), within four standard errors.
 - **Solvency II**: `type1` and `reinsurance_lgd` against an independent
   implementation of Articles 192, 199, 200 and 201 in the generator, to
   1e-12.

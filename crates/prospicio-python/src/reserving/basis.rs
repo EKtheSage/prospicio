@@ -112,6 +112,32 @@ pub(crate) fn chain_ladder_on(
     Ok(cl)
 }
 
+/// `impl_resolved!(PyX => X, ...)`: `PyX::resolved(origin)`, the method
+/// with its pattern converted as ``ldf_origin`` and ``ldf_underwriting``
+/// say, for origins of `origin`: through the method's chain ladder
+/// (`chain_ladder`), or its own pattern at the path after `pattern`.
+macro_rules! impl_resolved {
+    ($ty:ty => $method:ty, chain_ladder) => {
+        impl $ty {
+            pub(crate) fn resolved(&self, origin: Grain) -> PyResult<$method> {
+                let mut m = self.inner.clone();
+                m.chain_ladder = chain_ladder_on(&m.chain_ladder, &self.ldf_basis, origin)?;
+                Ok(m)
+            }
+        }
+    };
+    ($ty:ty => $method:ty, pattern $($field:ident).+) => {
+        impl $ty {
+            pub(crate) fn resolved(&self, origin: Grain) -> PyResult<$method> {
+                let mut m = self.inner.clone();
+                m.$($field).+ = averaged(&m.$($field).+, &self.ldf_basis, origin)?;
+                Ok(m)
+            }
+        }
+    };
+}
+pub(crate) use impl_resolved;
+
 /// A method's ``repr`` with ``ldf_origin`` and ``ldf_underwriting`` before
 /// its closing parenthesis, when they are set.
 pub(crate) fn with_ldf_basis(repr: String, basis: &LdfBasis) -> String {
