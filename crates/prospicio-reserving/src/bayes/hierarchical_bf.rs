@@ -2161,6 +2161,14 @@ mod tests {
                 level_cv: None,
                 ..quick(1)
             },
+            // The tight hyperpriors of the reduction to the normalised
+            // model, where tau and omega sit near 1e-6.
+            HierarchicalBf {
+                level_cv: Some(1e-6),
+                tau_scale: 1e-6,
+                omega_scale: 1e-6,
+                ..quick(1)
+            },
         ] {
             let p = prepared(&three_programs(), &model);
             let mut extended = p.model.clone();
@@ -3430,7 +3438,7 @@ mod tests {
             n_sims: 100,
             ..quick(841)
         };
-        crate::bayes::pins::check("HierarchicalBf", 0xb2df_4618_3823_c08e, || {
+        crate::bayes::pins::check("HierarchicalBf", 0xc90c_430e_1977_8257, || {
             let fit = model.fit(&three_programs(), "values", "premium").unwrap();
             crate::bayes::pins::fit_hash(&fit.posterior, &fit.reserves)
         });
