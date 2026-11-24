@@ -414,6 +414,12 @@ impl RetroPlan {
     /// The retrospective premium for a year's `losses` under the basic
     /// premium `basic`: `T (b + c L)`, between the minimum and the
     /// maximum.
+    ///
+    /// It is the premium of
+    /// [`LossSensitivePremium`](prospicio_aggregate::LossSensitivePremium)
+    /// with the tax multiplier folded into its basic premium and its loss
+    /// conversion factor, `new(T b, T c, Some(H), Some(G))`, which is the
+    /// form to apply to simulated years or a P&L.
     pub fn premium(&self, basic: f64, losses: f64) -> f64 {
         (self.tax_multiplier * (basic + self.loss_conversion * losses))
             .clamp(self.minimum, self.maximum)
@@ -734,5 +740,17 @@ mod tests {
         // A table on another expected loss.
         let other = InsuranceCharge::from_sample(&[1.0, 3.0]).unwrap();
         assert!(plan(80.0, 220.0).unwrap().balance(&other).is_err());
+    }
+
+    #[test]
+    fn the_premium_is_the_loss_sensitive_premium_with_the_tax_folded_in() {
+        use prospicio_aggregate::LossSensitivePremium;
+        let plan = RetroPlan::new(100.0, 30.0, 1.1, 1.03, 80.0, 220.0).unwrap();
+        let basic = 25.0;
+        let terms =
+            LossSensitivePremium::new(1.03 * basic, 1.03 * 1.1, Some(80.0), Some(220.0)).unwrap();
+        for losses in [0.0, 20.0, 48.0, 90.0, 150.0, 400.0] {
+            assert!((plan.premium(basic, losses) - terms.premium(losses)).abs() < 1e-12);
+        }
     }
 }

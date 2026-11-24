@@ -80,26 +80,8 @@ fn retro_balance_rust(
     ))
 }
 
-/// The retrospective premium of each of `losses` for R's
-/// `retro_premium()`.
-#[extendr]
-fn retro_premium_rust(
-    basic: f64,
-    losses: &[f64],
-    loss_conversion: f64,
-    tax_multiplier: f64,
-    minimum: f64,
-    maximum: f64,
-) -> Result<Vec<f64>> {
-    // The premium does not read the expected loss or the expense.
-    let plan = RetroPlan::new(1.0, 0.0, loss_conversion, tax_multiplier, minimum, maximum)
-        .map_err(to_r)?;
-    Ok(losses.iter().map(|&l| plan.premium(basic, l)).collect())
-}
-
 extendr_module! {
     mod retro;
     fn insurance_charge_rust;
     fn retro_balance_rust;
-    fn retro_premium_rust;
 }

@@ -57,7 +57,9 @@ retro_aggregate <- function(aggregate) {
 #' premium. `retro_balance()` finds the basic premium at which the plan
 #' collects the guaranteed-cost premium `T * (e + E)` on average, from the
 #' insurance charge at the entry ratios where the minimum and the maximum
-#' bind. `retro_premium()` is the premium for given losses.
+#' bind. [retro_premium()] gives the premium for given losses, with the tax
+#' multiplier folded into its `basic` and `lcm`:
+#' `retro_premium(losses, basic = T * b, lcm = T * c, minimum = H, maximum = G)`.
 #'
 #' A plan with a loss limit takes the losses with each occurrence limited:
 #' pass the limited aggregate and `unlimited_expected`, so that the plan
@@ -74,13 +76,12 @@ retro_aggregate <- function(aggregate) {
 #'   maximum.
 #' @param unlimited_expected With a loss limit, the expected aggregate loss
 #'   without it (normally `expected_loss`); `NULL` otherwise.
-#' @param basic The basic premium `b`.
-#' @param losses A year's losses, or a vector of them.
-#' @returns `retro_balance()`: a list with `basic`, `entry_ratio_minimum`
+#' @returns A list with `basic`, `entry_ratio_minimum`
 #'   and `entry_ratio_maximum` (where the minimum and the maximum bind; the
 #'   first is negative when the minimum never binds),
-#'   `net_insurance_charge` and `expected_premium`. `retro_premium()`: the
-#'   premiums.
+#'   `net_insurance_charge` and `expected_premium`.
+#' @seealso [insurance_charge()] for the table, [retro_premium()] for the
+#'   premium of given losses.
 #' @export
 #' @examples
 #' losses <- c(0, 10, 30, 50, 70, 90, 120, 150, 200, 280)
@@ -88,22 +89,13 @@ retro_aggregate <- function(aggregate) {
 #'                    tax_multiplier = 1.03, minimum = 80, maximum = 220)
 #' b$basic
 #' # The plan collects the guaranteed-cost premium on average.
-#' mean(retro_premium(b$basic, losses, 1.1, 1.03, 80, 220))
+#' mean(retro_premium(losses, basic = 1.03 * b$basic, lcm = 1.03 * 1.1, minimum = 80, maximum = 220))
 #' b$expected_premium
 retro_balance <- function(aggregate, expected_loss, expense, loss_conversion = 1,
                           tax_multiplier = 1, minimum = 0, maximum = Inf,
                           unlimited_expected = NULL) {
   rust_result(retro_balance_rust(retro_aggregate(aggregate), null_nan(unlimited_expected),
                                  as.double(expected_loss), as.double(expense),
-                                 as.double(loss_conversion), as.double(tax_multiplier),
-                                 as.double(minimum), as.double(maximum)))
-}
-
-#' @rdname retro_balance
-#' @export
-retro_premium <- function(basic, losses, loss_conversion = 1, tax_multiplier = 1,
-                          minimum = 0, maximum = Inf) {
-  rust_result(retro_premium_rust(as.double(basic), as.double(losses),
                                  as.double(loss_conversion), as.double(tax_multiplier),
                                  as.double(minimum), as.double(maximum)))
 }
