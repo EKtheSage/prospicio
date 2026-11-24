@@ -1175,7 +1175,7 @@ impl Compartmental {
                 let tau1 = draw_half(pr.rlr_effect_sd, rng);
                 let tau2 = draw_half(pr.rrf_effect_sd, rng);
                 let gamma = Gamma::new(pr.lkj_eta, 1.0).expect("lkj_eta was validated");
-                let (g1, g2) = (gamma.sample(rng, 1)[0], gamma.sample(rng, 1)[0]);
+                let (g1, g2) = (gamma.sample_one(rng), gamma.sample_one(rng));
                 let rho = 2.0 * g1 / (g1 + g2) - 1.0;
                 let rho_c = (1.0 - rho * rho).max(0.0).sqrt();
                 if !cellwise {
