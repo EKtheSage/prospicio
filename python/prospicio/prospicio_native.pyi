@@ -42518,6 +42518,8 @@ def solvency2_probability_by_step(step: int) -> float:
     ------
     ValueError
         For a step above 6.
+    OverflowError
+        For a negative step.
     
     Examples
     --------

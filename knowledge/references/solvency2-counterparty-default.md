@@ -73,7 +73,7 @@ probabilities), to 1e-12 relative.
 - **Unrated Solvency II undertakings meeting their MCR (Art 199(3))**: by
   solvency ratio, linearly interpolated between 196% (0.01%), 175% (0.05%),
   150% (0.1%), 125% (0.2%), 122% (0.24%), 100% (0.5%), 95% (1.2%) and 75%
-  (4.2%); 0.01% above 196%; 4.2% below 75%; 4.2% if the MCR is not met.
+  (4.2%); 0.01% at or above 196%; 4.2% at or below 75%; 4.2% if the MCR is not met.
   Before an undertaking's first solvency ratio is disclosed (Art 199(5)),
   the credit quality step applies if an ECAI assessment exists, and
   otherwise a 100% ratio (0.5%).

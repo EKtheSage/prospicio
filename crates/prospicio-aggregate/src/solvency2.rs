@@ -252,6 +252,8 @@ pub struct Type1 {
 /// For one exposure `V_inter + V_intra = PD (1 - PD) LGD^2`. No exposures,
 /// or only ones with a zero probability or a zero loss given default, give
 /// `sigma = 0` and a charge of 0 (`3 sigma`, since `0 <= 7 %` of the total).
+/// An exposure whose probability of default is 1 adds nothing to `sigma`
+/// but counts in the total, so a list of those alone also gives a charge of 0.
 ///
 /// # Errors
 ///

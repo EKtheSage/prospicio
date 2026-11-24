@@ -3197,6 +3197,8 @@ impl PySolvency2Type1 {
 /// ------
 /// ValueError
 ///     For a step above 6.
+/// OverflowError
+///     For a negative step.
 ///
 /// Examples
 /// --------
