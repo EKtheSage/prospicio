@@ -107,14 +107,23 @@ def test_chain_ladder_cells_of_several_segments_need_a_choice():
     stacked = Triangle.from_long(
         origin=[int(r["origin"]) for r in rows] * 2,
         development=[int(r["development"]) for r in rows] * 2,
-        values={"values": [float(r["value"]) for r in rows] * 2},
+        values={
+            "values": [float(r["value"]) for r in rows]
+            + [2 * float(r["value"]) for r in rows]
+        },
         keys={"lob": ["auto"] * len(rows) + ["home"] * len(rows)},
     )
     fit = ChainLadder().fit(stacked, "values")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="segment"):
         FutureCells.from_chain_ladder(fit)
-    one = FutureCells.from_chain_ladder(fit, segment={"lob": "home"})
-    assert len(one) == 45
+    base = FutureCells.from_chain_ladder(
+        ChainLadder().fit(dataset("genins"), "values")
+    ).reserves()
+    auto = FutureCells.from_chain_ladder(fit, segment={"lob": "auto"})
+    home = FutureCells.from_chain_ladder(fit, segment={"lob": "home"})
+    assert len(home) == 45
+    assert all(close(a, b) for a, b in zip(auto.reserves(), base))
+    assert all(close(a, 2 * b) for a, b in zip(home.reserves(), base))
 
 
 def test_odp_glm_cells_reinflate_at_a_constant_rate():
@@ -178,6 +187,30 @@ def test_future_cells_from_columns():
     assert cells.cells["valuation"] == ["2021-12", "2022-12", "2022-12"]
     assert cells.origins == ["2020", "2021"]
     assert len(cells) == 3
+
+
+def test_integer_years_for_origins_and_pickling():
+    cells = FutureCells(
+        [2020, 2021], [2020, 2021, 2020], [24, 24, 36],
+        ["2021-12", "2022-12", "2022-12"], [50.0, 60.0, 25.0],
+    )
+    assert cells.origins == ["2020", "2021"]
+    assert cells.cells["origin"] == ["2020", "2021", "2020"]
+    assert pickle.loads(pickle.dumps(cells)) == cells
+    out = Indexation(CalendarIndex("2020", [1.0], future_rate=0.1), "2020-01").reinflate(cells)
+    assert pickle.loads(pickle.dumps(out)) == out
+    assert out == out and "Reinflated(" in repr(out)
+
+
+def test_malformed_input_is_a_value_error_and_a_wrong_type_a_type_error():
+    index = CalendarIndex("2020", [1.0, 1.1])
+    for bad in ["2020-07-15", "2020/07", "July", "2020-13", ""]:
+        with pytest.raises(ValueError, match="month"):
+            index.value(bad)
+    with pytest.raises(TypeError, match="month"):
+        index.value(2020)
+    with pytest.raises(ValueError, match="age"):
+        FutureCells(["2020"], ["2020"], [-12], ["2021-12"], [1.0])
 
 
 def test_errors():

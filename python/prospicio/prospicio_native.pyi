@@ -15304,12 +15304,12 @@ class FutureCells:
     
     Parameters
     ----------
-    origins : list of str
+    origins : list of str or int
         The origin periods, such as ``["2020", "2021"]``.
-    origin : list of str
+    origin : list of str or int
         Each cell's origin, one of ``origins``.
     age : list of int
-        Each cell's development age in months.
+        Each cell's development age in months: 0 or more.
     valuation : list of str or date
         The month each cell's development period ends in (``"YYYY-MM"`` or
         a date): its index period is the cell's payment period.
@@ -15327,8 +15327,9 @@ class FutureCells:
     [24, 36]
     """
     def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[list[str], list[str], list[int], list[str], list[float]]: ...
     def __len__(self, /) -> int: ...
-    def __new__(cls, /, origins: Sequence[str], origin: Sequence[str], age: Sequence[int], valuation: Sequence[Any], value: Sequence[float]) -> FutureCells: ...
+    def __new__(cls, /, origins: Sequence[Any], origin: Sequence[Any], age: Sequence[int], valuation: Sequence[Any], value: Sequence[float]) -> FutureCells: ...
     def __repr__(self, /) -> str: ...
     @property
     def cells(self, /) -> dict:
@@ -31799,6 +31800,9 @@ class Reinflated:
     >>> round(out.total_reserve, 6), out.total_base_reserve
     (110.0, 100.0)
     """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[FutureCells, list[float], list[float]]: ...
+    def __new__(cls, /, cells: FutureCells, reserves: Sequence[float], base_reserves: Sequence[float]) -> Reinflated: ...
     def __repr__(self, /) -> str: ...
     @property
     def base_reserves(self, /) -> list[float]:

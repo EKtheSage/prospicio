@@ -382,6 +382,7 @@ reference:
       - reserving.MackFit
       - reserving.ClaimsDevelopmentResult
       - reserving.calendar_year_effect
+      - reserving.CalendarIndex
       - reserving.CalendarYearTest
       - reserving.development_correlation
       - reserving.DevelopmentCorrelationTest
@@ -404,10 +405,6 @@ reference:
       - reserving.ClarkFit
       - reserving.DiscountCurve
       - reserving.DiscountedReserves
-      - reserving.CalendarIndex
-      - reserving.FutureCells
-      - reserving.Indexation
-      - reserving.Reinflated
       - reserving.PaidIncurredChain
       - reserving.PaidIncurredFit
       - reserving.ExcessLayer
@@ -416,6 +413,7 @@ reference:
       - reserving.ExcessPattern
       - reserving.RatioDevelopment
       - reserving.RatioDevelopmentFit
+      - reserving.Reinflated
       - reserving.RiskAdjustmentResult
       - reserving.SegmentRiskAdjustment
       - reserving.UlaeEstimate
@@ -424,6 +422,8 @@ reference:
       - reserving.ulae_conger_nolibos
       - reserving.FrequencySeverity
       - reserving.FrequencySeverityFit
+      - reserving.FutureCells
+      - reserving.Indexation
       - reserving.Disposal
       - reserving.DisposalFit
       - reserving.CaseOutstanding

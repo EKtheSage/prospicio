@@ -64,16 +64,24 @@ fn period_of(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Period> {
         })
 }
 
+fn bad_month(what: &str, text: &str) -> PyErr {
+    PyValueError::new_err(format!("{what} must be a month \"YYYY-MM\", got {text:?}"))
+}
+
 /// A month as `"YYYY-MM"` or a date (`datetime.date`, pandas `Timestamp`);
 /// an integer year is refused, as it would read as January.
 fn month_of(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Month> {
     if obj.is_instance_of::<PyString>() {
         let text: String = obj.extract()?;
-        if let Some((y, m)) = text.trim().split_once('-')
-            && let (Ok(y), Ok(m)) = (y.parse::<i32>(), m.parse::<u8>())
-        {
-            return Month::new(y, m).map_err(|e| PyValueError::new_err(e.to_string()));
-        }
+        return match text.trim().split_once('-') {
+            Some((y, m)) => match (y.parse::<i32>(), m.parse::<u8>()) {
+                (Ok(y), Ok(m)) => {
+                    Month::new(y, m).map_err(|e| PyValueError::new_err(e.to_string()))
+                }
+                _ => Err(bad_month(what, &text)),
+            },
+            None => Err(bad_month(what, &text)),
+        };
     } else if obj.hasattr("year")? && obj.hasattr("month")? {
         let year: i32 = obj.getattr("year")?.extract()?;
         let month: u8 = obj.getattr("month")?.extract()?;
@@ -208,12 +216,12 @@ fn cells_of(inner: FutureCells) -> PyFutureCells {
 ///
 /// Parameters
 /// ----------
-/// origins : list of str
+/// origins : list of str or int
 ///     The origin periods, such as ``["2020", "2021"]``.
-/// origin : list of str
+/// origin : list of str or int
 ///     Each cell's origin, one of ``origins``.
 /// age : list of int
-///     Each cell's development age in months.
+///     Each cell's development age in months: 0 or more.
 /// valuation : list of str or date
 ///     The month each cell's development period ends in (``"YYYY-MM"`` or
 ///     a date): its index period is the cell's payment period.
@@ -244,9 +252,9 @@ impl PyFutureCells {
 impl PyFutureCells {
     #[new]
     fn new(
-        origins: Vec<String>,
-        origin: Vec<String>,
-        age: Vec<u32>,
+        origins: Vec<Bound<'_, PyAny>>,
+        origin: Vec<Bound<'_, PyAny>>,
+        age: Vec<i64>,
         valuation: Vec<Bound<'_, PyAny>>,
         value: Vec<f64>,
     ) -> PyResult<Self> {
@@ -262,21 +270,23 @@ impl PyFutureCells {
         }
         let periods = origins
             .iter()
-            .map(|s| {
-                parse_period(s)
-                    .ok_or_else(|| PyValueError::new_err(format!("origins: {s:?} is not a period")))
-            })
+            .map(|o| period_of(o, "origins"))
             .collect::<PyResult<Vec<_>>>()?;
         let mut cells = Vec::with_capacity(n);
         for (k, label) in origin.iter().enumerate() {
-            let position = parse_period(label)
-                .and_then(|p| periods.iter().position(|&q| q == p))
+            let cell_origin = period_of(label, "origin")?;
+            let position = periods
+                .iter()
+                .position(|&q| q == cell_origin)
                 .ok_or_else(|| {
-                    PyValueError::new_err(format!("origin {label:?} is not one of the origins"))
+                    PyValueError::new_err(format!("origin {cell_origin} is not one of the origins"))
                 })?;
+            let age = u32::try_from(age[k]).map_err(|_| {
+                PyValueError::new_err(format!("age {} is not an age in months", age[k]))
+            })?;
             cells.push(FutureCell {
                 origin: position,
-                age: age[k],
+                age,
                 valuation: month_of(&valuation[k], "valuation")?,
                 value: value[k],
             });
@@ -393,6 +403,19 @@ impl PyFutureCells {
         self.inner.cells.len()
     }
 
+    #[allow(clippy::type_complexity)]
+    fn __getnewargs__(&self) -> (Vec<String>, Vec<String>, Vec<u32>, Vec<String>, Vec<f64>) {
+        let labels = self.labels();
+        let c = &self.inner.cells;
+        (
+            labels.clone(),
+            c.iter().map(|x| labels[x.origin].clone()).collect(),
+            c.iter().map(|x| x.age).collect(),
+            c.iter().map(|x| x.valuation.to_string()).collect(),
+            c.iter().map(|x| x.value).collect(),
+        )
+    }
+
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
         other
             .extract::<PyRef<'_, PyFutureCells>>()
@@ -426,6 +449,41 @@ pub(crate) struct PyReinflated {
 
 #[pymethods]
 impl PyReinflated {
+    #[new]
+    fn new(
+        cells: PyRef<'_, PyFutureCells>,
+        reserves: Vec<f64>,
+        base_reserves: Vec<f64>,
+    ) -> PyResult<Self> {
+        let n = cells.inner.origins.len();
+        if reserves.len() != n || base_reserves.len() != n {
+            return Err(PyValueError::new_err(format!(
+                "reserves and base_reserves need one value per origin ({n})"
+            )));
+        }
+        Ok(Self {
+            inner: Reinflated {
+                cells: cells.inner.clone(),
+                reserves,
+                base_reserves,
+            },
+        })
+    }
+
+    fn __getnewargs__(&self) -> (PyFutureCells, Vec<f64>, Vec<f64>) {
+        (
+            cells_of(self.inner.cells.clone()),
+            self.inner.reserves.clone(),
+            self.inner.base_reserves.clone(),
+        )
+    }
+
+    fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
+        other
+            .extract::<PyRef<'_, PyReinflated>>()
+            .is_ok_and(|o| o.inner == self.inner)
+    }
+
     /// The re-inflated cells.
     #[getter]
     fn cells(&self) -> PyFutureCells {
