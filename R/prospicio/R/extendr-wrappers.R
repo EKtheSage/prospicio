@@ -521,6 +521,14 @@ size_premium_rust <- function(expected_loss, loss_ratio) .Call(wrap__size_premiu
 
 sobol_rust <- function(n, dim, scramble, seed) .Call(wrap__sobol_rust, n, dim, scramble, seed)
 
+solvency2_probability_by_ratio_rust <- function(scr_ratio) .Call(wrap__solvency2_probability_by_ratio_rust, scr_ratio)
+
+solvency2_probability_by_step_rust <- function(step) .Call(wrap__solvency2_probability_by_step_rust, step)
+
+solvency2_reinsurance_lgd_rust <- function(recoverables, risk_mitigation, collateral, lgd_share, factor) .Call(wrap__solvency2_reinsurance_lgd_rust, recoverables, risk_mitigation, collateral, lgd_share, factor)
+
+solvency2_type1_rust <- function(pd, lgd) .Call(wrap__solvency2_type1_rust, pd, lgd)
+
 stacking_weights_rust <- function(lpd, k) .Call(wrap__stacking_weights_rust, lpd, k)
 
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)

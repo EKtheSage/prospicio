@@ -1109,6 +1109,67 @@ fn per_risk_inuring_rust(
     ))
 }
 
+/// The Solvency II probability of default by credit quality step
+/// (Art 199(2)); `step` a whole number 0 to 6.
+#[extendr]
+fn solvency2_probability_by_step_rust(step: f64) -> Result<f64> {
+    let step = whole(step, "step")?;
+    let step = u8::try_from(step).map_err(|_| {
+        Error::Other(format!(
+            "step must be a credit quality step, 0 to 6, got {step}"
+        ))
+    })?;
+    prospicio_aggregate::solvency2::probability_by_step(step).map_err(to_r)
+}
+
+/// The Solvency II probability of default by solvency ratio (Art 199(3)),
+/// the ratio as a fraction.
+#[extendr]
+fn solvency2_probability_by_ratio_rust(scr_ratio: f64) -> Result<f64> {
+    prospicio_aggregate::solvency2::probability_by_ratio(scr_ratio).map_err(to_r)
+}
+
+/// The Solvency II loss given default of a reinsurance arrangement
+/// (Art 192(2)).
+#[extendr]
+fn solvency2_reinsurance_lgd_rust(
+    recoverables: f64,
+    risk_mitigation: f64,
+    collateral: f64,
+    lgd_share: f64,
+    factor: f64,
+) -> Result<f64> {
+    prospicio_aggregate::solvency2::reinsurance_lgd(
+        recoverables,
+        risk_mitigation,
+        collateral,
+        lgd_share,
+        factor,
+    )
+    .map_err(to_r)
+}
+
+/// `list(v_inter, v_intra, sigma, total_lgd, scr)` of the Solvency II
+/// capital requirement for type 1 exposures (Arts 200 and 201).
+#[extendr]
+fn solvency2_type1_rust(pd: &[f64], lgd: &[f64]) -> Result<List> {
+    if pd.len() != lgd.len() {
+        return Err(Error::Other(
+            "give one probability of default and one loss given default per exposure".into(),
+        ));
+    }
+    let exposures: Vec<(f64, f64)> = pd.iter().copied().zip(lgd.iter().copied()).collect();
+    let t: prospicio_aggregate::solvency2::Type1 =
+        prospicio_aggregate::solvency2::type1(&exposures).map_err(to_r)?;
+    Ok(list!(
+        v_inter = t.v_inter,
+        v_intra = t.v_intra,
+        sigma = t.sigma,
+        total_lgd = t.total_lgd,
+        scr = t.scr
+    ))
+}
+
 extendr_module! {
     mod reinsurance;
     fn per_risk_inuring_rust;
@@ -1116,6 +1177,10 @@ extendr_module! {
     fn aggregate_layer_statistics_rust;
     fn retro_premium_rust;
     fn occurrence_layer_statistics_rust;
+    fn solvency2_probability_by_step_rust;
+    fn solvency2_probability_by_ratio_rust;
+    fn solvency2_reinsurance_lgd_rust;
+    fn solvency2_type1_rust;
     impl XolLayer;
     impl ReinsuranceTower;
 }

@@ -1,7 +1,8 @@
 """Reinsurance: excess-of-loss layers, quota shares and stop-losses, and
 towers of them, applied to simulated losses or exactly on the grid, and the
 efficient frontier of retentions and limits (frontier), and cat bonds
-(CatBond)."""
+(CatBond), and the Solvency II standard formula's counterparty default
+module for type 1 exposures (solvency2_*)."""
 
 from .prospicio_native import (
     AggregateLayerStatistics,
@@ -12,6 +13,7 @@ from .prospicio_native import (
     Layer,
     LayerStatistics,
     LossSensitivePremium,
+    Solvency2Type1,
     Tower,
     TowerGrids,
     TowerPrice,
@@ -21,6 +23,10 @@ from .prospicio_native import (
     occurrence_cession_statistics,
     occurrence_layer_statistics,
     per_risk_inuring,
+    solvency2_probability_by_ratio,
+    solvency2_probability_by_step,
+    solvency2_reinsurance_lgd,
+    solvency2_type1,
 )
 
 __all__ = [
@@ -41,4 +47,9 @@ __all__ = [
     "CessionStatistics",
     "aggregate_layer_statistics",
     "AggregateLayerStatistics",
+    "Solvency2Type1",
+    "solvency2_probability_by_ratio",
+    "solvency2_probability_by_step",
+    "solvency2_reinsurance_lgd",
+    "solvency2_type1",
 ]

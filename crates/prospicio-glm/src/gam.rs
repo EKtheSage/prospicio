@@ -26,7 +26,7 @@ use prospicio_models::{Design, Fitted, Model};
 use prospicio_prob::{PredictiveDistribution, Provenance};
 
 use crate::{Dispersion, Glm, Irls, dev, irls, simulate_responses, working_system};
-use prospicio_models::Family;
+use prospicio_models::{Family, Link};
 
 /// What shape a [`PSpline`] takes.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -750,6 +750,61 @@ fn coarse_minimize(lo: f64, hi: f64, mut f: impl FnMut(f64) -> f64) -> f64 {
     brent(x(best - 1), x(best + 1), 1e-4, f).0
 }
 
+/// [`saturated_log_likelihood`] prepared for many dispersions: REML's
+/// search over `φ` evaluates it 20 to 40 times a trial. For the gamma
+/// (the one family searched) the rows are summed once, grouped by weight,
+/// so each evaluation costs one term per distinct weight, not per row.
+struct Saturated {
+    family: Family,
+    /// `Σ ln y` over the rows with positive weight (gamma).
+    ln_y: f64,
+    /// Each distinct positive weight and its number of rows (gamma).
+    weights: Vec<(f64, f64)>,
+}
+
+impl Saturated {
+    fn new(family: Family, y: &[f64], w: &[f64]) -> Result<Self> {
+        saturated_log_likelihood(family, y, w, 1.0)?;
+        let (mut ln_y, mut weights) = (0.0, Vec::new());
+        if family == Family::Gamma {
+            let mut sorted: Vec<f64> = Vec::new();
+            for (&y, &w) in y.iter().zip(w).filter(|(_, w)| **w > 0.0) {
+                ln_y += y.ln();
+                sorted.push(w);
+            }
+            sorted.sort_by(f64::total_cmp);
+            for w in sorted {
+                match weights.last_mut() {
+                    Some((v, count)) if *v == w => *count += 1.0,
+                    _ => weights.push((w, 1.0)),
+                }
+            }
+        }
+        Ok(Self {
+            family,
+            ln_y,
+            weights,
+        })
+    }
+
+    /// `l_s(φ)`, NaN where it is undefined.
+    fn at(&self, y: &[f64], w: &[f64], phi: f64) -> f64 {
+        if self.family == Family::Gamma {
+            let rows: f64 = self
+                .weights
+                .iter()
+                .map(|&(w, count)| {
+                    let s = phi / w;
+                    count * (-ln_gamma(1.0 / s) - s.ln() / s - 1.0 / s)
+                })
+                .sum();
+            rows - self.ln_y
+        } else {
+            saturated_log_likelihood(self.family, y, w, phi).unwrap_or(f64::NAN)
+        }
+    }
+}
+
 /// The saturated log-likelihood `l_s(φ)` of mgcv's `fix.family.ls`, the
 /// part of the log-likelihood that the deviance leaves out, for REML.
 fn saturated_log_likelihood(family: Family, y: &[f64], w: &[f64], phi: f64) -> Result<f64> {
@@ -816,6 +871,20 @@ fn observed_information(glm: &Glm, x: &Design, y: &[f64], mu: &[f64]) -> Vec<f64
     })
     .expect("the observed weights never fail");
     info
+}
+
+/// Whether `link` is `family`'s canonical link (up to a constant factor),
+/// where the observed and expected information agree. The negative
+/// binomial's log link is not canonical.
+fn canonical(family: Family, link: Link) -> bool {
+    matches!(
+        (family, link),
+        (Family::Gaussian, Link::Identity)
+            | (Family::Poisson, Link::Log)
+            | (Family::Binomial, Link::Logit)
+            | (Family::Gamma, Link::Inverse)
+            | (Family::InverseGaussian, Link::InverseSquared)
+    )
 }
 
 /// One penalized fit at fixed smoothing parameters.
@@ -1201,15 +1270,23 @@ impl Model for Gam {
                 })
                 .sum()
         };
-        if use_reml {
-            saturated_log_likelihood(glm.family, y, w, 1.0)?;
-        }
+        let saturated = if use_reml {
+            Some(Saturated::new(glm.family, y, w)?)
+        } else {
+            None
+        };
         let nf = n as f64;
         let n_obs = w.iter().filter(|v| **v > 0.0).count() as f64;
         // The REML score and dispersion at a trial.
         let reml = |t: &Trial, lambdas: &[f64]| -> Result<(f64, f64)> {
             let dp = t.deviance + crate::quadratic(&t.penalty, &t.irls.beta);
-            let mut a = observed_information(&glm, &x, y, &t.irls.mu);
+            // For a canonical link the observed information is the expected
+            // one IRLS already returned: skip the pass over the rows.
+            let mut a = if canonical(glm.family, glm.link) {
+                t.irls.information.clone()
+            } else {
+                observed_information(&glm, &x, y, &t.irls.mu)
+            };
             for (v, si) in a.iter_mut().zip(&t.penalty) {
                 *v += si;
             }
@@ -1219,7 +1296,7 @@ impl Model for Gam {
             let ln_det = cholesky_log_det(&l, p);
             let ln_s = ln_pseudo_det(lambdas);
             let v = |phi: f64| -> f64 {
-                let ls = saturated_log_likelihood(glm.family, y, w, phi).unwrap_or(f64::NAN);
+                let ls = saturated.as_ref().map_or(f64::NAN, |sat| sat.at(y, w, phi));
                 dp / (2.0 * phi) - ls + 0.5 * ln_det
                     - 0.5 * ln_s
                     - 0.5 * null_dim * (2.0 * std::f64::consts::PI * phi).ln()

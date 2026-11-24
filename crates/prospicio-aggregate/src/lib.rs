@@ -44,6 +44,7 @@ pub mod renewal;
 pub mod ruin;
 pub mod serial;
 pub mod sizing;
+pub mod solvency2;
 pub mod term;
 pub mod timeline;
 pub mod trials;

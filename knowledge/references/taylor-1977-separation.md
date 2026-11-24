@@ -40,6 +40,11 @@ sources:
 * Future `lambda_h` are chosen by the user, not fitted (section 8); a
   constant rate gives a `(1 + K)^t` factor.
 * The geometric method (least squares on `log s_ij`) is not in this paper.
+  Its fit equals OLS of `log s_ij` on development and calendar factors
+  (`SeparationKind::Geometric`, against statsmodels 0.14.5 to 1e-9 in
+  CI); a full n by n triangle leaves `(n - 1)(n - 2) / 2` residual
+  degrees of freedom, so the lognormal mean `exp(sigma^2 / 2)` needs
+  n of at least 3.
 
 # Example 1, a motor account (p. 228)
 

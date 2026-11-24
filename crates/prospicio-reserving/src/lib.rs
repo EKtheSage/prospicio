@@ -169,7 +169,9 @@ pub use pattern::{OneYearPattern, PatternKind, PatternWeight, SelectedPattern, U
 pub use pattern_draws::{DevelopmentPatterns, Monotone, MonthlyBasis, SegmentPatterns};
 pub use prospicio_core::{Grain, Lag, Month, Period};
 pub use segments::{FitTable, ReserveFit, SegmentFits};
-pub use separation::{FutureInflation, Separation, SeparationFit, SeparationKind};
+pub use separation::{
+    FutureInflation, Retransformation, Separation, SeparationFit, SeparationKind,
+};
 pub use tail::{CurveShape, Tail, TailBondy, TailConstant, TailCurve, TailFit};
 pub use triangle::{CalendarView, DevelopmentColumn, Diagonal, Label, Long, LongTable, Triangle};
 pub use view::{SummaryRow, TriangleSummary, TriangleView};

@@ -123,6 +123,11 @@ an `EventSet` keeps whatever dependence its events carry (#491).
   tower's one-year result (`Panel::apply`, `Panel::by_reinsurer`), one
   Gaussian factor ranked on the gross loss for wrong-way risk
   (`docs/design/reinsurer-default.md`, #980). Rust only until PR 5.
+- `prospicio_aggregate::solvency2`: the Solvency II standard formula's
+  counterparty default module for type 1 exposures as pure functions
+  (`probability_by_step`, `probability_by_ratio`, `reinsurance_lgd`,
+  `type1`; Delegated Regulation (EU) 2015/35, Arts 192, 199 to 201, #980).
+  Python `solvency2_*` in `prospicio.reinsurance`; R `solvency2_*()`.
 - Python (`prospicio.aggregate`) and R (`compound_distribution`,
   `simulate_events`, `xol_layer`, `quota_share`, `aggregate_stop_loss`,
   `reinsurance_tower`, `inuring_tower`) bindings for all of the above.
