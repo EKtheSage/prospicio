@@ -1,0 +1,1 @@
+* **Creation**: [Splitting an extendr binding file into modules](/environment/extendr-module-split.md), from #963 (branch claude/split-r-reserving-963-bayes): extendr 0.9 registers each item through a private `meta__` function, so the R bindings' reserving.rs split into 23 files each with its own `extendr_module!` used from the parent, and the generated R files did not change.
