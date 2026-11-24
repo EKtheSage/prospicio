@@ -31,3 +31,4 @@ Finished items are in [done/aggregate.md](done/aggregate.md), which agents read 
 - [emod-ratio] #981 the general liability experience ratio plan, and the Done bullet `#981` (`primary-rating.md`, PR 8)
 - [earned-short-rate] short-rate cancellation and audit premium adjustments (`primary-rating.md`, decision (d)); after #981
 - [retro-deductible-dividend] large deductible and dividend plans from the charge and savings (`primary-rating.md`); after #981
+- [retro-bindings] #981 Python and R bindings for `retro` (`InsuranceCharge` from a grid or a sample, its tables, and the plan balance), tests in new files, the allow-list entries removed (`primary-rating.md`, PR 4b); after `[retro-balance]`

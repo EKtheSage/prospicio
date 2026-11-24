@@ -1,6 +1,8 @@
 # Design note: earned exposure, experience modification and retrospective rating
 
-Status: **Proposed** (#981; decisions (a) to (j) below wait for the user) ·
+Status: **In progress** (#981; the note merged on the user's go-ahead of
+2026-11-24 to start the work, with decisions (a) to (j) as recommended and
+still open to change before the PR each one governs; PR 2 built) ·
 v0.3 · Depends on: `ratemaking.md` (`Period`, `year_fraction`),
 `aggregate.md` (`Grid`, `fft`, per-occurrence limits on a grid),
 `predictive-distribution.md` · Lane: Aggregate
@@ -190,15 +192,18 @@ pub fn earned_exposure(policies: &[Policy], windows: &Windows, method: EarningMe
     -> Result<EarnedTable>;   // written, earned, and unearned and in force at each window's end
 
 // prospicio_pricing::retro
-pub struct InsuranceCharge { /* entry ratios with phi and psi; the limit's k if any */ }
+pub struct InsuranceCharge { /* the expected loss and the stop-loss; the limit's k if any */ }
 impl InsuranceCharge {
-    pub fn from_aggregate(aggregate: &dyn Severity) -> Result<Self>;          // Table M
+    // Built in PR 2:
+    pub fn from_severity<S: Severity + Send + Sync + 'static>(aggregate: S) -> Result<Self>; // Table M
     pub fn from_sample(losses: &[f64]) -> Result<Self>;                        // empirical
-    pub fn table_l(limited: &dyn Severity, unlimited_mean: f64) -> Result<Self>;
-    pub fn limited_table_m(limited: &dyn Severity) -> Result<Self>;
+    pub fn expected(&self) -> f64;
     pub fn charge(&self, r: f64) -> f64;
     pub fn savings(&self, r: f64) -> f64;
-    pub fn table(&self, entry_ratios: &[f64]) -> Vec<(f64, f64, f64)>;
+    pub fn table(&self, entry_ratios: &[f64]) -> Vec<ChargeRow>;               // r, phi, psi
+    // PR 3:
+    pub fn table_l<S: Severity + ...>(limited: S, unlimited_mean: f64) -> Result<Self>;
+    pub fn limited_table_m<S: Severity + ...>(limited: S) -> Result<Self>;
 }
 pub struct RetroPlan { /* expected loss, expense, lcf, tax multiplier, minimum, maximum */ }
 impl RetroPlan {
@@ -220,8 +225,10 @@ impl ExperienceRatioPlan {
 }
 ```
 
-Each type gets its Python and R binding in the PR that adds it
-(`pricing` module files), with dates as ISO strings in R and Excel and as
+`retro`'s types are bound in Python and R in one PR after its three Rust
+PRs, on the allow-list until then, as the reinsurer panel was; `earned`
+and `emod` get theirs in the PR that adds each type (`pricing` module
+files), with dates as ISO strings in R and Excel and as
 `datetime.date` or ISO strings in Python.
 
 ## Decisions
@@ -312,10 +319,12 @@ Stacked, each on the one before:
 
 1. This note and the lane's Next bullets. Docs only.
 2. `retro::InsuranceCharge` from a `Severity` and from a sample, with
-   `charge`, `savings` and `table`; Python and R bindings; the closed-form
-   tests.
-3. `table_l` and `limited_table_m`; bindings; the identities.
-4. `RetroPlan::balance` and `premium`; bindings; the balance test.
+   `charge`, `savings` and `table`; the closed-form tests; allow-list
+   entries (reason: bound in PR 4b). Done.
+3. `table_l` and `limited_table_m`; the identities.
+4. `RetroPlan::balance` and `premium`; the balance test.
+4b. Python and R bindings for `retro` (`[retro-bindings]`), their tests in
+   new files, the allow-list entries removed.
 5. `earned::Date`, `Policy` and `earned_exposure` with the daily method;
    bindings; the Werner and Modlin chapter 4 exhibit.
 6. Endorsements, cancellations and the twenty-fourths method; bindings.
@@ -330,7 +339,7 @@ taught nothing new), and a changelog fragment under "Pricing".
 ## Next
 
 The Next items with ids in `docs/lanes/aggregate.md`: `[retro-charge]`,
-`[retro-limited]`, `[retro-balance]`, `[earned-daily]`,
+`[retro-limited]`, `[retro-balance]`, `[retro-bindings]`, `[earned-daily]`,
 `[earned-endorsements]`, `[emod-split]`, `[emod-ratio]`, and after #981:
 `[earned-short-rate]`, `[retro-deductible-dividend]`.
 
