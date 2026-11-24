@@ -1550,6 +1550,22 @@ indicators (0.317480 against 0.317189 after 15 epochs).
   or one per row. Gamma, Tweedie and Gaussian only: the Poisson's
   dispersion is 1.
 - **Samplers are delegated.** No home-grown NUTS (`architecture.md`).
+- **Row sums run in fixed blocks (#969).** `Xᵀ W X` and `Xᵀ W z` (IRLS,
+  the GAM's observed information) and the Bayesian GLM's log density and
+  gradient cut the rows into blocks whose size depends only on the
+  number of rows (8192 for the Gram products, 4096 for the log density),
+  run the blocks in parallel with rayon, and add the block sums in block
+  order. Within a block a tile of rows is weighted once and reduced with
+  dot products over contiguous column slices (eight running sums), since
+  `Design` stores columns. The result is the same on one thread, on many
+  and on WASM (where rayon runs on the calling thread), but not the same
+  in the last bits as the row-by-row loops of 0.2: seeded fits and
+  Bayesian draws move within rounding, noted under "Breaking changes" for
+  0.3.0. IRLS reuses its `n`-long buffers across iterations and step
+  halvings (`Design::linear_predictor_into`). Benchmarks:
+  `cargo bench -p prospicio-glm` and `-p prospicio-bayes`, plain
+  `harness = false` targets with no dependency
+  (`knowledge/findings/glm-gram-benchmark.md`).
 
 ## Open questions
 

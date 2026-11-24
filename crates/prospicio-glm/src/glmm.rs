@@ -599,7 +599,13 @@ fn correlation(theta: &[f64], d: usize) -> Vec<f64> {
     (0..d * d)
         .map(|ab| {
             let (a, b) = (ab / d, ab % d);
-            (0..d).map(|c| l[a * d + c] * l[b * d + c]).sum()
+            // The rows of `l` have unit length: the diagonal is 1 exactly,
+            // not a rounded sum of squares.
+            if a == b {
+                1.0
+            } else {
+                (0..d).map(|c| l[a * d + c] * l[b * d + c]).sum()
+            }
         })
         .collect()
 }

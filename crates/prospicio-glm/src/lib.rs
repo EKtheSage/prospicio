@@ -14,6 +14,7 @@ pub mod dglm;
 pub mod diagnostics;
 pub mod gam;
 pub mod glmm;
+mod gram;
 pub mod mars;
 pub mod negbin;
 pub mod nested;
@@ -300,35 +301,21 @@ pub(crate) fn working_system(
     mu: &[f64],
 ) -> Result<(Vec<f64>, Vec<f64>)> {
     let (family, link) = (spec.family, spec.link);
-    let p = design.n_cols();
     let w = design.weights();
     let offset = design.offset();
-    let mut xtwx = vec![0.0; p * p];
-    let mut xtwz = vec![0.0; p];
-    for i in 0..design.n_rows() {
+    gram::weighted_gram(design, true, |i| {
         let d = link.mu_eta(eta[i]);
         let z = eta[i] - offset[i] + (y[i] - mu[i]) / d;
         let wi = w[i] * d * d / family.variance(mu[i]);
-        if !(wi.is_finite() && z.is_finite()) {
-            return Err(Error::Data(format!(
+        if wi.is_finite() && z.is_finite() {
+            Ok((wi, z))
+        } else {
+            Err(Error::Data(format!(
                 "IRLS weights are not finite at row {i} (mean {})",
                 mu[i]
-            )));
+            )))
         }
-        for a in 0..p {
-            let xa = design.column(a)[i] * wi;
-            xtwz[a] += xa * z;
-            for b in 0..=a {
-                xtwx[a * p + b] += xa * design.column(b)[i];
-            }
-        }
-    }
-    for a in 0..p {
-        for b in a + 1..p {
-            xtwx[a * p + b] = xtwx[b * p + a];
-        }
-    }
-    Ok((xtwx, xtwz))
+    })
 }
 
 /// `βᵀ S β` for a row-major `S`.
@@ -359,6 +346,9 @@ pub(crate) fn irls(
     let mut mu: Vec<f64> = eta.iter().map(|&e| link.inverse(e)).collect();
     let mut current = f64::INFINITY;
     let mut beta = vec![0.0; p];
+    // Buffers reused by every iteration and step halving.
+    let (mut previous, mut trial) = (vec![0.0; p], vec![0.0; p]);
+    let (mut trial_eta, mut trial_mu) = (vec![0.0; n], vec![0.0; n]);
     for iteration in 1..=spec.max_iterations {
         let (mut xtwx, xtwz) = working_system(spec, design, y, &eta, &mu)?;
         if let Some(s) = penalty {
@@ -372,15 +362,15 @@ pub(crate) fn irls(
         let target = cholesky_solve(&l, &xtwz);
         // Step, halved while the objective rises or the mean is invalid.
         let mut step = 1.0;
-        let previous = beta.clone();
+        previous.copy_from_slice(&beta);
         loop {
-            let trial: Vec<f64> = previous
-                .iter()
-                .zip(&target)
-                .map(|(b, t)| b + step * (t - b))
-                .collect();
-            let trial_eta = design.linear_predictor(&trial);
-            let trial_mu: Vec<f64> = trial_eta.iter().map(|&e| link.inverse(e)).collect();
+            for ((t, b), g) in trial.iter_mut().zip(&previous).zip(&target) {
+                *t = b + step * (g - b);
+            }
+            design.linear_predictor_into(&trial, &mut trial_eta);
+            for (m, &e) in trial_mu.iter_mut().zip(&trial_eta) {
+                *m = link.inverse(e);
+            }
             let ok = trial_eta.iter().all(|&e| link.valid_eta(e))
                 && trial_mu.iter().all(|&m| family.valid_mu(m));
             let trial_obj = if ok {
@@ -390,9 +380,9 @@ pub(crate) fn irls(
             };
             // The first iteration has nothing to compare with.
             if trial_obj.is_finite() && (trial_obj <= current * (1.0 + 1e-12) || iteration == 1) {
-                beta = trial;
-                eta = trial_eta;
-                mu = trial_mu;
+                std::mem::swap(&mut beta, &mut trial);
+                std::mem::swap(&mut eta, &mut trial_eta);
+                std::mem::swap(&mut mu, &mut trial_mu);
                 break;
             }
             step *= 0.5;
