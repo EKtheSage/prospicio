@@ -175,14 +175,14 @@ impl MackProcess {
                 // `m * m` underflows for a value near zero, which a later
                 // cell of the year can be drawn from: see `vanishing`.
                 match Gamma::new(m * m / variance, variance / m) {
-                    Ok(gamma) => mean.signum() * gamma.sample(rng, 1)[0],
+                    Ok(gamma) => mean.signum() * gamma.sample_one(rng),
                     Err(_) => vanishing(mean, variance),
                 }
             }
             Self::Lognormal => {
                 let m = mean.abs();
                 match Lognormal::from_mean_cv(m, variance.sqrt() / m) {
-                    Ok(lognormal) => mean.signum() * lognormal.sample(rng, 1)[0],
+                    Ok(lognormal) => mean.signum() * lognormal.sample_one(rng),
                     Err(_) => vanishing(mean, variance),
                 }
             }
@@ -1883,7 +1883,7 @@ mod tests {
         let (_, draw) = b.model(&segment).unwrap();
         let mut rng = StreamRng::new(21, 4);
         draw.factors(dev, &mut rng, None);
-        let factor = lognormal.sample(&mut rng, 1)[0];
+        let factor = lognormal.sample_one(&mut rng);
         let got = fit.reserves.row(4).unwrap()[0];
         assert!(
             (got - (factor * c - c)).abs() < 1e-9 * c,
