@@ -730,11 +730,7 @@ pub(crate) struct PyCompartmentalFits {
     pub(crate) inner: CompartmentalFits,
 }
 
-impl PyCompartmentalFits {
-    fn one(&self, field: &str, instead: &str) -> PyResult<&CompartmentalSegment> {
-        single(&self.inner.segments, field, instead)
-    }
-}
+impl_one_segment!(PyCompartmentalFits => CompartmentalSegment);
 
 #[pymethods]
 impl PyCompartmentalFits {
@@ -1156,15 +1152,7 @@ pub(crate) struct PyCompartmentalOneYearFits {
     pub(crate) inner: CompartmentalOneYearFits,
 }
 
-impl PyCompartmentalOneYearFits {
-    fn one(
-        &self,
-        field: &str,
-        instead: &str,
-    ) -> PyResult<&BayesOneYearSegment<CompartmentalSegment>> {
-        single(&self.inner.segments, field, instead)
-    }
-}
+impl_one_segment!(PyCompartmentalOneYearFits => BayesOneYearSegment<CompartmentalSegment>);
 
 #[pymethods]
 impl PyCompartmentalOneYearFits {

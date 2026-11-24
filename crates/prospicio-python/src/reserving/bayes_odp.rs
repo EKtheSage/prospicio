@@ -886,11 +886,7 @@ pub(crate) struct PyBayesOdpFits {
     inner: BayesOdpFits,
 }
 
-impl PyBayesOdpFits {
-    fn one(&self, field: &str, instead: &str) -> PyResult<&BayesOdpSegment> {
-        single(&self.inner.segments, field, instead)
-    }
-}
+impl_one_segment!(PyBayesOdpFits => BayesOdpSegment);
 
 #[pymethods]
 impl PyBayesOdpFits {

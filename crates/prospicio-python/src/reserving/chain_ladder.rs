@@ -416,6 +416,20 @@ impl PyChainLadder {
     }
 }
 
+/// `impl_one_segment!(PyX => Segment)`: `PyX::one(field, instead)`, the
+/// one segment of a fit over segments (`self.inner.segments`) for a getter
+/// that needs a single-segment fit, or [`single`]'s error.
+macro_rules! impl_one_segment {
+    ($ty:ty => $segment:ty) => {
+        impl $ty {
+            fn one(&self, field: &str, instead: &str) -> PyResult<&$segment> {
+                single(&self.inner.segments, field, instead)
+            }
+        }
+    };
+}
+pub(crate) use impl_one_segment;
+
 /// The one fit of a single-segment result, or an error naming what to use
 /// instead: the long table `instead` (if any) or `segment(...)`.
 pub(crate) fn single<'a, T>(
