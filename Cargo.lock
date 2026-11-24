@@ -4082,7 +4082,6 @@ dependencies = [
  "prospicio-models",
  "prospicio-prob",
  "rayon",
- "rustfft",
 ]
 
 [[package]]
