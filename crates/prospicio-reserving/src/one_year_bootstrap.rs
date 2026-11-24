@@ -2118,7 +2118,7 @@ mod tests {
                         let gamma =
                             prospicio_prob::Gamma::new(mean * mean / variance, variance / mean)
                                 .unwrap();
-                        (o, d + 1, gamma.sample(rng, 1)[0])
+                        (o, d + 1, gamma.sample_one(rng))
                     })
                     .collect();
                 let next = NextCells {
@@ -2418,7 +2418,7 @@ mod tests {
                 let (pseudo, _) = sim.resample(&mut rng, None);
                 let factor = match std_err {
                     None => f,
-                    Some(_) => lognormal.sample(&mut rng, 1)[0],
+                    Some(_) => lognormal.sample_one(&mut rng),
                 };
                 let p = pseudo[9];
                 let want = fit.opening_ultimate[0] - (c + (p * factor - p));
