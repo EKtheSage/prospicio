@@ -3,8 +3,8 @@
 use prospicio_core::{Error, Result, StreamRng};
 use prospicio_math::special::{gamma_inc, gamma_upper, ln_gamma};
 
-use crate::Gamma;
 use crate::distribution::{Distribution, bisect_quantile, check_probability};
+use crate::gamma::standard_gamma;
 use crate::severity::{Moments, severity_from_moments};
 
 /// Inverse gamma distribution with shape `α` and scale `θ`: `X = θ / G` for
@@ -170,13 +170,9 @@ impl Distribution for InverseGamma {
     }
 
     /// `θ / G` for `G` drawn by the gamma's sampler (Marsaglia and Tsang),
-    /// not inverse transform; see [`Distribution::sample`].
-    fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
-        let unit = Gamma::new(self.shape, 1.0).expect("a positive shape");
-        unit.sample(rng, n)
-            .into_iter()
-            .map(|g| self.scale / g)
-            .collect()
+    /// not inverse transform; see [`Distribution::sample_one`].
+    fn sample_one(&self, rng: &mut StreamRng) -> f64 {
+        self.scale / standard_gamma(rng, self.shape)
     }
 }
 
