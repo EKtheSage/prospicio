@@ -18,3 +18,7 @@ prospicio-math.workspace = true
 prospicio-models.workspace = true
 prospicio-prob.workspace = true
 serde_json.workspace = true
+
+[[bench]]
+name = "glm"
+harness = false
