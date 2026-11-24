@@ -282,6 +282,10 @@ reference:
       - cumulative_loss_ratio
       - indicated_change
       - premium_based_expenses
+  - title: Retrospective rating
+    contents:
+      - insurance_charge
+      - retro_balance
   - title: Risk measures
     contents:
       - distortion
