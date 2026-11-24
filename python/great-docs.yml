@@ -404,6 +404,10 @@ reference:
       - reserving.ClarkFit
       - reserving.DiscountCurve
       - reserving.DiscountedReserves
+      - reserving.CalendarIndex
+      - reserving.FutureCells
+      - reserving.Indexation
+      - reserving.Reinflated
       - reserving.PaidIncurredChain
       - reserving.PaidIncurredFit
       - reserving.ExcessLayer

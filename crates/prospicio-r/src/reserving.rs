@@ -2845,7 +2845,7 @@ fn fit_table(table: FitTable) -> List {
 /// vectors run over the origins of each segment in turn.
 #[extendr]
 pub(crate) struct ChainLadderFit {
-    inner: SegmentFits<ChainLadderInner>,
+    pub(crate) inner: SegmentFits<ChainLadderInner>,
 }
 
 #[extendr]

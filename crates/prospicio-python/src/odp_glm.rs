@@ -265,7 +265,7 @@ fn error_dict<'py>(py: Python<'py>, e: &SumPredictionError) -> PyResult<Bound<'p
 /// the reserves and their prediction error.
 #[pyclass(name = "OdpGlmFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyOdpGlmFit {
-    inner: OdpGlmFit,
+    pub(crate) inner: OdpGlmFit,
 }
 
 #[pymethods]

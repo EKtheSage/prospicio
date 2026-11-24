@@ -421,6 +421,9 @@ reference:
       - development_correlation_test
       - discount_curve
       - discounted_reserves
+      - calendar_index
+      - indexation
+      - future_cells
       - tail_constant
       - tail_curve
       - tail_bondy

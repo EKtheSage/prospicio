@@ -16,3 +16,4 @@ Finished items are in [done/reserving.md](done/reserving.md), which agents read 
 - [apc-glm] #979 the age-period-cohort reserving GLM, Rust (`reserving-inflation.md` PR 6): canonical identification, I2, I1 and I0 calendar extrapolation, after its open decision 5
 - [apc-glm-bindings] #979 Python and R bindings for the APC GLM (`reserving-inflation.md` PR 7)
 - [reinflate-draws] #979 stochastic re-inflation (`reserving-inflation.md` PR 8, decision 11): `Indexation::reinflate_draws` over a `PredictiveDistribution` of future cells with one index path per simulation, in Rust, Python and R, after PR 2
+- [inflation-index-python-chain-ladder] #979 Python FutureCells.from_chain_ladder once #963's split of crates/prospicio-python/src/reserving.rs lands (PyChainLadderFit.inner is private to that module)
