@@ -32743,6 +32743,41 @@ class SizeOfLoss:
         """
 
 @final
+class Solvency2Type1:
+    """
+    The Solvency II capital requirement for type 1 exposures and its parts,
+    from ``solvency2_type1``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def scr(self, /) -> float:
+        """
+        ``SCR_def,1`` (Art 200).
+        """
+    @property
+    def sigma(self, /) -> float:
+        """
+        The standard deviation of the loss distribution,
+        ``sqrt(v_inter + v_intra)``.
+        """
+    @property
+    def total_lgd(self, /) -> float:
+        """
+        The sum of the losses given default.
+        """
+    @property
+    def v_inter(self, /) -> float:
+        """
+        ``V_inter`` (Art 201(2)), over every ordered pair of groups of equal
+        probability of default.
+        """
+    @property
+    def v_intra(self, /) -> float:
+        """
+        ``V_intra`` (Art 201(3)), within each group.
+        """
+
+@final
 class Stable:
     """
     An alpha-stable law ``S(alpha, beta, scale, loc)`` for ``invert_chf``.
@@ -42682,6 +42717,151 @@ def sobol(n: int, dim: int, scramble: bool = True, seed: int = 0) -> list[list[f
     >>> from prospicio.risk import sobol
     >>> sobol(4, 2, scramble=False)
     [[0.0, 0.0], [0.5, 0.5], [0.75, 0.25], [0.25, 0.75]]
+    """
+
+def solvency2_probability_by_ratio(scr_ratio: float) -> float:
+    """
+    The Solvency II probability of default of an unrated insurance or
+    reinsurance undertaking that meets its MCR, by its solvency ratio
+    (Art 199(3)).
+    
+    Linear in the ratio between the table's points, 196 % (0.01 %), 175 %
+    (0.05 %), 150 % (0.1 %), 125 % (0.2 %), 122 % (0.24 %), 100 % (0.5 %),
+    95 % (1.2 %) and 75 % (4.2 %); 0.01 % at or above 196 % and 4.2 % at or
+    below 75 %. An undertaking that does not meet its MCR has 4.2 %.
+    
+    Parameters
+    ----------
+    scr_ratio : float
+        The solvency ratio as a fraction: 1.5 for 150 % (150 would give
+        0.01 %).
+    
+    Returns
+    -------
+    float
+    
+    Raises
+    ------
+    ValueError
+        For a ratio that is NaN or negative.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import solvency2_probability_by_ratio
+    >>> solvency2_probability_by_ratio(1.25)
+    0.002
+    >>> solvency2_probability_by_ratio(0.5)
+    0.042
+    """
+
+def solvency2_probability_by_step(step: int) -> float:
+    """
+    The Solvency II probability of default of a counterparty with an
+    external credit assessment, by its credit quality step (Delegated
+    Regulation (EU) 2015/35, Art 199(2)): steps 0 to 6 give 0.002 %,
+    0.01 %, 0.05 %, 0.24 %, 1.2 %, 4.2 % and 4.2 %.
+    
+    Parameters
+    ----------
+    step : int
+        The credit quality step, 0 to 6.
+    
+    Returns
+    -------
+    float
+    
+    Raises
+    ------
+    ValueError
+        For a step above 6.
+    OverflowError
+        For a negative step.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import solvency2_probability_by_step
+    >>> solvency2_probability_by_step(3)
+    0.0024
+    """
+
+def solvency2_reinsurance_lgd(recoverables: float, risk_mitigation: float, collateral: float, lgd_share: float = 0.5, factor: float = 1.0) -> float:
+    """
+    The Solvency II loss given default of a reinsurance arrangement
+    (Art 192(2)): ``max(lgd_share * (recoverables + 0.5 * risk_mitigation)
+    - factor * collateral, 0)``.
+    
+    Parameters
+    ----------
+    recoverables : float
+        The best estimate of the amounts recoverable and the corresponding
+        debtors.
+    risk_mitigation : float
+        ``RM_re``, the arrangement's risk-mitigating effect on underwriting
+        risk (Art 196).
+    collateral : float
+        The risk-adjusted value of the collateral (Art 197), non-negative.
+    lgd_share : float, default 0.5
+        0.5, or 0.9 for a counterparty with 60 % or more of its assets
+        under collateral arrangements; any value in ``[0, 1]`` is accepted.
+    factor : float, default 1.0
+        The factor of Art 197(7) on the collateral: F (1.0 or 0.5) with the
+        50 % share, F' (1.0 or 0.18) with the 90 % share; in ``[0, 1]``.
+    
+    Returns
+    -------
+    float
+    
+    Raises
+    ------
+    ValueError
+        For inputs that are not finite, negative collateral, or a share or
+        factor outside ``[0, 1]``.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import solvency2_reinsurance_lgd
+    >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0)
+    30.0
+    >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0, lgd_share=0.9, factor=0.5)
+    93.0
+    """
+
+def solvency2_type1(exposures: Sequence[tuple[float, float]]) -> Solvency2Type1:
+    """
+    The Solvency II capital requirement for counterparty default risk on
+    type 1 exposures (Arts 200 and 201).
+    
+    The exposures are grouped by probability of default; ``v_inter`` sums
+    over every ordered pair of groups, the diagonal included, ``PD_j (1 -
+    PD_j) PD_k (1 - PD_k) / (1.25 (PD_j + PD_k) - PD_j PD_k)`` times the
+    groups' total losses given default (a term whose two probabilities are
+    both 0 is 0, EIOPA Q&A 2530), and ``v_intra`` sums ``1.5 PD_j (1 - PD_j)
+    / (2.5 - PD_j)`` times each group's squared losses given default. The
+    charge is ``3 sigma`` if ``sigma`` is at most 7 % of the total loss given
+    default, ``5 sigma`` if at most 20 %, and the total otherwise.
+    
+    Parameters
+    ----------
+    exposures : list of (float, float)
+        Each exposure's probability of default, in ``[0, 1]``, and loss given
+        default, non-negative. An empty list gives a charge of 0.
+    
+    Returns
+    -------
+    Solvency2Type1
+    
+    Raises
+    ------
+    ValueError
+        For a probability outside ``[0, 1]`` or a negative or infinite loss
+        given default.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import solvency2_type1
+    >>> t = solvency2_type1([(0.002, 100.0)])
+    >>> round(t.sigma ** 2, 12), round(t.scr / t.sigma, 12)
+    (19.96, 3.0)
     """
 
 def stack(ledgers: dict, impacts: Sequence[tuple[str, str, str]] |None = None) -> dict:

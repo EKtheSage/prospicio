@@ -1568,7 +1568,11 @@ indicators (0.317480 against 0.317189 after 15 epochs).
   dependency (examples rather than `[[bench]]` targets, since the R
   package's `bootstrap.R` copies no `benches/` and an explicit
   `[[bench]]` entry then fails to parse, as in #1053)
-  (`knowledge/findings/glm-gram-benchmark.md`).
+  (`knowledge/findings/glm-gram-benchmark.md`). The GAM's REML score
+  takes IRLS's expected information for a canonical link, where it equals
+  the observed one, and the gamma dispersion search sums the saturated
+  log-likelihood once per distinct weight; `tweedie_profile` fits its
+  grid in parallel and reports the first failure in grid order.
 
 ## Open questions
 

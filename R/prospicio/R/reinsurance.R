@@ -1498,3 +1498,90 @@ per_risk_inuring <- function(layer, years, event_limit = NULL, times = NULL, see
   ))
   list(ceded = r$ceded, ceded_by_event = r$ceded_by_event, net = event_set(ptr = r$net))
 }
+
+#' Solvency II probability of default
+#'
+#' The standard formula's probability of default of a counterparty
+#' (Delegated Regulation (EU) 2015/35, Art 199). `solvency2_probability_by_step()`
+#' takes a counterparty's credit quality step (Art 199(2)): steps 0 to 6 give
+#' 0.002 %, 0.01 %, 0.05 %, 0.24 %, 1.2 %, 4.2 % and 4.2 %.
+#' `solvency2_probability_by_ratio()` takes an unrated insurance or reinsurance
+#' undertaking's solvency ratio (Art 199(3)), linear between the points
+#' 196 % (0.01 %), 175 % (0.05 %), 150 % (0.1 %), 125 % (0.2 %), 122 %
+#' (0.24 %), 100 % (0.5 %), 95 % (1.2 %) and 75 % (4.2 %), 0.01 % at or above
+#' 196 % and 4.2 % at or below 75 %. An undertaking that does not meet its MCR
+#' has 4.2 %.
+#'
+#' @param step The credit quality step, a whole number from 0 to 6.
+#' @param scr_ratio The solvency ratio as a fraction: 1.5 for 150 % (150 would
+#'   give 0.01 %); not `NaN` or negative.
+#' @returns A number.
+#' @seealso [solvency2_type1()], [solvency2_reinsurance_lgd()].
+#' @export
+#' @examples
+#' solvency2_probability_by_step(3)
+#' solvency2_probability_by_ratio(1.375)
+solvency2_probability_by_step <- function(step) {
+  rust_result(solvency2_probability_by_step_rust(as.double(step)))
+}
+
+#' @rdname solvency2_probability_by_step
+#' @export
+solvency2_probability_by_ratio <- function(scr_ratio) {
+  rust_result(solvency2_probability_by_ratio_rust(as.double(scr_ratio)))
+}
+
+#' Solvency II loss given default of a reinsurance arrangement
+#'
+#' `max(lgd_share * (recoverables + 0.5 * risk_mitigation) - factor *
+#' collateral, 0)`, Delegated Regulation (EU) 2015/35, Art 192(2).
+#'
+#' @param recoverables The best estimate of the amounts recoverable from the
+#'   arrangement and the corresponding debtors.
+#' @param risk_mitigation `RM_re`, the arrangement's risk-mitigating effect on
+#'   underwriting risk (Art 196).
+#' @param collateral The risk-adjusted value of the collateral (Art 197),
+#'   non-negative.
+#' @param lgd_share 0.5, or 0.9 for a counterparty with 60 % or more of its
+#'   assets under collateral arrangements; any value in `[0, 1]` is accepted.
+#' @param factor The factor of Art 197(7) on the collateral, in `[0, 1]`: F
+#'   (1 or 0.5) with the 50 % share, F' (1 or 0.18) with the 90 % share.
+#' @returns A number.
+#' @seealso [solvency2_type1()].
+#' @export
+#' @examples
+#' solvency2_reinsurance_lgd(100, 40, 30)
+#' solvency2_reinsurance_lgd(100, 40, 30, lgd_share = 0.9, factor = 0.5)
+solvency2_reinsurance_lgd <- function(recoverables, risk_mitigation, collateral,
+                                      lgd_share = 0.5, factor = 1) {
+  rust_result(solvency2_reinsurance_lgd_rust(
+    as.double(recoverables), as.double(risk_mitigation), as.double(collateral),
+    as.double(lgd_share), as.double(factor)
+  ))
+}
+
+#' Solvency II capital requirement for type 1 exposures
+#'
+#' The standard formula's counterparty default charge on type 1 exposures
+#' (Delegated Regulation (EU) 2015/35, Arts 200 and 201). The exposures are
+#' grouped by probability of default; `v_inter` sums over every ordered pair
+#' of groups, the diagonal included, `PD_j (1 - PD_j) PD_k (1 - PD_k) /
+#' (1.25 (PD_j + PD_k) - PD_j PD_k)` times the groups' total losses given
+#' default (a term whose two probabilities are both 0 is 0, EIOPA Q&A 2530),
+#' and `v_intra` sums `1.5 PD_j (1 - PD_j) / (2.5 - PD_j)` times each group's
+#' squared losses given default. The charge `scr` is `3 sigma` if
+#' `sigma = sqrt(v_inter + v_intra)` is at most 7 % of the total loss given
+#' default, `5 sigma` if at most 20 %, and the total otherwise.
+#'
+#' @param pd Each exposure's probability of default, in `[0, 1]`.
+#' @param lgd Each exposure's loss given default, non-negative, as
+#'   [solvency2_reinsurance_lgd()] gives it for a reinsurer.
+#' @returns A list with `v_inter`, `v_intra`, `sigma`, `total_lgd` and `scr`.
+#' @seealso [solvency2_probability_by_step()], [solvency2_reinsurance_lgd()].
+#' @export
+#' @examples
+#' t <- solvency2_type1(pd = c(0.0005, 0.001), lgd = c(30, 45))
+#' t$scr
+solvency2_type1 <- function(pd, lgd) {
+  rust_result(solvency2_type1_rust(as.double(pd), as.double(lgd)))
+}
