@@ -236,16 +236,9 @@ impl PyMack {
     }
 }
 
-impl PyMack {
-    /// The method with its pattern converted as ``ldf_origin`` and
-    /// ``ldf_underwriting`` say, for
-    /// origins of `origin`.
-    fn resolved(&self, origin: Grain) -> PyResult<Mack> {
-        let mut m = self.inner.clone();
-        m.development.pattern = averaged(&m.development.pattern, &self.ldf_basis, origin)?;
-        Ok(m)
-    }
+impl_resolved!(PyMack => Mack, pattern development.pattern);
 
+impl PyMack {
     fn base_repr(&self) -> String {
         let given =
             |name: &str, v: Option<f64>| v.map_or(String::new(), |v| format!(", {name}={v:?}"));
