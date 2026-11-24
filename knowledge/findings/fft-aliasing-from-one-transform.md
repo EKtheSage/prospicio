@@ -13,6 +13,9 @@ sources:
   - id: math
     resource: ../crates/prospicio-math/src/fft.rs
     title: prospicio_math::fft (forward, inverse, real_forward, real_inverse, Plan, RealPlan, CACHED_LEN)
+  - id: natural
+    resource: ../crates/prospicio-pricing/src/natural.rs
+    title: prospicio_pricing::natural (Portfolio::from_independent, convolve)
   - id: issue
     resource: https://github.com/EKtheSage/prospicio/issues/973
     title: "#973: consolidate rustfft into prospicio-math, reuse the planner and scratch, evaluate realfft and an optional aliasing check"
@@ -110,8 +113,27 @@ transform is not a real sequence's, and gains only the scratch buffer.
 The renewal count's time is its loop over the powers of the wait's
 transform, not the two transforms.
 
+## `natural::Portfolio`
+
+Moved in the third PR of #973. `Portfolio::from_independent` transforms
+each unit's probabilities and its loss-weighted probabilities and inverts
+two products a unit, `4 m + 1` transforms of one length for `m` units, all
+of real sequences: real transforms on one kept plan, and the prefix and
+suffix products on half the spectrum. Lognormal units on a step of 0.05,
+release build, cloud container:
+
+| Calculation | Before | After |
+|---|---|---|
+| 3 units of 256 points | 168 us | 55 us |
+| 8 units of 4,096 points | 27.2 ms | 7.4 ms |
+| 20 units of 16,384 points | 1.24 s | 0.56 s |
+| the convolution of two 4,096-point grids | 542 us | 82 us |
+| the convolution of two 16,384-point grids | 1.64 ms | 0.37 ms |
+
+The convolution is the one behind the stand-alone prices' sum of two
+units.
+
 ## Not yet moved
 
-`natural` in `prospicio-pricing`, `chf` in `prospicio-prob` and
-`prospicio-bayes` still build a planner per call. They are the Aggregate
-lane's next item under #973.
+`chf` in `prospicio-prob` and `prospicio-bayes` still build a planner per
+call. They are the Aggregate lane's next item under #973.
