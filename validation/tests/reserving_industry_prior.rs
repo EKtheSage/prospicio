@@ -41,7 +41,7 @@ fn normal(rng: &mut StreamRng) -> f64 {
 
 fn gamma(rng: &mut StreamRng, mean: f64, cv: f64) -> f64 {
     let shape = cv.powi(-2);
-    Gamma::new(shape, mean / shape).unwrap().sample(rng, 1)[0]
+    Gamma::new(shape, mean / shape).unwrap().sample_one(rng)
 }
 
 /// Company `c`'s triangle, with process scale `phi` (`None`: the cells are

@@ -890,7 +890,7 @@ impl TailDraw {
             }
         }
         let factor = match &self.constant {
-            Some(lognormal) => lognormal.sample(rng, 1)[0],
+            Some(lognormal) => lognormal.sample_one(rng),
             None => factor,
         };
         Ok((ldf, factor))
@@ -1227,7 +1227,7 @@ pub(crate) fn process_draw(
                 return mean;
             }
             let gamma = Gamma::new(shape, scale).expect("shape and scale are finite and positive");
-            mean.signum() * gamma.sample(rng, 1)[0]
+            mean.signum() * gamma.sample_one(rng)
         }
     }
 }
@@ -1418,7 +1418,7 @@ mod tests {
                 let (pseudo, factors, mut rng) = pseudo(11, i);
                 let factor = match std_err {
                     None => fit.chain_ladder.tail.factor,
-                    Some(_) => lognormal.sample(&mut rng, 1)[0],
+                    Some(_) => lognormal.sample_one(&mut rng),
                 };
                 let cum = pseudo[9];
                 let want = 0.0 + (cum * factor - cum);

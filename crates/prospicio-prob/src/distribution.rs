@@ -34,20 +34,27 @@ pub trait Distribution {
     /// `[0, 1]`.
     fn quantile(&self, p: f64) -> Result<f64>;
 
-    /// `n` draws from stream `rng`, by inverse transform unless the family
+    /// One draw from stream `rng`, by inverse transform unless the family
     /// overrides it ([`crate::Gamma`] draws by Marsaglia and Tsang).
     ///
     /// Inverse transform keeps draws a pure function of `(seed, stream)` and
     /// preserves ordering under common random numbers. An override keeps
     /// the first but not the second; code that needs draws monotone in a
     /// uniform calls `quantile` itself.
+    ///
+    /// `k` calls give the same numbers, bit for bit, as one call of
+    /// [`sample`](Self::sample) with `n = k` from the same stream, without
+    /// the vector: a simulation that draws one value at a time (a process
+    /// error per cell, a prior draw) calls this one (#972).
+    fn sample_one(&self, rng: &mut StreamRng) -> f64 {
+        self.quantile(rng.next_open01())
+            .expect("next_open01 is always in (0, 1)")
+    }
+
+    /// `n` draws from stream `rng`: [`sample_one`](Self::sample_one) `n`
+    /// times, unless the family overrides it with the same draws.
     fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
-        (0..n)
-            .map(|_| {
-                self.quantile(rng.next_open01())
-                    .expect("next_open01 is always in (0, 1)")
-            })
-            .collect()
+        (0..n).map(|_| self.sample_one(rng)).collect()
     }
 
     /// Whether the distribution may be evaluated on several threads at
@@ -84,6 +91,10 @@ impl<T: Distribution + ?Sized> Distribution for Box<T> {
 
     fn quantile(&self, p: f64) -> Result<f64> {
         (**self).quantile(p)
+    }
+
+    fn sample_one(&self, rng: &mut StreamRng) -> f64 {
+        (**self).sample_one(rng)
     }
 
     fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {

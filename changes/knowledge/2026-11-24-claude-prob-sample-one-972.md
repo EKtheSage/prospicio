@@ -1,0 +1,1 @@
+* **Update**: [The Gamma sampler](/findings/gamma-sampler.md), from #972 (branch claude/prob-sample-one-972): the draw is now `Distribution::sample_one`, which `Gamma` and `InverseGamma` override; `sample(n)` is `n` calls of it, bit for bit, so no seeded draw moved.

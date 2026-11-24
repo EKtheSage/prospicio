@@ -3678,11 +3678,15 @@ pooled for `L`, `tau` and `omega` at their prior medians), a regularised
 Laplace whitening at it (`laplace::Whitened::regularised`), a pilot NUTS
 run, `Whitened::from_draws`, then the main run. The Newton start from the
 strong-prior mode that `BayesBfNormalised` uses does not carry over: the
-mode of a hierarchy sits at `tau = 0`. The gradient is the generic
+mode of a hierarchy sits at `tau = 0`. The gradient was the generic
 `Scalar` density (decision 15; at 162 parameters six chunked passes of 32
 tangents), checked against finite differences; a hand-written gradient
-only if profiling asks for it. As built, the pilot's scale is diagonal
-below 8 programs ("As built").
+only if profiling asks for it. Profiling asked (#972): since then
+`Model::log_density_gradient` writes it by hand in one pass, each term
+depending on a few parameters, with the generic density kept as the
+oracle (`the_hand_gradient_matches_the_dual`: the value bit for bit, the
+gradient to rounding) and for the year's log posterior. As built, the
+pilot's scale is diagonal below 8 programs ("As built").
 
 **The plug-in scale.** A program with two origins has three cells and
 three parameters of its own chain ladder (two ultimates and one factor),

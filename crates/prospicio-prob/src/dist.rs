@@ -188,6 +188,10 @@ impl Distribution for Dist {
         each!(self, d => d.quantile(p))
     }
 
+    fn sample_one(&self, rng: &mut StreamRng) -> f64 {
+        each!(self, d => d.sample_one(rng))
+    }
+
     fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
         each!(self, d => d.sample(rng, n))
     }
@@ -329,6 +333,10 @@ impl Distribution for SeverityDist {
 
     fn quantile(&self, p: f64) -> Result<f64> {
         self.0.quantile(p)
+    }
+
+    fn sample_one(&self, rng: &mut StreamRng) -> f64 {
+        self.0.sample_one(rng)
     }
 
     fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<f64> {
