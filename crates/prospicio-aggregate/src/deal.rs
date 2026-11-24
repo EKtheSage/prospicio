@@ -32,8 +32,9 @@ use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution};
 use crate::pnl::{ExpenseBasis, Group, Layout, Ledger, Leg, LegKind, Source};
 use crate::reinsurance::{CarryForward, Commission, Layer, Tower, checked_anchors};
 
-/// Kinds a tower's result already uses, and the names of the deal ratios:
-/// a deduction may not take one as its label.
+/// Kinds a tower's result already uses, the kinds a
+/// [`Panel`](crate::Panel) adds to it, and the names of the deal ratios: a
+/// deduction may not take one as its label.
 const RESERVED: &[&str] = &[
     "gross",
     "ceded",
@@ -51,6 +52,9 @@ const RESERVED: &[&str] = &[
     "combined_ratio",
     "nmbf",
     "margin",
+    "credit_loss",
+    "recovered",
+    "net_after_default",
 ];
 
 /// A deduction from a layer's premium: a rate of the year's premium or of

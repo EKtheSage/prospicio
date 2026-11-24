@@ -1,7 +1,7 @@
 # Design note: reinsurer default on a tower
 
-Status: **Proposed** (#980; decisions (a) to (l) below are proposed by the
-Aggregate lane for the user's acceptance; nothing is built) · v0.3 ·
+Status: **Accepted** (#980; decisions (a) to (l) accepted by the user on
+2026-11-24 as recommended; PR 2 built) · v0.3 ·
 Depends on: `aggregate.md` (`Tower`, `EventSet`, the tower's simulated years
 in parallel, #970), `predictive-distribution.md`, `rng.md` · Lane: Aggregate
 
@@ -215,9 +215,23 @@ dims `["kind", "reinsurer"]` with `credit_loss`, `exposure` (after
 collateral) and `default` (0 or 1) for each reinsurer, from the same draws
 as `apply` with the same seed.
 
+As built in PR 2 (`crates/prospicio-aggregate/src/reinsurance/panel.rs`),
+where the note left a choice open: `credit_loss` and `recovered` come for
+every layer of the input, in its order, not only the layers the panel
+names (zero credit loss, and the ceded loss recovered in full, on a layer
+the panel does not name), so `recovered` summed over layers is the total
+recovered. The lines are checked against the result when the panel is
+applied (a layer the result does not have, a named layer's lines not
+summing to 1, a driver of the wrong length), since a panel is built
+before it meets a tower. `apply` refuses a result a panel was already
+applied to, and a term's paths (a `"year"` dimension with integer years)
+until `apply_term` exists. The provenance also records the driver
+(`default_driver`) and each reinsurer's terms and lines
+(`reinsurer:<name>`), and `Panel::reinsurers` lists the panel.
+
 ## Decisions
 
-Proposed for the user's acceptance, each with the lane's recommendation:
+Accepted by the user on 2026-11-24 as the lane recommended them:
 
 (a) *The panel is a value of its own, applied to the tower's result, not a
 field of `Tower` or `Layer`.* A field would break the public structs

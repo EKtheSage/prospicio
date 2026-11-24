@@ -74,7 +74,7 @@ pub use pml::{
 };
 pub use reinsurance::{
     Basis, CarryForward, Commission, Corridor, Layer, LimitAllocation, LossSensitivePremium,
-    NoClaimsBonus, ProfitCommission, Tower,
+    NoClaimsBonus, Panel, ProfitCommission, Reinsurer, Tower,
 };
 pub use renewal::{RenewalCount, Wait, WaitGrid, renewal_count};
 pub use ruin::{
