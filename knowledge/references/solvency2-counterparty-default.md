@@ -25,6 +25,9 @@ sources:
   - id: qa3119
     resource: https://www.eiopa.europa.eu/qa-regulation/questions-and-answers-database/3119_en
     title: EIOPA Q&A 3119 on the factor F' after 2019/981
+  - id: qa2530
+    resource: https://www.eiopa.europa.eu/qa-regulation/questions-and-answers-database/2530_en
+    title: EIOPA Q&A 2530 on V_inter terms with zero probabilities of default
   - id: note
     resource: ../docs/design/reinsurer-default.md
     title: The design note for reinsurer default on a tower (#980)
@@ -60,17 +63,21 @@ legislation.gov.uk on 2026-11-24; no test in CI checks these numbers yet.
 - **Unrated Solvency II undertakings meeting their MCR (Art 199(3))**: by
   solvency ratio, linearly interpolated between 196% (0.01%), 175% (0.05%),
   150% (0.1%), 125% (0.2%), 122% (0.24%), 100% (0.5%), 95% (1.2%) and 75%
-  (4.2%); 4.2% below 75%; 4.2% if the MCR is not met; a 100% ratio (0.5%)
-  if no ratio is disclosed yet.
+  (4.2%); 0.01% above 196%; 4.2% below 75%; 4.2% if the MCR is not met.
+  Before an undertaking's first solvency ratio is disclosed (Art 199(5)),
+  the credit quality step applies if an ECAI assessment exists, and
+  otherwise a 100% ratio (0.5%).
 - **SCR (Art 200)**: with `sigma = sqrt(V)` and the sum of the LGDs of all
   type 1 exposures, `3 sigma` if `sigma` is at most 7% of that sum, `5 sigma`
   if at most 20%, else the sum.
 - **Variance (Art 201)**: `V = V_inter + V_intra`, with exposures grouped
   by probability of default `PD_j` and `TLGD_j` the sum of the LGDs in
-  group `j`: `V_inter = sum over j, k of PD_j(1 - PD_j) PD_k(1 - PD_k) /
+  group `j`: `V_inter = sum over all ordered pairs (j, k), j = k included,
+  of PD_j(1 - PD_j) PD_k(1 - PD_k) /
   (1.25 (PD_j + PD_k) - PD_j PD_k) TLGD_j TLGD_k` and `V_intra = sum over
   j of 1.5 PD_j (1 - PD_j) / (2.5 - PD_j) times the sum of the squared
-  LGDs in group j`.
+  LGDs in group j`. EIOPA Q&A 2530 takes a term whose two probabilities
+  are both 0 as 0.
 
 # Recovery rates
 

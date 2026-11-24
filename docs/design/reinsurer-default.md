@@ -112,21 +112,32 @@ tie at zero): with `b_i` years strictly below year `i`'s driver and `t_i`
 years tied with it (itself included), `U_i = (b_i + v_i t_i) / n`, with
 `v_i` uniform from year `i`'s own stream. Without ties this is the usual
 randomised rank, and in either case `U_i` is uniform on (0, 1) over the
-years, so `Z_i` is standard normal and the mean probability of default
-stays `p_r`.
+years (each tie group fills its own interval `(b_i / n, (b_i + t_i) / n)`),
+so `Z_i` is standard normal and the mean probability of default stays
+`p_r`. `v_i` comes from `StreamRng::next_open01`, so `U_i` is strictly
+inside (0, 1) and `Z_i` is finite; `p_r(z)` is taken as exactly `p_r` when
+`rho_r = 0`.
 
 ### Over a term
 
 In `apply_term`'s result a row is a path of `T` years. A default is final:
-a reinsurer that defaults in year `t` of a path recovers nothing more (past
-its recovery rate and collateral) on that path in years after `t`. Each
-year's factor comes from that year's driver ranked among all path-years, and
-the draws come from one stream per path, year after year.
+a reinsurer that defaults in year `t` of a path stays in default for the
+rest of the path, and each later year's exposure is lost at `1 - R_r` too.
+Collateral is held once per path and used up: in each year in default the
+collateral still held is set against that year's exposure, and whatever it
+covered is gone for the later years. Each year's factor comes from that
+year's driver ranked among all path-years (a driver given for a term is
+path-major, `n_paths * T` values, year `t` of path `j` at `j * T + t`), and
+the draws come from one stream per path, year after year: `v` and the
+reinsurers' uniforms for year 1, then for year 2, and so on. A reinsurer
+already in default still draws, so the draws do not depend on the path's
+history.
 
 ## API
 
 ```rust
 /// A reinsurer on a panel.
+#[non_exhaustive]
 pub struct Reinsurer {
     pub name: String,
     /// One-year probability of default, in [0, 1].
@@ -139,6 +150,12 @@ pub struct Reinsurer {
     pub correlation: f64,
 }
 
+impl Reinsurer {
+    pub fn new(name: &str, probability: f64, recovery: f64) -> Result<Self>;
+    pub fn collateral(self, amount: f64) -> Result<Self>;
+    pub fn correlation(self, rho: f64) -> Result<Self>;
+}
+
 /// The reinsurers on a tower and their signed lines.
 pub struct Panel { /* reinsurers, lines by (reinsurer, layer), driver */ }
 
@@ -148,10 +165,13 @@ impl Panel {
     pub fn line(self, reinsurer: &str, layer: &str, line: f64) -> Result<Self>;
     /// Rank the years by this driver instead of the gross loss.
     pub fn driver(self, by_year: Vec<f64>) -> Result<Self>;
-    /// The tower's simulated years after default.
+    /// A one-year result (`apply`, `apply_aggregate`, `apply_annual`) after default.
     pub fn apply(&self, tower: &PredictiveDistribution, seed: u64)
         -> Result<PredictiveDistribution>;
-    /// Credit loss, exposure and default by reinsurer.
+    /// A term's paths (`apply_term`, `apply_aggregate_term`) after default.
+    pub fn apply_term(&self, tower: &PredictiveDistribution, n_years: usize, seed: u64)
+        -> Result<PredictiveDistribution>;
+    /// Credit loss, exposure and default by reinsurer, from the same draws.
     pub fn by_reinsurer(&self, tower: &PredictiveDistribution, seed: u64)
         -> Result<PredictiveDistribution>;
 }
@@ -160,20 +180,32 @@ impl Panel {
 pub mod solvency2 {
     pub fn probability_by_step(step: u8) -> Result<f64>;          // Art 199(2)
     pub fn probability_by_ratio(scr_ratio: f64) -> Result<f64>;   // Art 199(3)
+    /// `lgd_share` is 0.5, or 0.9 for a counterparty with 60 % or more of
+    /// its assets collateralised; `factor` is F, or F' in the 90 % case.
     pub fn reinsurance_lgd(recoverables: f64, risk_mitigation: f64,
-        collateral: f64, factor: f64) -> Result<f64>;              // Art 192(2)
+        collateral: f64, lgd_share: f64, factor: f64) -> Result<f64>; // Art 192(2)
     pub fn type1(exposures: &[(f64, f64)]) -> Result<Type1>;       // Arts 200, 201
 }
 ```
 
-`Panel::apply` takes the tower's result (from `apply`, `apply_aggregate`,
-`apply_annual` or `apply_term`) and returns it with these components added:
+`Panel::apply` takes the tower's one-year result and returns it, its
+components copied bit for bit, with these components added (`apply_term`
+does the same for a term's paths, with the year as the last key of each
+new component, as `apply_term`'s own components have it). A term and a
+one-year result labelled by `year` have the same dims, so the term has an
+entry point of its own rather than being guessed from the shape:
 
 | Component | Meaning |
 |---|---|
 | `("credit_loss", l)` | the credit loss on layer `l` (decision (f)) |
 | `("recovered", l)` | layer `l`'s ceded loss less its credit loss |
 | `("net_after_default", "retained")` | the net loss plus the year's credit loss |
+
+On a labelled result the three new kinds go under the label `""` in every
+label dim, as the annual terms do: collateral nets across labels, so the
+credit loss has no split by label without a further rule, and
+`net_after_default` is the total over labels. The three kind names join
+`RESERVED` (`deal.rs`), so no deduction can take them.
 
 `ceded` and `net` are left as they are, so `net = gross - sum of ceded`
 still holds, and the new kinds sit beside them: `select("kind",
@@ -225,10 +257,10 @@ over a recovery pattern, is Next item `[reinsurer-default-payout]`.
 
 (f) *Credit loss by layer splits a reinsurer's loss over its layers in
 proportion to its exposure on each:* layer `l` gets
-`L_{r,i} s_{r,l} X_{l,i} / E_{r,i}`. Collateral nets across layers, so
-some rule is needed, and this one makes the layers' credit losses sum to
-the reinsurer's. On labelled results the credit loss goes under the label
-`""`, as the annual terms do.
+`L_{r,i} s_{r,l} X_{l,i} / E_{r,i}` (0 when `E_{r,i} = 0`). Collateral
+nets across layers, so some rule is needed, and this one makes the layers'
+credit losses sum to the reinsurer's. On labelled results the new kinds go
+under the label `""`, as the annual terms do.
 
 (g) *Wrong-way risk by one Gaussian factor ranked on the gross loss* (the
 model above). It needs one number per reinsurer, keeps each reinsurer's
@@ -253,8 +285,12 @@ uniform per reinsurer in panel order, drawn whether or not the reinsurer
 has an exposure that year. Reinsurer `r` defaults when its uniform is below
 `p_r(Z_i)`. The stream block keeps the draws apart from the events' own
 streams (`i` for the year, `TIME_STREAM = 1 << 63` plus `i` for event
-times) even when the caller passes the events' seed, and the provenance
-records the seed and a sampler id (`reinsurer-default/2026-11`). Each row
+times) even when the caller passes the events' seed. The result keeps the
+tower result's provenance (`draws_from`), so `join` still sees that it
+shares the events' streams, and records the panel's seed and stream block
+as parameters (`default_seed`, `default_streams`). It adds no sampler id:
+`SAMPLERS` lists a model's draw order only once it changes (`rng.md`), and
+the order above is documented here and in the module's doc. Each row
 depends only on its index and the ranks, which are computed once before the
 rows, so the result is the same on any number of threads (#1053's rule).
 Over a term the stream is the path's, and the years draw in order.
@@ -270,11 +306,16 @@ are not ours to pin.
 (k) *Solvency II helpers are pure functions with every input explicit*: the
 best estimate of recoverables, the risk-mitigating effect `RM_re` and the
 risk-adjusted collateral are the caller's (the library has no standard
-formula underwriting SCR to compute `RM_re` from), and the factor `F` of
-Article 197(7) is an argument (100 % or 50 %), as is the 90 % loss given
-default of a heavily collateralised counterparty. `type1` groups exposures
-by probability of default and returns `V_inter`, `V_intra`, the standard
-deviation and `SCR_def,1`.
+formula underwriting SCR to compute `RM_re` from), and the factor of
+Article 197(7) is an argument (F is 100 % or 50 %; F' is 100 % or 18 %, a
+figure EIOPA Q&A 3119 questions), as is the share, 50 % or the 90 % of a
+counterparty with 60 % or more of its assets collateralised.
+`probability_by_ratio` clamps at both ends (0.01 % above 196 %, 4.2 %
+below 75 %). `type1` groups exposures by probability of default and
+returns `V_inter` (over all ordered pairs `(j, k)`, the diagonal included,
+so each pair of different groups counts twice; a term with both
+probabilities 0 is 0, EIOPA Q&A 2530), `V_intra`, the standard deviation
+and `SCR_def,1`.
 
 (l) *Weighted years.* `simulate_events_weighted` returns its weights apart
 from the `EventSet`, and the tower's result is unweighted, so ranks and
@@ -284,10 +325,11 @@ result as for any other component.
 ## Validation
 
 - **Exact identities** (unit tests): `p = 0` gives no credit loss; `p = 1`
-  gives `(1 - R)(E - C)^+` in every year exactly; `R = 1` or
-  `C >= E` gives no credit loss; `rho = 0` gives the same defaults as the
-  independent draws; credit loss by layer sums to the credit loss by
-  reinsurer; a tower without a panel is untouched.
+  gives `(1 - R)(E - C)^+` in every year exactly, and over a term the
+  collateral used up year by year; `R = 1` or `C >= E` gives no credit
+  loss; `rho = 0` gives the same defaults as the independent draws; credit
+  loss by layer sums to the credit loss by reinsurer; the input's
+  components are copied bit for bit.
 - **Determinism**: the result's bits are the same on 1, 2, 3 and 8 threads,
   as in `aggregate_tower_threads.rs`, for `apply`, labelled `apply` and
   `apply_term`.
@@ -295,8 +337,9 @@ result as for any other component.
   with independent default, `E[credit loss] = sum over r of p_r (1 - R_r)
   E[(E_r - C_r)^+]` and the variance from the law of total variance; with
   the factor, a single excess layer on an annual lognormal gross loss `G`
-  ranked on itself has `E[credit loss] = (1 - R) s` times the integral over
-  `u` in (0, 1) of `c(F_G^{-1}(u)) p(Phi^{-1}(u))` with
+  ranked on itself, one reinsurer with line `s` and collateral `C`, has
+  `E[credit loss] = (1 - R)` times the integral over `u` in (0, 1) of
+  `(s c(F_G^{-1}(u)) - C)^+ p(Phi^{-1}(u))` with
   `p(x) = Phi((Phi^{-1}(p) + sqrt(rho) x) / sqrt(1 - rho))` and `c` the
   layer's ceded loss, by quadrature. The simulated mean must fall within
   four standard errors. The probabilities used here are large (5 % to
@@ -327,17 +370,24 @@ in the PR, if it is still open):
 2. `Panel`, `Reinsurer` and `Panel::apply` and `by_reinsurer` on one-year
    results (`apply`, `apply_aggregate`, `apply_annual`, labelled or not),
    with the unit tests, the determinism test
-   (`validation/tests/aggregate_reinsurer_default_threads.rs`) and
-   allow-list entries for the bindings that PR 5 adds. Independent and
-   factor default together, since the factor with `rho = 0` is the
-   independent case.
+   (`validation/tests/aggregate_reinsurer_default_threads.rs`), the new
+   kinds in `RESERVED`, and allow-list entries (reason: bound in PR 5) for
+   `Panel` and `Reinsurer`. Independent and factor default together, since
+   the factor with `rho = 0` is the independent case.
 3. The reference generator, file and validation test.
-4. The `solvency2` module, with its rows in the reference file.
-5. Python and R bindings (`reinsurance` module files; `Panel` and
-   `Reinsurer` as `prospicio.reinsurance.Panel` and `reinsurer_panel` in R),
-   their tests in new files, the allow-list entries removed, a changelog
-   fragment, the knowledge fragment and the Done bullet `#980`.
-6. Default over a term (`apply_term`'s paths, final default).
+4. The `solvency2` module, with its rows in the reference file and its
+   Python and R bindings (pure functions on numbers).
+5. Python and R bindings for the panel (`reinsurance` module files;
+   `prospicio.reinsurance.Panel` and `Reinsurer`, `reinsurer_panel` in R),
+   their tests in new files, the allow-list entries removed.
+6. Default over a term (`Panel::apply_term`, final default, collateral used
+   up), in Rust, Python and R, and the Done bullet `#980`.
+
+Every PR appends a Done bullet repeating its own Next id
+(`[reinsurer-default-core]` and so on) to `docs/lanes/done/aggregate.md`,
+adds a knowledge fragment (or says it taught nothing new), and, when it
+changes the public API, a changelog fragment under "Aggregate and
+reinsurance".
 
 ## Next
 
@@ -356,7 +406,8 @@ The Next items with ids in `docs/lanes/aggregate.md`:
   reinsurance arrangement), Art 196 (risk-mitigating effect), Art 197
   (collateral, factors F), Art 199 (probability of default by credit
   quality step and by solvency ratio), Art 200 (`SCR_def,1`), Art 201
-  (`V_inter`, `V_intra`). EIOPA Solvency II single rulebook,
+  (`V_inter`, `V_intra`). EIOPA Solvency II single rulebook, and EIOPA Q&A 2530 and
+  3119,
   https://www.eiopa.europa.eu/rulebook/solvency-ii-single-rulebook_en
 - Reinsurance Bad Debt Provisions for General Insurance Companies, working
   party report (Lloyd's and the Institute of Actuaries, 2000, with a 2005
