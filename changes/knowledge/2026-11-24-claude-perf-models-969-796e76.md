@@ -1,0 +1,1 @@
+* **Creation**: [Blocked, parallel X'WX makes a freMTPL2-sized GLM fit about 50 times faster](/findings/glm-gram-benchmark.md), from #969 (branch claude/perf-models-969-796e76): row blocks with rayon and column dots, bit-identical on any thread count, moved in the last bits from 0.2.
