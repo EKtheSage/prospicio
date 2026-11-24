@@ -592,6 +592,11 @@ generators = ["aggregate_reinsurance.py"]
 sha256 = "622e6fd2fd744b2fdb0e319461506520112d276e1dd8ec6decb826879e02dd0a"
 
 [[file]]
+path = "reinsurer_default.csv"
+generators = ["aggregate_reinsurer_default.py"]
+sha256 = "1a674b01dce9ec667293942324438f224aac64b2a6db6cd15dae9bd868c6123d"
+
+[[file]]
 path = "renewal_count_aggregate.csv"
 generators = ["aggregate_renewal.py"]
 sha256 = "5916840da95020d6940b38fcc1d900e351d15baac9984f8dfb4c48161ea83202"
