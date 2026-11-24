@@ -45,11 +45,11 @@ fn sample_one_matches_sample_for_every_override() {
         );
     }
     let gamma = Gamma::new(2.5, 3.0).unwrap();
-    agrees("dist gamma", &Dist::from(gamma.clone()));
-    agrees("severity gamma", &severity(gamma.clone()));
+    agrees("dist gamma", &Dist::from(gamma));
+    agrees("severity gamma", &severity(gamma));
     agrees(
         "affine gamma",
-        &Affine::new(severity(gamma.clone()), 2.0, 5.0).unwrap(),
+        &Affine::new(severity(gamma), 2.0, 5.0).unwrap(),
     );
     let boxed: Box<dyn Distribution> = Box::new(gamma);
     agrees("box dyn gamma", &boxed);
@@ -69,7 +69,7 @@ fn sample_one_matches_sample_for_every_override() {
 fn sample_one_matches_sample_on_the_default_inverse_transform() {
     let lognormal = Lognormal::from_mean_cv(100.0, 0.3).unwrap();
     agrees("lognormal", &lognormal);
-    agrees("dist lognormal", &Dist::from(lognormal.clone()));
+    agrees("dist lognormal", &Dist::from(lognormal));
     agrees(
         "affine lognormal",
         &Affine::new(severity(lognormal), 0.5, 1.0).unwrap(),
