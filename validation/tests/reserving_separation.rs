@@ -1,20 +1,30 @@
-//! Taylor's arithmetic separation method (`reserving-inflation.md`, PR 3,
-//! #979) against the Poisson GLM on development and calendar factors that
-//! it equals (statsmodels; `scripts/reserving_separation_statsmodels.py`)
-//! on GenIns and ABC, with and without a normaliser, and against Taylor's
-//! (1977) printed Example 1 (validation target 2).
+//! Taylor's separation method (`reserving-inflation.md`, PRs 3 and 4,
+//! #979): the arithmetic method against the Poisson GLM on development and
+//! calendar factors that it equals, and the geometric method against least
+//! squares on the logs (statsmodels;
+//! `scripts/reserving_separation_statsmodels.py`) on GenIns and ABC, with
+//! and without a normaliser (validation targets 2 and 3), and the
+//! arithmetic method against Taylor's (1977) printed Example 1.
 
 use std::collections::HashMap;
 
 use prospicio_reserving::{
-    FutureInflation, Period, Separation, SeparationFit, SeparationKind, Triangle,
+    FutureInflation, Period, Retransformation, Separation, SeparationFit, SeparationKind, Triangle,
 };
 use prospicio_validation::{check, reference, triangle, triangle_columns};
 
 fn fit(dataset: &str, method: &str) -> SeparationFit {
+    let kind = match method {
+        "arithmetic" | "arithmetic_premium" => SeparationKind::Arithmetic,
+        "geometric" | "geometric_premium" => {
+            SeparationKind::Geometric(Retransformation::GeometricMean)
+        }
+        "geometric_lognormal" => SeparationKind::Geometric(Retransformation::LognormalMean),
+        other => panic!("unknown method {other}"),
+    };
     let (tri, column, normaliser): (Triangle, &str, Option<Vec<f64>>) = match method {
-        "arithmetic" => (triangle(dataset), "values", None),
-        "arithmetic_premium" => {
+        "arithmetic" | "geometric" | "geometric_lognormal" => (triangle(dataset), "values", None),
+        "arithmetic_premium" | "geometric_premium" => {
             let tri = triangle_columns("genins_premium", &["paid", "premium"]);
             let premium = tri
                 .latest_diagonal()
@@ -24,7 +34,7 @@ fn fit(dataset: &str, method: &str) -> SeparationFit {
         other => panic!("unknown method {other}"),
     };
     Separation {
-        kind: SeparationKind::Arithmetic,
+        kind,
         normaliser,
         future: FutureInflation::Rate(0.05),
     }
@@ -32,8 +42,11 @@ fn fit(dataset: &str, method: &str) -> SeparationFit {
     .unwrap()
 }
 
+/// Every row: the arithmetic method against the Poisson GLM, the
+/// geometric method (both retransformations) against least squares on
+/// the logs.
 #[test]
-fn arithmetic_separation_matches_the_poisson_glm() {
+fn separation_matches_statsmodels() {
     let mut fits: HashMap<(String, String), SeparationFit> = HashMap::new();
     check(&reference("reserving_separation_statsmodels.csv"), |case| {
         let (dataset, method) = (case.get("dataset"), case.get("method"));
@@ -67,6 +80,7 @@ fn arithmetic_separation_matches_the_poisson_glm() {
             }
             "reserve" => Some(fit.reserves[origin(case.number("arg")?)?]),
             "total_reserve" => Some(fit.total_reserve()),
+            "log_variance" => fit.log_variance,
             _ => None,
         }
     });
