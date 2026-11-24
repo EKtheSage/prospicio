@@ -428,7 +428,7 @@ pub(super) fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
         HalfPrior::StudentT { nu, scale } => {
             let chi2 = Gamma::new(nu / 2.0, 2.0)
                 .expect("nu was validated")
-                .sample(rng, 1)[0];
+                .sample_one(rng);
             scale * z / (chi2 / nu).sqrt()
         }
         HalfPrior::Normal { scale } => scale * z,

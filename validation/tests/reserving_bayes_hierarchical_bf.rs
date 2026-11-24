@@ -1076,8 +1076,12 @@ fn a_tight_hyperprior_reduces_to_the_normalised_fit_on_raa() {
 /// Validation item 5's limit: the one-year view of one program with a tight
 /// hyperprior and spreads near 0 is `BayesBfNormalised`'s, both reweighting
 /// only so that refit noise stays out: the opening reserves and the
-/// claims development result's total and origins' means within `0.1 s` and
-/// its sds within 10%.
+/// claims development result's total and origins' means within `0.1 s`, the
+/// total's sd within 10% and each origin's within 20%. An origin's sd from
+/// 4,000 simulations is noisy: `BayesBfNormalised` alone gave origin 1 an
+/// sd of 601 to 712 over seeds 32 to 35 (Windows, #972), so a ratio of two
+/// of them can leave 10% by chance, as one did on Linux when
+/// `HierarchicalBf`'s gradient moved in its last bits (689 against 607).
 #[test]
 fn a_tight_hyperprior_reduces_the_one_year_view_to_the_normalised_one() {
     use prospicio_reserving::bayes::{BayesOneYear, OneYearRefit};
@@ -1143,7 +1147,7 @@ fn a_tight_hyperprior_reduces_the_one_year_view_to_the_normalised_one() {
                 mean(&y)
             );
             assert!(
-                (sd(&x) / sd(&y) - 1.0).abs() < 0.1,
+                (sd(&x) / sd(&y) - 1.0).abs() < 0.2,
                 "origin {w}: CDR sds {} {}",
                 sd(&x),
                 sd(&y)
