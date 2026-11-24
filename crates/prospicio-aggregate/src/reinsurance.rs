@@ -247,6 +247,11 @@ pub(crate) struct Carried {
 }
 
 impl Carried {
+    /// Forgets everything carried, keeping the memory (#970).
+    pub(crate) fn clear(&mut self) {
+        self.amounts.clear();
+    }
+
     /// Records year `t`'s `value` and returns the sum over the last `years`
     /// years recorded, `t` included (a no-claims bonus's window, #592).
     pub(crate) fn window(&mut self, value: f64, t: usize, years: u32) -> f64 {

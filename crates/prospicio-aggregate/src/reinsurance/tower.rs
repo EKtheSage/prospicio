@@ -14,6 +14,75 @@ pub(crate) struct ScopeView<'a> {
     pub(crate) masks: &'a [Option<Vec<bool>>],
 }
 
+/// The buffers one simulated year of a tower works in. A simulation keeps
+/// one per thread and reuses it from year to year, so the years allocate
+/// nothing once the buffers have grown to the largest year (#970).
+#[derive(Debug, Default)]
+pub(crate) struct YearScratch {
+    /// Each layer's ceded loss and reinstatement premium.
+    pub(crate) ceded: Vec<(f64, f64)>,
+    /// Each layer's scale key.
+    pub(crate) keys: Vec<f64>,
+    /// Each layer's ceded loss by entry, when asked for.
+    pub(crate) by_event: Vec<Vec<f64>>,
+    /// The entries a stage sees, net of the earlier stages.
+    seen: Vec<f64>,
+    stage_by_event: Vec<f64>,
+    layer_by_event: Vec<f64>,
+    masked: Vec<f64>,
+    dropped: Vec<f64>,
+    under_seen: Vec<f64>,
+    used: Vec<f64>,
+    all_of: Vec<usize>,
+    all_times: Vec<f64>,
+    all_lf: Vec<f64>,
+}
+
+/// [`YearScratch`] with what a labelled year adds: each entry's label
+/// combination and the sums by label.
+#[derive(Debug, Default)]
+struct LabeledScratch {
+    year: YearScratch,
+    carried: Vec<Carried>,
+    of: Vec<usize>,
+    by_label: Vec<f64>,
+}
+
+/// The rows a parallel task takes at least: enough that a year with one
+/// loss (an aggregate or annual total) is not swamped by the scheduling.
+const MIN_ROWS_PER_TASK: usize = 256;
+
+/// `n_rows` rows of `width` values each, row-major, with row `i` written
+/// by `fill(state, row, i)` into an empty `row`. The rows are filled in
+/// parallel with one `S` per task (its buffers reused from row to row), and
+/// each row depends only on its index, so the result is the same whatever
+/// the number of threads; on `wasm32` Rayon runs them on the calling
+/// thread.
+pub(crate) fn fill_rows<S: Default>(
+    n_rows: usize,
+    width: usize,
+    fill: impl Fn(&mut S, &mut Vec<f64>, usize) + Sync,
+) -> Vec<f64> {
+    use rayon::prelude::*;
+    let mut draws = vec![0.0; n_rows * width];
+    if width == 0 {
+        return draws;
+    }
+    draws
+        .par_chunks_mut(width)
+        .enumerate()
+        .with_min_len(MIN_ROWS_PER_TASK)
+        .for_each_init(
+            || (S::default(), Vec::with_capacity(width)),
+            |(state, row), (i, out)| {
+                row.clear();
+                fill(state, row, i);
+                out.copy_from_slice(row);
+            },
+        );
+    draws
+}
+
 /// A reinsurance programme: layers in inuring stages.
 ///
 /// Layers in the same stage see the same losses: the gross losses in the
@@ -290,7 +359,9 @@ impl Tower {
         si: Option<&[f64]>,
         times: Option<&[f64]>,
     ) -> Vec<(f64, f64)> {
-        self.year_by_event(&[], losses, si, times, None, None, None, None)
+        let mut w = YearScratch::default();
+        self.year_by_event(&mut w, &[], losses, si, times, None, None, false);
+        w.ceded
     }
 
     /// [`year`](Self::year) with each layer's scale key: the ceded loss, or
@@ -298,76 +369,108 @@ impl Tower {
     /// [`scales_before_annual_terms`](Layer::scales_before_annual_terms) its
     /// share of the year's recoveries before the annual terms.
     pub(crate) fn year_keyed(&self, losses: &[f64]) -> (Vec<(f64, f64)>, Vec<f64>) {
-        let mut keys = Vec::with_capacity(self.layers.len());
-        let year = self.year_by_event(&[], losses, None, None, None, None, None, Some(&mut keys));
-        (year, keys)
+        let mut w = YearScratch::default();
+        self.year_by_event(&mut w, &[], losses, None, None, None, None, false);
+        (w.ceded, w.keys)
     }
 
     /// [`year`](Self::year) with an aggregate part `aggregate` beside the
-    /// events, and with `by_event` each layer's ceded loss by entry (one
+    /// events, written into `w`: `w.ceded` each layer's ceded loss and
+    /// reinstatement premium, `w.keys` each layer's scale key (the ceded
+    /// loss, or for a layer with
+    /// [`scales_before_annual_terms`](Layer::scales_before_annual_terms)
+    /// its share of the year's recoveries before the annual terms) and,
+    /// with `by_event`, `w.by_event` each layer's ceded loss by entry (one
     /// vector per layer, in tower order, the aggregate part's entries
     /// first). The aggregate part comes before the events in the year and
     /// only layers that [see it](Layer::sees_aggregate_part) cede from it.
-    /// With `keys` each layer's scale key: the ceded loss, or for a layer
-    /// with [`scales_before_annual_terms`](Layer::scales_before_annual_terms)
-    /// its share of the year's recoveries before the annual terms.
+    /// `w`'s buffers keep their memory from one year to the next, so a
+    /// simulation allocates nothing per year (#970).
     #[allow(clippy::too_many_arguments)]
-    fn year_by_event(
+    pub(crate) fn year_by_event(
         &self,
+        w: &mut YearScratch,
         aggregate: &[f64],
         losses: &[f64],
         si: Option<&[f64]>,
         times: Option<&[f64]>,
         lf: Option<&[f64]>,
         scope: Option<ScopeView<'_>>,
-        mut by_event: Option<&mut Vec<Vec<f64>>>,
-        mut keys: Option<&mut Vec<f64>>,
-    ) -> Vec<(f64, f64)> {
-        let mut ceded = Vec::with_capacity(self.layers.len());
+        by_event: bool,
+    ) {
+        let YearScratch {
+            ceded,
+            keys,
+            by_event: by_event_out,
+            seen,
+            stage_by_event,
+            layer_by_event,
+            masked,
+            dropped,
+            under_seen,
+            used,
+            all_of,
+            all_times,
+            all_lf,
+        } = w;
+        ceded.clear();
+        keys.clear();
+        if by_event {
+            by_event_out.resize_with(self.layers.len(), Vec::new);
+        }
         let n_agg = aggregate.len();
         // Each entry's label combination, the aggregate part's first, when a
         // layer is scoped.
-        let all_of: Option<Vec<usize>> =
-            scope.map(|v| v.aggregate.iter().chain(v.events).copied().collect());
-        let mut masked: Vec<f64> = Vec::new();
-        let mut dropped: Vec<f64> = Vec::new();
-        let mut seen: Vec<f64> = aggregate.iter().chain(losses).copied().collect();
+        let all_of: Option<&[usize]> = match scope {
+            Some(v) => {
+                all_of.clear();
+                all_of.extend(v.aggregate.iter().chain(v.events).copied());
+                Some(&all_of[..])
+            }
+            None => None,
+        };
+        seen.clear();
+        seen.extend(aggregate.iter().chain(losses).copied());
         // A layer that sees the aggregate part is on the loss, so needs no
         // sum insured; the part's time is the year's start.
-        let all_times: Option<Vec<f64>> = (n_agg > 0)
-            .then(|| {
-                times.map(|t| {
-                    std::iter::repeat_n(0.0, n_agg)
-                        .chain(t.iter().copied())
-                        .collect()
-                })
-            })
-            .flatten();
+        let all_times: Option<&[f64]> = match times {
+            Some(t) if n_agg > 0 => {
+                all_times.clear();
+                all_times.extend(std::iter::repeat_n(0.0, n_agg).chain(t.iter().copied()));
+                Some(&all_times[..])
+            }
+            _ => None,
+        };
         // The aggregate part is not an event, so its limit is not scaled.
-        let all_lf: Option<Vec<f64>> = (n_agg > 0)
-            .then(|| {
-                lf.map(|f| {
-                    std::iter::repeat_n(1.0, n_agg)
-                        .chain(f.iter().copied())
-                        .collect()
-                })
-            })
-            .flatten();
+        let all_lf: Option<&[f64]> = match lf {
+            Some(f) if n_agg > 0 => {
+                all_lf.clear();
+                all_lf.extend(std::iter::repeat_n(1.0, n_agg).chain(f.iter().copied()));
+                Some(&all_lf[..])
+            }
+            _ => None,
+        };
         let last_stage = self.stages.last().copied().unwrap_or(0);
         let mut i = 0;
         while i < self.layers.len() {
             let stage = self.stages[i];
             let end = i + self.stages[i..].iter().take_while(|&&s| s == stage).count();
-            let mut stage_by_event = vec![0.0; seen.len()];
+            // Each entry's loss to the stage, which the next stage sees
+            // netted off; needed only before a later stage or by event.
+            let split = stage < last_stage || by_event;
+            if split {
+                stage_by_event.clear();
+                stage_by_event.resize(seen.len(), 0.0);
+            }
             for (li, layer) in self.layers.iter().enumerate().take(end).skip(i) {
                 let sees = n_agg > 0 && layer.sees_aggregate_part();
                 let (mut x, s, t, f) = if sees {
-                    (&seen[..], None, all_times.as_deref(), all_lf.as_deref())
+                    (&seen[..], None, all_times, all_lf)
                 } else {
                     (&seen[n_agg..], si, times, lf)
                 };
                 // A scoped layer sees the entries outside its scope as zero.
-                if let (Some(view), Some(of)) = (scope, all_of.as_deref())
+                if let (Some(view), Some(of)) = (scope, all_of)
                     && let Some(mask) = &view.masks[li]
                 {
                     let of = if sees { of } else { &of[n_agg..] };
@@ -377,7 +480,7 @@ impl Tower {
                             .zip(of)
                             .map(|(&v, &c)| if mask[c] { v } else { 0.0 }),
                     );
-                    x = &masked;
+                    x = &masked[..];
                 }
                 // A top-and-drop layer sees each event after its underlying
                 // layer's annual limit is used up shifted up by the drop, so
@@ -389,17 +492,19 @@ impl Tower {
                         .position(|l| l.name == d.underlying)
                         .expect("Tower::inuring checks the underlying layer");
                     let under = &self.layers[u];
-                    let mut ux: Vec<f64> = seen[n_agg..].to_vec();
-                    if let (Some(view), Some(of)) = (scope, all_of.as_deref())
+                    under_seen.clear();
+                    under_seen.extend_from_slice(&seen[n_agg..]);
+                    if let (Some(view), Some(of)) = (scope, all_of)
                         && let Some(mask) = &view.masks[u]
                     {
-                        for (v, &c) in ux.iter_mut().zip(&of[n_agg..]) {
+                        for (v, &c) in under_seen.iter_mut().zip(&of[n_agg..]) {
                             if !mask[c] {
                                 *v = 0.0;
                             }
                         }
                     }
-                    let used = under.cumulative_layer_loss(&ux, si, lf);
+                    used.clear();
+                    used.extend(under.cumulative(under_seen, si, lf));
                     let shift = layer.attachment - d.attachment;
                     let offset = x.len() - used.len();
                     let mut exhausted = false;
@@ -411,38 +516,48 @@ impl Tower {
                         }
                         exhausted |= *cum >= under.aggregate_limit;
                     }
-                    x = &dropped;
+                    x = &dropped[..];
                 }
-                let layer_ceded = layer.share * layer.layer_loss(x, s, f);
-                ceded.push((layer_ceded, layer.reinstatement_premium_at(x, s, t, f)));
-                if let Some(keys) = keys.as_deref_mut() {
-                    keys.push(if layer.scales_before_annual_terms {
-                        layer.share * layer.before_terms(x, s, f)
+                // The recoveries before and after the annual terms, each
+                // summed once: the layer loss, its reinstatement premium
+                // (pro rata as to amount) and its key all read them.
+                let before = layer.before_terms(x, s, f);
+                let layer_loss = layer.after_terms(before);
+                let layer_ceded = layer.share * layer_loss;
+                let reinstatement = if layer.pro_rata_time {
+                    layer.reinstatement_premium_at(x, s, t, f)
+                } else {
+                    layer.reinstatement_premium_on(layer_loss)
+                };
+                ceded.push((layer_ceded, reinstatement));
+                keys.push(if layer.scales_before_annual_terms {
+                    layer.share * before
+                } else {
+                    layer_ceded
+                });
+                if split {
+                    let out = if by_event {
+                        &mut by_event_out[li]
                     } else {
-                        layer_ceded
-                    });
-                }
-                if stage < last_stage || by_event.is_some() {
-                    let mut layer_by_event = layer.ceded_by_event_si(x, s, f);
+                        &mut *layer_by_event
+                    };
+                    out.clear();
                     if !sees && n_agg > 0 {
-                        layer_by_event.splice(0..0, std::iter::repeat_n(0.0, n_agg));
+                        out.extend(std::iter::repeat_n(0.0, n_agg));
                     }
-                    for (total, c) in stage_by_event.iter_mut().zip(&layer_by_event) {
+                    layer.ceded_by_event_into(x, s, f, out);
+                    for (total, c) in stage_by_event.iter_mut().zip(out.iter()) {
                         *total += c;
-                    }
-                    if let Some(by_event) = by_event.as_deref_mut() {
-                        by_event.push(layer_by_event);
                     }
                 }
             }
             if stage < last_stage {
-                for (x, c) in seen.iter_mut().zip(&stage_by_event) {
+                for (x, c) in seen.iter_mut().zip(stage_by_event.iter()) {
                     *x -= c;
                 }
             }
             i = end;
         }
-        ceded
     }
 
     /// Applies the tower to every simulated year.
@@ -528,15 +643,15 @@ impl Tower {
         }
         self.refuse_scope("unlabelled events")?;
         self.apply_years(
-            (0..events.n_sims()).map(|i| {
+            events.n_sims(),
+            |i| {
                 (
                     events.aggregate_part(i).unwrap_or(&[]),
                     events.events(i),
                     events.sums_insured(i),
                     events.times(i),
                 )
-            }),
-            events.n_sims(),
+            },
             provenance,
         )
     }
@@ -594,8 +709,8 @@ impl Tower {
             .param("loss", format!("total of {}", source.model))
             .draws_from(source);
         self.apply_years(
-            totals.chunks(1).map(|t| (&[][..], t, None, None)),
             totals.len(),
+            |i| (&[][..], std::slice::from_ref(&totals[i]), None, None),
             provenance,
         )
     }
@@ -630,57 +745,60 @@ impl Tower {
         }
         let n_sims = events.n_sims();
         let agg_of = events.aggregate_part_indices().unwrap_or(&[]);
-        let mut draws = Vec::with_capacity(n_sims * components.len());
-        let mut annual = Vec::new();
-        for i in 0..n_sims {
-            let losses = events.events(i);
-            let aggregate = events.aggregate_part(i).unwrap_or(&[]);
-            let (si, times) = (events.sums_insured(i), events.times(i));
-            // Each entry's combination: the aggregate part's, then the
-            // events'.
-            let of: Vec<usize> = agg_of
-                .iter()
-                .chain(events.label_indices(i).expect("the events carry labels"))
-                .copied()
-                .collect();
-            let mut by_event = Vec::with_capacity(n_layers);
-            let mut keys = Vec::with_capacity(n_layers);
-            let scope = masks.as_deref().map(|masks| ScopeView {
-                aggregate: agg_of,
-                events: &of[agg_of.len()..],
-                masks,
-            });
-            let year = self.year_by_event(
-                aggregate,
-                losses,
-                si,
-                times,
-                None,
-                scope,
-                Some(&mut by_event),
-                Some(&mut keys),
-            );
-            let by_label = |values: &[f64]| -> Vec<f64> {
-                let mut sums = vec![0.0; n_labels];
-                for (&x, &c) in values.iter().zip(&of) {
-                    sums[c] += x;
+        let draws = fill_rows(
+            n_sims,
+            components.len(),
+            |r: &mut LabeledScratch, row, i| {
+                let LabeledScratch {
+                    year: w,
+                    carried,
+                    of,
+                    by_label,
+                } = r;
+                let losses = events.events(i);
+                let aggregate = events.aggregate_part(i).unwrap_or(&[]);
+                let (si, times) = (events.sums_insured(i), events.times(i));
+                // Each entry's combination: the aggregate part's, then the
+                // events'.
+                of.clear();
+                of.extend(
+                    agg_of
+                        .iter()
+                        .chain(events.label_indices(i).expect("the events carry labels")),
+                );
+                let scope = masks.as_deref().map(|masks| ScopeView {
+                    aggregate: agg_of,
+                    events: &of[agg_of.len()..],
+                    masks,
+                });
+                self.year_by_event(w, aggregate, losses, si, times, None, scope, true);
+                // Gross, then each layer's ceded loss, summed by label in
+                // the order of the entries; `by_label` keeps them, gross
+                // first, for the net.
+                by_label.clear();
+                by_label.resize((n_layers + 1) * n_labels, 0.0);
+                let (gross, ceded) = by_label.split_at_mut(n_labels);
+                for (&x, &c) in aggregate.iter().chain(losses).zip(of.iter()) {
+                    gross[c] += x;
                 }
-                sums
-            };
-            let all: Vec<f64> = aggregate.iter().chain(losses).copied().collect();
-            let gross = by_label(&all);
-            let ceded: Vec<Vec<f64>> = by_event.iter().map(|c| by_label(c)).collect();
-            draws.extend(&gross);
-            for c in &ceded {
-                draws.extend(c);
-            }
-            draws.extend((0..n_labels).map(|j| gross[j] - ceded.iter().map(|c| c[j]).sum::<f64>()));
-            // The annual components, as an unlabelled year writes them.
-            annual.clear();
-            let mut carried = self.carries();
-            self.push_terms(&columns, &mut annual, &year, &keys, 0, &mut carried);
-            draws.extend(&annual);
-        }
+                for (sums, by_event) in ceded.chunks_mut(n_labels).zip(&w.by_event) {
+                    for (&x, &c) in by_event.iter().zip(of.iter()) {
+                        sums[c] += x;
+                    }
+                }
+                row.extend_from_slice(by_label);
+                row.extend((0..n_labels).map(|j| {
+                    by_label[j]
+                        - by_label[n_labels..]
+                            .chunks(n_labels)
+                            .map(|c| c[j])
+                            .sum::<f64>()
+                }));
+                // The annual components, as an unlabelled year writes them.
+                self.reset_carries(carried);
+                self.push_terms(&columns, row, &w.ceded, &w.keys, 0, carried);
+            },
+        );
         let mut dims = vec!["kind".to_string(), "layer".to_string()];
         dims.extend(labels.dims.iter().cloned());
         PredictiveDistribution::from_draws(dims, components, draws, self.terms_provenance(base))
@@ -743,36 +861,60 @@ impl Tower {
         }
         let masks = self.scope_masks(events)?;
         let agg_of = events.aggregate_part_indices().unwrap_or(&[]);
-        let mut by_year = Vec::with_capacity(events.n_sims());
-        for i in 0..events.n_sims() {
-            let aggregate = events.aggregate_part(i).unwrap_or(&[]);
-            let losses = events.events(i);
-            let scope = masks.as_deref().map(|masks| ScopeView {
-                aggregate: agg_of,
-                events: events.label_indices(i).expect("a scope needs labels"),
-                masks,
-            });
-            let mut by_event = Vec::with_capacity(self.layers.len());
-            self.year_by_event(
-                aggregate,
-                losses,
-                events.sums_insured(i),
-                events.times(i),
-                None,
-                scope,
-                Some(&mut by_event),
-                None,
-            );
-            let mut row = vec![0.0; aggregate.len() + losses.len()];
-            for &j in &chosen {
-                for (r, c) in row.iter_mut().zip(&by_event[j]) {
-                    *r += c;
-                }
+        // Year `i`'s entries start at `start[i]` of one flat vector, its
+        // aggregate part's first.
+        let n_sims = events.n_sims();
+        let mut start = Vec::with_capacity(n_sims + 1);
+        start.push(0);
+        for i in 0..n_sims {
+            let n = events.aggregate_part(i).map_or(0, <[f64]>::len) + events.events(i).len();
+            start.push(start[i] + n);
+        }
+        let mut amounts = vec![0.0; start[n_sims]];
+        {
+            use rayon::prelude::*;
+            // Blocks of years, each a contiguous slice of `amounts`.
+            let mut blocks = Vec::with_capacity(n_sims.div_ceil(MIN_ROWS_PER_TASK));
+            let mut rest = &mut amounts[..];
+            for b in (0..n_sims).step_by(MIN_ROWS_PER_TASK) {
+                let e = (b + MIN_ROWS_PER_TASK).min(n_sims);
+                let (block, tail) = rest.split_at_mut(start[e] - start[b]);
+                blocks.push((b..e, block));
+                rest = tail;
             }
-            by_year.push(row);
+            blocks
+                .into_par_iter()
+                .for_each_init(YearScratch::default, |w, (years, block)| {
+                    let first = start[years.start];
+                    for i in years {
+                        let aggregate = events.aggregate_part(i).unwrap_or(&[]);
+                        let losses = events.events(i);
+                        let scope = masks.as_deref().map(|masks| ScopeView {
+                            aggregate: agg_of,
+                            events: events.label_indices(i).expect("a scope needs labels"),
+                            masks,
+                        });
+                        self.year_by_event(
+                            w,
+                            aggregate,
+                            losses,
+                            events.sums_insured(i),
+                            events.times(i),
+                            None,
+                            scope,
+                            true,
+                        );
+                        let row = &mut block[start[i] - first..start[i + 1] - first];
+                        for &j in &chosen {
+                            for (r, c) in row.iter_mut().zip(&w.by_event[j]) {
+                                *r += c;
+                            }
+                        }
+                    }
+                });
         }
         let sees = chosen.iter().any(|&j| self.layers[j].sees_aggregate_part());
-        Ok(events.with_amounts(&by_year, sees))
+        Ok(events.with_amounts(&amounts, &start, sees))
     }
 
     /// Applies the tower to plain annual losses, one per simulation, each
@@ -846,8 +988,8 @@ impl Tower {
             .version("prospicio-aggregate", env!("CARGO_PKG_VERSION"))
             .param("loss", "annual losses");
         self.apply_years(
-            losses.chunks(1).map(|t| (&[][..], t, None, None)),
             losses.len(),
+            |i| (&[][..], std::slice::from_ref(&losses[i]), None, None),
             provenance,
         )
     }
@@ -859,30 +1001,29 @@ impl Tower {
             .collect()
     }
 
+    /// One row per simulated year, `year(i)` giving year `i`'s aggregate
+    /// part, losses, sums insured and times; the years run in parallel
+    /// ([`fill_rows`]).
+    #[allow(clippy::type_complexity)]
     fn apply_years<'a>(
         &self,
-        years: impl Iterator<Item = (&'a [f64], &'a [f64], Option<&'a [f64]>, Option<&'a [f64]>)>,
         n_sims: usize,
+        year: impl Fn(usize) -> (&'a [f64], &'a [f64], Option<&'a [f64]>, Option<&'a [f64]>) + Sync,
         base: Provenance,
     ) -> Result<PredictiveDistribution> {
         let columns = Columns::new(self);
-        let mut draws = Vec::with_capacity(n_sims * columns.len(self));
-        for (aggregate, losses, si, times) in years {
-            // A single year starts with nothing carried.
-            let mut carried = self.carries();
-            self.push_year(
-                &columns,
-                &mut draws,
-                aggregate,
-                losses,
-                si,
-                times,
-                None,
-                None,
-                0,
-                &mut carried,
-            );
-        }
+        let draws = fill_rows(
+            n_sims,
+            columns.len(self),
+            |(w, carried): &mut (YearScratch, Vec<Carried>), row, i| {
+                let (aggregate, losses, si, times) = year(i);
+                // A single year starts with nothing carried.
+                self.reset_carries(carried);
+                self.push_year(
+                    &columns, row, w, aggregate, losses, si, times, None, None, 0, carried,
+                );
+            },
+        );
         let components = columns.keys(self);
         PredictiveDistribution::from_draws(
             vec!["kind".into(), "layer".into()],
@@ -902,6 +1043,7 @@ impl Tower {
         &self,
         columns: &Columns,
         draws: &mut Vec<f64>,
+        w: &mut YearScratch,
         aggregate: &[f64],
         losses: &[f64],
         si: Option<&[f64]>,
@@ -913,21 +1055,11 @@ impl Tower {
     ) {
         let gross: f64 = aggregate.iter().chain(losses).sum();
         draws.push(gross);
-        let mut keys = Vec::with_capacity(self.layers.len());
-        let year = self.year_by_event(
-            aggregate,
-            losses,
-            si,
-            times,
-            lf,
-            scope,
-            None,
-            Some(&mut keys),
-        );
-        let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
-        draws.extend(year.iter().map(|(c, _)| c));
+        self.year_by_event(w, aggregate, losses, si, times, lf, scope, false);
+        let ceded_total: f64 = w.ceded.iter().map(|(c, _)| c).sum();
+        draws.extend(w.ceded.iter().map(|(c, _)| c));
         draws.push(gross - ceded_total);
-        self.push_terms(columns, draws, &year, &keys, t, carried);
+        self.push_terms(columns, draws, &w.ceded, &w.keys, t, carried);
     }
 
     /// Appends one year's components after net: reinstatement and swing
@@ -1008,11 +1140,16 @@ impl Tower {
         }
     }
 
-    /// What a simulated term carries, empty: two per layer (the profit
-    /// commission's, then the sliding scale's), then one per deal, then
-    /// each layer's no-claims history.
-    pub(crate) fn carries(&self) -> Vec<Carried> {
-        vec![Carried::default(); 3 * self.layers.len() + self.deals.len()]
+    /// Sets `carried` to what a simulated term carries, empty: two per
+    /// layer (the profit commission's, then the sliding scale's), then one
+    /// per deal, then each layer's no-claims history. The memory is kept
+    /// for the next path or year (#970).
+    pub(crate) fn reset_carries(&self, carried: &mut Vec<Carried>) {
+        let n = 3 * self.layers.len() + self.deals.len();
+        carried.resize_with(n, Carried::default);
+        for c in carried.iter_mut() {
+            c.clear();
+        }
     }
 
     /// The provenance of a result: `base` with every layer's terms.

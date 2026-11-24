@@ -1269,8 +1269,7 @@ impl Layer {
         };
         let mut before = 0.0;
         let total: f64 = self
-            .cumulative_layer_loss(losses, si, lf)
-            .into_iter()
+            .cumulative(losses, si, lf)
             .zip(times)
             .map(|(after, t)| {
                 let u = used(before, after) * (1.0 - t);
@@ -1282,22 +1281,19 @@ impl Layer {
     }
 
     /// Layer loss at 100%, after annual terms, up to and including each
-    /// event in turn. `lf`, when given, scales each event's limit (an
-    /// interlocking factor, [`Tower::interlocking`]).
-    pub(super) fn cumulative_layer_loss(
-        &self,
-        losses: &[f64],
-        si: Option<&[f64]>,
-        lf: Option<&[f64]>,
-    ) -> Vec<f64> {
+    /// event in turn, one event at a time. `lf`, when given, scales each
+    /// event's limit (an interlocking factor, [`Tower::interlocking`]).
+    pub(super) fn cumulative<'a>(
+        &'a self,
+        losses: &'a [f64],
+        si: Option<&'a [f64]>,
+        lf: Option<&'a [f64]>,
+    ) -> impl Iterator<Item = f64> + 'a {
         let mut recovery = 0.0;
-        self.recoveries(losses, si, lf)
-            .into_iter()
-            .map(|r| {
-                recovery += r;
-                self.after_terms(recovery)
-            })
-            .collect()
+        self.recovery_iter(losses, si, lf).map(move |r| {
+            recovery += r;
+            self.after_terms(recovery)
+        })
     }
 
     /// Annual layer loss at 100%, after annual terms.
@@ -1312,7 +1308,7 @@ impl Layer {
         si: Option<&[f64]>,
         lf: Option<&[f64]>,
     ) -> f64 {
-        self.recoveries(losses, si, lf).into_iter().sum()
+        self.recovery_iter(losses, si, lf).sum()
     }
 
     /// Ceded loss per event for one year, in the order given.
@@ -1344,30 +1340,42 @@ impl Layer {
         si: Option<&[f64]>,
         lf: Option<&[f64]>,
     ) -> Vec<f64> {
+        let mut out = Vec::with_capacity(losses.len());
+        self.ceded_by_event_into(losses, si, lf, &mut out);
+        out
+    }
+
+    /// [`ceded_by_event_si`](Self::ceded_by_event_si) appended to `out`,
+    /// whose memory a simulation reuses from year to year (#970).
+    pub(super) fn ceded_by_event_into(
+        &self,
+        losses: &[f64],
+        si: Option<&[f64]>,
+        lf: Option<&[f64]>,
+        out: &mut Vec<f64>,
+    ) {
         if self.allocation == LimitAllocation::ProRata {
-            let recoveries = self.recoveries(losses, si, lf);
-            let total: f64 = recoveries.iter().sum();
+            let start = out.len();
+            out.extend(self.recovery_iter(losses, si, lf));
+            let total: f64 = out[start..].iter().sum();
             // No recovery, nothing to share; the factor is 1 by convention.
             let factor = if total > 0.0 {
                 self.after_terms(total) / total
             } else {
                 1.0
             };
-            return recoveries
-                .into_iter()
-                .map(|u| self.share * u * factor)
-                .collect();
+            for u in &mut out[start..] {
+                *u = self.share * *u * factor;
+            }
+            return;
         }
         let mut before = 0.0;
-        self.cumulative_layer_loss(losses, si, lf)
-            .into_iter()
-            .map(|cum| {
-                let after = self.share * cum;
-                let ceded = after - before;
-                before = after;
-                ceded
-            })
-            .collect()
+        out.extend(self.cumulative(losses, si, lf).map(|cum| {
+            let after = self.share * cum;
+            let ceded = after - before;
+            before = after;
+            ceded
+        }));
     }
 
     /// Per-occurrence recovery at 100%, before annual terms, of a layer on
@@ -1438,23 +1446,30 @@ impl Layer {
         si: Option<&[f64]>,
         lf: Option<&[f64]>,
     ) -> Vec<f64> {
+        self.recovery_iter(losses, si, lf).collect()
+    }
+
+    /// [`recoveries`](Self::recoveries) one event at a time, without a
+    /// vector: the sums over them add in the same order (#970).
+    fn recovery_iter<'a>(
+        &'a self,
+        losses: &'a [f64],
+        si: Option<&'a [f64]>,
+        lf: Option<&'a [f64]>,
+    ) -> impl Iterator<Item = f64> + 'a {
         let mut qualifying = 0u32;
-        losses
-            .iter()
-            .enumerate()
-            .map(|(e, &x)| {
-                let s = si.map(|s| s[e]);
-                let r = self.recovery_at(x, s, factor(lf, e));
-                match self.nth_event {
-                    Some(nth) if self.basis.amount(x, s) > nth.threshold => {
-                        qualifying += 1;
-                        if qualifying < nth.n { 0.0 } else { r }
-                    }
-                    Some(_) => 0.0,
-                    None => r,
+        losses.iter().enumerate().map(move |(e, &x)| {
+            let s = si.map(|s| s[e]);
+            let r = self.recovery_at(x, s, factor(lf, e));
+            match self.nth_event {
+                Some(nth) if self.basis.amount(x, s) > nth.threshold => {
+                    qualifying += 1;
+                    if qualifying < nth.n { 0.0 } else { r }
                 }
-            })
-            .collect()
+                Some(_) => 0.0,
+                None => r,
+            }
+        })
     }
 
     /// Annual terms applied to an annual recovery total at 100%: the
