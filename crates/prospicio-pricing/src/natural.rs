@@ -42,11 +42,12 @@
 //! the probability-weighted mean of the units, where `aggregate` takes the
 //! unweighted mean (the same when the rows are equally likely).
 
+use std::cell::RefCell;
+
 use prospicio_core::{Error, Result};
+use prospicio_math::fft::{Complex64, RealPlan};
 use prospicio_prob::distortion::{Family, calibrate};
 use prospicio_prob::{Distortion, Grid, PredictiveDistribution};
-use rustfft::FftPlanner;
-use rustfft::num_complex::Complex64;
 
 /// Which share of the assets above the asset level a unit gets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -417,26 +418,24 @@ impl Portfolio {
         }
         let span: usize = grids.iter().map(|g| g.len() - 1).sum::<usize>() + 1;
         let len = span.next_power_of_two();
-        let mut planner = FftPlanner::<f64>::new();
-        let forward = planner.plan_fft_forward(len);
-        let inverse = planner.plan_fft_inverse(len);
-        let transform = |v: &mut Vec<Complex64>| forward.process(v);
-        let pad = |values: &mut dyn Iterator<Item = f64>| {
-            let mut v: Vec<Complex64> = values.map(|x| Complex64::new(x, 0.0)).collect();
-            v.resize(len, Complex64::new(0.0, 0.0));
-            v
+        // Every sequence is real, so the transforms are real ones, on half
+        // the spectrum, and one plan serves them all.
+        let plan = RefCell::new(RealPlan::new(len));
+        let half = plan.borrow().spectrum_len();
+        let transform = |values: &mut dyn Iterator<Item = f64>| {
+            let mut signal: Vec<f64> = values.collect();
+            signal.resize(len, 0.0);
+            let mut spectrum = vec![Complex64::new(0.0, 0.0); half];
+            plan.borrow_mut().forward(&mut signal, &mut spectrum);
+            spectrum
         };
         let mut ft: Vec<Vec<Complex64>> = grids
             .iter()
-            .map(|g| {
-                let mut v = pad(&mut g.probs().iter().copied());
-                transform(&mut v);
-                v
-            })
+            .map(|g| transform(&mut g.probs().iter().copied()))
             .collect();
         // Products of the other units' transforms, from prefix and suffix
         // products (no division, so zeros in a transform are harmless).
-        let one = vec![Complex64::new(1.0, 0.0); len];
+        let one = vec![Complex64::new(1.0, 0.0); half];
         let mut prefix = vec![one.clone()];
         for f in &ft {
             let last = prefix.last().expect("starts with one");
@@ -451,16 +450,17 @@ impl Portfolio {
                 .collect();
         }
         let scale = 1.0 / len as f64;
-        let back = |mut v: Vec<Complex64>| -> Vec<f64> {
-            inverse.process(&mut v);
-            v.iter().map(|c| c.re * scale).collect()
+        let back = |mut spectrum: Vec<Complex64>| -> Vec<f64> {
+            let mut signal = vec![0.0; len];
+            plan.borrow_mut().inverse(&mut spectrum, &mut signal);
+            signal.iter_mut().for_each(|v| *v *= scale);
+            signal
         };
         let total = back(prefix[m].clone());
         let mut weighted = Vec::with_capacity(m);
         let mut leave_out = Vec::with_capacity(m);
         for (i, g) in grids.iter().enumerate() {
-            let mut xp = pad(&mut (0..g.len()).map(|j| g.x(j) * g.probs()[j]));
-            transform(&mut xp);
+            let xp = transform(&mut (0..g.len()).map(|j| g.x(j) * g.probs()[j]));
             let others: Vec<Complex64> = prefix[i]
                 .iter()
                 .zip(&suffix[i + 1])
@@ -1614,17 +1614,25 @@ impl LimitedOnGrid {
 fn convolve(a: &[f64], b: &[f64]) -> Vec<f64> {
     let out = a.len() + b.len() - 1;
     let len = out.next_power_of_two();
-    let mut planner = FftPlanner::<f64>::new();
-    let forward = planner.plan_fft_forward(len);
-    let pad = |v: &[f64]| {
-        let mut c: Vec<Complex64> = v.iter().map(|&x| Complex64::new(x, 0.0)).collect();
-        c.resize(len, Complex64::new(0.0, 0.0));
-        forward.process(&mut c);
-        c
+    let mut plan = RealPlan::new(len);
+    let half = plan.spectrum_len();
+    let mut signal = vec![0.0; len];
+    let mut transform = |v: &[f64], signal: &mut [f64]| {
+        signal[..v.len()].copy_from_slice(v);
+        signal[v.len()..].fill(0.0);
+        let mut spectrum = vec![Complex64::new(0.0, 0.0); half];
+        plan.forward(signal, &mut spectrum);
+        spectrum
     };
-    let mut prod: Vec<Complex64> = pad(a).iter().zip(&pad(b)).map(|(x, y)| x * y).collect();
-    planner.plan_fft_inverse(len).process(&mut prod);
-    prod.iter().take(out).map(|c| c.re / len as f64).collect()
+    let mut prod = transform(a, &mut signal);
+    let other = transform(b, &mut signal);
+    for (x, y) in prod.iter_mut().zip(&other) {
+        *x *= y;
+    }
+    plan.inverse(&mut prod, &mut signal);
+    signal.truncate(out);
+    signal.iter_mut().for_each(|v| *v /= len as f64);
+    signal
 }
 
 /// Each unit priced alone, the book priced together and the sum of the

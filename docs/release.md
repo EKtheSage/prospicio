@@ -265,6 +265,7 @@ two actuarial tracks.
 | Performance (each starts with a benchmark) | #969, #970, #972 |
 | Bindings and refactors | #957, #963 (with small `macro_rules!` helpers for the repeated glue), #976, #977, #978, #990, #991 |
 | Actuarial | #979 (calendar-year and superimposed inflation), #980 (reinsurer default risk on towers) |
+| Breaking, deferred from 0.2.1 | #1043 (`Trace::first_month` restored, `Trace` `#[non_exhaustive]`) |
 
 #973, #974, #761 and #981 to #983 have no milestone yet.
 

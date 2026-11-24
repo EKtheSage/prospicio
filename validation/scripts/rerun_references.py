@@ -9,7 +9,9 @@ generator is compared with the committed copy, then put back, so the working
 tree is the same afterwards:
 
 - a CSV with `expected`, `abs_tol` and `rel_tol` columns: rows are matched on
-  every other column but `source`, and a new `expected` passes when it is
+  every other column but `source` (a float in a key is matched to 12
+  significant digits, so a last-digit move of a computed argument is not a
+  row removed and another added), and a new `expected` passes when it is
   within `max(abs_tol, rel_tol * |committed|)` of the committed value; a row
   added or removed is a difference, and a changed `source` (a package that
   moved) is listed but is not one;
@@ -169,6 +171,18 @@ def same(a: float, b: float, abs_tol: float, rel_tol: float) -> bool:
     return abs(a - b) <= max(abs_tol, rel_tol * abs(b))
 
 
+KEY_FLOAT = re.compile(r"-?\d+\.\d+(?:[eE][-+]?\d+)?|-?\d+[eE][-+]?\d+")
+
+
+def key_text(cell: str) -> str:
+    """A key cell for matching rows: every float in it to 12 significant
+    digits. A computed argument (a quantile, a mean) written with `repr` moves
+    in its last digit when a library does (numpy 2.5.5, 2026-11-23, #1046),
+    which would show the row as removed and another added, hiding the value
+    that is compared. The expected values are not rounded."""
+    return KEY_FLOAT.sub(lambda m: format(float(m.group()), ".12g"), cell)
+
+
 def compare_tolerance_rows(header: list[str], old: list[list[str]], new: list[list[str]]):
     """Differences and moved sources of a CSV whose rows carry their tolerance."""
     col = {c: i for i, c in enumerate(header)}
@@ -177,7 +191,7 @@ def compare_tolerance_rows(header: list[str], old: list[list[str]], new: list[li
     def index(table):
         out: dict[tuple, list[list[str]]] = {}
         for r in table:
-            out.setdefault(tuple(r[i] for i in key_cols), []).append(r)
+            out.setdefault(tuple(key_text(r[i]) for i in key_cols), []).append(r)
         return out
 
     old_i, new_i = index(old), index(new)

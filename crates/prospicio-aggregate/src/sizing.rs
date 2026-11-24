@@ -14,7 +14,7 @@ use prospicio_core::{Error, Result};
 use prospicio_prob::{Counting, Distribution, Gamma, Grid, Lognormal, Severity};
 
 use crate::compound::CompoundReport;
-use crate::fft::{compound_buffer, fft};
+use crate::fft::{aliasing_error, compound_pair, fft};
 
 /// Rounds a bucket size *up* to a "nice" value, as `aggregate`'s
 /// `round_bucket`: at 1 and above, the smallest of `{1, 2, 4, 5, 8} × 10^k`
@@ -1110,8 +1110,7 @@ pub fn audit_portfolio_grid(
         for (n, x) in units {
             let (sev, _) = Grid::rounding(*x, h, points)?;
             sev_raw.push(raw_moments(&sev));
-            let c = compound_buffer(*n, sev.probs(), base);
-            let f = compound_buffer(*n, sev.probs(), 2 * base);
+            let (c, f) = compound_pair(*n, sev.probs(), base);
             coarse = if coarse.is_empty() {
                 c
             } else {
@@ -1123,11 +1122,7 @@ pub fn audit_portfolio_grid(
                 circular(&fine, &f)
             };
         }
-        let aliasing_error = coarse[..points]
-            .iter()
-            .zip(&fine[..points])
-            .map(|(a, b)| (a - b).abs())
-            .fold(0.0, f64::max);
+        let aliasing_error = aliasing_error(&coarse, &fine, points);
         let (probs, tail_mass) = crate::compound::lump_tail(fine[..points].to_vec());
         let agg = Grid::new(h, probs)?;
         let mut terms = ScoreTerms::default();
@@ -1143,20 +1138,25 @@ pub fn audit_portfolio_grid(
 
 /// The circular convolution of two buffers of the same length, by FFT.
 fn circular(a: &[f64], b: &[f64]) -> Vec<f64> {
-    use rustfft::FftPlanner;
-    use rustfft::num_complex::Complex64;
+    use prospicio_math::fft::{Complex64, RealPlan};
     let len = a.len();
-    let mut planner = FftPlanner::<f64>::new();
-    let forward = planner.plan_fft_forward(len);
-    let mut x: Vec<Complex64> = a.iter().map(|&v| Complex64::new(v, 0.0)).collect();
-    let mut y: Vec<Complex64> = b.iter().map(|&v| Complex64::new(v, 0.0)).collect();
-    forward.process(&mut x);
-    forward.process(&mut y);
+    // Three transforms of one length.
+    let mut plan = RealPlan::new(len);
+    let half = plan.spectrum_len();
+    let mut transform = |v: &[f64]| {
+        let mut signal = v.to_vec();
+        let mut spectrum = vec![Complex64::new(0.0, 0.0); half];
+        plan.forward(&mut signal, &mut spectrum);
+        (signal, spectrum)
+    };
+    let (mut out, mut x) = transform(a);
+    let (_, y) = transform(b);
     for (u, v) in x.iter_mut().zip(&y) {
         *u *= v;
     }
-    planner.plan_fft_inverse(len).process(&mut x);
-    x.iter().map(|z| (z.re / len as f64).max(0.0)).collect()
+    plan.inverse(&mut x, &mut out);
+    out.iter_mut().for_each(|p| *p = (*p / len as f64).max(0.0));
+    out
 }
 
 /// The search of [`audit_grid`], on any build.

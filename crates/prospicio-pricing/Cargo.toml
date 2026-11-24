@@ -15,8 +15,7 @@ categories.workspace = true
 [dependencies]
 prospicio-aggregate.workspace = true
 prospicio-core.workspace = true
+# Root finding, linear algebra and quadrature, and the FFTs of natural::Portfolio (#973).
 prospicio-math.workspace = true
 prospicio-prob.workspace = true
 microlp.workspace = true
-# Conditional expectations of independent units by FFT (natural::Portfolio).
-rustfft.workspace = true

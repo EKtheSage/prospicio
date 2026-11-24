@@ -18,10 +18,9 @@
 //! `docs/design/aggregate.md`.
 
 use prospicio_core::{Error, Result};
+use prospicio_math::fft::{Complex64, Plan, RealPlan};
 use prospicio_prob::copula::Copula;
 use prospicio_prob::{Counting, Grid};
-use rustfft::FftPlanner;
-use rustfft::num_complex::Complex64;
 
 /// A joint distribution of two losses on a grid: `P(A = i h_A, B = j h_B)`,
 /// with a step `h_A` on axis 0 (rows) and `h_B` on axis 1 (columns).
@@ -451,36 +450,48 @@ fn full_marginal_at(full: &[f64], len: [usize; 2], axis: usize, k: usize) -> f64
 }
 
 /// The compound pmf on a circular `len[0] × len[1]` buffer, row by row.
+///
+/// The severity is real, so each row takes a real transform and only the
+/// columns `0..=cols / 2` of the spectrum are carried: the rest are the
+/// conjugates of those, at the conjugate points of the pgf.
 fn compound_2d<N: Counting + ?Sized>(
     frequency: &N,
     severity: &JointGrid,
     len: [usize; 2],
 ) -> Vec<f64> {
     let [rows, cols] = len;
-    let mut buffer = vec![Complex64::new(0.0, 0.0); rows * cols];
+    let mut buffer = vec![0.0; rows * cols];
     // A severity longer than the buffer wraps around, like the aggregate.
     for (i, row) in severity.probs.chunks(severity.shape[1]).enumerate() {
         for (j, &p) in row.iter().enumerate() {
-            buffer[(i % rows) * cols + j % cols].re += p;
+            buffer[(i % rows) * cols + j % cols] += p;
         }
     }
-    let mut planner = FftPlanner::<f64>::new();
     // A 2-D transform is a transform of every row, then of every column.
-    planner.plan_fft_forward(cols).process(&mut buffer);
-    let mut columns = transpose(&buffer, rows, cols);
-    planner.plan_fft_forward(rows).process(&mut columns);
+    let mut by_row = RealPlan::new(cols);
+    let half = by_row.spectrum_len();
+    let mut spectrum = vec![Complex64::new(0.0, 0.0); rows * half];
+    for (row, out) in buffer.chunks_mut(cols).zip(spectrum.chunks_mut(half)) {
+        by_row.forward(row, out);
+    }
+    let mut by_column = Plan::new(rows);
+    let mut columns = transpose(&spectrum, rows, half);
+    by_column.forward(&mut columns);
     // The pgf acts on each frequency alone, so the layout does not matter.
     for z in &mut columns {
         let (re, im) = frequency.pgf_complex((z.re, z.im));
         *z = Complex64::new(re, im);
     }
-    planner.plan_fft_inverse(rows).process(&mut columns);
-    let mut buffer = transpose(&columns, cols, rows);
-    planner.plan_fft_inverse(cols).process(&mut buffer);
-    // rustfft does not normalize. Round-off is left signed, so that it
-    // cancels in the sums over rows and columns instead of adding up.
-    let scale = (rows * cols) as f64;
-    buffer.iter().map(|z| z.re / scale).collect()
+    by_column.inverse(&mut columns);
+    let mut spectrum = transpose(&columns, half, rows);
+    for (row, out) in spectrum.chunks_mut(half).zip(buffer.chunks_mut(cols)) {
+        by_row.inverse(row, out);
+    }
+    // The transforms do not normalize. Round-off is left signed, so that
+    // it cancels in the sums over rows and columns instead of adding up.
+    let scale = 1.0 / (rows * cols) as f64;
+    buffer.iter_mut().for_each(|p| *p *= scale);
+    buffer
 }
 
 /// The transpose of a `rows × cols` matrix stored row by row.

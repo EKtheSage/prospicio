@@ -32,7 +32,19 @@ def check(got, want, case):
     assert got == want, f"{case}: {got!r}, want {want!r}"
 
 
+TOL_HEAD = b"distribution,params,quantity,arg,expected,abs_tol,rel_tol,source\n"
+
+
 def main():
+    # A float in a key moving in its last digit is the same row, and its value is still compared (#1046).
+    old = TOL_HEAD + b"d,p,cdf,56.79453034175243,0.5,0.0,1e-12,scipy 1\n"
+    new = TOL_HEAD + b"d,p,cdf,56.794530341752406,0.5,0.0,1e-12,scipy 2\n"
+    check(rr.compare("x.csv", old, new), ([], ["scipy 1 -> scipy 2"]), "key float drift")
+    diffs, _ = rr.compare("x.csv", old, new.replace(b",0.5,", b",0.6,"))
+    assert len(diffs) == 1 and "0.5 -> 0.6" in diffs[0], diffs
+    # A key that really moved is still a row removed and another added.
+    diffs, _ = rr.compare("x.csv", old, new.replace(b"56.79", b"57.79"))
+    assert len(diffs) == 2, diffs
     # A version label alone is a moved source, not a difference.
     check(rr.compare("sobol_scipy.csv", SOBOL_OLD, SOBOL_NEW), ([], ["SciPy 1.14.1 -> SciPy 1.18.1"]), "label only")
     # A changed value in a file with a source column is still a difference.
