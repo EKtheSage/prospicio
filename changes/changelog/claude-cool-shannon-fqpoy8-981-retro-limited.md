@@ -4,4 +4,4 @@
   per-occurrence limit as a Table L (entry ratios on the unlimited
   expected loss, the limit's cost in the charge), made from the table of
   the limited aggregate, which is the limited Table M. Rust only for now
-  (#981).
+  (#981, #1080).
