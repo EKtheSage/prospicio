@@ -1121,11 +1121,7 @@ pub(crate) struct PyMeyersFits {
     inner: MeyersFits,
 }
 
-impl PyMeyersFits {
-    fn one(&self, field: &str, instead: &str) -> PyResult<&MeyersSegment> {
-        single(&self.inner.segments, field, instead)
-    }
-}
+impl_one_segment!(PyMeyersFits => MeyersSegment);
 
 #[pymethods]
 impl PyMeyersFits {
