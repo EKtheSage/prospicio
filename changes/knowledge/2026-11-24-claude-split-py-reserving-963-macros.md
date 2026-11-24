@@ -1,0 +1,1 @@
+* **Creation**: [Splitting a pyo3 binding file](/environment/pyo3-binding-layout.md), from #963 (branch claude/split-py-reserving-963-macros): splitting the Python bindings' reserving.rs into 28 files re-exported by glob left the generated stub byte-identical, and pyo3 0.29 rejects a macro invocation inside a pymethods block, so binding macros generate plain impl blocks only.

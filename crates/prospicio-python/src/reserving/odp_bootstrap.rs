@@ -455,16 +455,9 @@ impl PyOdpBootstrap {
     }
 }
 
-impl PyOdpBootstrap {
-    /// The method with its pattern converted as ``ldf_origin`` and
-    /// ``ldf_underwriting`` say, for
-    /// origins of `origin`.
-    fn resolved(&self, origin: Grain) -> PyResult<OdpBootstrap> {
-        let mut m = self.inner.clone();
-        m.pattern = averaged(&m.pattern, &self.ldf_basis, origin)?;
-        Ok(m)
-    }
+impl_resolved!(PyOdpBootstrap => OdpBootstrap, pattern pattern);
 
+impl PyOdpBootstrap {
     fn base_repr(&self) -> String {
         let std_err = self
             .inner
@@ -503,15 +496,13 @@ pub(crate) struct PyOdpBootstrapFit {
     inner: OdpBootstrapFits,
 }
 
+impl_one_segment!(PyOdpBootstrapFit => OdpBootstrapSegment);
+
 impl PyOdpBootstrapFit {
     /// A row-major origin x development vector as nested lists.
     fn grid(&self, flat: &[f64]) -> Vec<Vec<f64>> {
         let n_dev = self.development().len();
         flat.chunks(n_dev.max(1)).map(<[f64]>::to_vec).collect()
-    }
-
-    fn one(&self, field: &str, instead: &str) -> PyResult<&OdpBootstrapSegment> {
-        single(&self.inner.segments, field, instead)
     }
 }
 

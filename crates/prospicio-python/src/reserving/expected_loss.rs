@@ -378,16 +378,9 @@ impl PyExpectedLoss {
     }
 }
 
-impl PyExpectedLoss {
-    /// The method with its pattern converted as ``ldf_origin`` and
-    /// ``ldf_underwriting`` say, for
-    /// origins of `origin`.
-    pub(crate) fn resolved(&self, origin: Grain) -> PyResult<ExpectedLoss> {
-        let mut m = self.inner.clone();
-        m.chain_ladder = chain_ladder_on(&m.chain_ladder, &self.ldf_basis, origin)?;
-        Ok(m)
-    }
+impl_resolved!(PyExpectedLoss => ExpectedLoss, chain_ladder);
 
+impl PyExpectedLoss {
     fn base_repr(&self) -> String {
         format!(
             "ExpectedLoss(apriori={}, {})",
@@ -645,16 +638,9 @@ impl PyBornhuetterFerguson {
     }
 }
 
-impl PyBornhuetterFerguson {
-    /// The method with its pattern converted as ``ldf_origin`` and
-    /// ``ldf_underwriting`` say, for
-    /// origins of `origin`.
-    pub(crate) fn resolved(&self, origin: Grain) -> PyResult<BornhuetterFerguson> {
-        let mut m = self.inner.clone();
-        m.chain_ladder = chain_ladder_on(&m.chain_ladder, &self.ldf_basis, origin)?;
-        Ok(m)
-    }
+impl_resolved!(PyBornhuetterFerguson => BornhuetterFerguson, chain_ladder);
 
+impl PyBornhuetterFerguson {
     fn base_repr(&self) -> String {
         format!(
             "BornhuetterFerguson(apriori={}, {})",
@@ -922,16 +908,9 @@ impl PyBenktander {
     }
 }
 
-impl PyBenktander {
-    /// The method with its pattern converted as ``ldf_origin`` and
-    /// ``ldf_underwriting`` say, for
-    /// origins of `origin`.
-    pub(crate) fn resolved(&self, origin: Grain) -> PyResult<Benktander> {
-        let mut m = self.inner.clone();
-        m.chain_ladder = chain_ladder_on(&m.chain_ladder, &self.ldf_basis, origin)?;
-        Ok(m)
-    }
+impl_resolved!(PyBenktander => Benktander, chain_ladder);
 
+impl PyBenktander {
     fn base_repr(&self) -> String {
         format!(
             "Benktander(apriori={}, n_iters={}, {})",
@@ -1195,16 +1174,9 @@ impl PyCapeCod {
     }
 }
 
-impl PyCapeCod {
-    /// The method with its pattern converted as ``ldf_origin`` and
-    /// ``ldf_underwriting`` say, for
-    /// origins of `origin`.
-    pub(crate) fn resolved(&self, origin: Grain) -> PyResult<CapeCod> {
-        let mut m = self.inner.clone();
-        m.chain_ladder = chain_ladder_on(&m.chain_ladder, &self.ldf_basis, origin)?;
-        Ok(m)
-    }
+impl_resolved!(PyCapeCod => CapeCod, chain_ladder);
 
+impl PyCapeCod {
     fn base_repr(&self) -> String {
         format!(
             "CapeCod(trend={:?}, decay={:?}, {})",
