@@ -6,6 +6,7 @@ resource: https://doi.org/10.1017/S0515036100011533
 tags: [reserving, inflation, separation-method, calendar-year, glm, reference]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-11-24T12:00:00-08:00 }
+verified: { by: process:ci, at: 2026-11-24T18:00:00-08:00 }
 sources:
   - id: paper
     resource: https://doi.org/10.1017/S0515036100011533
@@ -13,6 +14,9 @@ sources:
   - id: design
     resource: ../docs/design/reserving-inflation.md
     title: The design note that plans the separation method in prospicio-reserving (#979)
+  - id: parity
+    resource: ../validation/tests/reserving_separation.rs
+    title: The CI test of Separation against Example 1 and the statsmodels Poisson GLM
 ---
 
 # What it is
@@ -28,10 +32,11 @@ sources:
   PDF's OCR garbles equations (5) and (6); this form reproduces every
   printed number.
 * Section 6 cites Verbeek (1972): the same estimates are the Poisson
-  maximum-likelihood ones. A check on 2026-11-24 (statsmodels, offline,
-  not in CI) found the recursion's fitted values equal those of
-  `glm(s ~ C(dev) + C(cal), Poisson)` to 2.3e-13 on Example 1: no origin
-  factor and no offset, the normaliser divides the data first.
+  maximum-likelihood ones: the recursion's fitted values equal those of
+  `glm(s ~ C(dev) + C(cal), Poisson)`, with no origin factor and no
+  offset (the normaliser divides the data first), to 2.3e-13 on Example 1
+  (offline) and to 1e-9 on GenIns and ABC in CI (`Separation`, against
+  statsmodels 0.14.5).
 * Future `lambda_h` are chosen by the user, not fitted (section 8); a
   constant rate gives a `(1 + K)^t` factor.
 * The geometric method (least squares on `log s_ij`) is not in this paper.
@@ -44,7 +49,9 @@ sources:
   102.0, 113.9`. The recursion gives 0.583476, 0.287767, 0.086615,
   0.042142 and 86.3789, 98.9391, 101.9984, 113.9.
 * The 3 by 3 sub-triangle prints `r = 0.6101, 0.2980, 0.0921` and `lambda
-  = 82.6, 94.9, 97.7`.
+  = 82.6, 94.9, 97.7`; the recursion gives 0.60993, 0.29796, 0.09212 and
+  82.633, 94.946, 97.7, so the first proportion is off the print by 1.7e-4
+  (Taylor's intermediate rounding, presumably).
 * At 10% a year from `lambda_3` (`lambda_4..7 = 125.3, 137.8, 151.6,
   166.8`) the future cells print 5.3; 10.8, 5.8; 36.1, 11.9, 6.4.
 * Example 2 (a pecuniary loss account) is too damaged in the OCR to use.

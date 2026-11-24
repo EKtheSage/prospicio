@@ -2151,8 +2151,9 @@ mod tests {
 
     /// The hand gradient against the chunked dual over the generic
     /// density (#972): the same value bit for bit, the same gradient to
-    /// rounding, with and without the hyperprior on the level, and on a
-    /// model extended by a year's cells as a refit sees it.
+    /// rounding, with and without the hyperprior on the level, at points
+    /// near the start, far from it and at the edges, and on a model
+    /// extended by a year's cells as a refit sees it.
     #[test]
     fn the_hand_gradient_matches_the_dual() {
         for model in [
@@ -2176,13 +2177,24 @@ mod tests {
                 let (w, d, x) = program.cells[0];
                 program.cells.push((w, d, 1.5 * x));
             }
+            // Points near the start, far from it, and at the edges: tau
+            // and omega underflowing towards 0 and shares near 0 and 1.
+            let mut points: Vec<Vec<f64>> = (0..4).map(|k| near(&p.start, k, 0.3)).collect();
+            points.extend((4..7).map(|k| near(&p.start, k, 2.0)));
+            let m = &p.model;
+            let mut edge = near(&p.start, 7, 0.3);
+            edge[1] = -20.0;
+            edge[m.log_omega()] = -20.0;
+            for d in 1..m.n_dev {
+                edge[m.beta(d)] = if d % 2 == 0 { 8.0 } else { -8.0 };
+            }
+            points.push(edge);
             for m in [&p.model, &extended] {
                 let n = m.dim();
-                for k in 0..4 {
-                    let theta = near(&p.start, k, 0.3);
+                for theta in &points {
                     let (mut hand, mut dual) = (vec![0.0; n], vec![0.0; n]);
-                    let v = m.log_density_gradient(&theta, &mut hand);
-                    let w = gradient::<CHUNK>(&theta, &mut dual, |x| m.log_density(x));
+                    let v = m.log_density_gradient(theta, &mut hand);
+                    let w = gradient::<CHUNK>(theta, &mut dual, |x| m.log_density(x));
                     assert_eq!(v.to_bits(), w.to_bits(), "the value moved");
                     for (j, (h, d)) in hand.iter().zip(&dual).enumerate() {
                         assert!(

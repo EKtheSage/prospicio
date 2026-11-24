@@ -1,9 +1,20 @@
 # Design note: calendar-year and superimposed inflation in reserving (indexation, Taylor's separation method, an age-period-cohort GLM)
 
-Status: **Proposed** (2026-11-24; issue #979, milestone 0.3.0). The open
-decisions at the end wait for the user; PR 1 is built on the
-recommendations of decisions 1 to 8, which it does not depend on any
-open decision for. Lane: Reserving (`crates/prospicio-reserving/`; the
+Status: **Accepted** (2026-11-24; issue #979, milestone 0.3.0). The user
+accepted all six recommendations of the open decisions on 2026-11-24,
+recorded as decisions 11 to 16.
+
+* **PR 1 is built** (branch `claude/inflation-index`, 2026-11-24):
+  `CalendarIndex`, `Indexation` (`factor`, `restate`, `inflate`,
+  `reinflate`), `FutureCells` and `Reinflated`, in Rust, with Taylor's
+  re-inflation of Example 1 reproduced; the bindings are PR 2.
+* **PR 3 is built** (branch `claude/separation-arithmetic`, 2026-11-24):
+  `Separation` with the arithmetic method, a normaliser,
+  `FutureInflation` (`Rate`, `Index`, `Trend`), `fit_segments` and
+  `SeparationFit`, in Rust, at parity with statsmodels' Poisson GLM
+  (1e-9) and Taylor's Example 1.
+
+Lane: Reserving (`crates/prospicio-reserving/`; the
 bindings in new module files of `prospicio-python` and `prospicio-r`) ·
 Depends on: `triangle.md` (calendar periods, decision 2),
 `reserving-v02.md` (the chain ladder, `OdpGlm` and its designs, the
@@ -123,8 +134,8 @@ decisions 2 and 3; the arithmetic method comes first.
 chooses them. The fit takes them as a constant annual rate from the last
 fitted `lambda_k`, as an index (`CalendarIndex`, item 1, scaled to
 `lambda_k` at its last observed period) or, as an option, the
-exponential trend fitted to the last `m` fitted `lambda_h` (open decision
-4). The future increment of origin `i` at age `j` is `n_i r_j
+exponential trend fitted to the last `m` fitted `lambda_h` (decision
+14). The future increment of origin `i` at age `j` is `n_i r_j
 lambda_{i+j}`.
 
 ### 3. An APC reserving GLM
@@ -227,8 +238,7 @@ impl FutureCells {
 }
 
 pub struct Reinflated {
-    pub origins: Vec<Period>,
-    pub cells: FutureCells,         // re-inflated
+    pub cells: FutureCells,         // re-inflated, with their origins
     pub reserves: Vec<f64>,         // re-inflated, by origin
     pub base_reserves: Vec<f64>,    // at the base level, by origin
 }
@@ -297,7 +307,11 @@ takes the fit instead.
 1. **The calendar is a `Month`, the index has its own grain.** A cell's
    payment period is the index period that contains the cell's valuation
    month (`Triangle::valuation_of`), as `triangle.md` decision 2 keys the
-   calendar view by valuation month. Quarterly or monthly development
+   calendar view by valuation month: the index of the period that holds
+   the end of the cell's development period. An index finer than the
+   triangle (quarterly on annual cells) therefore takes its last
+   sub-period; a user who wants the period's average gives the index at
+   the triangle's grain. Quarterly or monthly development
    with annual origins, and an index at a coarser or finer grain than the
    triangle, then need nothing special. An index period before the first
    given period is an error; past the last one, the future rate is used,
@@ -315,7 +329,7 @@ takes the fit instead.
 4. **Future index by a constant annual rate.** Values given past the
    valuation are used as given; beyond the last value one constant rate,
    compounded monthly over the months from the last period's start. A
-   path per simulation is open decision 1.
+   path per simulation is decision 11 (PR 8).
 5. **The tail's payment period.** A chain ladder's tail increment is
    placed one development period after the oldest age, Taylor's
    equation (8) convention. A user who wants a longer payout of the tail
@@ -343,6 +357,29 @@ takes the fit instead.
    identification (two calendar references) fitted through
    `OdpGlm::fit_design`.
 10. **`Error::Inflation(String)`**, one variant for the three methods.
+11. **Stochastic future inflation is PR 8** (the user, 2026-11-24, open
+    decision 1 (a)): `Indexation::reinflate_draws` takes a
+    `PredictiveDistribution` of future cells (the bootstraps', `OdpGlm`'s)
+    and one index path per simulation, and gives the reserve draws in the
+    money of the payment periods; after PR 2.
+12. **Geometric normalisation `sum r_j = 1`** (the user, 2026-11-24, open
+    decision 2 (a)), as the arithmetic method, so the two methods'
+    `lambda` compare. Fitted values do not depend on it.
+13. **Geometric retransformation: both** (the user, 2026-11-24, open
+    decision 3 (c)): the geometric means `exp(eta)` (Taylor's) by default,
+    the lognormal means `exp(eta + sigma^2 / 2)` as an option.
+14. **Future `lambda` by a fitted trend, as an option** (the user,
+    2026-11-24, open decision 4 (b)): besides a given rate or index, the
+    exponential trend of the last `m` fitted `lambda`, with no default
+    `m`.
+15. **The APC reference is Python `apc` 1.0.2** (the user, 2026-11-24,
+    open decision 5 (a)) under `uv` with pins, falling back to
+    `statsmodels` fitted values and deviance with the invariance tests
+    (option (c)). It installs under `uv` on 2026-11-24 but imports
+    `pkg_resources`, so the generator pins `setuptools` below 81.
+16. **Standard errors for separation** (the user, 2026-11-24, open
+    decision 6): none in PR 3 (Taylor gives none); the Poisson GLM's
+    delta-method prediction error with PR 6's machinery.
 
 ## Validation targets
 
@@ -377,7 +414,7 @@ takes the fit instead.
    documented Poisson APC `I0` total for Taylor-Ashe, 19,061,428, as a
    cross-check. R `apc` was archived on CRAN on 2026-03-02, so an R
    generator would install from the archive; R is not on the local
-   machine, so the Python package is the first choice (open decision 5).
+   machine, so the Python package is the first choice (decision 15).
    The invariance of fitted values and forecasts under a second
    identification, exactly.
 
@@ -399,10 +436,13 @@ Each a small PR, stacked on the one before, linking #979.
    normaliser, the future rate or index, `fit_segments`,
    `FutureCells::from_separation` (target 2).
 4. **`[separation-geometric]` Geometric separation, Rust** (target 3),
-   after open decisions 2 and 3.
+   under decisions 12 and 13.
 5. **`[separation-bindings]` Python and R** for PRs 3 and 4.
-6. **`[apc-glm]` The APC GLM, Rust** (target 4), after open decision 5.
+6. **`[apc-glm]` The APC GLM, Rust** (target 4, decision 15), with the
+   separation method's delta-method prediction error (decision 16).
 7. **`[apc-glm-bindings]` Python and R** for PR 6.
+8. **`[reinflate-draws]` Stochastic re-inflation, Rust, Python and R**
+   (decision 11), after PR 2.
 
 A guide (deflate, develop, re-inflate; separation on a deflated triangle
 for superimposed inflation) belongs to the Guides lane: an issue for it
@@ -410,46 +450,11 @@ when PR 5 merges.
 
 ## Not in this note
 
-* Stochastic future inflation (a path of the index per simulation applied
-  to reserve draws): open decision 1.
 * Calendar effects inside the Bayesian models (Meyers' CAY has one).
 * Claims-inflation estimation from external series (the index is input).
 * The Barnett and Zehnwirth probabilistic trend family (piecewise
   trends in three directions); the APC GLM's design covers its
   unrestricted case.
-
-## Open decisions
-
-1. **Stochastic future inflation.** The issue asks to re-inflate "under
-   deterministic or stochastic future inflation paths". (a) A later PR:
-   `Indexation::reinflate_draws` taking a `PredictiveDistribution` of
-   future cells (the bootstraps', `OdpGlm`'s) and one index path per
-   simulation (a matrix, or a `prospicio-prob` process), giving the
-   reserve draws in payment-period money; (b) out of scope for #979, a
-   new issue. Recommended: (a), as PR 8 after PR 2, since the draws by
-   cell exist.
-2. **Geometric normalisation.** (a) `sum r_j = 1`, as the arithmetic
-   method, so the two methods' `lambda` compare; (b) `prod r_j = 1`
-   (`sum log r_j = 0`), the log model's natural one. Fitted values do not
-   depend on it. Recommended: (a).
-3. **Geometric retransformation.** (a) Fitted values `exp(eta)`, the
-   geometric means (Taylor's); (b) `exp(eta + sigma^2 / 2)`, the
-   lognormal means; (c) both, (a) by default. Recommended: (c).
-4. **Future `lambda` by a fitted trend.** (a) Only a given rate or
-   index (Taylor's own position); (b) also the exponential trend of the
-   last `m` fitted `lambda`, as an option. Recommended: (b), with no
-   default `m`.
-5. **The APC reference.** (a) Python `apc` 1.0.2 under `uv` with pins
-   (if it installs; its dependencies are from 2020); (b) R `apc` 2.0.1
-   or 3.0.0 from the CRAN archive, run on CI's R; (c) `statsmodels` GLM
-   fitted values and deviance only (forecast rules then checked by the
-   invariance and hand-derived cases). Recommended: (a), falling back to
-   (c).
-6. **Standard errors for separation.** (a) None in PR 3 (Taylor gives
-   none); (b) the Poisson GLM's delta-method prediction error, since the
-   arithmetic fit is that GLM; (c) Bjorkwall, Hossjer and Ohlsson's
-   (2010) bootstrap of the separation method, a later PR. Recommended:
-   (a) now, (b) with the APC GLM's machinery in PR 6.
 
 ## References
 

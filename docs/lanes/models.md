@@ -10,3 +10,4 @@ Finished items are in [done/models.md](done/models.md), which agents read when t
 
 - [survival-models] survival models, parked with claim-level reserving by the user on 2026-10-29 until the user has researched how to approach them; no lane works on them until the user picks them up (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
+- [glm-perf-gam-tweedie] #969 the rest of the issue: the GAM's REML score reuses IRLS's information for a canonical link and searches the gamma dispersion without a pass over the rows a step, and `tweedie_profile` fits its power grid in parallel (stacked on the first #969 PR)

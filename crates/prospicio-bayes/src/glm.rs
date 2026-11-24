@@ -254,6 +254,23 @@ impl fmt::Debug for Posterior<'_> {
     }
 }
 
+/// `Σ aᵢ bᵢ` with eight running sums, so the loop vectorizes.
+fn dot(a: &[f64], b: &[f64]) -> f64 {
+    let n = a.len().min(b.len());
+    let mut acc = [0.0; 8];
+    let ((ca, ra), (cb, rb)) = (a[..n].as_chunks::<8>(), b[..n].as_chunks::<8>());
+    for (x, y) in ca.iter().zip(cb) {
+        for k in 0..8 {
+            acc[k] += x[k] * y[k];
+        }
+    }
+    let mut s = ((acc[0] + acc[1]) + (acc[2] + acc[3])) + ((acc[4] + acc[5]) + (acc[6] + acc[7]));
+    for (x, y) in ra.iter().zip(rb) {
+        s += x * y;
+    }
+    s
+}
+
 /// A position where the density is not defined (a mean outside the
 /// family's range): NUTS treats it as a divergence.
 #[derive(Debug)]
@@ -281,6 +298,76 @@ impl HasDims for Posterior<'_> {
     }
 }
 
+/// Rows per parallel block of the log density, and per stack tile within
+/// a block.
+const LOGP_BLOCK: usize = 4096;
+const LOGP_TILE: usize = 256;
+
+/// One block's share of the log likelihood, `∂/∂φ` and `Xᵀ s`.
+struct Block {
+    logp: f64,
+    dphi: f64,
+    grad: Vec<f64>,
+}
+
+impl Posterior<'_> {
+    /// The rows `start..end`, a tile at a time: the linear predictor and
+    /// the scores live on the stack, and the gradient is a dot product of
+    /// each contiguous column slice with the scores.
+    fn block(
+        &self,
+        beta: &[f64],
+        phi: f64,
+        sampled: bool,
+        start: usize,
+        end: usize,
+    ) -> std::result::Result<Block, OutOfRange> {
+        let p = beta.len();
+        let (w, offset) = (self.design.weights(), self.design.offset());
+        let mut out = Block {
+            logp: 0.0,
+            dphi: 0.0,
+            grad: vec![0.0; p],
+        };
+        let mut eta = [0.0; LOGP_TILE];
+        let mut score = [0.0; LOGP_TILE];
+        let mut t = start;
+        while t < end {
+            let len = LOGP_TILE.min(end - t);
+            let (eta, score) = (&mut eta[..len], &mut score[..len]);
+            eta.copy_from_slice(&offset[t..t + len]);
+            for (j, b) in beta.iter().enumerate() {
+                for (e, x) in eta.iter_mut().zip(&self.design.column(j)[t..t + len]) {
+                    *e += b * x;
+                }
+            }
+            for k in 0..len {
+                let i = t + k;
+                let mu = self.link.inverse(eta[k]);
+                if !(self.link.valid_eta(eta[k]) && self.family.valid_mu(mu)) {
+                    return Err(OutOfRange);
+                }
+                let ll = self.family.log_likelihood(self.y[i], mu, w[i], phi);
+                if !ll.is_finite() {
+                    return Err(OutOfRange);
+                }
+                out.logp += ll;
+                // Score in η: w (y - μ) μ'(η) / (φ V(μ)).
+                score[k] = w[i] * (self.y[i] - mu) * self.link.mu_eta(eta[k])
+                    / (phi * self.family.variance(mu));
+                if sampled {
+                    out.dphi += dll_dphi(self.family, self.y[i], mu, w[i], phi);
+                }
+            }
+            for (j, g) in out.grad.iter_mut().enumerate() {
+                *g += dot(&self.design.column(j)[t..t + len], score);
+            }
+            t += len;
+        }
+        Ok(out)
+    }
+}
+
 impl CpuLogpFunc for Posterior<'_> {
     type LogpError = OutOfRange;
     type FlowParameters = ();
@@ -301,29 +388,27 @@ impl CpuLogpFunc for Posterior<'_> {
         if !(phi.is_finite() && phi > 0.0) {
             return Err(OutOfRange);
         }
-        grad.iter_mut().for_each(|g| *g = 0.0);
-        let eta = self.design.linear_predictor(beta);
-        let w = self.design.weights();
+        // The rows in blocks of a fixed size, in parallel (four chains
+        // leave most cores idle), each block's sums added in block order:
+        // the result does not depend on the number of threads.
+        let n = self.y.len();
+        let sampled = matches!(self.dispersion, DispersionPrior::HalfNormal(_));
+        let blocks: Vec<std::result::Result<Block, OutOfRange>> = (0..n.div_ceil(LOGP_BLOCK))
+            .into_par_iter()
+            .map(|k| {
+                let end = ((k + 1) * LOGP_BLOCK).min(n);
+                self.block(beta, phi, sampled, k * LOGP_BLOCK, end)
+            })
+            .collect();
         let mut logp = 0.0;
         let mut dphi = 0.0;
-        for i in 0..self.y.len() {
-            let mu = self.link.inverse(eta[i]);
-            if !(self.link.valid_eta(eta[i]) && self.family.valid_mu(mu)) {
-                return Err(OutOfRange);
-            }
-            let ll = self.family.log_likelihood(self.y[i], mu, w[i], phi);
-            if !ll.is_finite() {
-                return Err(OutOfRange);
-            }
-            logp += ll;
-            // Score in η: w (y - μ) μ'(η) / (φ V(μ)).
-            let s = w[i] * (self.y[i] - mu) * self.link.mu_eta(eta[i])
-                / (phi * self.family.variance(mu));
-            for (j, g) in grad[..p].iter_mut().enumerate() {
-                *g += s * self.design.column(j)[i];
-            }
-            if matches!(self.dispersion, DispersionPrior::HalfNormal(_)) {
-                dphi += dll_dphi(self.family, self.y[i], mu, w[i], phi);
+        grad[..p].iter_mut().for_each(|g| *g = 0.0);
+        for block in blocks {
+            let block = block?;
+            logp += block.logp;
+            dphi += block.dphi;
+            for (g, b) in grad[..p].iter_mut().zip(&block.grad) {
+                *g += b;
             }
         }
         for j in 0..p {
@@ -679,6 +764,64 @@ mod tests {
             seed: 3,
             ..Sampler::default()
         }
+    }
+
+    #[test]
+    fn the_blocked_density_matches_a_row_by_row_pass_on_any_thread_count() {
+        // More rows than a block, a ragged last tile, weights and an offset.
+        let n = 2 * LOGP_BLOCK + 300;
+        let x: Vec<f64> = (0..n).map(|i| (i % 97) as f64 / 48.0 - 1.0).collect();
+        let w: Vec<f64> = (0..n).map(|i| 0.5 + (i % 7) as f64 / 6.0).collect();
+        let off: Vec<f64> = (0..n).map(|i| 0.1 * (i % 3) as f64).collect();
+        let y: Vec<f64> = (0..n).map(|i| 1.0 + (i % 5) as f64).collect();
+        let d = Design::new(
+            vec!["(Intercept)".into(), "x".into()],
+            vec![vec![1.0; n], x],
+        )
+        .unwrap()
+        .with_weights(w.clone())
+        .unwrap()
+        .with_offset(off)
+        .unwrap();
+        let prior = [10.0, 2.5];
+        let mut post = Posterior {
+            family: Family::Gamma,
+            link: Link::Log,
+            design: &d,
+            y: &y,
+            prior_sd: &prior,
+            dispersion: DispersionPrior::HalfNormal(10.0),
+        };
+        let at = [0.4, 0.3, -0.2];
+        let mut many = vec![0.0; 3];
+        let lp = post.logp(&at, &mut many).unwrap();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let mut one = vec![0.0; 3];
+        let lp1 = pool.install(|| post.logp(&at, &mut one).unwrap());
+        assert_eq!((lp, &many), (lp1, &one));
+        // The row-by-row sums, before the prior terms.
+        let eta = d.linear_predictor(&at[..2]);
+        let phi = f64::exp(at[2]);
+        let (mut want, mut g, mut dphi) = (0.0, [0.0; 2], 0.0);
+        for i in 0..n {
+            let mu = eta[i].exp();
+            want += Family::Gamma.log_likelihood(y[i], mu, w[i], phi);
+            let s = w[i] * (y[i] - mu) * mu / (phi * Family::Gamma.variance(mu));
+            g[0] += s;
+            g[1] += s * d.column(1)[i];
+            dphi += dll_dphi(Family::Gamma, y[i], mu, w[i], phi);
+        }
+        want -= 0.5 * (at[0] / 10.0_f64).powi(2) + 0.5 * (at[1] / 2.5_f64).powi(2);
+        want += -0.5 * (phi / 10.0).powi(2) + phi.ln();
+        g[0] -= at[0] / 100.0;
+        g[1] -= at[1] / 6.25;
+        let gphi = phi * dphi - (phi / 10.0).powi(2) + 1.0;
+        let near = |a: f64, b: f64| (a - b).abs() <= 1e-10 * (1.0 + b.abs());
+        assert!(near(lp, want), "{lp} vs {want}");
+        assert!(near(many[0], g[0]) && near(many[1], g[1]) && near(many[2], gphi));
     }
 
     #[test]
