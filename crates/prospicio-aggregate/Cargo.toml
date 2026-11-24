@@ -19,8 +19,3 @@ prospicio-math.workspace = true
 prospicio-prob.workspace = true
 rayon.workspace = true
 serde_json.workspace = true
-
-# Timings of the reinsurance tower (#970): `cargo bench -p prospicio-aggregate --bench tower`.
-[[bench]]
-name = "tower"
-harness = false

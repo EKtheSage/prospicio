@@ -10,7 +10,7 @@ sources:
     resource: https://github.com/EKtheSage/risk-rs/issues/970
     title: "[P1] Aggregate: parallelize Tower::apply* / ceded_events and eliminate per-year heap allocations"
   - id: bench
-    resource: ../crates/prospicio-aggregate/benches/tower.rs
+    resource: ../crates/prospicio-aggregate/examples/tower_bench.rs
     title: The tower benchmark, with a checksum of each result's bits
   - id: note
     resource: ../docs/design/aggregate.md
@@ -22,7 +22,7 @@ sources:
 
 # The tower's simulated paths in parallel
 
-`cargo bench -p prospicio-aggregate --bench tower` on a 16-core Windows
+`cargo run --release -p prospicio-aggregate --example tower_bench` on a 16-core Windows
 machine, the median of five runs, the old and new binaries run one after
 the other in two rounds (the larger of the two medians shown). The
 events are Poisson(5) losses of a lognormal(12, 1.5) severity.

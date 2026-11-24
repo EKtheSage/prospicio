@@ -1,6 +1,6 @@
 //! Timings of the reinsurance tower on simulated years (#970).
 //!
-//! `cargo bench -p prospicio-aggregate --bench tower` prints, for each
+//! `cargo run --release -p prospicio-aggregate --example tower_bench` prints, for each
 //! scenario, the median of several runs and a checksum of the result's bits.
 //! The checksum shows whether a change moved any number: equal checksums
 //! before and after a change mean the results are bit for bit the same.
@@ -8,7 +8,10 @@
 //! scenarios to run (all by default); `--sims N` scales the year count.
 //!
 //! No benchmark crate: plain `std::time::Instant`, so the bench adds no
-//! dependency.
+//! dependency. It is an example rather than a `[[bench]]` target: the R
+//! package's `bootstrap.R` vendors the crates without `benches/`, and a
+//! `[[bench]]` table naming a missing file stops Cargo reading the
+//! manifest, while an example needs no manifest entry.
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
