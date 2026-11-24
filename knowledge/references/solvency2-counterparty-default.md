@@ -1,11 +1,12 @@
 ---
 type: Reference
 title: The Solvency II counterparty default module for type 1 exposures
-description: Delegated Regulation (EU) 2015/35 as amended, Articles 192, 196, 197, 199, 200 and 201; the loss given default of a reinsurance arrangement, the factors F, the probability of default by credit quality step and by solvency ratio, the variance V_inter plus V_intra and SCR_def,1; the reference for the planned prospicio_aggregate Solvency II helpers (#980).
+description: Delegated Regulation (EU) 2015/35 as amended, Articles 192, 196, 197, 199, 200 and 201; the loss given default of a reinsurance arrangement, the factors F, the probability of default by credit quality step and by solvency ratio, the variance V_inter plus V_intra and SCR_def,1; the reference for prospicio_aggregate::solvency2 (#980), whose reference test checks these formulas.
 resource: https://www.eiopa.europa.eu/rulebook/solvency-ii-single-rulebook_en
 tags: [solvency-ii, counterparty, reinsurance, credit-risk, capital]
-status: draft
+status: stable
 generated: { by: claude-code/local-session, at: 2026-11-24T00:00:00Z }
+verified: { by: process:ci, at: 2026-11-24T12:00:00Z }
 sources:
   - id: art192
     resource: https://www.eiopa.europa.eu/rulebook/solvency-ii-single-rulebook/article-5845_en
@@ -38,7 +39,16 @@ sources:
 The standard formula's capital charge for the default of counterparties
 whose exposures are not diversified and are likely rated, such as
 reinsurers (type 1 exposures). Read from the EIOPA single rulebook and
-legislation.gov.uk on 2026-11-24; no test in CI checks these numbers yet.
+legislation.gov.uk on 2026-11-24. `prospicio_aggregate::solvency2`
+implements Arts 192(2), 199, 200 and 201 (#980), and
+`validation/tests/aggregate_reinsurer_default_solvency2.rs` checks it, with
+its Python and R bindings, against `reinsurer_default_solvency2.csv`, which
+`validation/scripts/aggregate_reinsurer_default.py` computes from the
+formulas below independently of the Rust (every credit quality step, the
+ratio table's points, values between them and both clamps, the 50 % and
+90 % shares with F of 100 % and 50 % and F' of 18 %, and type 1 portfolios
+taking each of Art 200's three branches, with repeated and zero
+probabilities), to 1e-12 relative.
 
 # The numbers
 

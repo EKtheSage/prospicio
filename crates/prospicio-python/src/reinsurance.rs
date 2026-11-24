@@ -3129,3 +3129,215 @@ pub(crate) fn per_risk_inuring<'py>(
     d.set_item("net", crate::aggregate::PyEventSet { inner: r.net })?;
     Ok(d)
 }
+
+/// The Solvency II capital requirement for type 1 exposures and its parts,
+/// from ``solvency2_type1``.
+#[pyclass(name = "Solvency2Type1", module = "prospicio.reinsurance", frozen)]
+pub(crate) struct PySolvency2Type1 {
+    inner: prospicio_aggregate::solvency2::Type1,
+}
+
+#[pymethods]
+impl PySolvency2Type1 {
+    /// ``V_inter`` (Art 201(2)), over every ordered pair of groups of equal
+    /// probability of default.
+    #[getter]
+    fn v_inter(&self) -> f64 {
+        self.inner.v_inter
+    }
+
+    /// ``V_intra`` (Art 201(3)), within each group.
+    #[getter]
+    fn v_intra(&self) -> f64 {
+        self.inner.v_intra
+    }
+
+    /// The standard deviation of the loss distribution,
+    /// ``sqrt(v_inter + v_intra)``.
+    #[getter]
+    fn sigma(&self) -> f64 {
+        self.inner.sigma
+    }
+
+    /// The sum of the losses given default.
+    #[getter]
+    fn total_lgd(&self) -> f64 {
+        self.inner.total_lgd
+    }
+
+    /// ``SCR_def,1`` (Art 200).
+    #[getter]
+    fn scr(&self) -> f64 {
+        self.inner.scr
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Solvency2Type1(scr={}, sigma={}, total_lgd={})",
+            self.inner.scr, self.inner.sigma, self.inner.total_lgd
+        )
+    }
+}
+
+/// The Solvency II probability of default of a counterparty with an
+/// external credit assessment, by its credit quality step (Delegated
+/// Regulation (EU) 2015/35, Art 199(2)): steps 0 to 6 give 0.002 %,
+/// 0.01 %, 0.05 %, 0.24 %, 1.2 %, 4.2 % and 4.2 %.
+///
+/// Parameters
+/// ----------
+/// step : int
+///     The credit quality step, 0 to 6.
+///
+/// Returns
+/// -------
+/// float
+///
+/// Raises
+/// ------
+/// ValueError
+///     For a step above 6.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import solvency2_probability_by_step
+/// >>> solvency2_probability_by_step(3)
+/// 0.0024
+#[pyfunction]
+pub(crate) fn solvency2_probability_by_step(step: u8) -> PyResult<f64> {
+    prospicio_aggregate::solvency2::probability_by_step(step).map_err(to_py)
+}
+
+/// The Solvency II probability of default of an unrated insurance or
+/// reinsurance undertaking that meets its MCR, by its solvency ratio
+/// (Art 199(3)).
+///
+/// Linear in the ratio between the table's points, 196 % (0.01 %), 175 %
+/// (0.05 %), 150 % (0.1 %), 125 % (0.2 %), 122 % (0.24 %), 100 % (0.5 %),
+/// 95 % (1.2 %) and 75 % (4.2 %); 0.01 % at or above 196 % and 4.2 % at or
+/// below 75 %. An undertaking that does not meet its MCR has 4.2 %.
+///
+/// Parameters
+/// ----------
+/// scr_ratio : float
+///     The solvency ratio as a fraction: 1.5 for 150 % (150 would give
+///     0.01 %).
+///
+/// Returns
+/// -------
+/// float
+///
+/// Raises
+/// ------
+/// ValueError
+///     For a ratio that is NaN or negative.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import solvency2_probability_by_ratio
+/// >>> solvency2_probability_by_ratio(1.25)
+/// 0.002
+/// >>> solvency2_probability_by_ratio(0.5)
+/// 0.042
+#[pyfunction]
+pub(crate) fn solvency2_probability_by_ratio(scr_ratio: f64) -> PyResult<f64> {
+    prospicio_aggregate::solvency2::probability_by_ratio(scr_ratio).map_err(to_py)
+}
+
+/// The Solvency II loss given default of a reinsurance arrangement
+/// (Art 192(2)): ``max(lgd_share * (recoverables + 0.5 * risk_mitigation)
+/// - factor * collateral, 0)``.
+///
+/// Parameters
+/// ----------
+/// recoverables : float
+///     The best estimate of the amounts recoverable and the corresponding
+///     debtors.
+/// risk_mitigation : float
+///     ``RM_re``, the arrangement's risk-mitigating effect on underwriting
+///     risk (Art 196).
+/// collateral : float
+///     The risk-adjusted value of the collateral (Art 197), non-negative.
+/// lgd_share : float, default 0.5
+///     0.5, or 0.9 for a counterparty with 60 % or more of its assets
+///     under collateral arrangements; any value in ``[0, 1]`` is accepted.
+/// factor : float, default 1.0
+///     The factor of Art 197(7) on the collateral: F (1.0 or 0.5) with the
+///     50 % share, F' (1.0 or 0.18) with the 90 % share; in ``[0, 1]``.
+///
+/// Returns
+/// -------
+/// float
+///
+/// Raises
+/// ------
+/// ValueError
+///     For inputs that are not finite, negative collateral, or a share or
+///     factor outside ``[0, 1]``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import solvency2_reinsurance_lgd
+/// >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0)
+/// 30.0
+/// >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0, lgd_share=0.9, factor=0.5)
+/// 93.0
+#[pyfunction]
+#[pyo3(signature = (recoverables, risk_mitigation, collateral, lgd_share = 0.5, factor = 1.0))]
+pub(crate) fn solvency2_reinsurance_lgd(
+    recoverables: f64,
+    risk_mitigation: f64,
+    collateral: f64,
+    lgd_share: f64,
+    factor: f64,
+) -> PyResult<f64> {
+    prospicio_aggregate::solvency2::reinsurance_lgd(
+        recoverables,
+        risk_mitigation,
+        collateral,
+        lgd_share,
+        factor,
+    )
+    .map_err(to_py)
+}
+
+/// The Solvency II capital requirement for counterparty default risk on
+/// type 1 exposures (Arts 200 and 201).
+///
+/// The exposures are grouped by probability of default; ``v_inter`` sums
+/// over every ordered pair of groups, the diagonal included, ``PD_j (1 -
+/// PD_j) PD_k (1 - PD_k) / (1.25 (PD_j + PD_k) - PD_j PD_k)`` times the
+/// groups' total losses given default (a term whose two probabilities are
+/// both 0 is 0, EIOPA Q&A 2530), and ``v_intra`` sums ``1.5 PD_j (1 - PD_j)
+/// / (2.5 - PD_j)`` times each group's squared losses given default. The
+/// charge is ``3 sigma`` if ``sigma`` is at most 7 % of the total loss given
+/// default, ``5 sigma`` if at most 20 %, and the total otherwise.
+///
+/// Parameters
+/// ----------
+/// exposures : list of (float, float)
+///     Each exposure's probability of default, in ``[0, 1]``, and loss given
+///     default, non-negative. An empty list gives a charge of 0.
+///
+/// Returns
+/// -------
+/// Solvency2Type1
+///
+/// Raises
+/// ------
+/// ValueError
+///     For a probability outside ``[0, 1]`` or a negative or infinite loss
+///     given default.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reinsurance import solvency2_type1
+/// >>> t = solvency2_type1([(0.002, 100.0)])
+/// >>> round(t.sigma ** 2, 12), round(t.scr / t.sigma, 12)
+/// (19.96, 3.0)
+#[pyfunction]
+pub(crate) fn solvency2_type1(exposures: Vec<(f64, f64)>) -> PyResult<PySolvency2Type1> {
+    let inner: prospicio_aggregate::solvency2::Type1 =
+        prospicio_aggregate::solvency2::type1(&exposures).map_err(to_py)?;
+    Ok(PySolvency2Type1 { inner })
+}
