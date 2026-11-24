@@ -970,10 +970,11 @@ mod tests {
             let eventual = (q / (1.0 - q)).powi(u + 1);
             assert!((long.psi_at(u as f64, 2000).unwrap() - eventual).abs() < 1e-12);
         }
-        // Non-decreasing in t, non-increasing in u.
+        // Non-decreasing in t, non-increasing in u. Where no path is
+        // ruined yet both are the FFTs' round-off, of the order of 1e-18.
         for t in 1..12 {
             for (a, b) in ruin.psi(t).unwrap().iter().zip(ruin.psi(t + 1).unwrap()) {
-                assert!(a <= b);
+                assert!(*a <= *b + 1e-15, "t = {t}: {a:e} above {b:e}");
             }
         }
         assert!(ruin.psi(1).unwrap().windows(2).all(|w| w[0] >= w[1]));
