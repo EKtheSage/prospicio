@@ -803,27 +803,18 @@ fn saturated_log_likelihood(family: Family, y: &[f64], w: &[f64], phi: f64) -> R
 /// They are the expected ones for a canonical link.
 fn observed_information(glm: &Glm, x: &Design, y: &[f64], mu: &[f64]) -> Vec<f64> {
     let (family, link) = (glm.family, glm.link);
-    let (n, p) = (x.n_rows(), x.n_cols());
     let w = x.weights();
-    let mut info = vec![0.0; p * p];
-    for i in 0..n {
+    let (info, _) = crate::gram::weighted_gram(x, false, |i| {
         let eta = link.link(mu[i]);
         let (d1, d2) = (link.mu_eta(eta), link.mu_eta2(eta));
         let (v, dv) = (family.variance(mu[i]), family.variance_deriv(mu[i]));
         let r = y[i] - mu[i];
-        let wi = w[i] * (d1 * d1 / v - r * (d2 / v - d1 * d1 * dv / (v * v)));
-        for a in 0..p {
-            let xa = x.column(a)[i] * wi;
-            for b in 0..=a {
-                info[a * p + b] += xa * x.column(b)[i];
-            }
-        }
-    }
-    for a in 0..p {
-        for b in a + 1..p {
-            info[a * p + b] = info[b * p + a];
-        }
-    }
+        Ok((
+            w[i] * (d1 * d1 / v - r * (d2 / v - d1 * d1 * dv / (v * v))),
+            0.0,
+        ))
+    })
+    .expect("the observed weights never fail");
     info
 }
 
