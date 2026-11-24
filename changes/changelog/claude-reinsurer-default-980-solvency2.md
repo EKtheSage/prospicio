@@ -13,4 +13,4 @@
   `solvency2_probability_by_ratio`, `solvency2_reinsurance_lgd` and
   `solvency2_type1` (returning `Solvency2Type1`), and in R as
   `solvency2_probability_by_step()`, `solvency2_probability_by_ratio()`,
-  `solvency2_reinsurance_lgd()` and `solvency2_type1()` (#980).
+  `solvency2_reinsurance_lgd()` and `solvency2_type1()` (#980, #1082).
