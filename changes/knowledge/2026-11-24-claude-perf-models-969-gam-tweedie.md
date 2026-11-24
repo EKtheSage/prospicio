@@ -1,0 +1,1 @@
+* **Update**: [Blocked, parallel X'WX makes a freMTPL2-sized GLM fit about 50 times faster](/findings/glm-gram-benchmark.md), from #969 (branch claude/perf-models-969-gam-tweedie): the GAM's REML score with the expected information for canonical links and the gamma dispersion search by weight, 59 s to 3 s; the Tweedie grid in parallel saves little.
