@@ -22,3 +22,12 @@ Finished items are in [done/aggregate.md](done/aggregate.md), which agents read 
 - [reinsurer-default-tail] a systematic factor with tail dependence (t or Clayton) for wrong-way risk (`reinsurer-default.md` decision (g)); after #980
 - [reinsurer-default-pnl] a reinsurance bad debt row in the P&L ledger (`pnl.md`) from the panel's expected credit loss; after #980
 - [reinsurer-default-json] the panel in the tower's JSON, so the JavaScript and Excel front ends can use it (`serial.rs`); after #980
+- [retro-charge] #981 `retro::InsuranceCharge`: the insurance charge `phi(r)` and savings `psi(r)` of an aggregate `Severity` (a `Grid` from `fft` or `panjer`, a fitted law) or a sample, with Python and R bindings and the closed-form tests (`primary-rating.md`, PR 2); waits for the user's acceptance of the note's decisions (a) to (j)
+- [retro-limited] #981 Table L and the limited Table M: the charge under a per-occurrence limit in both conventions (`primary-rating.md`, PR 3)
+- [retro-balance] #981 `RetroPlan::balance`: the entry ratios and the basic premium that balance a retrospective plan to the guaranteed-cost premium, and `premium` (`primary-rating.md`, PR 4)
+- [earned-daily] #981 `earned::Date`, `Policy` and `earned_exposure`: written, earned, unearned and in-force exposure or premium by calendar or policy window from policy dates, exact days, with Werner and Modlin's chapter 4 exhibit (`primary-rating.md`, PR 5)
+- [earned-endorsements] #981 mid-term endorsements, cancellations and the twenty-fourths method (`primary-rating.md`, PR 6)
+- [emod-split] #981 the workers compensation split plan: primary and excess losses, D-ratios, the weighting value and the ballast as inputs, the exhibit and the modification (`primary-rating.md`, PR 7)
+- [emod-ratio] #981 the general liability experience ratio plan, and the Done bullet `#981` (`primary-rating.md`, PR 8)
+- [earned-short-rate] short-rate cancellation and audit premium adjustments (`primary-rating.md`, decision (d)); after #981
+- [retro-deductible-dividend] large deductible and dividend plans from the charge and savings (`primary-rating.md`); after #981
