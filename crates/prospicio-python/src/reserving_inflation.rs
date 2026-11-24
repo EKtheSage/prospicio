@@ -2,8 +2,8 @@
 //! a projection (issue #979, `docs/design/reserving-inflation.md`, PR 2),
 //! over `prospicio_reserving::inflation`.
 //!
-//! `FutureCells.from_chain_ladder` is not bound here: `ChainLadderFit`'s
-//! Rust fit is private to `reserving.rs` until its split (#963) lands.
+//! `FutureCells.from_chain_ladder` takes a `ChainLadderFit` and, for a fit
+//! over several segments, the key values of the one to use.
 
 use prospicio_reserving::{
     CalendarIndex, FutureCell, FutureCells, Grain, Indexation, Month, Period, Reinflated,
@@ -13,7 +13,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyString};
 
 use crate::odp_glm::PyOdpGlmFit;
-use crate::reserving::{PyTriangle, err, py_repr};
+use crate::reserving::{PyChainLadderFit, PyTriangle, err, pick, py_repr};
 
 /// A period as a label: `"2020"`, `"2020H2"`, `"2020Q3"` or `"2020-07"`.
 fn parse_period(text: &str) -> Option<Period> {
@@ -285,6 +285,53 @@ impl PyFutureCells {
             origins: periods,
             cells,
         }))
+    }
+
+    /// A chain ladder's future increments: at each age of the grid after an
+    /// origin's latest one, the projected cumulative value less the one
+    /// before, then the rest of the ultimate (the tail) as one increment
+    /// one development period after the oldest age. The cells sum to the
+    /// fit's reserves.
+    ///
+    /// Parameters
+    /// ----------
+    /// fit : ChainLadderFit
+    /// segment : dict of str to object, optional
+    ///     The key values choosing one segment of a fit over several, as
+    ///     ``fit.segment``; without it the fit must have one segment.
+    ///
+    /// Returns
+    /// -------
+    /// FutureCells
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the fit has several segments and ``segment`` does not choose
+    ///     exactly one.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reserving import ChainLadder, FutureCells, Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 110.0]}
+    /// ... )
+    /// >>> cells = FutureCells.from_chain_ladder(ChainLadder().fit(tri, "paid"))
+    /// >>> cells.cells["origin"], cells.cells["age"]
+    /// (['2021'], [24])
+    #[staticmethod]
+    #[pyo3(signature = (fit, segment=None))]
+    fn from_chain_ladder(
+        fit: PyRef<'_, PyChainLadderFit>,
+        segment: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let one = pick(&fit.inner, segment)?;
+        let [cl] = one.fits.as_slice() else {
+            return Err(PyValueError::new_err(
+                "the fit has several segments: choose one with segment={key: value}",
+            ));
+        };
+        Ok(cells_of(FutureCells::from_chain_ladder(cl)))
     }
 
     /// An ODP GLM's future increments and their means.

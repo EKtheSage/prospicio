@@ -10,6 +10,12 @@ source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE)
 long <- utils::read.csv(validation("data", "genins.csv"), comment.char = "#")
 genins <- triangle(long, "origin", "development", "value")
 
+# near() over arrays whose unobserved cells are NA in both.
+near_na <- function(a, b, rel) {
+  stopifnot(identical(is.na(a), is.na(b)))
+  near(a[!is.na(a)], b[!is.na(b)], rel)
+}
+
 # The index reads its periods and extends at the rate.
 cpi <- calendar_index("2020", c(100, 104, 110), future_rate = 0.05)
 near(calendar_index_value(cpi, c("2021-06", "2022-12")), c(104, 110))
@@ -27,15 +33,15 @@ stopifnot(identical(calendar_index(2020, 1)@first, "2020"))
 unit <- indexation(calendar_index("2001", 1, future_rate = 0), "2010-12")
 restated <- restate(unit, genins)
 stopifnot(inherits(restated, "prospicio::triangle"))
-near(restated@values[1, 1, , ], genins@values[1, 1, , ], 1e-14)
+near_na(restated@values[1, 1, , ], genins@values[1, 1, , ], 1e-14)
 near(chain_ladder(restated)@reserve, chain_ladder(genins)@reserve, 1e-9)
 
 # inflate undoes restate; the factor is the index ratio.
 index <- calendar_index("2001", c(100, 103, 101.5, 108, 112, 111, 118, 125, 131, 140))
 at <- indexation(index, "2006-07")
-near(indexation_factor(at, "2008-03"), 118 / 111, 1e-14)
+near(indexation_factor(at, "2008-03"), 125 / 111, 1e-14)
 back <- inflate(at, restate(at, genins))
-near(back@values[1, 1, , ], genins@values[1, 1, , ], 1e-12)
+near_na(back@values[1, 1, , ], genins@values[1, 1, , ], 1e-12)
 near(restate(at, genins)@values[1, 1, 1, 1], genins@values[1, 1, 1, 1] * 111 / 100, 1e-14)
 
 # A chain ladder's future cells sum to its reserves; re-inflating at a
@@ -71,7 +77,8 @@ near(sum(home@reserves), 2 * sum(future_cells(fit)@reserves), 1e-9)
 r <- c(0.5835, 0.2878, 0.0866, 0.0421)
 lam <- c(86.4, 98.9, 102.0, 113.9)
 rows <- do.call(rbind, lapply(1:4, function(i) {
-  j <- if (i == 1) integer() else seq(6 - i, 4)
+  if (i == 1) return(NULL)
+  j <- seq(6 - i, 4)
   data.frame(origin = as.character(2000 + i), age = 12 * j, valuation = sprintf("%d-12", 2000 + i + j - 1),
              value = r[j] * lam[4])
 }))

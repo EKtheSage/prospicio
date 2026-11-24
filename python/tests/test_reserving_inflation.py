@@ -6,7 +6,7 @@ import datetime
 import pickle
 
 import pytest
-from helpers import dataset
+from helpers import VALIDATION, dataset, read_csv
 from prospicio.reserving import (
     CalendarIndex,
     ChainLadder,
@@ -78,6 +78,43 @@ def test_inflate_undoes_restate_and_the_factor_is_the_index_ratio():
     first = cells_of(at.restate(tri, "values"))[0][0]
     assert close(first, cells_of(tri)[0][0] * 111.0 / 100.0)
     assert pickle.loads(pickle.dumps(at)) == at
+
+
+def test_chain_ladder_cells_sum_to_its_reserves_and_reinflate_at_a_constant_rate():
+    tri = dataset("genins")
+    fit = ChainLadder().fit(tri, "values")
+    cells = FutureCells.from_chain_ladder(fit)
+    assert len(cells) == 45
+    assert all(close(a, b) for a, b in zip(cells.reserves(), fit.reserve))
+    unit = Indexation(CalendarIndex("2001", [1.0], future_rate=0.0), "2010-12")
+    out = unit.reinflate(cells)
+    assert all(close(a, b) for a, b in zip(out.reserves, fit.reserve))
+    # A restated triangle's chain ladder, re-inflated at 4% a year.
+    cpi = Indexation(CalendarIndex("2001", [1.0] * 10, future_rate=0.04), "2010-12")
+    again = cpi.reinflate(FutureCells.from_chain_ladder(ChainLadder().fit(cpi.restate(tri, "values"), "values")))
+    assert again.total_reserve > again.total_base_reserve
+    for base, got, month in zip(
+        FutureCells.from_chain_ladder(ChainLadder().fit(cpi.restate(tri, "values"), "values")).cells["value"],
+        again.cells.cells["value"],
+        again.cells.cells["valuation"],
+    ):
+        years = (int(month[:4]) - 2010) + (int(month[5:]) - 12) / 12
+        assert close(got, base * 1.04**years, 1e-12)
+
+
+def test_chain_ladder_cells_of_several_segments_need_a_choice():
+    rows = read_csv(VALIDATION / "data" / "genins.csv")
+    stacked = Triangle.from_long(
+        origin=[int(r["origin"]) for r in rows] * 2,
+        development=[int(r["development"]) for r in rows] * 2,
+        values={"values": [float(r["value"]) for r in rows] * 2},
+        keys={"lob": ["auto"] * len(rows) + ["home"] * len(rows)},
+    )
+    fit = ChainLadder().fit(stacked, "values")
+    with pytest.raises(ValueError):
+        FutureCells.from_chain_ladder(fit)
+    one = FutureCells.from_chain_ladder(fit, segment={"lob": "home"})
+    assert len(one) == 45
 
 
 def test_odp_glm_cells_reinflate_at_a_constant_rate():

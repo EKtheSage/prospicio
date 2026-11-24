@@ -8,13 +8,11 @@ recorded as decisions 11 to 16. **PR 1 is built** (branch
 `Reinflated`, in Rust, with Taylor's re-inflation of Example 1
 reproduced. **PR 2 is built** (branch `claude/inflation-index-bindings`,
 2026-11-24): `CalendarIndex`, `Indexation`, `FutureCells` and `Reinflated`
-in Python and R; Python has no `FutureCells.from_chain_ladder` until #963's
-split of `crates/prospicio-python/src/reserving.rs` lands
-(`PyChainLadderFit.inner` is private to that module; Next item
-`[inflation-index-python-chain-ladder]`), and builds `FutureCells` from
-explicit columns or an `OdpGlmFit`; R's `future_cells()` takes a chain-ladder
-fit (with `segment` for a fit over several segments), an ODP GLM fit or a
-data frame. Lane: Reserving (`crates/prospicio-reserving/`; the bindings in
+in Python and R. Python builds `FutureCells` from explicit columns,
+`from_chain_ladder(fit, segment=None)` or `from_odp_glm(fit)`; R's
+`future_cells()` takes a chain-ladder fit, an ODP GLM fit or a data frame
+(`segment` chooses one segment of a fit over several). `FutureCells::from_odp_glm`
+returns a `Result` (PR 1 review). Lane: Reserving (`crates/prospicio-reserving/`; the bindings in
 new module files of `prospicio-python` and `prospicio-r`) ·
 Depends on: `triangle.md` (calendar periods, decision 2),
 `reserving-v02.md` (the chain ladder, `OdpGlm` and its designs, the
