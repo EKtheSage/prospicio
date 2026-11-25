@@ -806,6 +806,7 @@ class ArchimedeanCopula:
     (3, 'clayton')
     """
     def __new__(cls, /, family: str, theta: float, dim: int) -> ArchimedeanCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
     def cdf(self, /, u: Sequence[float]) -> float:
         """
         The copula's distribution function at the point ``u``, each
@@ -16524,6 +16525,13 @@ class GaussianCopula:
     (3, True)
     """
     def __new__(cls, /, correlation: Sequence[Sequence[float]]) -> GaussianCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
+    @staticmethod
+    def _from_factor(factor: Sequence[float], dim: int) -> GaussianCopula:
+        """
+        Rebuilds the copula from its Cholesky factor, bit for bit: what
+        ``pickle`` calls.
+        """
     def cdf(self, /, u: Sequence[float]) -> float:
         """
         The copula's distribution function at the point ``u``, each
@@ -27072,6 +27080,7 @@ class NestedArchimedeanCopula:
     0.5
     """
     def __new__(cls, /, family: str, tree: Any) -> NestedArchimedeanCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
     def cdf(self, /, u: Sequence[float]) -> float:
         """
         The copula's distribution function at the point ``u``.
@@ -29010,6 +29019,7 @@ class PairCopula:
     True
     """
     def __new__(cls, /, family: str, parameter: float = 0.0, rotation: int = 0, nu: float |None = None) -> PairCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
     def __repr__(self, /) -> str: ...
     def cdf(self, /, u: float, v: float) -> float:
         """
@@ -32846,6 +32856,7 @@ class RVineCopula:
     (0, 2, [1])
     """
     def __new__(cls, /, matrix: Sequence[Sequence[int]], pairs: Sequence[Sequence[PairCopula]]) -> RVineCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
     @property
     def dim(self, /) -> int:
         """
@@ -34966,6 +34977,13 @@ class StudentTCopula:
     2
     """
     def __new__(cls, /, correlation: Sequence[Sequence[float]], nu: float) -> StudentTCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
+    @staticmethod
+    def _from_factor(factor: Sequence[float], dim: int, nu: float) -> StudentTCopula:
+        """
+        Rebuilds the copula from its Cholesky factor, bit for bit: what
+        ``pickle`` calls.
+        """
     def cdf(self, /, u: Sequence[float]) -> float:
         """
         The copula's distribution function at the point ``u``, each
@@ -39395,6 +39413,7 @@ class VineCopula:
     3
     """
     def __new__(cls, /, kind: str, order: Sequence[int], pairs: Sequence[Sequence[PairCopula]]) -> VineCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
     @property
     def dim(self, /) -> int:
         """
