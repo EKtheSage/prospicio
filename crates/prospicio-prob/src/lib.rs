@@ -46,6 +46,7 @@ pub mod piecewise_pareto;
 pub mod policy_limits;
 pub mod portfolio;
 pub mod predictive;
+pub mod predictive_json;
 pub mod provenance;
 pub mod rearrangement;
 pub mod risk;
