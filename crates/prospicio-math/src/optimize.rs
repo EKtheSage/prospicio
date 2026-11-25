@@ -381,6 +381,93 @@ fn simplex_pass(
     }
 }
 
+/// Polishes a least-squares fit of `y = m(q)` by Levenberg-Marquardt steps
+/// on the normal equations, from `start`. `residuals` gives `y - m(q)` and
+/// the Jacobian of `m` by row, or `None` outside the parameters' range.
+/// `None` when the start itself is outside the range.
+///
+/// The damping multiplies the diagonal of `JᵀJ` by `1 + λ`, `λ` starting
+/// at `1e-6`, divided by 10 after a step that does not raise the sum of
+/// squares and multiplied by 10 after one that does; it stops after 200
+/// steps, when no damping below `1e12` helps, when a step moves every
+/// parameter by at most `1e-14` of its size, or when the sum of squares
+/// falls by at most `1e-16` of itself.
+///
+/// ```
+/// use prospicio_math::optimize::levenberg_marquardt;
+///
+/// // y = a e^(b t) through three exact points, from a rough start.
+/// let t = [0.0, 1.0, 2.0];
+/// let y: Vec<f64> = t.iter().map(|t: &f64| 2.0 * (0.5 * t).exp()).collect();
+/// let q = levenberg_marquardt(&[1.0, 0.1], |q| {
+///     let r = t.iter().zip(&y).map(|(t, y)| y - q[0] * (q[1] * t).exp()).collect();
+///     let j = t.iter().map(|t| vec![(q[1] * t).exp(), q[0] * t * (q[1] * t).exp()]).collect();
+///     Some((r, j))
+/// })
+/// .unwrap();
+/// assert!((q[0] - 2.0).abs() < 1e-10 && (q[1] - 0.5).abs() < 1e-10);
+/// ```
+pub fn levenberg_marquardt(
+    start: &[f64],
+    residuals: impl Fn(&[f64]) -> Option<(Vec<f64>, Vec<Vec<f64>>)>,
+) -> Option<Vec<f64>> {
+    let n = start.len();
+    let sse = |r: &[f64]| r.iter().map(|v| v * v).sum::<f64>();
+    let mut q = start.to_vec();
+    let (mut r, mut j) = residuals(&q)?;
+    let mut value = sse(&r);
+    let mut lambda = 1e-6;
+    for _ in 0..200 {
+        let mut a = vec![0.0; n * n];
+        let mut g = vec![0.0; n];
+        for (row, ri) in j.iter().zip(&r) {
+            for u in 0..n {
+                g[u] += row[u] * ri;
+                for v in 0..n {
+                    a[u * n + v] += row[u] * row[v];
+                }
+            }
+        }
+        let mut improved = false;
+        while lambda < 1e12 {
+            let mut damped = a.clone();
+            for u in 0..n {
+                damped[u * n + u] *= 1.0 + lambda;
+            }
+            let Some(step) = crate::linalg::solve(damped, g.clone(), n) else {
+                lambda *= 10.0;
+                continue;
+            };
+            let trial: Vec<f64> = q.iter().zip(&step).map(|(x, s)| x + s).collect();
+            if let Some((tr, tj)) = residuals(&trial) {
+                let tv = sse(&tr);
+                if tv.is_finite() && tv <= value {
+                    let small = step
+                        .iter()
+                        .zip(&q)
+                        .all(|(s, x)| s.abs() <= 1e-14 * x.abs().max(1e-8));
+                    let done = small || value - tv <= 1e-16 * value;
+                    q = trial;
+                    r = tr;
+                    j = tj;
+                    value = tv;
+                    lambda = (lambda / 10.0).max(1e-12);
+                    improved = true;
+                    if done {
+                        return Some(q);
+                    }
+                    break;
+                }
+            }
+            lambda *= 10.0;
+        }
+        if !improved {
+            break;
+        }
+    }
+    Some(q)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

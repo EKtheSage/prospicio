@@ -79,6 +79,54 @@ pub fn cholesky_solve(l: &[f64], b: &[f64]) -> Vec<f64> {
     x
 }
 
+/// Solves `G w = rhs` for a positive semidefinite `k × k` matrix `G`
+/// (row-major), such as a Gram matrix of rows that may depend on each
+/// other, by a Cholesky factorization that skips each row whose pivot is at
+/// most `1e-10` of its diagonal (a row that depends, to rounding, on the
+/// rows before it), with `w` 0 there. When `rhs` is in the range of `G`,
+/// the skipped rows' equations hold too; otherwise they are ignored.
+///
+/// ```
+/// use prospicio_math::linalg::semidefinite_solve;
+///
+/// // The second row is twice the first; rhs is in the range.
+/// let g = [1.0, 2.0, 2.0, 4.0];
+/// let w = semidefinite_solve(&g, &[3.0, 6.0], 2);
+/// assert_eq!(w, [3.0, 0.0]);
+/// ```
+pub fn semidefinite_solve(g: &[f64], rhs: &[f64], k: usize) -> Vec<f64> {
+    let mut l = vec![0.0f64; k * k];
+    let mut kept = vec![false; k];
+    for j in 0..k {
+        let d = g[j * k + j] - (0..j).map(|m| l[j * k + m].powi(2)).sum::<f64>();
+        if d.is_nan() || d <= 1e-10 * g[j * k + j] {
+            continue;
+        }
+        kept[j] = true;
+        let ljj = d.sqrt();
+        l[j * k + j] = ljj;
+        for i in j + 1..k {
+            let v = g[i * k + j] - (0..j).map(|m| l[i * k + m] * l[j * k + m]).sum::<f64>();
+            l[i * k + j] = v / ljj;
+        }
+    }
+    let mut y = vec![0.0; k];
+    for j in 0..k {
+        if kept[j] {
+            let v = rhs[j] - (0..j).map(|m| l[j * k + m] * y[m]).sum::<f64>();
+            y[j] = v / l[j * k + j];
+        }
+    }
+    let mut w = vec![0.0; k];
+    for j in (0..k).rev() {
+        if kept[j] {
+            let v = y[j] - (j + 1..k).map(|m| l[m * k + j] * w[m]).sum::<f64>();
+            w[j] = v / l[j * k + j];
+        }
+    }
+    w
+}
+
 /// The inverse of `l lᵀ` from its Cholesky factor `l` (`n × n`,
 /// row-major), row-major: the covariance of coefficients from the factor
 /// of their information matrix.
@@ -445,6 +493,18 @@ fn jacobi(a: &[f64], n: usize, vectors: bool) -> (Vec<f64>, Vec<f64>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn semidefinite_solve_matches_cholesky_when_definite() {
+        let g = [4.0, 2.0, 2.0, 5.0];
+        let w = semidefinite_solve(&g, &[6.0, 7.0], 2);
+        let l = cholesky(&g, 2).unwrap();
+        assert_eq!(w, cholesky_solve(&l, &[6.0, 7.0]));
+        // A zero row is skipped.
+        let z = semidefinite_solve(&[0.0, 0.0, 0.0, 2.0], &[0.0, 4.0], 2);
+        assert_eq!(z[0], 0.0);
+        assert!((z[1] - 2.0).abs() < 1e-15);
+    }
 
     #[test]
     fn symmetric_eigen_reconstructs_the_matrix() {
