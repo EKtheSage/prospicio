@@ -5581,6 +5581,57 @@ impl PyMarsFit {
         }
     }
 
+    /// The fit as a versioned JSON artifact: the names, the selected and
+    /// forward terms, the forward pass's steps, the coefficients and the
+    /// fit statistics, with the GLM fitted on the terms when ``family`` was
+    /// given; numbers bit for bit (#978). ``from_json`` reads it back;
+    /// ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import MarsFit, mars
+    /// >>> x = [float(i) for i in range(60)]
+    /// >>> fit = mars({"x": x}, [1 + 0.5 * v + 3 * max(0.0, v - 31) for v in x])
+    /// >>> MarsFit.from_json(fit.to_json()).knots("x")
+    /// [31.0]
+    /// >>> pickle.loads(pickle.dumps(fit)).coefficients == fit.coefficients
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// MarsFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::mars::MarsFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "MarsFit({} terms, rss={}, gcv={})",
