@@ -54,6 +54,10 @@
 "stan_csv::parse" = "unbound on 2026-10-28 (seed); review"
 
 [python.prospicio_glm]
+"quantile::rows_by_tau" = "a scalar helper that the Excel add-in uses (#976); Python has it natively (QuantileFits.predict(rearrange=...) covers it)"
+"wald::critical_value" = "a scalar helper that the Excel add-in uses (#976); Python has it natively (scipy.stats.norm.ppf)"
+"wald::interval" = "a scalar helper that the Excel add-in uses (#976); Python has it natively (the fits report their own intervals; scipy.stats.norm)"
+"wald::p_value" = "a scalar helper that the Excel add-in uses (#976); Python has it natively (scipy.stats.norm.sf)"
 "diagnostics::Diagnostics" = "unbound on 2026-10-28 (seed); review"
 "gam::SmoothKind" = "unbound on 2026-10-28 (seed); review"
 "glmm::Integration" = "unbound on 2026-10-28 (seed); review"
@@ -179,20 +183,13 @@
 "onnx::OnnxInput" = "unbound on 2026-10-28 (seed); review"
 
 [python.prospicio_pricing]
+"payout::discount" = "a scalar helper that the Excel add-in uses (#976); Python has it natively ((1 + rate) ** -t)"
 "credibility::partial_credibility" = "the rule LimitedFluctuation.credibility(n, standard) applies; Python calls it through that method (#838)"
 "book::Adequacy" = "a result type: Book.adequacy returns its fields as a dict"
-"earned::Date" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::EarnedRow" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::EarnedTable" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::EarningMethod" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::Policy" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::Windows" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::earned_exposure" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::in_force" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
+"earned::EarnedTable" = "a result type: earned_exposure returns its rows as columns of a dict"
 "ratemaking::ScheduleTrendRow" = "a result type: schedule_trend returns its fields as columns of a dict"
 "retro::BalancedPlan" = "a result type: RetroPlan.balance returns its fields as a dict"
 "retro::ChargeRow" = "a result type: InsuranceCharge.table returns its fields as columns of a dict"
-"ratemaking::PeriodKind" = "the name table Period.calendar and Period.policy are chosen by; Python has the two constructors, not the enum (#956)"
 "book::DealContribution" = "unbound on 2026-10-28 (seed); review"
 "book::Distribution" = "unbound on 2026-10-28 (seed); review"
 "bounds::PriceRange" = "unbound on 2026-10-28 (seed); review"
@@ -220,6 +217,8 @@
 "tower::layer_losses_from_unlimited" = "unbound on 2026-10-28 (seed); review"
 
 [python.prospicio_prob]
+"statistics::SampleMoments" = "a scalar helper that the Excel add-in uses (#976); Python has it natively (numpy and scipy.stats.skew)"
+"statistics::sample_moments" = "a scalar helper that the Excel add-in uses (#976); Python has it natively (numpy and scipy.stats.skew)"
 "chf::TiltSide" = "the side tilted is read in Python and R from the report's tilt pair, (0, tau) for a right power tail and (tau, 0) for a left one"
 "chf::ChfReport" = "bound as ChfDistribution's properties (Python) and the report list of a chf_distribution (R), not as a class"
 "DistortionKind" = "the front ends' table of distortion names (#834); Python builds a distortion by its constructor and reads a family name through Family::from_name, which uses the table"
@@ -344,6 +343,10 @@
 "stan_csv::parse" = "unbound on 2026-10-28 (seed); review"
 
 [r.prospicio_glm]
+"quantile::rows_by_tau" = "a scalar helper that the Excel add-in uses (#976); R has it natively (predict(..., rearrange = TRUE) covers it)"
+"wald::critical_value" = "a scalar helper that the Excel add-in uses (#976); R has it natively (stats::qnorm)"
+"wald::interval" = "a scalar helper that the Excel add-in uses (#976); R has it natively (the fits report their own intervals; stats::qnorm)"
+"wald::p_value" = "a scalar helper that the Excel add-in uses (#976); R has it natively (stats::pnorm)"
 "diagnostics::Diagnostics" = "unbound on 2026-10-28 (seed); review"
 "gam::SmoothKind" = "unbound on 2026-10-28 (seed); review"
 "glmm::Integration" = "unbound on 2026-10-28 (seed); review"
@@ -480,15 +483,10 @@
 "onnx::OnnxInput" = "unbound on 2026-10-28 (seed); review"
 
 [r.prospicio_pricing]
+"payout::discount" = "a scalar helper that the Excel add-in uses (#976); R has it natively ((1 + rate)^-t)"
 "book::Adequacy" = "a result type: the book's adequacy() returns its fields as a list"
-"earned::Date" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::EarnedRow" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::EarnedTable" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::EarningMethod" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::Policy" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::Windows" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::earned_exposure" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
-"earned::in_force" = "bound in [earned-bindings] after the earned Rust PRs (primary-rating.md, PR 6b)"
+"earned::EarnedRow" = "a result type: earned_exposure() returns its fields as a data frame"
+"earned::EarnedTable" = "a result type: earned_exposure() returns its rows as a data frame"
 "ratemaking::ScheduleTrendRow" = "a result type: schedule_trend() returns its fields as a data frame"
 "retro::BalancedPlan" = "a result type: retro_balance() returns its fields as a list"
 "retro::ChargeRow" = "a result type: insurance_charge() returns its fields as a data frame"
@@ -534,6 +532,8 @@
 "tower::layer_losses_from_unlimited" = "unbound on 2026-10-28 (seed); review"
 
 [r.prospicio_prob]
+"statistics::SampleMoments" = "a scalar helper that the Excel add-in uses (#976); R has it natively (mean, sd and moments in base R)"
+"statistics::sample_moments" = "a scalar helper that the Excel add-in uses (#976); R has it natively (mean, sd and moments in base R)"
 "chf::TiltSide" = "the side tilted is read in Python and R from the report's tilt pair, (0, tau) for a right power tail and (tau, 0) for a left one"
 "chf::ChfReport" = "bound as ChfDistribution's properties (Python) and the report list of a chf_distribution (R), not as a class"
 "FitStatistics" = "the Pareto fits' likelihood reaches Python and R through fit_severity with a t (#800)"

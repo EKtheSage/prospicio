@@ -18,7 +18,7 @@
 use prospicio_aggregate::cat::{EltBucketing, EventLossTable};
 use prospicio_aggregate::ylt::{Expansion, YearLossTable};
 use prospicio_aggregate::{EventSet, compound_moments, fft, round_bucket};
-use prospicio_prob::statistics::{QuantileMethod, TvarMethod};
+use prospicio_prob::statistics::{QuantileMethod, TvarMethod, sample_moments};
 use prospicio_prob::{Distribution, Grid as Lattice};
 
 use crate::aggregate::{MAX_POINTS, grid_control, layer, percent};
@@ -196,9 +196,7 @@ pub fn ylt_stats(args: &[Grid]) -> Result<Grid> {
     let (totals, maxima) = totals_and_maxima(&events);
     let n = totals.len() as f64;
     let counts = events.counts();
-    let mean = totals.iter().sum::<f64>() / n;
-    let m2 = totals.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
-    let m3 = totals.iter().map(|x| (x - mean).powi(3)).sum::<f64>() / n;
+    let moments = sample_moments(&totals).map_err(|e| e.to_string())?;
     let sorted = sorted(totals);
     let mut rows = vec![
         row("Years", n),
@@ -212,17 +210,10 @@ pub fn ylt_stats(args: &[Grid]) -> Result<Grid> {
             "Occurrences a year",
             counts.iter().sum::<usize>() as f64 / n,
         ),
-        row("Mean", mean),
-        row("SD", m2.sqrt()),
-        row(
-            "CV",
-            if mean == 0.0 {
-                f64::NAN
-            } else {
-                m2.sqrt() / mean
-            },
-        ),
-        row("Skewness", m3 / m2.powf(1.5)),
+        row("Mean", moments.mean),
+        row("SD", moments.sd),
+        row("CV", moments.cv),
+        row("Skewness", moments.skewness),
         row("Min", sorted[0]),
         row("Max", sorted[sorted.len() - 1]),
         row(
@@ -545,10 +536,7 @@ pub fn elt_agg(args: &[Grid]) -> Result<Grid> {
                 let n = (reach / step).ceil() as usize + 2;
                 let (sev, report) = elt.severity_grid(step, n, rule).map_err(e)?;
                 let m = compound_moments(&count, &image(sev.clone())?).map_err(e)?;
-                let extent = m.mean + 12.0 * m.variance.sqrt() + reach;
-                let points = ((extent / step).ceil() as usize + 1)
-                    .next_power_of_two()
-                    .max(1 << 10);
+                let points = m.covering_points(reach, step);
                 if points <= MAX_POINTS {
                     break ((sev, report), points);
                 }

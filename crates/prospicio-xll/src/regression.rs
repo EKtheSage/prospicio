@@ -7,11 +7,11 @@
 
 use prospicio_glm::Glm;
 use prospicio_glm::negbin::NegativeBinomialGlm;
-use prospicio_glm::quantile::{Bandwidth, ExpectileRegression, QuantileRegression};
+use prospicio_glm::quantile::{Bandwidth, ExpectileRegression, QuantileRegression, rows_by_tau};
+use prospicio_glm::wald;
 use prospicio_glm::zero::{
     CountDistribution, Hurdle, TwoPartFit, ZeroInflated, count_log_likelihoods, vuong,
 };
-use prospicio_math::special::norm_cdf;
 use prospicio_models::{Coding, Design, Family, Fitted, Link, LinkKind, Model};
 
 use crate::glm::{
@@ -24,11 +24,6 @@ type Result<T> = std::result::Result<T, String>;
 
 fn err(e: impl ToString) -> String {
     e.to_string()
-}
-
-/// A two-sided normal p-value.
-fn p_value(z: f64) -> f64 {
-    2.0 * norm_cdf(-z.abs())
 }
 
 /// A part of a model: its predictors' coding, or the intercept alone.
@@ -224,7 +219,7 @@ pub fn two_part(args: &[Grid]) -> Result<Grid> {
                 Value::number(b[j]),
                 Value::number(se[j]),
                 Value::number(z),
-                Value::number(p_value(z)),
+                Value::number(wald::p_value(z)),
                 Value::number(b[j].exp()),
             ]);
         }
@@ -515,22 +510,13 @@ pub fn linear_predict(args: &[Grid]) -> Result<Grid> {
     };
     let new = Table::new(&args[4], "newdata")?;
     let d = design(&coding, &new, &terms, None, "newdata")?;
-    let mut order: Vec<usize> = (0..taus.len()).collect();
-    if rearrange {
-        order.sort_by(|&a, &b| taus[a].total_cmp(&taus[b]));
-    }
-    let columns = order
+    let columns = fits
         .iter()
-        .map(|&k| (fits[k].fitted)(&d).map_err(err))
+        .map(|f| (f.fitted)(&d).map_err(err))
         .collect::<Result<Vec<_>>>()?;
-    let rows = (0..d.n_rows())
-        .map(|i| {
-            let mut row: Vec<f64> = columns.iter().map(|c| c[i]).collect();
-            if rearrange {
-                row.sort_by(f64::total_cmp);
-            }
-            row.into_iter().map(Value::number).collect()
-        })
+    let rows = rows_by_tau(&taus, &columns, rearrange)
+        .into_iter()
+        .map(|row| row.into_iter().map(Value::number).collect())
         .collect();
     Ok(Grid::from_rows(rows))
 }

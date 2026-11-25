@@ -132,10 +132,7 @@ fn severity_grid(
                 let top = ((a + l) / step).ceil() as usize + 1;
                 let g = image(&Grid::rounding(sev, step, top + 1).map_err(e)?.0)?;
                 let m = compound_moments(n, &g).map_err(e)?;
-                let extent = m.mean + 12.0 * m.variance.sqrt() + l;
-                let points = ((extent / step).ceil() as usize + 1)
-                    .next_power_of_two()
-                    .max(1 << 10);
+                let points = m.covering_points(l, step);
                 if points <= MAX_POINTS {
                     return Ok((g, points));
                 }

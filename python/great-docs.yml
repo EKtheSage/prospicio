@@ -379,6 +379,12 @@ reference:
       - pricing.premium_based_expenses
       - pricing.credibility_weighted
       - pricing.trended_present_rates
+  - title: Earned exposure
+    desc: Written, earned, unearned and in-force exposure or premium by calendar or policy period, from the policies' dates, with mid-term changes and cancellations.
+    contents:
+      - pricing.calendar_windows
+      - pricing.earned_exposure
+      - pricing.in_force
   - title: Retrospective rating
     desc: The insurance charge and savings of an aggregate loss distribution or a sample (Table M), under a per-occurrence limit (Table L), and the basic premium that balances a retrospective plan.
     contents:

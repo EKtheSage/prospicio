@@ -4,7 +4,7 @@
 //! `PRO.RES.CL.CDF`), its discount factor, duration and capital years, and a
 //! cost-of-capital price restated over the payout.
 
-use prospicio_pricing::payout::{PaymentPattern, price_over_payout};
+use prospicio_pricing::payout::{PaymentPattern, discount, price_over_payout};
 use prospicio_pricing::risk_load::{PremiumRule, Price};
 
 use crate::pricing::{paired, scalar};
@@ -70,7 +70,7 @@ pub fn pattern_table(args: &[Grid]) -> Result<Grid> {
     for (&t, &s) in p.times().iter().zip(p.shares()) {
         paid += s;
         rows.push(
-            [t, s, paid.min(1.0), p.outstanding(t), (1.0 + r).powf(-t)]
+            [t, s, paid.min(1.0), p.outstanding(t), discount(r, t)]
                 .map(Value::number)
                 .to_vec(),
         );

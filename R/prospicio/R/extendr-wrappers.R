@@ -75,6 +75,8 @@ calendar_index_periods_rust <- function(first, values, rate) .Call(wrap__calenda
 
 calendar_index_value_rust <- function(first, values, rate, months) .Call(wrap__calendar_index_value_rust, first, values, rate, months)
 
+calendar_windows_rust <- function(first_year, last_year, by) .Call(wrap__calendar_windows_rust, first_year, last_year, by)
+
 cann_fit_design <- function(x, names, y, offset, weights, family_name, link_name, power, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience) .Call(wrap__cann_fit_design, x, names, y, offset, weights, family_name, link_name, power, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience)
 
 case_adequacy_rust <- function(triangle, incurred, paid, open_counts, trend, max_age) .Call(wrap__case_adequacy_rust, triangle, incurred, paid, open_counts, trend, max_age)
@@ -158,6 +160,8 @@ draws_loo_rust <- function(values, n_iter, n_chain, names, prefix) .Call(wrap__d
 draws_summary_rust <- function(values, n_iter, n_chain, names) .Call(wrap__draws_summary_rust, values, n_iter, n_chain, names)
 
 dyadic_lattice_step_rust <- function(atoms, depth) .Call(wrap__dyadic_lattice_step_rust, atoms, depth)
+
+earned_exposure_rust <- function(effective, expiration, amount, bounds, kind, method, valuation, label, change_policy, change_date, change_amount, cancellation) .Call(wrap__earned_exposure_rust, effective, expiration, amount, bounds, kind, method, valuation, label, change_policy, change_date, change_amount, cancellation)
 
 elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, gammas, theta, power, link_power, foldid) .Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, gammas, theta, power, link_power, foldid)
 
@@ -260,6 +264,8 @@ hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, 
 hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
 
 iman_conover_reorder <- function(pd, correlation, seed, dof, scores, shuffle_rows) .Call(wrap__iman_conover_reorder, pd, correlation, seed, dof, scores, shuffle_rows)
+
+in_force_amount_rust <- function(effective, expiration, amount, at, change_policy, change_date, change_amount, cancellation) .Call(wrap__in_force_amount_rust, effective, expiration, amount, at, change_policy, change_date, change_amount, cancellation)
 
 index_paths_periods_rust <- function(first, n_sims, values) .Call(wrap__index_paths_periods_rust, first, n_sims, values)
 
