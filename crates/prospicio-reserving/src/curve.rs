@@ -39,7 +39,7 @@
 
 use prospicio_core::Lag;
 use prospicio_math::linalg::{line_fit, solve};
-use prospicio_math::optimize::{NelderMead, nelder_mead};
+use prospicio_math::optimize::{NelderMead, levenberg_marquardt, nelder_mead};
 
 use crate::clark::GrowthCurve;
 use crate::development::DevelopmentFit;
@@ -486,7 +486,7 @@ fn fit_sherman(points: &[(usize, f64)]) -> std::result::Result<Vec<f64>, &'stati
     let (_, v) = best.ok_or("the Sherman curve could not be fitted")?;
     let (b, c) = (v[0], v[1].exp() - 1.0);
     let start = vec![best_a(b, c), b, c];
-    let polished = gauss_newton(&start, |q| {
+    let polished = levenberg_marquardt(&start, |q| {
         if q[2].is_nan() || q[2] <= -1.0 {
             return None;
         }
@@ -567,7 +567,7 @@ fn fit_growth(
     }
     let (_, x) = best.ok_or("the growth curve could not be fitted")?;
     let start = vec![x[0].exp(), x[1].exp()];
-    let polished = gauss_newton(&start, |q| {
+    let polished = levenberg_marquardt(&start, |q| {
         let (omega, theta) = (q[0], q[1]);
         if !(omega > 0.0 && theta > 0.0) {
             return None;
@@ -599,71 +599,6 @@ fn fit_growth(
         );
     }
     Ok(q)
-}
-
-/// Polishes a least-squares fit of `y = m(q)` by Levenberg-Marquardt steps
-/// on the normal equations, from `start`. `residuals` gives `y - m(q)` and
-/// the Jacobian of `m` by row, or `None` outside the parameters' range.
-/// `None` when the start itself is outside the range.
-fn gauss_newton(
-    start: &[f64],
-    residuals: impl Fn(&[f64]) -> Option<(Vec<f64>, Vec<Vec<f64>>)>,
-) -> Option<Vec<f64>> {
-    let n = start.len();
-    let sse = |r: &[f64]| r.iter().map(|v| v * v).sum::<f64>();
-    let mut q = start.to_vec();
-    let (mut r, mut j) = residuals(&q)?;
-    let mut value = sse(&r);
-    let mut lambda = 1e-6;
-    for _ in 0..200 {
-        let mut a = vec![0.0; n * n];
-        let mut g = vec![0.0; n];
-        for (row, ri) in j.iter().zip(&r) {
-            for u in 0..n {
-                g[u] += row[u] * ri;
-                for v in 0..n {
-                    a[u * n + v] += row[u] * row[v];
-                }
-            }
-        }
-        let mut improved = false;
-        while lambda < 1e12 {
-            let mut damped = a.clone();
-            for u in 0..n {
-                damped[u * n + u] *= 1.0 + lambda;
-            }
-            let Some(step) = solve(damped, g.clone(), n) else {
-                lambda *= 10.0;
-                continue;
-            };
-            let trial: Vec<f64> = q.iter().zip(&step).map(|(x, s)| x + s).collect();
-            if let Some((tr, tj)) = residuals(&trial) {
-                let tv = sse(&tr);
-                if tv.is_finite() && tv <= value {
-                    let small = step
-                        .iter()
-                        .zip(&q)
-                        .all(|(s, x)| s.abs() <= 1e-14 * x.abs().max(1e-8));
-                    let done = small || value - tv <= 1e-16 * value;
-                    q = trial;
-                    r = tr;
-                    j = tj;
-                    value = tv;
-                    lambda = (lambda / 10.0).max(1e-12);
-                    improved = true;
-                    if done {
-                        return Some(q);
-                    }
-                    break;
-                }
-            }
-            lambda *= 10.0;
-        }
-        if !improved {
-            break;
-        }
-    }
-    Some(q)
 }
 
 #[cfg(test)]

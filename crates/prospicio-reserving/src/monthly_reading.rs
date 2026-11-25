@@ -42,6 +42,7 @@
 //! average of `p` at the other months.
 
 use prospicio_core::Lag;
+use prospicio_math::linalg::semidefinite_solve;
 use prospicio_math::optimize::{NelderMead, nelder_mead};
 
 use crate::benchmark_curve::{MAX_LN_THETA, MAX_OMEGA, MIN_OMEGA, linearized};
@@ -471,7 +472,7 @@ fn primal(rows: &[Vec<f64>], b: &[f64], c: &[f64], fixed: &[bool]) -> Vec<f64> {
     // The solve, then one pass of refinement on its residuals.
     for _ in 0..2 {
         let rhs: Vec<f64> = rows.iter().zip(b).map(|(r, &bi)| bi - dot(r, &x)).collect();
-        let u = solve_semidefinite(&g, &rhs, rows.len());
+        let u = semidefinite_solve(&g, &rhs, rows.len());
         for (j, xj) in x.iter_mut().enumerate() {
             if !fixed[j] {
                 *xj += rows.iter().zip(&u).map(|(r, ui)| r[j] * ui).sum::<f64>();
@@ -514,7 +515,7 @@ impl Projection<'_> {
         // The month added is free, so each row's part of the normal on the
         // free months is its weight on that month.
         let rhs: Vec<f64> = self.rows.iter().map(|r| r[add]).collect();
-        let w = solve_semidefinite(&g, &rhs, k);
+        let w = semidefinite_solve(&g, &rhs, k);
         let mut z = vec![0.0; n];
         let mut r_bound = vec![0.0; n];
         for j in 0..n {
@@ -544,44 +545,6 @@ fn gram(rows: &[Vec<f64>], fixed: &[bool]) -> Vec<f64> {
         }
     }
     g
-}
-
-/// Solves `G w = rhs` for a positive semidefinite Gram matrix `G` by a
-/// Cholesky factorization that skips each row whose pivot is at most
-/// `1e-10` of its diagonal (a row that depends, to rounding, on the rows
-/// before it), with `w` 0 there. When `rhs` is in the range of `G`, as it
-/// is in the projection, the skipped rows' equations hold too.
-fn solve_semidefinite(g: &[f64], rhs: &[f64], k: usize) -> Vec<f64> {
-    let mut l = vec![0.0f64; k * k];
-    let mut kept = vec![false; k];
-    for j in 0..k {
-        let d = g[j * k + j] - (0..j).map(|m| l[j * k + m].powi(2)).sum::<f64>();
-        if d.is_nan() || d <= 1e-10 * g[j * k + j] {
-            continue;
-        }
-        kept[j] = true;
-        let ljj = d.sqrt();
-        l[j * k + j] = ljj;
-        for i in j + 1..k {
-            let v = g[i * k + j] - (0..j).map(|m| l[i * k + m] * l[j * k + m]).sum::<f64>();
-            l[i * k + j] = v / ljj;
-        }
-    }
-    let mut y = vec![0.0; k];
-    for j in 0..k {
-        if kept[j] {
-            let v = rhs[j] - (0..j).map(|m| l[j * k + m] * y[m]).sum::<f64>();
-            y[j] = v / l[j * k + j];
-        }
-    }
-    let mut w = vec![0.0; k];
-    for j in (0..k).rev() {
-        if kept[j] {
-            let v = y[j] - (j + 1..k).map(|m| l[m * k + j] * w[m]).sum::<f64>();
-            w[j] = v / l[j * k + j];
-        }
-    }
-    w
 }
 
 fn dot(a: &[f64], b: &[f64]) -> f64 {
