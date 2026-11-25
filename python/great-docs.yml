@@ -429,6 +429,8 @@ reference:
       - reserving.Reinflated
       - reserving.RiskAdjustmentResult
       - reserving.SegmentRiskAdjustment
+      - reserving.Separation
+      - reserving.SeparationFit
       - reserving.UlaeEstimate
       - reserving.ulae_classical
       - reserving.ulae_kittel

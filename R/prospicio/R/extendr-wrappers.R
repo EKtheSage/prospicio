@@ -507,6 +507,8 @@ round_premium_rust <- function(premium) .Call(wrap__round_premium_rust, premium)
 
 schedule_trend_rust <- function(years, trend_years, trend_rates, inception, basis, kind, cutoff, before) .Call(wrap__schedule_trend_rust, years, trend_years, trend_rates, inception, basis, kind, cutoff, before)
 
+separation_fit_rust <- function(triangle, column, keys, values, kind, normaliser, future, rate, first, index_values, index_rate, trend_periods) .Call(wrap__separation_fit_rust, triangle, column, keys, values, kind, normaliser, future, rate, first, index_values, index_rate, trend_periods)
+
 settlement_rate_rust <- function(triangle, paid, closed_counts, ultimate, disposal_rates, interpolation) .Call(wrap__settlement_rate_rust, triangle, paid, closed_counts, ultimate, disposal_rates, interpolation)
 
 severity_fit_rust <- function(family, losses, reporting, censored, weights, upper, t) .Call(wrap__severity_fit_rust, family, losses, reporting, censored, weights, upper, t)

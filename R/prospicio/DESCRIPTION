@@ -43,4 +43,5 @@ Collate:
     'reserving_discount.R'
     'reserving_expense.R'
     'reserving_inflation.R'
+    'reserving_separation.R'
     'risk.R'
