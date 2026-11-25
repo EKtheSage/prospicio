@@ -135,6 +135,54 @@ impl PyTerms {
         }
     }
 
+    /// The terms as a versioned JSON artifact (format
+    /// ``risk_rs.terms``), numbers bit for bit (#978).
+    /// ``from_json`` reads it back; ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Terms
+    /// >>> terms = Terms().intercept().numeric("age").factor("region")
+    /// >>> Terms.from_json(terms.to_json()).to_json() == terms.to_json()
+    /// True
+    /// >>> pickle.loads(pickle.dumps(terms)).to_json() == terms.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     an invalid term.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: Terms::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// Adds an intercept.
     ///
     /// Returns
@@ -402,6 +450,56 @@ pub(crate) struct PyCoding {
 
 #[pymethods]
 impl PyCoding {
+    /// The coding, with the levels and knots training learned, as a versioned JSON artifact (format
+    /// ``risk_rs.coding``), numbers bit for bit (#978).
+    /// ``from_json`` reads it back; ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Coding, Terms
+    /// >>> data = {"age": [30.0, 45.0, 60.0], "region": ["N", "S", "W"]}
+    /// >>> coding = Terms().intercept().numeric("age").factor("region").fit(data)
+    /// >>> back = pickle.loads(pickle.dumps(coding))
+    /// >>> back.names
+    /// ['(Intercept)', 'age', 'region[S]', 'region[W]']
+    /// >>> Coding.from_json(coding.to_json()).to_json() == coding.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// Coding
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     an invalid term.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: Coding::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// Design matrix column names.
     #[getter]
     fn names(&self) -> Vec<String> {
