@@ -8279,6 +8279,7 @@ class Coding:
     Terms with factor levels learned from training data, from
     ``Terms.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def design(self, /, data: Any, offset: Sequence[float] |None = None, weights: Sequence[float] |None = None) -> Design:
         """
         The design matrix for ``data``.
@@ -8298,10 +8299,51 @@ class Coding:
         ValueError
             If a column is missing or a factor level was not seen in training.
         """
+    @staticmethod
+    def from_json(text: str) -> Coding:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        Coding
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            an invalid term.
+        """
     @property
     def names(self, /) -> list[str]:
         """
         Design matrix column names.
+        """
+    def to_json(self, /) -> str:
+        """
+        The coding, with the levels and knots training learned, as a versioned JSON artifact (format
+        ``risk_rs.coding``), numbers bit for bit (#978).
+        ``from_json`` reads it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Coding, Terms
+        >>> data = {"age": [30.0, 45.0, 60.0], "region": ["N", "S", "W"]}
+        >>> coding = Terms().intercept().numeric("age").factor("region").fit(data)
+        >>> back = pickle.loads(pickle.dumps(coding))
+        >>> back.names
+        ['(Intercept)', 'age', 'region[S]', 'region[W]']
+        >>> Coding.from_json(coding.to_json()).to_json() == coding.to_json()
+        True
         """
 
 @final
@@ -35633,6 +35675,7 @@ class Terms:
     ['(Intercept)', 'age', 'region[S]', 'region[W]']
     """
     def __new__(cls, /) -> Terms: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def bins(self, /, name: str, cuts: Sequence[float], reference: int |None = None) -> Terms:
         """
         Adds a numeric column cut into bins ``(-inf, c1], (c1, c2], ...,
@@ -35682,6 +35725,25 @@ class Terms:
         ------
         ValueError
             If a column is missing or has the wrong kind.
+        """
+    @staticmethod
+    def from_json(text: str) -> Terms:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        Terms
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            an invalid term.
         """
     def hinges(self, /, name: str, knots: Sequence[float]) -> Terms:
         """
@@ -35834,6 +35896,26 @@ class Terms:
         Returns
         -------
         Terms
+        """
+    def to_json(self, /) -> str:
+        """
+        The terms as a versioned JSON artifact (format
+        ``risk_rs.terms``), numbers bit for bit (#978).
+        ``from_json`` reads it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Terms
+        >>> terms = Terms().intercept().numeric("age").factor("region")
+        >>> Terms.from_json(terms.to_json()).to_json() == terms.to_json()
+        True
+        >>> pickle.loads(pickle.dumps(terms)).to_json() == terms.to_json()
+        True
         """
 
 @final
