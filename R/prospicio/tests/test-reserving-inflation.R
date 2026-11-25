@@ -111,3 +111,12 @@ expect_error_like(reinflate(indexation(calendar_index("2001", rep(1, 10)), "2005
 expect_error_like(future_cells(data.frame(origin = "2010", age = 24, valuation = "2011-12", value = 1),
                                origins = "2009"), "not one of the origins")
 expect_error_like(future_cells(1), "must be a chain_ladder_fit")
+
+# A non-integer age is refused, not truncated, and the constructors called
+# bare say what they need.
+expect_error_like(
+  future_cells(data.frame(origin = "2020", age = 24.5, valuation = "2021-12", value = 1)),
+  "24.5 is not an age in months"
+)
+expect_error_like(future_cells(), "must be a chain_ladder_fit")
+expect_error_like(reinflated(), "made by reinflate")

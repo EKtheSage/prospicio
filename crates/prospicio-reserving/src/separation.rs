@@ -172,9 +172,9 @@ pub struct SeparationFit {
     /// The sum of each origin's future cells. The first origin's is 0: the
     /// method has no tail past the oldest age.
     pub reserves: Vec<f64>,
-    /// The geometric method's residual variance on the log scale, `sigma^2`
-    /// (NaN with no degrees of freedom left, as on 2 origins); `None` for
-    /// the arithmetic method.
+    /// The geometric method's residual variance on the log scale, `sigma^2`;
+    /// `None` for the arithmetic method and when no degrees of freedom are
+    /// left (as on 2 origins).
     pub log_variance: Option<f64>,
 }
 
@@ -194,6 +194,9 @@ impl Separation {
     /// by is not positive, or the future indices cannot be formed (a rate
     /// at or below -1, an index that misses a period, a trend over fewer
     /// than 2 or more than all periods or through a non-positive index).
+    /// The geometric method also fails on an increment over the normaliser
+    /// that is not finite and positive, or on a singular design, and the
+    /// lognormal means on fewer than 3 origins (no residual variance).
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<SeparationFit> {
         self.fit_segment(&triangle.segment(column)?)
     }
@@ -396,17 +399,17 @@ impl Separation {
                 let (r, lambda, sigma2) = geometric(&s, &seg.origins, &seg.ages)?;
                 let lambda = match how {
                     Retransformation::GeometricMean => lambda,
-                    Retransformation::LognormalMean if sigma2.is_nan() => {
-                        return sep_err(
-                            "lognormal means need a residual variance: at least 3 origins",
-                        );
-                    }
                     Retransformation::LognormalMean => {
+                        let Some(sigma2) = sigma2 else {
+                            return sep_err(
+                                "lognormal means need a residual variance: at least 3 origins",
+                            );
+                        };
                         let scale = (sigma2 / 2.0).exp();
                         lambda.into_iter().map(|l| l * scale).collect()
                     }
                 };
-                (r, lambda, Some(sigma2))
+                (r, lambda, sigma2)
             }
         };
 
@@ -535,7 +538,7 @@ fn geometric(
     s: &[Vec<f64>],
     origins: &[Period],
     ages: &[Lag],
-) -> Result<(Vec<f64>, Vec<f64>, f64)> {
+) -> Result<(Vec<f64>, Vec<f64>, Option<f64>)> {
     let n = s.len();
     let p = 2 * n - 1;
     let mut xtx = vec![0.0; p * p];
@@ -545,7 +548,7 @@ fn geometric(
         for (j, &v) in row.iter().enumerate().take(n - i) {
             if v <= 0.0 || !v.is_finite() {
                 return sep_err(format!(
-                    "the geometric method needs positive increments; origin {} has {v} at age {}",
+                    "the geometric method needs positive increments; origin {} at age {} has {v} over its normaliser",
                     origins[i], ages[j]
                 ));
             }
@@ -578,7 +581,7 @@ fn geometric(
         })
         .sum();
     let df = rows.len() - p;
-    let sigma2 = if df > 0 { rss / df as f64 } else { f64::NAN };
+    let sigma2 = (df > 0).then(|| rss / df as f64);
     let dev: Vec<f64> = (0..n)
         .map(|j| if j == 0 { 1.0 } else { beta[j].exp() })
         .collect();
@@ -955,7 +958,8 @@ mod tests {
         let fit = geometric(Retransformation::GeometricMean)
             .fit(&two, "values")
             .unwrap();
-        assert!(fit.log_variance.unwrap().is_nan());
+        assert_eq!(fit.log_variance, None);
+        assert_eq!(fit, fit.clone());
         assert!(
             geometric(Retransformation::LognormalMean)
                 .fit(&two, "values")

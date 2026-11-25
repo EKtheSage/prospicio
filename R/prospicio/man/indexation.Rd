@@ -17,11 +17,7 @@ restate(x, triangle, column = NULL)
 
 inflate(x, triangle, column = NULL)
 
-reinflated(
-  cells = future_cells(),
-  reserves = numeric(0),
-  base_reserves = numeric(0)
-)
+reinflated(cells, reserves, base_reserves)
 
 reinflate(x, cells)
 }
@@ -39,7 +35,12 @@ month (a \code{"YYYY-MM"} label or a date).}
 
 \item{column}{The column to restate; \code{NULL} for the triangle's only one.}
 
-\item{cells}{\code{\link[=future_cells]{future_cells()}} at the base level.}
+\item{cells}{\code{\link[=future_cells]{future_cells()}} at the base level; for \code{reinflated()}, the
+re-inflated cells.}
+
+\item{reserves, base_reserves}{For \code{reinflated()}: the reserves by origin in
+the money of the payment periods and at the base level. A \code{reinflated}
+is made by \code{reinflate()}; the constructor only holds its fields.}
 }
 \value{
 \code{indexation()}: an \code{indexation} with the properties \code{index} and

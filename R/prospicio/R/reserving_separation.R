@@ -56,8 +56,8 @@ NULL
 #'   origins by ages, `NA` on the future ones), `future` (the future cells as
 #'   [future_cells()], with no tail past the oldest age), `reserves` (the sum
 #'   of each origin's future cells; the first origin's is 0), `log_variance`
-#'   (the geometric methods' residual variance on the log scale, `NaN` with
-#'   no degrees of freedom left; `NULL` for the arithmetic method) and
+#'   (the geometric methods' residual variance on the log scale; `NULL` for
+#'   the arithmetic method and with no degrees of freedom left) and
 #'   `total_reserve`.
 #' @seealso [indexation()], [calendar_index()], [future_cells()]
 #' @export
