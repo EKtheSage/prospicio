@@ -14,6 +14,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 mod aggregate;
+mod arrays;
 mod bonus_malus;
 mod book;
 mod cashflow;

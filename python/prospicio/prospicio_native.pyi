@@ -31040,7 +31040,7 @@ class PredictiveDistribution:
     >>> pd.marginal(("A",)).var(0.75)
     0.0
     """
-    def __new__(cls, /, dims: Sequence[str], components: Sequence[Sequence[int |str]], draws: Sequence[Sequence[float]]) -> PredictiveDistribution: ...
+    def __new__(cls, /, dims: Sequence[str], components: Sequence[Sequence[int |str]], draws: Incomplete |Sequence[Sequence[float]]) -> PredictiveDistribution: ...
     def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def aggregate(self, /, keep: Sequence[str]) -> PredictiveDistribution:
@@ -31535,6 +31535,30 @@ class PredictiveDistribution:
         True
         >>> pickle.loads(pickle.dumps(pd)).draw_matrix() == pd.draw_matrix()
         True
+        """
+    def to_numpy(self, /) -> Incomplete:
+        """
+        All draws as a read-only NumPy array, one row per simulation and one
+        column per component, in the order of ``components()``. The array is
+        a view of the distribution's own buffer: nothing is copied, and it
+        keeps the distribution alive (#978). ``numpy.array(pd.to_numpy())``
+        gives a writeable copy.
+        
+        Returns
+        -------
+        numpy.ndarray
+            Float64, of shape ``(n_sims, n_components)``.
+        
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(["line"], [("A",), ("B",)], np.array([[1.0, 2.0], [3.0, 4.5]]))
+        >>> pd.to_numpy()
+        array([[1. , 2. ],
+               [3. , 4.5]])
+        >>> pd.to_numpy().flags.writeable
+        False
         """
     def total(self, /) -> Sampled:
         """

@@ -21,6 +21,8 @@ classifiers = [
     "Topic :: Office/Business :: Financial",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
+# NumPy arrays in and out of the bindings without boxing each number (#978).
+dependencies = ["numpy>=1.22"]
 # The version is the Rust workspace's (Cargo.toml, workspace.package).
 dynamic = ["version"]
 
