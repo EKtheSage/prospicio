@@ -57,6 +57,7 @@ pub mod bayes;
 pub mod benchmark_curve;
 pub mod berquist_sherman;
 pub mod bootstrap;
+mod bootstrap_cells;
 pub mod chain_ladder;
 pub mod clark;
 pub mod curve;

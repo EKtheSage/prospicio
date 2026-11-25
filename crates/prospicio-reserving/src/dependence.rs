@@ -42,6 +42,7 @@ use prospicio_prob::{KeyValue, PredictiveDistribution};
 
 use crate::bootstrap::components_of;
 use crate::error::{Error, Result};
+#[cfg(feature = "bayes")]
 use crate::pattern_draws::DevelopmentPatterns;
 use crate::segments::{ReserveFit, SegmentFits};
 use crate::triangle::Segment;
@@ -158,6 +159,7 @@ impl SegmentDependence {
     /// patterns moved with its reserves (`reserving-v02.md` decision 28):
     /// the reserves are `reorder`'s, and row `i` of a segment's patterns is
     /// the simulation its reserves in row `i` came from.
+    #[cfg(feature = "bayes")]
     pub(crate) fn reorder_with<T: ReserveFit>(
         &self,
         draws: PredictiveDistribution,
@@ -165,12 +167,28 @@ impl SegmentDependence {
         seed: u64,
         patterns: &mut DevelopmentPatterns,
     ) -> Result<PredictiveDistribution> {
+        self.reorder_moving(draws, fits, seed, |s, source| patterns.permute(s, source))
+    }
+
+    /// As [`reorder`](Self::reorder), calling `moved(s, source)` for each
+    /// segment `s` under a rank correlation, where `source[i]` is the
+    /// simulation its reserves in row `i` came from, so that whatever else
+    /// a segment simulated (its patterns, its future cells) moves with its
+    /// reserves; `moved` is not called otherwise. The reserves are
+    /// `reorder`'s.
+    pub(crate) fn reorder_moving<T: ReserveFit>(
+        &self,
+        draws: PredictiveDistribution,
+        fits: &SegmentFits<T>,
+        seed: u64,
+        mut moved: impl FnMut(usize, &[usize]),
+    ) -> Result<PredictiveDistribution> {
         match self {
             Self::RankCorrelation { spearman } => {
                 let ranges: Vec<_> = (0..fits.len()).map(|s| components_of(fits, s)).collect();
                 let (draws, source) = rank_correlate_indexed(draws, &ranges, spearman, seed)?;
                 for (s, source) in source.iter().enumerate() {
-                    patterns.permute(s, source);
+                    moved(s, source);
                 }
                 Ok(draws)
             }

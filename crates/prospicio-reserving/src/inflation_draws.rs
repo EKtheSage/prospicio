@@ -152,10 +152,14 @@ impl Indexation {
     /// Which draws can be passed:
     /// [`OdpGlmFit::predict_distribution`](crate::OdpGlmFit::predict_distribution)
     /// and [`ApcGlmFit::predict_distribution`](crate::ApcGlmFit::predict_distribution)
-    /// give future increments with dimensions `origin` and `development`.
-    /// The bootstraps' reserve draws are by origin only (`origin`, after the
-    /// triangle's segment keys if it has any), without cells, and are
-    /// rejected for their missing age.
+    /// give future increments with dimensions `origin` and `development`,
+    /// and so do the bootstraps' cells,
+    /// [`OdpBootstrap::fit_with_cells`](crate::OdpBootstrap::fit_with_cells)
+    /// and [`MackBootstrap::fit_with_cells`](crate::MackBootstrap::fit_with_cells)
+    /// (and their `fit_segments_with_cells`, after the triangle's segment
+    /// keys), each simulation's future increments as simulated. The
+    /// bootstraps' `reserves` are by origin only, without an age, and are
+    /// still rejected.
     /// The compartmental model's `paid` draws (dimensions `origin` and
     /// `age`) are cumulative paid, under incremental paid too, so they pass
     /// these checks but would be re-inflated wrongly: difference them by

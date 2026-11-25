@@ -57,6 +57,13 @@ recorded as decisions 11 to 16.
   decisions 11 (amended) and 20 to 22 below. It takes future cells only:
   the bootstraps' draws are by origin, so re-inflating them waits for
   `[reinflate-bootstrap-cells]`.
+* **The bootstraps' cells are built in Rust** (branch
+  `claude/reinflate-bootstrap-cells`, 2026-11-25; decisions A to I below):
+  `fit_with_cells` and `fit_segments_with_cells` on `OdpBootstrap` and
+  `MackBootstrap` keep each simulated future increment in a new field
+  `cells` of their fits, which `reinflate_draws` takes; the reserves and
+  patterns are bit-identical with and without them. The Python and R
+  bindings follow in a stacked PR.
 
 Lane: Reserving (`crates/prospicio-reserving/`; the
 bindings in new module files of `prospicio-python` and `prospicio-r`) ·
@@ -545,6 +552,10 @@ E. **Dimensions and keys.** `key_names + ["origin", "development"]`
    (the segment keys, then a period and an age in months), as the
    reserves' `origin_keys` plus the age and as `OdpGlmFit`'s draws.
    Fully developed origins with no tail have no cells. **Decided.**
+   Settled while building: a segment picked with `segment` from a fit
+   with cells, when that segment has no future cell, has `cells: None`
+   (as a fit without cells has), not an empty distribution and not an
+   error; the bindings' docs say so.
 F. **Dependence.** Under `SegmentDependence::RankCorrelation` the
    segments' simulations are reordered by their totals; each segment's
    cells are permuted with the same order as its reserves and patterns,

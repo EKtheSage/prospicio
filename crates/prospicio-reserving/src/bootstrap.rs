@@ -47,6 +47,7 @@ use prospicio_prob::{
     Provenance, Sampled,
 };
 
+use crate::bootstrap_cells::{CellLayout, cells_provenance, segment_cells, segment_part};
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::dependence::{Resample, SegmentDependence, synchronize};
 use crate::development::Development;
@@ -272,6 +273,16 @@ pub struct OdpBootstrapFit {
     /// and tail), row `i` simulation `i` of `reserves`
     /// (`reserving-v02.md` decision 28).
     pub patterns: DevelopmentPatterns,
+    /// Each simulation's future incremental cells, as simulated with their
+    /// process error, row `i` simulation `i` of `reserves`; only
+    /// [`OdpBootstrap::fit_with_cells`] sets them, [`OdpBootstrap::fit`]
+    /// leaves `None`. Dimensions `origin` and `development` (the age in
+    /// months at the end of the cell's development period), one component
+    /// per origin and age after its latest, and with a tail one more per
+    /// origin one development period past the oldest age, kept even when
+    /// it is 0. Each origin's cells sum to its reserve in every simulation
+    /// (`reserving-inflation.md`, decisions A to I).
+    pub cells: Option<PredictiveDistribution>,
 }
 
 /// What the bootstrap estimates in one segment before simulating: the
@@ -369,6 +380,13 @@ pub struct OdpBootstrapFits {
     /// Each segment's development pattern in every simulation, moving with
     /// the segment's reserves (`reserving-v02.md` decision 28).
     pub patterns: DevelopmentPatterns,
+    /// Each simulation's future incremental cells, moving with the
+    /// segment's reserves; only [`OdpBootstrap::fit_segments_with_cells`]
+    /// sets them, [`OdpBootstrap::fit_segments`] leaves `None`. Dimensions
+    /// the key names, `origin` and `development` (the age in months), its
+    /// components running over each segment's cells in turn, as
+    /// [`OdpBootstrapFit::cells`].
+    pub cells: Option<PredictiveDistribution>,
 }
 
 impl OdpBootstrapFits {
@@ -397,13 +415,22 @@ impl OdpBootstrapFits {
 
     /// The one segment chosen as in [`SegmentFits::position`], with its
     /// part of the joint reserves (same dimensions).
+    /// Its cells are the segment's part of [`cells`](Self::cells). They are
+    /// `None` when the fit kept no cells, and also when it kept them but the
+    /// segment has none (fully developed, with no tail); tell the two apart
+    /// by `self.cells`.
     pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
         let (segments, reserves) = pick_segment(&self.segments, &self.reserves, keys)?;
         let patterns = self.patterns.only(&segments.labels[0]);
+        let cells = match &self.cells {
+            Some(cells) => segment_part(cells, &segments.labels[0])?,
+            None => None,
+        };
         Ok(Self {
             segments,
             reserves,
             patterns,
+            cells,
         })
     }
 }
@@ -535,6 +562,67 @@ impl OdpBootstrap {
     /// tail cannot be refitted on fails, and the call returns
     /// [`Error::TailRefit`] with the number that failed.
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<OdpBootstrapFit> {
+        self.fit_lifetime(triangle, column, false)
+    }
+
+    /// [`fit`](Self::fit), keeping each simulation's future incremental
+    /// cells in [`OdpBootstrapFit::cells`]: the values the simulation draws
+    /// with their process error and sums into each origin's reserve, so
+    /// [`Indexation::reinflate_draws`](crate::Indexation::reinflate_draws)
+    /// can re-inflate them. Keeping them draws no other random number: the
+    /// reserves, the patterns and the reserves' provenance are
+    /// [`fit`](Self::fit)'s, bit for bit; the cells' provenance is the
+    /// reserves' with `cells = incremental`. The result holds `n_sims` times
+    /// the number of cells; while the fit runs they are held up to three
+    /// times over (in each simulation's row, copied out, then rebuilt as
+    /// the distribution). Fails with [`Error::Bootstrap`] when
+    /// there is no future cell (a fully developed triangle with no tail).
+    ///
+    /// ```
+    /// use prospicio_prob::KeyValue;
+    /// use prospicio_reserving::{
+    ///     DevelopmentColumn, Grain, Long, Month, OdpBootstrap, Period, Triangle,
+    /// };
+    ///
+    /// let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12]),
+    ///     values: &[("paid", &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0])],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let boot = OdpBootstrap { n_sims: 500, seed: 1, ..Default::default() };
+    /// let fit = boot.fit_with_cells(&tri, "paid")?;
+    /// let cells = fit.cells.as_ref().unwrap();
+    /// assert_eq!(cells.dims(), ["origin", "development"]);
+    /// // 2021 at 36 months, 2022 at 24 and 36.
+    /// assert_eq!(cells.n_components(), 3);
+    /// assert_eq!(
+    ///     cells.components()[0],
+    ///     [KeyValue::Period(Period::year(2021)), KeyValue::Int(36)]
+    /// );
+    /// // The reserves are `fit`'s, and each simulation's cells sum to them.
+    /// let plain = boot.fit(&tri, "paid")?;
+    /// assert_eq!(fit.reserves.draw_matrix(), plain.reserves.draw_matrix());
+    /// let (row, reserves) = (cells.row(3).unwrap(), fit.reserves.row(3).unwrap());
+    /// assert_eq!(row[0], reserves[1]);
+    /// assert_eq!(row[1] + row[2], reserves[2]);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn fit_with_cells(&self, triangle: &Triangle, column: &str) -> Result<OdpBootstrapFit> {
+        self.fit_lifetime(triangle, column, true)
+    }
+
+    /// [`fit`](Self::fit), keeping the cells when `with_cells`.
+    fn fit_lifetime(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        with_cells: bool,
+    ) -> Result<OdpBootstrapFit> {
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
@@ -572,6 +660,19 @@ impl OdpBootstrap {
         let mut components: Vec<ComponentKey> =
             segment.origins.iter().map(|&p| vec![p.into()]).collect();
         components.extend(layout.keys(1));
+        let cells = if with_cells {
+            let cells = segment_cells(
+                &segment.origins,
+                &fit.chain_ladder.latest_position,
+                ages,
+                tail.is_some(),
+            );
+            let cells = CellLayout::new(components.len(), vec![(Label::default(), cells)])?;
+            components.extend(cells.keys(1));
+            Some(cells)
+        } else {
+            None
+        };
         let (offset, width) = (layout.offset(0), layout.width(0));
         let wide = simulate_lifetime(
             vec!["origin".into()],
@@ -580,11 +681,16 @@ impl OdpBootstrap {
             self.seed,
             self.provenance(column, hasher),
             |rng, row| {
-                let (reserves, shares) = row.split_at_mut(offset);
-                sim.run(rng, reserves, &mut shares[..width], None)
+                let (reserves, rest) = row.split_at_mut(offset);
+                let (shares, values) = rest.split_at_mut(width);
+                sim.run(rng, reserves, shares, with_cells.then_some(values), None)
             },
         )?;
+        let cells = cells.map(|c| c.take(&wide));
         let (reserves, patterns) = layout.split(wide)?;
+        let cells = cells
+            .map(|c| c.into_distribution(&[], cells_provenance(&reserves)))
+            .transpose()?;
         let OdpBootstrapSegment {
             chain_ladder,
             fitted,
@@ -598,6 +704,7 @@ impl OdpBootstrap {
             scale,
             reserves,
             patterns,
+            cells,
         })
     }
 
@@ -607,6 +714,33 @@ impl OdpBootstrap {
     /// [`dependence`](Self::dependence) says; see [`OdpBootstrapFits`]. A
     /// failure names its segment.
     pub fn fit_segments(&self, triangle: &Triangle, column: &str) -> Result<OdpBootstrapFits> {
+        self.fit_segments_lifetime(triangle, column, false)
+    }
+
+    /// [`fit_segments`](Self::fit_segments), keeping each simulation's
+    /// future incremental cells in [`OdpBootstrapFits::cells`], as
+    /// [`fit_with_cells`](Self::fit_with_cells) does for one segment. Under
+    /// a [`RankCorrelation`](crate::SegmentDependence::RankCorrelation) each
+    /// segment's cells move with its reserves; they take no part in the
+    /// ranking. The reserves and patterns are
+    /// [`fit_segments`](Self::fit_segments)'s, bit for bit. Fails with
+    /// [`Error::Bootstrap`] when no segment has a future cell.
+    pub fn fit_segments_with_cells(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+    ) -> Result<OdpBootstrapFits> {
+        self.fit_segments_lifetime(triangle, column, true)
+    }
+
+    /// [`fit_segments`](Self::fit_segments), keeping the cells when
+    /// `with_cells`.
+    fn fit_segments_lifetime(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        with_cells: bool,
+    ) -> Result<OdpBootstrapFits> {
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
@@ -639,6 +773,7 @@ impl OdpBootstrap {
         let mut components = Vec::new();
         let mut sims = Vec::with_capacity(prepared.len());
         let mut layouts = Vec::with_capacity(prepared.len());
+        let mut cell_segments = Vec::with_capacity(prepared.len());
         for (label, (fit, pool, (tail, blend, kept), segment)) in prepared.iter() {
             hasher.str(&label.to_string());
             hash_segment(&mut hasher, segment, &fit.chain_ladder, &segment.ages);
@@ -647,6 +782,15 @@ impl OdpBootstrap {
                 label.clone(),
                 origin_grain(&segment.origins),
                 pattern_ages(&segment.ages, tail.is_some()),
+            ));
+            cell_segments.push((
+                label.clone(),
+                segment_cells(
+                    &segment.origins,
+                    &fit.chain_ladder.latest_position,
+                    &segment.ages,
+                    tail.is_some(),
+                ),
             ));
             let sim = Simulation {
                 segment,
@@ -664,6 +808,14 @@ impl OdpBootstrap {
         let layout = PatternLayout::new(components.len(), layouts);
         let n_reserves = components.len();
         components.extend(layout.keys(dims.len()));
+        let n_before_cells = components.len();
+        let cells = if with_cells {
+            let cells = CellLayout::new(n_before_cells, cell_segments)?;
+            components.extend(cells.keys(dims.len()));
+            Some(cells)
+        } else {
+            None
+        };
         let wide = simulate_lifetime(
             dims,
             components,
@@ -674,15 +826,21 @@ impl OdpBootstrap {
                 .param("dependence", format!("{:?}", self.dependence)),
             |rng, row| {
                 let picks = shared.map(|s| s.picks(rng));
-                let (reserves, shares) = row.split_at_mut(n_reserves);
+                let (reserves, rest) = row.split_at_mut(n_reserves);
+                let (shares, values) = rest.split_at_mut(n_before_cells - n_reserves);
                 let mut start = 0;
                 for (s, (sim, label)) in sims.iter().enumerate() {
                     let end = start + sim.segment.n_origins;
                     let at = layout.offset(s) - n_reserves;
+                    let segment_values = cells.as_ref().map(|c| {
+                        let at = c.offset(s);
+                        &mut values[at..at + c.width(s)]
+                    });
                     sim.run(
                         rng,
                         &mut reserves[start..end],
                         &mut shares[at..at + layout.width(s)],
+                        segment_values,
                         picks.as_deref(),
                     )
                     .map_err(|e| in_segment(label, e))?;
@@ -691,15 +849,25 @@ impl OdpBootstrap {
                 Ok(())
             },
         )?;
+        let mut cells = cells.map(|c| c.take(&wide));
         let (reserves, mut patterns) = layout.split(wide)?;
         let segments = prepared.map(|(fit, _, _, _)| fit.clone());
         let reserves =
             self.dependence
-                .reorder_with(reserves, &segments, self.seed, &mut patterns)?;
+                .reorder_moving(reserves, &segments, self.seed, |s, source| {
+                    patterns.permute(s, source);
+                    if let Some(cells) = cells.as_mut() {
+                        cells.permute(s, source);
+                    }
+                })?;
+        let cells = cells
+            .map(|c| c.into_distribution(&segments.key_names, cells_provenance(&reserves)))
+            .transpose()?;
         Ok(OdpBootstrapFits {
             segments,
             reserves,
             patterns,
+            cells,
         })
     }
 
@@ -1152,12 +1320,16 @@ impl Simulation<'_> {
     ///
     /// `shares` takes the simulation's development pattern, the cumulative
     /// share at each age from its factors and tail (`reserving-v02.md`
-    /// decision 28), which draws no random number.
+    /// decision 28), which draws no random number. `cells`, when given,
+    /// takes each future increment as drawn, origin by origin, ages
+    /// increasing, the tail step last (`bootstrap_cells::segment_cells`);
+    /// the reserves are what they are without it.
     fn run(
         &self,
         rng: &mut StreamRng,
         reserves: &mut [f64],
         shares: &mut [f64],
+        mut cells: Option<&mut [f64]>,
         picks: Option<&[usize]>,
     ) -> Result<()> {
         let nd = self.segment.n_dev;
@@ -1174,16 +1346,23 @@ impl Simulation<'_> {
             }
         };
         write_shares(&factors, tail, shares);
+        let mut at = 0;
         for (o, reserve) in reserves.iter_mut().enumerate() {
             let mut cum = pseudo[o * nd + self.latest[o]];
             let mut total = 0.0;
             for f in factors[self.latest[o]..].iter().chain(&tail) {
                 let next = cum * f;
-                total += self.with_process(next - cum, rng);
+                let increment = self.with_process(next - cum, rng);
+                total += increment;
+                if let Some(cells) = cells.as_deref_mut() {
+                    cells[at] = increment;
+                }
+                at += 1;
                 cum = next;
             }
             *reserve = total;
         }
+        debug_assert!(cells.is_none_or(|c| c.len() == at));
         Ok(())
     }
 
@@ -1270,6 +1449,78 @@ mod tests {
     use crate::triangle::tests::{annual, raa};
     use crate::{DevelopmentFit, TailConstant};
     use prospicio_core::Period;
+
+    /// The doc example of [`OdpBootstrap::fit_with_cells`], as a unit test.
+    #[test]
+    fn fit_with_cells_doc_example() {
+        use crate::{DevelopmentColumn, Grain, Long, Month};
+        let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+        let tri = Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12]),
+            values: &[("paid", &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap();
+        let boot = OdpBootstrap {
+            n_sims: 500,
+            seed: 1,
+            ..Default::default()
+        };
+        let fit = boot.fit_with_cells(&tri, "paid").unwrap();
+        let cells = fit.cells.as_ref().unwrap();
+        assert_eq!(cells.dims(), ["origin", "development"]);
+        // 2021 at 36 months, 2022 at 24 and 36.
+        assert_eq!(cells.n_components(), 3);
+        assert_eq!(
+            cells.components()[0],
+            [KeyValue::Period(Period::year(2021)), KeyValue::Int(36)]
+        );
+        // The reserves are `fit`'s, and each simulation's cells sum to them.
+        let plain = boot.fit(&tri, "paid").unwrap();
+        assert_eq!(fit.reserves.draw_matrix(), plain.reserves.draw_matrix());
+        let (row, reserves) = (cells.row(3).unwrap(), fit.reserves.row(3).unwrap());
+        assert_eq!(row[0], reserves[1]);
+        assert_eq!(row[1] + row[2], reserves[2]);
+        assert!(plain.cells.is_none());
+    }
+
+    #[test]
+    fn bootstrap_cells_with_a_tail_sum_to_the_reserves() {
+        let boot = OdpBootstrap {
+            n_sims: 200,
+            seed: 3,
+            tail: Tail::Constant(TailConstant {
+                factor: 1.05,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let fit = boot.fit_with_cells(&raa(), "values").unwrap();
+        let plain = boot.fit(&raa(), "values").unwrap();
+        assert_eq!(fit.reserves.draw_matrix(), plain.reserves.draw_matrix());
+        assert_eq!(fit.patterns, plain.patterns);
+        let cells = fit.cells.unwrap();
+        // 45 cells within the triangle and one tail cell per origin.
+        assert_eq!(cells.n_components(), 45 + 10);
+        let n = cells.n_components();
+        for (row, reserves) in cells.draw_matrix().chunks_exact(n).zip(
+            fit.reserves
+                .draw_matrix()
+                .chunks_exact(fit.reserves.n_components()),
+        ) {
+            let mut at = 0;
+            for (o, &reserve) in reserves.iter().enumerate() {
+                let k = o + 1;
+                let sum = row[at..at + k].iter().fold(0.0, |s, x| s + x);
+                assert_eq!(sum, reserve);
+                at += k;
+            }
+        }
+    }
 
     fn boot(process: ProcessDistribution, n_sims: usize) -> OdpBootstrapFit {
         OdpBootstrap {
