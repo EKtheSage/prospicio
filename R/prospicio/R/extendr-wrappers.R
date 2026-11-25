@@ -35,6 +35,8 @@ ale_numeric_rust <- function(interval, lower, upper, k) .Call(wrap__ale_numeric_
 
 ale_order_rust <- function(distance, k) .Call(wrap__ale_order_rust, distance, k)
 
+apc_glm_fit_rust <- function(triangle, column, effects, extrapolation, family, power, tolerance, max_iterations) .Call(wrap__apc_glm_fit_rust, triangle, column, effects, extrapolation, family, power, tolerance, max_iterations)
+
 approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap__approximation_eval_rust, moments, kind, values, quantile)
 
 approximation_parameters_rust <- function(moments, kind) .Call(wrap__approximation_parameters_rust, moments, kind)
@@ -512,6 +514,8 @@ round_premium_rust <- function(premium) .Call(wrap__round_premium_rust, premium)
 schedule_trend_rust <- function(years, trend_years, trend_rates, inception, basis, kind, cutoff, before) .Call(wrap__schedule_trend_rust, years, trend_years, trend_rates, inception, basis, kind, cutoff, before)
 
 separation_fit_rust <- function(triangle, column, keys, values, kind, normaliser, future, rate, first, index_values, index_rate, trend_periods) .Call(wrap__separation_fit_rust, triangle, column, keys, values, kind, normaliser, future, rate, first, index_values, index_rate, trend_periods)
+
+separation_glm_rust <- function(triangle, column, normaliser, future, rate, first, index_values, index_rate, trend_periods) .Call(wrap__separation_glm_rust, triangle, column, normaliser, future, rate, first, index_values, index_rate, trend_periods)
 
 settlement_rate_rust <- function(triangle, paid, closed_counts, ultimate, disposal_rates, interpolation) .Call(wrap__settlement_rate_rust, triangle, paid, closed_counts, ultimate, disposal_rates, interpolation)
 
