@@ -967,14 +967,15 @@ tower_ceded <- function(tower, losses) {
 apply_tower <- S7::new_generic("apply_tower", "tower", function(tower, events, ...) S7::S7_dispatch())
 
 S7::method(apply_tower, reinsurance_tower) <- function(tower, events, ...) {
-  ptr <- if (S7::S7_inherits(events, predictive_distribution)) {
+  call <- s7_call()
+  ptr <- rust_result(if (S7::S7_inherits(events, predictive_distribution)) {
     tower@ptr$apply_aggregate(events@ptr)
   } else if (is.numeric(events)) {
     tower@ptr$apply_annual(as.double(events))
   } else {
     tower@ptr$apply(events@ptr)
-  }
-  predictive_distribution(ptr = rust_result(ptr, s7_call()))
+  }, call)
+  predictive_distribution(ptr = ptr)
 }
 #' Reinsurance tower over a contract term
 #'
