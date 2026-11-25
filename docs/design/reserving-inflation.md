@@ -7,7 +7,14 @@ recorded as decisions 11 to 16.
 * **PR 1 is built** (branch `claude/inflation-index`, 2026-11-24):
   `CalendarIndex`, `Indexation` (`factor`, `restate`, `inflate`,
   `reinflate`), `FutureCells` and `Reinflated`, in Rust, with Taylor's
-  re-inflation of Example 1 reproduced; the bindings are PR 2.
+  re-inflation of Example 1 reproduced.
+* **PR 2 is built** (branch `claude/inflation-index-bindings`,
+  2026-11-24): `CalendarIndex`, `Indexation`, `FutureCells` and
+  `Reinflated` in Python and R. Python builds `FutureCells` from explicit
+  columns, `from_chain_ladder(fit, segment=None)` or `from_odp_glm(fit)`;
+  R's `future_cells()` takes a chain-ladder fit, an ODP GLM fit or a data
+  frame (`segment` chooses one segment of a fit over several).
+  `FutureCells::from_odp_glm` returns a `Result` (PR 1 review).
 * **PR 3 is built** (branch `claude/separation-arithmetic`, 2026-11-24):
   `Separation` with the arithmetic method, a normaliser,
   `FutureInflation` (`Rate`, `Index`, `Trend`), `fit_segments` and
@@ -242,7 +249,7 @@ impl FutureCells {
     /// increment one development period past the oldest age (decision 5).
     pub fn from_chain_ladder(fit: &ChainLadderFit) -> Self;
     /// An `OdpGlm` fit's future means.
-    pub fn from_odp_glm(fit: &OdpGlmFit) -> Self;
+    pub fn from_odp_glm(fit: &OdpGlmFit) -> Result<Self>;
 }
 
 pub struct Reinflated {
