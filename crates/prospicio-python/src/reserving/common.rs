@@ -93,20 +93,12 @@ pub(crate) fn sigma_interpolation(name: &str) -> PyResult<SigmaInterpolation> {
 }
 
 pub(crate) fn process_distribution(name: &str) -> PyResult<ProcessDistribution> {
-    match name {
-        "gamma" => Ok(ProcessDistribution::Gamma),
-        "none" => Ok(ProcessDistribution::None),
-        _ => Err(PyValueError::new_err(format!(
-            "process must be \"gamma\" or \"none\", got {name:?}"
-        ))),
-    }
+    ProcessDistribution::from_name(name)
+        .ok_or_else(|| crate::unknown_name("process", name, ProcessDistribution::NAMES))
 }
 
 pub(crate) fn process_name(p: ProcessDistribution) -> &'static str {
-    match p {
-        ProcessDistribution::Gamma => "gamma",
-        ProcessDistribution::None => "none",
-    }
+    p.name()
 }
 
 /// The dependence between segments named `name`, with the Spearman matrix

@@ -416,7 +416,16 @@ Stacked, each on the one before:
 6. Endorsements, cancellations and the twenty-fourths method, and
    earning on the book's half-month grid (`ratemaking::year_fraction`),
    which reproduces chapter 4's earned tables exactly. Done.
-6b. Python and R bindings for `earned` (`[earned-bindings]`).
+6b. Python and R bindings for `earned` (`[earned-bindings]`). Done:
+   `earned_exposure`, `calendar_windows` and `in_force` in
+   `prospicio.pricing`; `earned_exposure()`, `in_force_amount()` and
+   `calendar_windows()` in R. Policies cross as columns (effective,
+   expiration, amount, and optionally label, changes and cancellation),
+   which the core's `policies_from_columns` turns into `Policy`s, and the
+   table comes back as a dict of columns or a data frame. Dates are
+   `datetime.date` or ISO strings in Python and `Date` or ISO strings in R.
+   A change names its policy by position, from 0 in Python and from 1 in
+   R, as each language counts.
 7. `emod::SplitPlan`; bindings; a reference exhibit.
 8. `emod::ExperienceRatioPlan`; bindings; a reference exhibit; the Done
    bullet `#981`.

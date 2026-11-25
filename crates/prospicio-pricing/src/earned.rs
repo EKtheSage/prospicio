@@ -539,6 +539,33 @@ pub enum EarningMethod {
 }
 
 impl EarningMethod {
+    /// Every name the Python and R front ends accept, with its method, the
+    /// canonical name of each first.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("daily", Self::Daily),
+        ("half_month", Self::HalfMonth),
+        ("twenty_fourths", Self::TwentyFourths),
+        ("24ths", Self::TwentyFourths),
+    ];
+
+    /// The method named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, m)| m)
+    }
+
+    /// The canonical name: `"daily"`, `"half_month"` or
+    /// `"twenty_fourths"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Daily => "daily",
+            Self::HalfMonth => "half_month",
+            Self::TwentyFourths => "twenty_fourths",
+        }
+    }
+
     /// A policy date (effective, expiration, change, cancellation) on the
     /// method's time axis.
     fn event(self, date: Date) -> f64 {
@@ -623,6 +650,20 @@ impl Windows {
         Self::every(first_year, last_year, 1)
     }
 
+    /// Calendar windows by the name of their length: `"year"`,
+    /// `"quarter"` or `"month"`, for the years `first_year` to
+    /// `last_year`.
+    pub fn calendar(by: &str, first_year: i32, last_year: i32) -> Result<Self> {
+        match by {
+            "year" => Self::years(first_year, last_year),
+            "quarter" => Self::quarters(first_year, last_year),
+            "month" => Self::months(first_year, last_year),
+            other => Err(Error::Data(format!(
+                "unknown window length {other:?}: use \"year\", \"quarter\" or \"month\""
+            ))),
+        }
+    }
+
     /// The dates the windows lie between, one more than there are windows.
     pub fn bounds(&self) -> &[Date] {
         &self.bounds
@@ -662,6 +703,86 @@ impl Windows {
 /// ```
 pub fn in_force(policies: &[Policy], date: Date) -> f64 {
     policies.iter().map(|p| p.amount_at(date)).sum()
+}
+
+/// Policies from columns, one entry a policy: the form a table of
+/// policies arrives in, and the one the Python and R front ends pass.
+///
+/// `labels` and `cancellations` are empty, or one entry a policy (`None`
+/// for a policy not cancelled). `changes` holds mid-term changes in any
+/// order, each the index of its policy, its date and the full-term amount
+/// from that date.
+///
+/// Fails when the columns differ in length, a change names a policy that
+/// is not there, or a policy, a change or a cancellation is not valid
+/// ([`Policy::new`], [`Policy::endorsed`], [`Policy::cancelled`]); the
+/// message names the policy by its position, from 1.
+///
+/// ```
+/// use prospicio_pricing::earned::{Date, policies_from_columns};
+///
+/// let d = |y, m, day| Date::new(y, m, day).unwrap();
+/// let policies = policies_from_columns(
+///     &[d(2011, 7, 1), d(2011, 10, 1)],
+///     &[d(2012, 7, 1), d(2012, 10, 1)],
+///     &[400.0, 350.0],
+///     &[],
+///     &[(0, d(2012, 1, 1), 800.0)],
+///     &[None, Some(d(2012, 4, 1))],
+/// )
+/// .unwrap();
+/// assert_eq!(policies[0].amount_at(d(2012, 2, 1)), 800.0);
+/// assert_eq!(policies[1].cancellation(), Some(d(2012, 4, 1)));
+/// ```
+pub fn policies_from_columns(
+    effective: &[Date],
+    expiration: &[Date],
+    amount: &[f64],
+    labels: &[String],
+    changes: &[(usize, Date, f64)],
+    cancellations: &[Option<Date>],
+) -> Result<Vec<Policy>> {
+    let n = effective.len();
+    let same = |name: &str, len: usize, optional: bool| {
+        if len == n || (optional && len == 0) {
+            Ok(())
+        } else {
+            Err(Error::Data(format!(
+                "{name} has {len} entries for {n} policies"
+            )))
+        }
+    };
+    same("expiration", expiration.len(), false)?;
+    same("amount", amount.len(), false)?;
+    same("label", labels.len(), true)?;
+    same("cancellation", cancellations.len(), true)?;
+    if let Some(bad) = changes.iter().find(|c| c.0 >= n) {
+        return Err(Error::Data(format!(
+            "a change names policy {}, and there are {n}",
+            bad.0 + 1
+        )));
+    }
+    let named = |k: usize, e: Error| Error::Data(format!("policy {}: {e}", k + 1));
+    let mut sorted = changes.to_vec();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    (0..n)
+        .map(|k| {
+            let mut policy =
+                Policy::new(effective[k], expiration[k], amount[k]).map_err(|e| named(k, e))?;
+            if let Some(label) = labels.get(k) {
+                policy = policy.with_label(label.clone());
+            }
+            for change in sorted.iter().filter(|c| c.0 == k) {
+                policy = policy
+                    .endorsed(change.1, change.2)
+                    .map_err(|e| named(k, e))?;
+            }
+            if let Some(Some(date)) = cancellations.get(k) {
+                policy = policy.cancelled(*date).map_err(|e| named(k, e))?;
+            }
+            Ok(policy)
+        })
+        .collect()
 }
 
 /// One window's figures for one label: [`EarnedTable::rows`].
@@ -1157,5 +1278,56 @@ mod tests {
         let months = Windows::months(2023, 2024).unwrap();
         assert_eq!((months.len(), months.is_empty()), (24, false));
         assert_eq!(months.bounds()[24], d(2025, 1, 1));
+    }
+
+    #[test]
+    fn names_and_columns() {
+        for &(name, method) in EarningMethod::NAMES {
+            assert_eq!(EarningMethod::from_name(name), Some(method));
+            assert_eq!(EarningMethod::from_name(method.name()), Some(method));
+        }
+        assert_eq!(EarningMethod::from_name("weekly"), None);
+        assert_eq!(Windows::calendar("quarter", 2024, 2024).unwrap().len(), 4);
+        assert_eq!(Windows::calendar("year", 2023, 2024).unwrap().len(), 2);
+        assert_eq!(Windows::calendar("month", 2024, 2024).unwrap().len(), 12);
+        assert!(Windows::calendar("week", 2024, 2024).is_err());
+
+        let (eff, exp) = (
+            [d(2024, 1, 1), d(2024, 3, 1)],
+            [d(2025, 1, 1), d(2025, 3, 1)],
+        );
+        // Changes in any order; the second policy changed twice and cancelled.
+        let policies = policies_from_columns(
+            &eff,
+            &exp,
+            &[100.0, 200.0],
+            &["a".to_string(), "b".to_string()],
+            &[(1, d(2024, 9, 1), 50.0), (1, d(2024, 6, 1), 300.0)],
+            &[None, Some(d(2024, 12, 1))],
+        )
+        .unwrap();
+        assert_eq!((policies[0].label(), policies[1].label()), ("a", "b"));
+        assert_eq!(
+            policies[1].changes(),
+            [(d(2024, 6, 1), 300.0), (d(2024, 9, 1), 50.0)]
+        );
+        assert_eq!(policies[1].cancellation(), Some(d(2024, 12, 1)));
+        assert!(policies[0].changes().is_empty() && policies[0].cancellation().is_none());
+        // Columns of other lengths, a change for no policy, and a bad
+        // policy named by its position.
+        let columns = |amount: &[f64], changes: &[(usize, Date, f64)]| {
+            policies_from_columns(&eff, &exp, amount, &[], changes, &[])
+        };
+        assert!(columns(&[1.0], &[]).is_err());
+        assert!(columns(&[1.0, 1.0], &[(2, d(2024, 6, 1), 1.0)]).is_err());
+        let message = columns(&[1.0, -1.0], &[]).unwrap_err().to_string();
+        assert!(message.contains("policy 2"), "{message}");
+        let message = columns(&[1.0, 1.0], &[(0, d(2026, 1, 1), 1.0)])
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("policy 1"), "{message}");
+        assert!(
+            policies_from_columns(&eff, &exp, &[1.0, 1.0], &["x".to_string()], &[], &[]).is_err()
+        );
     }
 }

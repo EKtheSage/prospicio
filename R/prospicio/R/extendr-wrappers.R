@@ -77,6 +77,8 @@ calendar_index_periods_rust <- function(first, values, rate) rust_native_result(
 
 calendar_index_value_rust <- function(first, values, rate, months) rust_native_result(.Call(wrap__calendar_index_value_rust, first, values, rate, months))
 
+calendar_windows_rust <- function(first_year, last_year, by) rust_native_result(.Call(wrap__calendar_windows_rust, first_year, last_year, by))
+
 cann_fit_design <- function(x, names, y, offset, weights, family_name, link_name, power, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience) rust_native_result(.Call(wrap__cann_fit_design, x, names, y, offset, weights, family_name, link_name, power, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience))
 
 case_adequacy_rust <- function(triangle, incurred, paid, open_counts, trend, max_age) rust_native_result(.Call(wrap__case_adequacy_rust, triangle, incurred, paid, open_counts, trend, max_age))
@@ -160,6 +162,8 @@ draws_loo_rust <- function(values, n_iter, n_chain, names, prefix) rust_native_r
 draws_summary_rust <- function(values, n_iter, n_chain, names) rust_native_result(.Call(wrap__draws_summary_rust, values, n_iter, n_chain, names))
 
 dyadic_lattice_step_rust <- function(atoms, depth) rust_native_result(.Call(wrap__dyadic_lattice_step_rust, atoms, depth))
+
+earned_exposure_rust <- function(effective, expiration, amount, bounds, kind, method, valuation, label, change_policy, change_date, change_amount, cancellation) rust_native_result(.Call(wrap__earned_exposure_rust, effective, expiration, amount, bounds, kind, method, valuation, label, change_policy, change_date, change_amount, cancellation))
 
 elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, gammas, theta, power, link_power, foldid) rust_native_result(.Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, gammas, theta, power, link_power, foldid))
 
@@ -262,6 +266,8 @@ hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, 
 hill_rust <- function(draws, ks) rust_native_result(.Call(wrap__hill_rust, draws, ks))
 
 iman_conover_reorder <- function(pd, correlation, seed, dof, scores, shuffle_rows) rust_native_result(.Call(wrap__iman_conover_reorder, pd, correlation, seed, dof, scores, shuffle_rows))
+
+in_force_amount_rust <- function(effective, expiration, amount, at, change_policy, change_date, change_amount, cancellation) rust_native_result(.Call(wrap__in_force_amount_rust, effective, expiration, amount, at, change_policy, change_date, change_amount, cancellation))
 
 indexation_apply_rust <- function(triangle, column, first, values, rate, base, inflate) rust_native_result(.Call(wrap__indexation_apply_rust, triangle, column, first, values, rate, base, inflate))
 
