@@ -5,4 +5,4 @@
   it happens, and two more earning methods, `EarningMethod::HalfMonth` (the
   ratemaking exhibits' grid) and `TwentyFourths` (the "15th of the month"
   rule). `Policy::amount_at` and `in_force` give the full-term amount in
-  effect. Rust only for now (#981).
+  effect. Rust only for now (#981, #1091).
