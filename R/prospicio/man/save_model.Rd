@@ -10,8 +10,10 @@ save_model(model, file)
 load_model(file)
 }
 \arguments{
-\item{model}{A \code{glm_model}, \code{gam_model}, \code{elastic_net_model},
-\code{cann_model}, \code{attention_cann_model} or \code{tabular_net_model}.}
+\item{model}{A model from \code{\link[=glm_fit]{glm_fit()}}, \code{\link[=gam_fit]{gam_fit()}}, \code{\link[=elastic_net_fit]{elastic_net_fit()}},
+\code{\link[=glmm_fit]{glmm_fit()}}, \code{\link[=bayes_glm_fit]{bayes_glm_fit()}}, \code{\link[=bayes_glmm_fit]{bayes_glmm_fit()}}, \code{\link[=dglm_fit]{dglm_fit()}},
+\code{\link[=zeroinfl_fit]{zeroinfl_fit()}}, \code{\link[=hurdle_fit]{hurdle_fit()}}, \code{\link[=expectreg_fit]{expectreg_fit()}}, \code{\link[=cann_fit]{cann_fit()}},
+\code{\link[=attention_cann_fit]{attention_cann_fit()}} or \code{\link[=tabular_net_fit]{tabular_net_fit()}}.}
 
 \item{file}{Path of the RDS file.}
 }
@@ -20,17 +22,17 @@ load_model(file)
 the class saved.
 }
 \description{
-\code{save_model()} writes a \code{\link[=glm_fit]{glm_fit()}}, \code{\link[=gam_fit]{gam_fit()}}, \code{\link[=elastic_net_fit]{elastic_net_fit()}},
-\code{\link[=cann_fit]{cann_fit()}} or \code{\link[=attention_cann_fit]{attention_cann_fit()}} model to an RDS file: the Rust
-fit as a versioned JSON artifact (spec, estimates, covariance, fit
-statistics, fitted values, and provenance with the package version and
-a hash of the training data; for a GAM also the spline knots and
-constraints; for an elastic net one artifact per lambda; for a network
-its feature scaling and every weight), with the formula terms and
-factor levels that
-\code{\link[stats:predict]{stats::predict()}} needs. \code{load_model()} reads it back; the estimates
-round-trip exactly. A loaded model predicts and simulates but has no
-training data, so \code{\link[=robust_vcov]{robust_vcov()}} needs the original fit.
+\code{save_model()} writes a fitted model to an RDS file: the Rust fit as a
+versioned JSON artifact (spec, estimates, covariance, fit statistics,
+fitted values, and provenance with the package version and a hash of
+the training data; for a GAM also the spline knots and constraints; for
+an elastic net one artifact per lambda; for a network its feature
+scaling and every weight; for a Bayesian model its draws and sampler
+diagnostics), with the formula terms, factor levels and other settings
+that \code{\link[stats:predict]{stats::predict()}} needs. \code{load_model()} reads it back; the
+estimates round-trip exactly. A loaded model predicts and simulates but
+has no training data, so \code{\link[=robust_vcov]{robust_vcov()}}, and LOO and the posterior
+predictive checks of a \code{\link[=bayes_glm_fit]{bayes_glm_fit()}} model, need the original fit.
 }
 \examples{
 d <- data.frame(claims = c(1, 2, 4, 2, 1, 3), region = c("N", "N", "S", "S", "W", "W"))
