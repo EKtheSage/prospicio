@@ -533,7 +533,7 @@ fn log_slope(y: &[f64]) -> f64 {
 /// triangle `s`, with an intercept, development effects 1.. and calendar
 /// effects 1.. (treatment coded): the proportions normalised to sum to 1,
 /// the indices `exp(a + c_h) sum_j exp(b_j)`, and the residual variance
-/// (NaN with no degrees of freedom).
+/// (`None` with no degrees of freedom).
 fn geometric(
     s: &[Vec<f64>],
     origins: &[Period],

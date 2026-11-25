@@ -258,9 +258,15 @@ future_cells <- S7::new_class(
       origin <- as.character(x$origin)
       if (is.null(origins)) origins <- unique(origin)
       age <- x$age
-      bad <- if (is.numeric(age)) which(is.na(age) | age != round(age) | age < 0) else 1L
+      if (is.character(age)) age <- suppressWarnings(as.numeric(age))
+      bad <- if (is.numeric(age)) {
+        which(!is.finite(age) | age != round(age) | age < 0 | age > .Machine$integer.max)
+      } else {
+        1L
+      }
       if (length(bad)) {
-        stop(sprintf("age %s is not an age in months", format(age[bad[1]])), call. = FALSE)
+        stop(sprintf("age %s is not an age in months (a whole number from 0)",
+                     format(x$age[bad[1]])), call. = FALSE)
       }
       out <- reserving_result(future_cells_check_rust(
         as.character(origins), origin, as.integer(age),
