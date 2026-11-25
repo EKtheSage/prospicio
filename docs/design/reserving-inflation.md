@@ -48,6 +48,15 @@ recorded as decisions 11 to 16.
   names of `coefficients`), with the arithmetic separation as a Poisson GLM
   (`Separation.glm`, `separation_glm()`), in new module files, tested
   against every row of the Python `apc` reference.
+* **PR 8 is built** (branch `claude/reinflate-draws`, 2026-11-24):
+  `IndexPaths` (one future index path per simulation) and
+  `Indexation::reinflate_draws` in Rust, Python (`IndexPaths(first,
+  values)` with one list per simulation, `Indexation.reinflate_draws(draws,
+  paths=None)`) and R (`index_paths()`, `reinflate_draws()`), in new
+  module files, at a numpy closed-form reference to 1e-12 relative;
+  decisions 11 (amended) and 20 to 22 below. It takes future cells only:
+  the bootstraps' draws are by origin, so re-inflating them waits for
+  `[reinflate-bootstrap-cells]`.
 
 Lane: Reserving (`crates/prospicio-reserving/`; the
 bindings in new module files of `prospicio-python` and `prospicio-r`) ·
@@ -398,9 +407,13 @@ takes the fit instead.
 10. **`Error::Inflation(String)`**, one variant for the three methods.
 11. **Stochastic future inflation is PR 8** (the user, 2026-11-24, open
     decision 1 (a)): `Indexation::reinflate_draws` takes a
-    `PredictiveDistribution` of future cells (the bootstraps', `OdpGlm`'s)
-    and one index path per simulation, and gives the reserve draws in the
-    money of the payment periods; after PR 2.
+    `PredictiveDistribution` of future cells (`OdpGlm`'s, `ApcGlm`'s)
+    and one index path per simulation, and gives the draws in the
+    money of the payment periods; after PR 2. Amended when PR 8 was
+    built: the bootstraps' reserve draws are by origin, not by cell, so
+    they cannot be re-inflated cell by cell and are refused for their
+    missing age; cell-level bootstrap draws are a Next item
+    (`[reinflate-bootstrap-cells]`).
 12. **Geometric normalisation `sum r_j = 1`** (the user, 2026-11-24, open
     decision 2 (a)), as the arithmetic method, so the two methods'
     `lambda` compare. Fitted values do not depend on it.
@@ -460,6 +473,30 @@ takes the fit instead.
     by R's source (cran/apc, `R/apc_forecast.R` line 673: `mean(cumsum(xi.per.dd)) -
     cumsum(xi.per.dd)[length(xi.per.dd)]`; lines 586-596 document I1 and
     I0), with the mean over the `n` cumulated second differences.
+20. **The cells of a draw** (PR 8). A cell is read from the `origin`
+    dimension (a period) and exactly one of `development` or `age` (an
+    age in months); it is paid in the month `age - 1` months after the
+    origin's first month, as `FutureCells`. Every other dimension passes
+    through, and the output keeps the input's dimensions, components and
+    number of simulations, so `aggregate(&["origin"])` gives reserves by
+    origin. An age below 1, a missing or mistyped key and a payment
+    before the index are errors. The compartmental model's `paid` draws
+    are cumulative (under incremental paid too) and pass these checks,
+    so the doc says to difference them by origin first.
+21. **Index paths continue the given index** (PR 8). `IndexPaths` holds
+    `n_sims` paths of levels at the index's grain, starting in the
+    period right after its last given one; simulation `i` takes path
+    `i`. A payment inside the given periods takes the given value, one
+    past the paths is an error (no fallback to the future rate, which
+    paths make unused), and the base must be a given period, so the
+    base level is the same in every simulation. Without paths each cell
+    takes `factor`, the deterministic index, and the draws keep their
+    spread.
+22. **No sampling of index paths** (PR 8). The paths are input, as the
+    index is (decision 4): a model of future inflation (a random walk on
+    the log rate, an ESG's scenarios) is the user's, which keeps the
+    seeds and the dependence between the paths and the claims out of
+    this crate.
 
 ## Validation targets
 
@@ -522,7 +559,7 @@ Each a small PR, stacked on the one before, linking #979.
    separation method's delta-method prediction error (decision 16).
 7. **`[apc-glm-bindings]` Python and R** for PR 6.
 8. **`[reinflate-draws]` Stochastic re-inflation, Rust, Python and R**
-   (decision 11), after PR 2.
+   (decision 11), after PR 2. Future cells only (decisions 11 and 20).
 
 A guide (deflate, develop, re-inflate; separation on a deflated triangle
 for superimposed inflation) belongs to the Guides lane: an issue for it

@@ -440,6 +440,7 @@ reference:
       - reserving.FrequencySeverity
       - reserving.FrequencySeverityFit
       - reserving.FutureCells
+      - reserving.IndexPaths
       - reserving.Indexation
       - reserving.Disposal
       - reserving.DisposalFit

@@ -45,6 +45,7 @@ mod reserving_counts;
 mod reserving_discount;
 mod reserving_expense;
 mod reserving_inflation;
+mod reserving_inflation_draws;
 mod reserving_separation;
 mod risk;
 
@@ -248,6 +249,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::reserving_inflation::{PyCalendarIndex, PyFutureCells, PyIndexation, PyReinflated};
+    #[pymodule_export]
+    use super::reserving_inflation_draws::PyIndexPaths;
     #[pymodule_export]
     use super::reserving_separation::{PySeparation, PySeparationFit};
     #[pymodule_export]

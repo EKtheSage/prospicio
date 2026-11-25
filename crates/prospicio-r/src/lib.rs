@@ -47,6 +47,7 @@ mod reserving_counts;
 mod reserving_discount;
 mod reserving_expense;
 mod reserving_inflation;
+mod reserving_inflation_draws;
 mod reserving_separation;
 mod risk;
 
@@ -106,6 +107,7 @@ extendr_module! {
     use reserving_discount;
     use reserving_expense;
     use reserving_inflation;
+    use reserving_inflation_draws;
     use reserving_separation;
     use risk;
 }
