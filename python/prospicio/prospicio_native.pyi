@@ -39485,6 +39485,29 @@ def balance_correction(y: Sequence[float], pred: Sequence[float], weights: Seque
     2.0
     """
 
+def base_score(link: str, y: Sequence[float], weights: Sequence[float], offset: Sequence[float]) -> float:
+    """
+    The constant link-scale score a booster starts from:
+    ``log(sum(w y) / sum(w exp(offset)))`` for a log link (the weighted
+    total must be positive), ``sum(w (y - offset)) / sum(w)`` for an
+    identity link.
+    
+    Parameters
+    ----------
+    link : {"log", "identity"}
+    y, weights, offset : list of float
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.models import base_score
+    >>> base_score("identity", [1.0, 3.0], [1.0, 1.0], [0.0, 0.0])
+    2.0
+    """
+
 def berquist_sherman_adjust(triangle: Triangle, incurred: str, paid: str, reported: str, closed_counts: str, trend: Any, ultimate_counts: Any, max_age: int |None = None, disposal_rates: Any |None = None, interpolation: str = "exponential") -> Triangle:
     """
     Both Berquist-Sherman adjustments: paid claims and closed counts as
@@ -42564,6 +42587,32 @@ def mcmc_diagnostics(chains: Sequence[Sequence[float]]) -> dict[str, float]:
     True
     """
 
+def mean_deviance(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float] |None = None, theta: float |None = None, power: float |None = None) -> float:
+    """
+    Weighted mean deviance ``sum(w d(y, mu)) / sum(w)`` of a family (the
+    number of rows when there are no weights): the score to compare models
+    on held-out data.
+    
+    Parameters
+    ----------
+    family : str
+    y : list of float
+    mu : list of float
+    weights : list of float, optional
+    theta : float, optional
+    power : float, optional
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.models import mean_deviance
+    >>> mean_deviance("gaussian", [1.0, 3.0], [2.0, 2.0])
+    1.0
+    """
+
 def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tuple[float, float, int]]:
     """
     The empirical mean-excess function ``e(u) = E[X - u | X > u]`` at each
@@ -42608,6 +42657,29 @@ def moic(released: float, funded: float, opening: float) -> float:
     >>> from prospicio.pricing import moic
     >>> moic(30.0, 40.0, 60.0)
     1.3
+    """
+
+def monotone_violations(means: Sequence[float], direction: int, tol: float = 1e-9) -> list[int]:
+    """
+    The indices ``i`` (from 1) whose step from ``means[i - 1]`` goes
+    against ``direction`` by more than ``tol`` times the curve's largest
+    absolute value.
+    
+    Parameters
+    ----------
+    means : list of float
+    direction : {1, -1}
+    tol : float, default 1e-9
+    
+    Returns
+    -------
+    list of int
+    
+    Examples
+    --------
+    >>> from prospicio.models import monotone_violations
+    >>> monotone_violations([1.0, 2.0, 1.5, 3.0], 1)
+    [2]
     """
 
 def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_months: int = 12, interpolation: str = "linear", accident_period: str |None = None, reading: str = "weibull", written_timing: str = "through_month") -> tuple[list[float], list[float], list[float]]:
@@ -43032,6 +43104,45 @@ def pareto_extrapolation(from_: tuple[float, float], to: tuple[float, float], al
     >>> from prospicio.pricing import pareto_extrapolation
     >>> round(pareto_extrapolation((1e6, 1e6), (2e6, 2e6), 2.0), 12)
     0.5
+    """
+
+def pearson_dispersion(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float], theta: float |None = None, power: float |None = None) -> float:
+    """
+    The Pearson dispersion ``sum(w (y - mu)^2 / V(mu)) / n``.
+    
+    Parameters
+    ----------
+    family : str
+    y, mu, weights : list of float
+    theta : float, optional
+    power : float, optional
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.models import pearson_dispersion
+    >>> pearson_dispersion("poisson", [1.0, 4.0], [2.0, 2.0], [1.0, 1.0])
+    1.25
+    """
+
+def pearson_terms(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequence[float], theta: float |None = None, power: float |None = None) -> list[float]:
+    """
+    Each row's Pearson term ``w (y - mu)^2 / V(mu)``, ``V`` the family's
+    variance function.
+    
+    Parameters
+    ----------
+    family : str
+    y, mu, weights : list of float
+    theta : float, optional
+    power : float, optional
+    
+    Returns
+    -------
+    list of float
     """
 
 def per_risk_inuring(layer: Layer, years: Sequence[Sequence[Sequence[float]]], event_limit: float |None = None, times: Sequence[Sequence[float]] |None = None, seed: int = 0) -> dict:
@@ -44958,6 +45069,29 @@ def vuong(a: Sequence[float], b: Sequence[float], k_a: int, k_b: int) -> dict[st
     (pscl counts the coefficients only, not ``theta``). Returns a dict with
     ``"raw"``, ``"aic"`` and ``"bic"``, each ``(statistic, p_value)``: a
     positive statistic favours ``a``, the p-value is one-sided.
+    """
+
+def weighted_quantile(y: Sequence[float], weights: Sequence[float], alpha: float) -> float:
+    """
+    The smallest ``y`` whose cumulative weight, in increasing ``y``,
+    reaches ``alpha`` of the total weight.
+    
+    Parameters
+    ----------
+    y : list of float
+    weights : list of float
+    alpha : float
+        In ``[0, 1]``.
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.models import weighted_quantile
+    >>> weighted_quantile([3.0, 1.0, 2.0], [1.0, 1.0, 2.0], 0.5)
+    2.0
     """
 
 def wiener_hopf(severity: Grid, wait: Any, rho: float |None = None, *, loss_ratio: float |None = None, points: int |None = None) -> RenewalRuin:

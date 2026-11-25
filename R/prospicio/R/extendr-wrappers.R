@@ -65,6 +65,8 @@ blend_by_component_rust <- function(models, weights, seed) .Call(wrap__blend_by_
 
 blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
 
+booster_base_score_rust <- function(link_name, y, w, offset) .Call(wrap__booster_base_score_rust, link_name, y, w, offset)
+
 bootstrap_rows_rust <- function(n, seed, stream) .Call(wrap__bootstrap_rows_rust, n, seed, stream)
 
 bootstrap_se_rust <- function(columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed) .Call(wrap__bootstrap_se_rust, columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed)
@@ -203,6 +205,8 @@ exposure_uniform_rust <- function(n_years, policy_months) .Call(wrap__exposure_u
 
 family_deviance_rust <- function(family_name, theta, power, y, mu, weights) .Call(wrap__family_deviance_rust, family_name, theta, power, y, mu, weights)
 
+family_mean_deviance_rust <- function(family_name, theta, power, y, mu, weights) .Call(wrap__family_mean_deviance_rust, family_name, theta, power, y, mu, weights)
+
 fft_bivariate_rust <- function(frequency, probs, rows, cols, step_a, step_b, points_a, points_b) .Call(wrap__fft_bivariate_rust, frequency, probs, rows, cols, step_a, step_b, points_a, points_b)
 
 finite_horizon_ruin_rust <- function(severity, premium, periods, frequency, rate, sub_periods, points, p) .Call(wrap__finite_horizon_ruin_rust, severity, premium, periods, frequency, rate, sub_periods, points, p)
@@ -333,6 +337,8 @@ mean_excess_rust <- function(draws, thresholds) .Call(wrap__mean_excess_rust, dr
 
 mes_rust <- function(pd, p) .Call(wrap__mes_rust, pd, p)
 
+monotone_violations_rust <- function(means, direction, tol) .Call(wrap__monotone_violations_rust, means, direction, tol)
+
 murphy_rust <- function(y, pred, family_name, weights, theta, power) .Call(wrap__murphy_rust, y, pred, family_name, weights, theta, power)
 
 mvn_cdf_rust <- function(lower, upper, correlation, abs_tol, max_points, scrambles, seed) .Call(wrap__mvn_cdf_rust, lower, upper, correlation, abs_tol, max_points, scrambles, seed)
@@ -368,6 +374,10 @@ pareto_fit_standard_error_rust <- function(losses, t, reporting, censored, weigh
 partial_credibility_rust <- function(n, standard) .Call(wrap__partial_credibility_rust, n, standard)
 
 pattern_prior_rust <- function(ages, values, sd, from_shares) .Call(wrap__pattern_prior_rust, ages, values, sd, from_shares)
+
+pearson_dispersion_rust <- function(family_name, theta, power, y, mu, w) .Call(wrap__pearson_dispersion_rust, family_name, theta, power, y, mu, w)
+
+pearson_terms_rust <- function(family_name, theta, power, y, mu, w) .Call(wrap__pearson_terms_rust, family_name, theta, power, y, mu, w)
 
 per_risk_inuring_rust <- function(layer, years, event_limit, times, seed) .Call(wrap__per_risk_inuring_rust, layer, years, event_limit, times, seed)
 
@@ -596,6 +606,8 @@ vif_rust <- function(x, names) .Call(wrap__vif_rust, x, names)
 vine_fit_rust <- function(data, n, matrix, families, criterion, independence_test, trunc_level) .Call(wrap__vine_fit_rust, data, n, matrix, families, criterion, independence_test, trunc_level)
 
 vuong_rust <- function(a, b, k_a, k_b) .Call(wrap__vuong_rust, a, b, k_a, k_b)
+
+weighted_quantile_rust <- function(y, w, alpha) .Call(wrap__weighted_quantile_rust, y, w, alpha)
 
 weighted_tail_rust <- function(values, weights, p, batches) .Call(wrap__weighted_tail_rust, values, weights, p, batches)
 
@@ -838,6 +850,8 @@ BayesGlmmModel$laplace <- function() .Call(wrap__BayesGlmmModel__laplace, self)
 BayesGlmmModel$names <- function() .Call(wrap__BayesGlmmModel__names, self)
 
 BayesGlmmModel$parameter_draws <- function() .Call(wrap__BayesGlmmModel__parameter_draws, self)
+
+BayesGlmmModel$parameter_means <- function() .Call(wrap__BayesGlmmModel__parameter_means, self)
 
 BayesGlmmModel$parameter_names <- function() .Call(wrap__BayesGlmmModel__parameter_names, self)
 
