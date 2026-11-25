@@ -1716,7 +1716,14 @@ reinsurer_panel <- S7::new_class(
   ),
   constructor = function(reinsurers, ptr = NULL) {
     if (is.null(ptr)) {
-      ptr <- rust_result(ReinsurerPanel$new(lapply(reinsurers, function(r) r@ptr)))
+      if (S7::S7_inherits(reinsurers, reinsurer)) reinsurers <- list(reinsurers)
+      ptrs <- lapply(reinsurers, function(r) {
+        if (!S7::S7_inherits(r, reinsurer)) {
+          stop("reinsurers must all be reinsurer objects", call. = FALSE)
+        }
+        r@ptr
+      })
+      ptr <- rust_result(ReinsurerPanel$new(ptrs))
     }
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
@@ -1749,14 +1756,25 @@ panel_driver <- function(panel, by_year) {
   reinsurer_panel(ptr = rust_result(panel@ptr$driver(as.double(by_year))))
 }
 
+check_panel_args <- function(panel, result) {
+  if (!S7::S7_inherits(panel, reinsurer_panel)) {
+    stop("panel must be a reinsurer_panel", call. = FALSE)
+  }
+  if (!S7::S7_inherits(result, predictive_distribution)) {
+    stop("result must be a predictive_distribution", call. = FALSE)
+  }
+}
+
 #' @rdname reinsurer_panel
 #' @export
 apply_panel <- function(panel, result, seed = 0) {
+  check_panel_args(panel, result)
   predictive_distribution(ptr = rust_result(panel@ptr$apply(result@ptr, as.double(seed))))
 }
 
 #' @rdname reinsurer_panel
 #' @export
 panel_by_reinsurer <- function(panel, result, seed = 0) {
+  check_panel_args(panel, result)
   predictive_distribution(ptr = rust_result(panel@ptr$by_reinsurer(result@ptr, as.double(seed))))
 }

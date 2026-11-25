@@ -69,6 +69,11 @@ expect_error_like(panel_line(two, c("R1", "R1"), "A", 0.5), "already has a line"
 expect_error_like(apply_panel(panel_line(two, "R1", "A", 0.5), years), "sum")
 expect_error_like(apply_panel(panel_line(two, "R1", "Z", 1), years), "Z")
 expect_error_like(apply_panel(panel_line(two, "R1", "A", 1), years, seed = -1), "seed")
+expect_error_like(reinsurer_panel(list("R1")), "reinsurers must all be reinsurer objects")
+stopifnot(identical(reinsurer_panel(reinsurer("R1", 0.1, 0.4))@reinsurer_names, "R1"))
+expect_error_like(apply_panel(two, 1:3), "result must be a predictive_distribution")
+expect_error_like(panel_by_reinsurer(two, 1:3), "result must be a predictive_distribution")
+expect_error_like(apply_panel("two", years), "panel must be a reinsurer_panel")
 
 # The reference's cases on stratified years: the gross loss at the
 # lognormal's quantiles (i - 1/2) / n, so the only sampling error is the
