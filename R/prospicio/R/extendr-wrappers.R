@@ -813,6 +813,8 @@ BayesGlmModel$dispersion_draws <- function() .Call(wrap__BayesGlmModel__dispersi
 
 BayesGlmModel$divergences <- function() .Call(wrap__BayesGlmModel__divergences, self)
 
+BayesGlmModel$from_json <- function(text) rust_native_result(.Call(wrap__BayesGlmModel__from_json, text))
+
 BayesGlmModel$log_likelihood <- function() rust_native_result(.Call(wrap__BayesGlmModel__log_likelihood, self))
 
 BayesGlmModel$loo <- function() rust_native_result(.Call(wrap__BayesGlmModel__loo, self))
@@ -833,6 +835,8 @@ BayesGlmModel$replicate <- function(seed) rust_native_result(.Call(wrap__BayesGl
 
 BayesGlmModel$summary <- function() rust_native_result(.Call(wrap__BayesGlmModel__summary, self))
 
+BayesGlmModel$to_json <- function() .Call(wrap__BayesGlmModel__to_json, self)
+
 #' @export
 `$.BayesGlmModel` <- function (self, name) { func <- BayesGlmModel[[name]]; environment(func) <- environment(); func }
 
@@ -846,6 +850,8 @@ BayesGlmmModel$divergences <- function() .Call(wrap__BayesGlmmModel__divergences
 BayesGlmmModel$effect_draws <- function() .Call(wrap__BayesGlmmModel__effect_draws, self)
 
 BayesGlmmModel$effect_names <- function() .Call(wrap__BayesGlmmModel__effect_names, self)
+
+BayesGlmmModel$from_json <- function(text) rust_native_result(.Call(wrap__BayesGlmmModel__from_json, text))
 
 BayesGlmmModel$laplace <- function() .Call(wrap__BayesGlmmModel__laplace, self)
 
@@ -862,6 +868,8 @@ BayesGlmmModel$predict <- function(x, names, offset, group_names, group_labels, 
 BayesGlmmModel$random_effects <- function() .Call(wrap__BayesGlmmModel__random_effects, self)
 
 BayesGlmmModel$summary <- function() rust_native_result(.Call(wrap__BayesGlmmModel__summary, self))
+
+BayesGlmmModel$to_json <- function() .Call(wrap__BayesGlmmModel__to_json, self)
 
 #' @export
 `$.BayesGlmmModel` <- function (self, name) { func <- BayesGlmmModel[[name]]; environment(func) <- environment(); func }
@@ -2083,6 +2091,8 @@ DglmModel$dispersion_std_errors <- function() .Call(wrap__DglmModel__dispersion_
 
 DglmModel$fitted <- function() .Call(wrap__DglmModel__fitted, self)
 
+DglmModel$from_json <- function(text) rust_native_result(.Call(wrap__DglmModel__from_json, text))
+
 DglmModel$iterations <- function() .Call(wrap__DglmModel__iterations, self)
 
 DglmModel$m2loglik <- function() .Call(wrap__DglmModel__m2loglik, self)
@@ -2098,6 +2108,8 @@ DglmModel$predict_dispersion <- function(z, names, offset) rust_native_result(.C
 DglmModel$reml_criterion <- function() .Call(wrap__DglmModel__reml_criterion, self)
 
 DglmModel$std_errors <- function() .Call(wrap__DglmModel__std_errors, self)
+
+DglmModel$to_json <- function() .Call(wrap__DglmModel__to_json, self)
 
 #' @export
 `$.DglmModel` <- function (self, name) { func <- DglmModel[[name]]; environment(func) <- environment(); func }
@@ -2343,6 +2355,8 @@ ExpectregModel$coefficients <- function() .Call(wrap__ExpectregModel__coefficien
 
 ExpectregModel$covariance <- function() .Call(wrap__ExpectregModel__covariance, self)
 
+ExpectregModel$from_json <- function(text) rust_native_result(.Call(wrap__ExpectregModel__from_json, text))
+
 ExpectregModel$iterations <- function() .Call(wrap__ExpectregModel__iterations, self)
 
 ExpectregModel$names <- function() .Call(wrap__ExpectregModel__names, self)
@@ -2356,6 +2370,8 @@ ExpectregModel$predict_distribution <- function(x, names, offset, n_sims, seed) 
 ExpectregModel$std_errors <- function() .Call(wrap__ExpectregModel__std_errors, self)
 
 ExpectregModel$tau <- function() .Call(wrap__ExpectregModel__tau, self)
+
+ExpectregModel$to_json <- function() .Call(wrap__ExpectregModel__to_json, self)
 
 #' @export
 `$.ExpectregModel` <- function (self, name) { func <- ExpectregModel[[name]]; environment(func) <- environment(); func }
@@ -2643,6 +2659,8 @@ GlmmModel$dispersion_std_error <- function() .Call(wrap__GlmmModel__dispersion_s
 
 GlmmModel$fitted <- function() .Call(wrap__GlmmModel__fitted, self)
 
+GlmmModel$from_json <- function(text) rust_native_result(.Call(wrap__GlmmModel__from_json, text))
+
 GlmmModel$group_names <- function() .Call(wrap__GlmmModel__group_names, self)
 
 GlmmModel$iterations <- function() .Call(wrap__GlmmModel__iterations, self)
@@ -2662,6 +2680,8 @@ GlmmModel$sd_std_errors <- function() .Call(wrap__GlmmModel__sd_std_errors, self
 GlmmModel$std_errors <- function() .Call(wrap__GlmmModel__std_errors, self)
 
 GlmmModel$term_names <- function() .Call(wrap__GlmmModel__term_names, self)
+
+GlmmModel$to_json <- function() .Call(wrap__GlmmModel__to_json, self)
 
 #' @export
 `$.GlmmModel` <- function (self, name) { func <- GlmmModel[[name]]; environment(func) <- environment(); func }
@@ -4957,6 +4977,8 @@ ZeroModel$dist <- function() .Call(wrap__ZeroModel__dist, self)
 
 ZeroModel$fitted <- function() .Call(wrap__ZeroModel__fitted, self)
 
+ZeroModel$from_json <- function(text) rust_native_result(.Call(wrap__ZeroModel__from_json, text))
+
 ZeroModel$iterations <- function() .Call(wrap__ZeroModel__iterations, self)
 
 ZeroModel$kind <- function() .Call(wrap__ZeroModel__kind, self)
@@ -4974,6 +4996,8 @@ ZeroModel$predict_distribution <- function(x, names, offset, z, zero_names, zero
 ZeroModel$se_log_theta <- function() .Call(wrap__ZeroModel__se_log_theta, self)
 
 ZeroModel$theta <- function() .Call(wrap__ZeroModel__theta, self)
+
+ZeroModel$to_json <- function() .Call(wrap__ZeroModel__to_json, self)
 
 ZeroModel$zero_coefficients <- function() .Call(wrap__ZeroModel__zero_coefficients, self)
 
