@@ -60,6 +60,7 @@
 use std::fmt;
 use std::sync::Arc;
 
+use prospicio_aggregate::LossSensitivePremium;
 use prospicio_core::{Error, Result};
 use prospicio_prob::Severity;
 
@@ -325,11 +326,7 @@ pub struct RetroPlan {
 /// A balanced plan: [`RetroPlan::balance`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BalancedPlan {
-    /// The basic premium `b`, before the tax multiplier. It is negative
-    /// when the minimum premium is high enough to collect more than the
-    /// expenses on its own; such a plan balances on paper and would not be
-    /// sold, and [`LossSensitivePremium`](prospicio_aggregate::LossSensitivePremium)
-    /// refuses a negative basic premium.
+    /// The basic premium `b`, before the tax multiplier; never negative.
     pub basic: f64,
     /// The entry ratio `r_H` at and below which the minimum premium
     /// applies. Negative when the minimum is below `T b`, so that it never
@@ -415,18 +412,32 @@ impl RetroPlan {
         self.tax_multiplier * (self.expense + self.expected_loss)
     }
 
-    /// The retrospective premium for a year's `losses` under the basic
-    /// premium `basic`: `T (b + c L)`, between the minimum and the
-    /// maximum.
+    /// The plan's premium terms under the basic premium `basic`, as a
+    /// [`LossSensitivePremium`]: `T (b + c L)` for a year's losses `L`,
+    /// between the minimum and the maximum, with the tax multiplier folded
+    /// into its basic premium and its loss conversion factor
+    /// (`new(T b, T c, Some(H), Some(G))`). Its
+    /// [`premium`](LossSensitivePremium::premium) is the retrospective
+    /// premium, and it is the form the reinsurance terms and the P&L take.
     ///
-    /// It is the premium of
-    /// [`LossSensitivePremium`](prospicio_aggregate::LossSensitivePremium)
-    /// with the tax multiplier folded into its basic premium and its loss
-    /// conversion factor, `new(T b, T c, Some(H), Some(G))`, which is the
-    /// form to apply to simulated years or a P&L.
-    pub fn premium(&self, basic: f64, losses: f64) -> f64 {
-        (self.tax_multiplier * (basic + self.loss_conversion * losses))
-            .clamp(self.minimum, self.maximum)
+    /// Fails when `basic` is negative or not finite.
+    ///
+    /// ```
+    /// use prospicio_pricing::retro::RetroPlan;
+    ///
+    /// let plan = RetroPlan::new(100.0, 30.0, 1.1, 1.03, 80.0, 220.0).unwrap();
+    /// let terms = plan.loss_sensitive_premium(25.0).unwrap();
+    /// assert_eq!(terms.premium(0.0), 80.0); // the minimum
+    /// assert!((terms.premium(90.0) - 1.03 * (25.0 + 1.1 * 90.0)).abs() < 1e-12);
+    /// assert_eq!(terms.premium(400.0), 220.0); // the maximum
+    /// ```
+    pub fn loss_sensitive_premium(&self, basic: f64) -> Result<LossSensitivePremium> {
+        LossSensitivePremium::new(
+            self.tax_multiplier * basic,
+            self.tax_multiplier * self.loss_conversion,
+            Some(self.minimum),
+            Some(self.maximum),
+        )
     }
 
     /// The basic premium at which the plan's expected premium is the
@@ -451,8 +462,9 @@ impl RetroPlan {
     ///
     /// Fails when the table's expected loss is not the plan's; when the
     /// minimum premium is at least the guaranteed-cost premium, or the
-    /// maximum at most it (no basic premium balances such a plan); or when
-    /// the charge is not finite.
+    /// maximum at most it (no basic premium balances such a plan); when the
+    /// minimum is high enough that only a negative basic premium would
+    /// balance the plan; or when the charge is not finite.
     ///
     /// ```
     /// use prospicio_pricing::retro::{InsuranceCharge, RetroPlan};
@@ -463,8 +475,8 @@ impl RetroPlan {
     /// let plan = RetroPlan::new(100.0, 30.0, 1.1, 1.03, 80.0, 220.0).unwrap();
     /// let balanced = plan.balance(&table).unwrap();
     /// // The plan collects the guaranteed-cost premium on average.
-    /// let mean: f64 =
-    ///     losses.iter().map(|&l| plan.premium(balanced.basic, l)).sum::<f64>() / 10.0;
+    /// let terms = plan.loss_sensitive_premium(balanced.basic).unwrap();
+    /// let mean: f64 = losses.iter().map(|&l| terms.premium(l)).sum::<f64>() / 10.0;
     /// assert!((mean - plan.guaranteed_cost()).abs() < 1e-10);
     /// assert!((balanced.expected_premium - 1.03 * 130.0).abs() < 1e-12);
     /// ```
@@ -515,8 +527,15 @@ impl RetroPlan {
         }
         let r_h = prospicio_math::roots::bisect(lo, hi, |r| gap(r) > target);
         let r_g = r_h + spread;
+        let basic = self.minimum / t - c * big_e * r_h;
+        if basic < 0.0 {
+            return Err(Error::Data(format!(
+                "the minimum premium {} is so high that the plan would balance only with a                  negative basic premium ({basic}); lower the minimum",
+                self.minimum
+            )));
+        }
         Ok(BalancedPlan {
-            basic: self.minimum / t - c * big_e * r_h,
+            basic,
             entry_ratio_minimum: r_h,
             entry_ratio_maximum: r_g,
             net_insurance_charge: charge.charge(r_g) - charge.savings(r_h),
@@ -648,7 +667,8 @@ mod tests {
     }
 
     fn mean_premium(plan: &RetroPlan, basic: f64, losses: &[f64]) -> f64 {
-        losses.iter().map(|&l| plan.premium(basic, l)).sum::<f64>() / losses.len() as f64
+        let terms = plan.loss_sensitive_premium(basic).unwrap();
+        losses.iter().map(|&l| terms.premium(l)).sum::<f64>() / losses.len() as f64
     }
 
     const YEARS: [f64; 10] = [
@@ -661,7 +681,7 @@ mod tests {
         for (minimum, maximum) in [
             (80.0, 220.0),
             (0.0, 180.0),
-            (120.0, f64::INFINITY),
+            (60.0, f64::INFINITY),
             (60.0, 400.0),
         ] {
             let plan = RetroPlan::new(100.0, 30.0, 1.1, 1.03, minimum, maximum).unwrap();
@@ -720,7 +740,7 @@ mod tests {
     fn a_continuous_aggregate_balances_by_its_own_integral() {
         // Exponential losses of mean 100: E[min(max(L, a), b)] in closed form.
         let table = InsuranceCharge::from_severity(Gamma::new(1.0, 100.0).unwrap()).unwrap();
-        let plan = RetroPlan::new(100.0, 25.0, 1.15, 1.04, 90.0, 260.0).unwrap();
+        let plan = RetroPlan::new(100.0, 25.0, 1.15, 1.04, 60.0, 260.0).unwrap();
         let b = plan.balance(&table).unwrap();
         let (lo, hi) = (100.0 * b.entry_ratio_minimum, 100.0 * b.entry_ratio_maximum);
         let clipped = lo + 100.0 * ((-lo / 100.0).exp() - (-hi / 100.0).exp());
@@ -747,14 +767,33 @@ mod tests {
     }
 
     #[test]
-    fn the_premium_is_the_loss_sensitive_premium_with_the_tax_folded_in() {
-        use prospicio_aggregate::LossSensitivePremium;
+    fn the_terms_fold_the_tax_multiplier_into_the_loss_sensitive_premium() {
         let plan = RetroPlan::new(100.0, 30.0, 1.1, 1.03, 80.0, 220.0).unwrap();
-        let basic = 25.0;
-        let terms =
-            LossSensitivePremium::new(1.03 * basic, 1.03 * 1.1, Some(80.0), Some(220.0)).unwrap();
-        for losses in [0.0, 20.0, 48.0, 90.0, 150.0, 400.0] {
-            assert!((plan.premium(basic, losses) - terms.premium(losses)).abs() < 1e-12);
+        let terms = plan.loss_sensitive_premium(25.0).unwrap();
+        assert!(
+            (terms.basic - 1.03 * 25.0).abs() < 1e-15 && (terms.lcm - 1.03 * 1.1).abs() < 1e-15
+        );
+        assert_eq!((terms.minimum, terms.maximum), (80.0, 220.0));
+        for losses in [0.0f64, 20.0, 48.0, 90.0, 150.0, 400.0] {
+            let direct = (1.03 * (25.0 + 1.1 * losses)).clamp(80.0, 220.0);
+            assert!((terms.premium(losses) - direct).abs() < 1e-12);
         }
+        assert!(plan.loss_sensitive_premium(-1.0).is_err());
+        // No maximum.
+        let open = RetroPlan::new(100.0, 30.0, 1.1, 1.03, 80.0, f64::INFINITY).unwrap();
+        assert_eq!(
+            open.loss_sensitive_premium(25.0).unwrap().maximum,
+            f64::INFINITY
+        );
+    }
+
+    #[test]
+    fn a_minimum_that_needs_a_negative_basic_premium_is_refused() {
+        // A minimum of 120 with no maximum collects more than the expenses
+        // on its own: the plan would balance at a basic premium below 0.
+        let table = InsuranceCharge::from_sample(&YEARS).unwrap();
+        let plan = RetroPlan::new(100.0, 30.0, 1.1, 1.03, 120.0, f64::INFINITY).unwrap();
+        let message = plan.balance(&table).unwrap_err().to_string();
+        assert!(message.contains("negative basic premium"), "{message}");
     }
 }

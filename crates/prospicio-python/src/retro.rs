@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 use crate::distributions::PyGrid;
+use crate::reinsurance::PyLossSensitivePremium;
 use crate::to_py;
 
 /// The insurance charge and savings of an aggregate loss distribution, at
@@ -241,7 +242,8 @@ impl PyInsuranceCharge {
 /// >>> plan = RetroPlan(100.0, 30.0, loss_conversion=1.1, tax_multiplier=1.03,
 /// ...                  minimum=80.0, maximum=220.0)
 /// >>> balanced = plan.balance(InsuranceCharge.from_sample(losses))
-/// >>> mean = sum(plan.premium(balanced["basic"], x) for x in losses) / 10
+/// >>> terms = plan.loss_sensitive_premium(balanced["basic"])
+/// >>> mean = sum(terms.premium(losses)) / 10
 /// >>> round(mean, 9) == round(plan.guaranteed_cost(), 9)
 /// True
 #[pyclass(name = "RetroPlan", module = "prospicio.pricing", frozen)]
@@ -283,21 +285,39 @@ impl PyRetroPlan {
         self.inner.guaranteed_cost()
     }
 
-    /// The retrospective premium for a year's losses: ``T (b + c L)``,
-    /// between the minimum and the maximum.
+    /// The plan's premium terms under a basic premium, as a
+    /// ``prospicio.reinsurance.LossSensitivePremium``: ``T (b + c L)`` for
+    /// a year's losses ``L``, between the minimum and the maximum, with
+    /// the tax multiplier folded into its basic premium and its loss
+    /// conversion factor.
     ///
     /// Parameters
     /// ----------
     /// basic : float
-    ///     The basic premium ``b``.
-    /// losses : float
-    ///     The year's losses ``L``.
+    ///     The basic premium ``b``, before the tax multiplier.
     ///
     /// Returns
     /// -------
-    /// float
-    fn premium(&self, basic: f64, losses: f64) -> f64 {
-        self.inner.premium(basic, losses)
+    /// prospicio.reinsurance.LossSensitivePremium
+    ///     Its ``premium(losses)`` is the retrospective premium of each of
+    ///     a list of losses.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``basic`` is negative or not finite.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.pricing import RetroPlan
+    /// >>> plan = RetroPlan(100.0, 30.0, 1.1, 1.03, minimum=80.0, maximum=220.0)
+    /// >>> terms = plan.loss_sensitive_premium(25.0)
+    /// >>> terms.premium([0.0, 400.0])
+    /// [80.0, 220.0]
+    fn loss_sensitive_premium(&self, basic: f64) -> PyResult<PyLossSensitivePremium> {
+        Ok(PyLossSensitivePremium {
+            inner: self.inner.loss_sensitive_premium(basic).map_err(to_py)?,
+        })
     }
 
     /// The basic premium at which the plan collects the guaranteed-cost
@@ -322,7 +342,8 @@ impl PyRetroPlan {
     /// ValueError
     ///     If the table's expected loss is not the plan's, or the minimum
     ///     is at least the guaranteed-cost premium, or the maximum at most
-    ///     it.
+    ///     it, or the minimum is high enough that only a negative basic
+    ///     premium would balance the plan.
     fn balance<'py>(
         &self,
         py: Python<'py>,

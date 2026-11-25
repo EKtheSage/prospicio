@@ -66,6 +66,10 @@ retro_aggregate <- function(aggregate) {
 #' balances against a Table L. Its basic premium then carries the cost of
 #' the limit.
 #'
+#' A minimum high enough that the plan would balance only with a negative
+#' basic premium is refused, as are a minimum at or above the
+#' guaranteed-cost premium and a maximum at or below it.
+#'
 #' @param aggregate The plan's aggregate losses, as in
 #'   [insurance_charge()].
 #' @param expected_loss The expected losses `E`, without any loss limit.

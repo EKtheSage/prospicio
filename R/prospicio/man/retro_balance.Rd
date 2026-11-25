@@ -55,6 +55,10 @@ A plan with a loss limit takes the losses with each occurrence limited:
 pass the limited aggregate and \code{unlimited_expected}, so that the plan
 balances against a Table L. Its basic premium then carries the cost of
 the limit.
+
+A minimum high enough that the plan would balance only with a negative
+basic premium is refused, as are a minimum at or above the
+guaranteed-cost premium and a maximum at or below it.
 }
 \examples{
 losses <- c(0, 10, 30, 50, 70, 90, 120, 150, 200, 280)

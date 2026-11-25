@@ -36,10 +36,11 @@ stopifnot(near_abs(mean(prem(b, losses, 80, 220)), 1.03 * 130, 1e-9))
 stopifnot(near_abs(b$expected_premium, 1.03 * 130, 1e-12))
 stopifnot(near_abs(b$basic, 30 - 0.1 * 100 + 1.1 * 100 * b$net_insurance_charge, 1e-9))
 # No maximum, and a plan that never binds.
-# A high minimum with no maximum balances with a negative basic premium.
-b <- retro_balance(losses, 100, 30, 1.1, 1.03, minimum = 120)
-stopifnot(is.infinite(b$entry_ratio_maximum), b$basic < 0)
-stopifnot(near_abs(mean(prem(b, losses, 120, Inf)), 1.03 * 130, 1e-9))
+b <- retro_balance(losses, 100, 30, 1.1, 1.03, minimum = 60)
+stopifnot(is.infinite(b$entry_ratio_maximum), b$basic >= 0)
+stopifnot(near_abs(mean(prem(b, losses, 60, Inf)), 1.03 * 130, 1e-9))
+# A minimum that would need a negative basic premium is refused.
+expect_error_like(retro_balance(losses, 100, 30, 1.1, 1.03, minimum = 120), "negative basic premium")
 b <- retro_balance(losses, 100, 30, 1.1, 1.03, minimum = 0, maximum = 1000)
 stopifnot(near_abs(b$basic, 20, 1e-9), b$entry_ratio_minimum < 0)
 # A loss limit balances against Table L.

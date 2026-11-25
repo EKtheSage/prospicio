@@ -58,13 +58,14 @@ def test_table_l_adds_the_cost_of_the_limit():
 
 
 @pytest.mark.parametrize(
-    "minimum, maximum", [(80.0, 220.0), (0.0, 180.0), (120.0, math.inf), (60.0, 400.0)]
+    "minimum, maximum", [(80.0, 220.0), (0.0, 180.0), (60.0, math.inf), (60.0, 400.0)]
 )
 def test_a_balanced_plan_collects_the_guaranteed_cost_premium(minimum, maximum):
     plan = RetroPlan(100.0, 30.0, loss_conversion=1.1, tax_multiplier=1.03,
                      minimum=minimum, maximum=maximum)
     b = plan.balance(InsuranceCharge.from_sample(YEARS))
-    mean = sum(plan.premium(b["basic"], x) for x in YEARS) / len(YEARS)
+    terms = plan.loss_sensitive_premium(b["basic"])
+    mean = sum(terms.premium(YEARS)) / len(YEARS)
     assert plan.guaranteed_cost() == pytest.approx(1.03 * 130.0, abs=1e-12)
     assert mean == pytest.approx(plan.guaranteed_cost(), abs=1e-9)
     assert b["expected_premium"] == pytest.approx(plan.guaranteed_cost(), abs=1e-12)
@@ -78,7 +79,8 @@ def test_a_plan_with_a_loss_limit_balances_against_table_l():
     limited = [min(x, 150.0) for x in YEARS]
     plan = RetroPlan(100.0, 30.0, 1.1, 1.03, 80.0, 200.0)
     b = plan.balance(InsuranceCharge.from_sample(limited).table_l(100.0))
-    mean = sum(plan.premium(b["basic"], x) for x in limited) / len(limited)
+    terms = plan.loss_sensitive_premium(b["basic"])
+    mean = sum(terms.premium(limited)) / len(limited)
     assert mean == pytest.approx(plan.guaranteed_cost(), abs=1e-9)
     with pytest.raises(ValueError, match="Table L"):
         plan.balance(InsuranceCharge.from_sample(limited))
@@ -89,7 +91,12 @@ def test_defaults_and_refusals():
     plan = RetroPlan(100.0, 30.0)
     b = plan.balance(InsuranceCharge.from_sample(YEARS))
     assert b["basic"] == pytest.approx(30.0, abs=1e-9) and b["entry_ratio_minimum"] < 0
-    assert plan.premium(30.0, 50.0) == 80.0
+    assert plan.loss_sensitive_premium(30.0).premium([50.0]) == [80.0]
+    with pytest.raises(ValueError):
+        plan.loss_sensitive_premium(-1.0)
+    # A minimum that would need a negative basic premium is refused.
+    with pytest.raises(ValueError, match="negative basic premium"):
+        RetroPlan(100.0, 30.0, 1.1, 1.03, minimum=120.0).balance(InsuranceCharge.from_sample(YEARS))
     with pytest.raises(ValueError):
         InsuranceCharge.from_sample([])
     with pytest.raises(ValueError):

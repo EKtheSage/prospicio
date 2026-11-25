@@ -212,7 +212,7 @@ impl RetroPlan {
     pub fn new(expected_loss: f64, expense: f64, loss_conversion: f64, tax_multiplier: f64,
                minimum: f64, maximum: f64) -> Result<Self>;
     pub fn guaranteed_cost(&self) -> f64;                                      // T (e + E)
-    pub fn premium(&self, basic: f64, losses: f64) -> f64;                     // T (b + c L), clamped
+    pub fn loss_sensitive_premium(&self, basic: f64) -> Result<LossSensitivePremium>; // T b, T c, H, G
     pub fn balance(&self, charge: &InsuranceCharge) -> Result<BalancedPlan>;
 }
 pub struct BalancedPlan {
@@ -301,6 +301,15 @@ Proposed for the user's acceptance; each has a recommendation.
   minimum at or above the guaranteed-cost premium, or a maximum at or
   below it, has no balancing basic premium and is an error. An entry ratio
   of the minimum below 0 means the minimum never binds.
+  By the user's decisions of 2026-11-25: the plan's premium has one name,
+  the existing `LossSensitivePremium` (the reinsurance terms' and the
+  P&L's), which `RetroPlan::loss_sensitive_premium(basic)` returns with the
+  tax multiplier folded in, and `RetroPlan::premium` is gone; and a plan
+  that would balance only with a negative basic premium is refused. That
+  happens at ordinary minimums too, not only extreme ones: with expected
+  losses 100, expenses 30, `c = 1.1` and `T = 1.03` (guaranteed cost
+  133.9) on the tests' ten-year sample, a minimum of 95 with no maximum
+  already needs a basic premium of -19.6.
 - (j) **Order: retrospective rating, then earned exposure, then the
   modifications.** The charge builds on what the lane already has (the
   aggregate on a grid) and has closed forms to validate against; earned
