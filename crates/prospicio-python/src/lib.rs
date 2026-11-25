@@ -40,6 +40,7 @@ mod pricing;
 mod ratemaking;
 mod reinsurance;
 mod reserving;
+mod reserving_apc;
 mod reserving_counts;
 mod reserving_discount;
 mod reserving_expense;
@@ -227,6 +228,8 @@ mod prospicio_native {
         PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle, PyUltimateExhibit,
         PyUnderwritingBasis, calendar_year_effect, development_correlation, diagonal_backtest,
     };
+    #[pymodule_export]
+    use super::reserving_apc::{PyApcGlm, PyApcGlmFit};
     #[pymodule_export]
     use super::reserving_counts::{
         PyCaseOutstanding, PyCaseOutstandingFit, PyDisposal, PyDisposalFit, PyFrequencySeverity,

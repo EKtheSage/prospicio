@@ -40,6 +40,14 @@ recorded as decisions 11 to 16.
   `Separation::glm`, the arithmetic method as a Poisson GLM with a
   delta-method `prediction_error()` (decision 16), in Rust; decisions 17
   to 19 below; the bindings are PR 7.
+* **PR 7 is built** (branch `claude/apc-glm-bindings`, 2026-11-24):
+  `ApcGlm` and `ApcGlmFit` in Python (effects `"APC"`, `"AP"`, `"AC"`,
+  `"PC"` and extrapolation `"I0"`, `"I1"`, `"I2"` as strings; the fit's
+  `odp_fit`, `future`, `prediction_error()` and `predict_distribution()`)
+  and `apc_glm()` with `apc_glm_fit` in R (the coefficient names as the
+  names of `coefficients`), with the arithmetic separation as a Poisson GLM
+  (`Separation.glm`, `separation_glm()`), in new module files, tested
+  against every row of the Python `apc` reference.
 
 Lane: Reserving (`crates/prospicio-reserving/`; the
 bindings in new module files of `prospicio-python` and `prospicio-r`) ·

@@ -431,6 +431,8 @@ reference:
       - reserving.SegmentRiskAdjustment
       - reserving.Separation
       - reserving.SeparationFit
+      - reserving.ApcGlm
+      - reserving.ApcGlmFit
       - reserving.UlaeEstimate
       - reserving.ulae_classical
       - reserving.ulae_kittel

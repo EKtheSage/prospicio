@@ -1,6 +1,7 @@
 //! `separation()`: Taylor's separation method, arithmetic and geometric
 //! (issue #979, `docs/design/reserving-inflation.md`, PR 5), over
-//! `prospicio_reserving::separation`.
+//! `prospicio_reserving::separation`, and `separation_glm()`, the arithmetic
+//! method as a Poisson GLM (`Separation::glm`, PR 7).
 //!
 //! The R side passes the method's settings as plain values and holds the
 //! fit's fields in an S7 object; the future cells come back as the columns
@@ -12,6 +13,7 @@ use prospicio_reserving::{
     FutureInflation, Retransformation, Separation, SeparationFit, SeparationKind,
 };
 
+use crate::odp_glm::OdpGlmFit;
 use crate::reserving::{Triangle, to_r};
 use crate::reserving_inflation::{cells_list, index};
 
@@ -23,6 +25,45 @@ fn kind_of(text: &str) -> Result<SeparationKind> {
         other => Err(Error::Other(format!(
             "kind must be \"arithmetic\", \"geometric\" or \"geometric_lognormal\", got {other:?}"
         ))),
+    }
+}
+
+/// The future indices: `future` is `"rate"` (`rate`), `"index"` (the
+/// calendar index `first`, `index_values`, `index_rate`) or `"trend"`
+/// (`trend_periods`); the settings of the other kinds are ignored.
+fn future_of(
+    future: &str,
+    rate: f64,
+    first: &str,
+    index_values: Vec<f64>,
+    index_rate: Nullable<f64>,
+    trend_periods: i32,
+) -> Result<FutureInflation> {
+    Ok(match future {
+        "rate" => FutureInflation::Rate(rate),
+        "index" => FutureInflation::Index(index(first, index_values, index_rate)?),
+        "trend" => FutureInflation::Trend {
+            periods: usize::try_from(trend_periods)
+                .ok()
+                .filter(|&p| p >= 2)
+                .ok_or_else(|| {
+                    Error::Other(format!(
+                        "trend_periods must be a whole number of at least 2, got {trend_periods}"
+                    ))
+                })?,
+        },
+        other => {
+            return Err(Error::Other(format!(
+                "future must be \"rate\", \"index\" or \"trend\", got {other:?}"
+            )));
+        }
+    })
+}
+
+fn normaliser_of(normaliser: Nullable<Vec<f64>>) -> Option<Vec<f64>> {
+    match normaliser {
+        Nullable::NotNull(v) => Some(v),
+        Nullable::Null => None,
     }
 }
 
@@ -50,32 +91,10 @@ fn separation_fit_rust(
     if keys.len() != values.len() {
         return Err(Error::Other("one value is needed per key".into()));
     }
-    let future = match future {
-        "rate" => FutureInflation::Rate(rate),
-        "index" => FutureInflation::Index(index(first, index_values, index_rate)?),
-        "trend" => FutureInflation::Trend {
-            periods: usize::try_from(trend_periods)
-                .ok()
-                .filter(|&p| p >= 2)
-                .ok_or_else(|| {
-                    Error::Other(format!(
-                        "trend_periods must be a whole number of at least 2, got {trend_periods}"
-                    ))
-                })?,
-        },
-        other => {
-            return Err(Error::Other(format!(
-                "future must be \"rate\", \"index\" or \"trend\", got {other:?}"
-            )));
-        }
-    };
     let model = Separation {
         kind: kind_of(kind)?,
-        normaliser: match normaliser {
-            Nullable::NotNull(v) => Some(v),
-            Nullable::Null => None,
-        },
-        future,
+        normaliser: normaliser_of(normaliser),
+        future: future_of(future, rate, first, index_values, index_rate, trend_periods)?,
     };
     let fits = model.fit_segments(&triangle.inner, column).map_err(to_r)?;
     let choice: Vec<(&str, &str)> = keys
@@ -126,7 +145,34 @@ fn separation_fit_rust(
     ))
 }
 
+/// The arithmetic separation method of `column` of a single-segment
+/// triangle as a Poisson GLM (`Separation::glm`), with the future set as
+/// `separation_fit_rust` takes it. Fails with a normaliser, with the Rust
+/// message (`separation_glm()` has no geometric kind to choose).
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn separation_glm_rust(
+    triangle: &Triangle,
+    column: &str,
+    normaliser: Nullable<Vec<f64>>,
+    future: &str,
+    rate: f64,
+    first: &str,
+    index_values: Vec<f64>,
+    index_rate: Nullable<f64>,
+    trend_periods: i32,
+) -> Result<OdpGlmFit> {
+    let model = Separation {
+        kind: SeparationKind::Arithmetic,
+        normaliser: normaliser_of(normaliser),
+        future: future_of(future, rate, first, index_values, index_rate, trend_periods)?,
+    };
+    let inner = model.glm(&triangle.inner, column).map_err(to_r)?;
+    Ok(OdpGlmFit { inner })
+}
+
 extendr_module! {
     mod reserving_separation;
     fn separation_fit_rust;
+    fn separation_glm_rust;
 }
