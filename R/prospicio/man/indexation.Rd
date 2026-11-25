@@ -43,11 +43,6 @@ month (a \code{"YYYY-MM"} label or a date).}
 \item{column}{The column to restate; \code{NULL} for the triangle's only one.}
 
 \item{cells}{\code{\link[=future_cells]{future_cells()}} at the base level.}
-
-\item{draws}{A \link{predictive_distribution} of future cells at the base level.}
-
-\item{paths}{A list of \code{\link[=calendar_index]{calendar_index()}} objects, one per simulation, or
-\code{NULL}.}
 }
 \value{
 \code{indexation()}: an \code{indexation} with the properties \code{index} and

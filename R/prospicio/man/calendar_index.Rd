@@ -23,6 +23,11 @@ default) leaves a period past the last an error.}
 \item{index}{A \code{calendar_index}.}
 
 \item{month}{Months as \code{"YYYY-MM"} labels or dates.}
+
+\item{draws}{A \link{predictive_distribution} of future cells at the base level.}
+
+\item{paths}{A list of \code{\link[=calendar_index]{calendar_index()}} objects, one per simulation, or
+\code{NULL}.}
 }
 \value{
 \code{calendar_index()}: a \code{calendar_index} with the properties
