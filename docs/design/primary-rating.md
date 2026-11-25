@@ -202,6 +202,7 @@ impl Windows {
 pub fn earned_exposure(policies: &[Policy], windows: &Windows, kind: PeriodKind,
                        method: EarningMethod, valuation: Option<Date>) -> Result<EarnedTable>;
 pub struct EarnedRow { pub label, pub from, pub to, pub written, pub earned, pub unearned, pub in_force }
+pub fn in_force(policies: &[Policy], date: Date) -> f64;   // the book's in-force as of a date
 
 // prospicio_pricing::retro
 pub struct InsuranceCharge { /* the expected loss and the stop-loss; the limit's k if any */ }
@@ -346,19 +347,20 @@ Proposed for the user's acceptance; each has a recommendation.
   aggregate distribution, computed directly, equals `T (e + E)` to
   round-off; a plan with no minimum and an unreachable maximum has
   `b = e - (c - 1) E`.
-- **Earned exposure.** As built (PR 5): a day-by-day count over a fixed
+- **Earned exposure.** As built (PR 5): Werner and Modlin's chapter 4
+  exhibits, read from the CAS study note
+  (`validation/tests/pricing_earned_exposure.rs`): the six annual policies'
+  written exposures by calendar year (Table 4.7) and by policy year (4.9)
+  and their policy year earned exposures (4.13) exactly; their calendar
+  year earned exposures (4.11: 0.25, 3.25, 2.50) within two days in the
+  year, since the book counts months and the daily method counts days
+  (92/365 for its 0.25); the in-force exposures as of three dates (4.15)
+  exactly, by `in_force`; and the same for its six-month policies (4.18 to
+  4.22). Exact parity on the earned tables needs a method on the book's
+  half-month grid, proposed for PR 6. Also a day-by-day count over a fixed
   book of 60 policies with terms of three months to two years across leap
-  days, by label and quarter, to 1e-9
-  (`validation/tests/pricing_earned_exposure.rs`), and six annual policies
-  written a quarter apart, in the manner of Werner and Modlin's chapter 4,
-  against exact day counts and, within two days in the year, the figures
-  a count of months gives (0.25, 3.25, 2.5 by calendar year). The book's
-  own exhibit was not at hand in the cloud session, so its numbers are not
-  transcribed and no parity with it is claimed; when the user supplies
-  the exhibit it becomes a reference file. Still to come from the book:
-  its premium examples with a mid-term change in chapter 5 (PR 6). Twenty-fourths against daily on policies written at
-  mid-month, where they agree. Totals: the earned amounts over all
-  windows sum to the written amount net of cancellations.
+  days, by label and quarter, to 1e-9. Still to come from the book: its
+  premium examples with a mid-term change in chapter 5 (PR 6).
 - **Modifications.** Worked exhibits from the CAS study note on
   individual risk rating (Fisher, McTaggart, Petker and Pettingell) and
   from the bureaus' public explanatory material. These texts are the
@@ -395,7 +397,9 @@ Stacked, each on the one before:
 5. `earned::Date`, `Policy`, `Windows` and `earned_exposure` with the
    daily method, by calendar or policy period and as of a valuation date;
    allow-list entries (reason: bound in PR 6b). Done.
-6. Endorsements, cancellations and the twenty-fourths method.
+6. Endorsements, cancellations and the twenty-fourths method, and
+   earning on the book's half-month grid (`ratemaking::year_fraction`),
+   which reproduces chapter 4's earned tables exactly.
 6b. Python and R bindings for `earned` (`[earned-bindings]`).
 7. `emod::SplitPlan`; bindings; a reference exhibit.
 8. `emod::ExperienceRatioPlan`; bindings; a reference exhibit; the Done

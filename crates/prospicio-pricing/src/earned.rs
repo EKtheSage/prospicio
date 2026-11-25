@@ -392,6 +392,33 @@ impl Windows {
     }
 }
 
+/// The amount in force on `date`: the sum of the amounts of the policies
+/// with an effective date on or before it and an expiration after it
+/// (Werner and Modlin's in-force exposure as of a date, a snapshot with no
+/// regard to how long each policy runs).
+///
+/// A window's `in_force` in an [`EarnedTable`] is this on the window's
+/// last day.
+///
+/// ```
+/// use prospicio_pricing::earned::{Date, Policy, in_force};
+///
+/// let d = |y, m, day| Date::new(y, m, day).unwrap();
+/// let policies = [
+///     Policy::new(d(2010, 10, 1), d(2011, 10, 1), 1.0).unwrap(),
+///     Policy::new(d(2011, 1, 1), d(2012, 1, 1), 1.0).unwrap(),
+/// ];
+/// assert_eq!(in_force(&policies, d(2011, 1, 1)), 2.0);
+/// assert_eq!(in_force(&policies, d(2011, 10, 1)), 1.0); // the first has expired
+/// ```
+pub fn in_force(policies: &[Policy], date: Date) -> f64 {
+    policies
+        .iter()
+        .filter(|p| p.in_force_at(date))
+        .map(Policy::amount)
+        .sum()
+}
+
 /// One window's figures for one label: [`EarnedTable::rows`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct EarnedRow {
@@ -626,7 +653,7 @@ mod tests {
     }
 
     /// Six annual policies of one exposure each, written a quarter apart
-    /// from 1 October 2010, in the manner of Werner and Modlin's chapter 4.
+    /// from 1 October 2010: Werner and Modlin's chapter 4 (Table 4.7).
     fn six_policies() -> Vec<Policy> {
         [
             (2010, 10),

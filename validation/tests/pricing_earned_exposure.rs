@@ -142,3 +142,85 @@ fn policy_periods_as_of_a_date_split_what_the_calendar_periods_earned() {
         }
     }
 }
+
+/// Werner and Modlin's six policies of chapter 4 (*Basic Ratemaking*, 5th
+/// ed., Tables 4.7 to 4.15): one exposure each, effective a quarter apart
+/// from 1 October 2010, for `months` months. The book writes the
+/// expiration as the last day in force; here it is the day after.
+fn werner_modlin(months: u8, amount: f64) -> Vec<Policy> {
+    [(2010, 10), (2011, 1), (2011, 4), (2011, 7), (2011, 10), (2012, 1)]
+        .into_iter()
+        .map(|(year, month)| {
+            let end = month + months;
+            let expiration = if end > 12 {
+                Date::new(year + 1, end - 12, 1)
+            } else {
+                Date::new(year, end, 1)
+            }
+            .unwrap();
+            Policy::new(Date::new(year, month, 1).unwrap(), expiration, amount).unwrap()
+        })
+        .collect()
+}
+
+fn by_year(policies: &[Policy], kind: PeriodKind, valuation: Option<Date>) -> Vec<[f64; 2]> {
+    earned_exposure(
+        policies,
+        &Windows::years(2010, 2012).unwrap(),
+        kind,
+        EarningMethod::Daily,
+        valuation,
+    )
+    .unwrap()
+    .rows()
+    .iter()
+    .map(|r| [r.written, r.earned])
+    .collect()
+}
+
+#[test]
+fn werner_modlin_chapter_4_annual_policies() {
+    let policies = werner_modlin(12, 1.0);
+    // As of 12/31/12, which is a valuation date of 1 January 2013.
+    let valuation = Some(Date::new(2013, 1, 1).unwrap());
+
+    // Table 4.7, calendar year written exposures, and Table 4.11, earned.
+    // The book counts months (a quarter of a policy is 0.25); exact days
+    // give 92/365 for the same quarter, within two days in the year.
+    let calendar = by_year(&policies, PeriodKind::Calendar, valuation);
+    for (row, (written, earned)) in calendar.iter().zip([(1.0, 0.25), (4.0, 3.25), (1.0, 2.50)]) {
+        assert_eq!(row[0], written);
+        assert!((row[1] - earned).abs() < 6e-3, "{} against {earned}", row[1]);
+    }
+    // Tables 4.9 and 4.13, policy year written and earned exposures: all
+    // six policies have expired by the valuation date.
+    let policy = by_year(&policies, PeriodKind::Policy, valuation);
+    for (row, written) in policy.iter().zip([1.0, 4.0, 1.0]) {
+        assert_eq!(row[0], written);
+        assert!((row[1] - written).abs() < 1e-12);
+    }
+    // Table 4.15, in-force exposure as of 01/01/11, 06/15/11 and 01/01/12.
+    let on = |y, m, d| prospicio_pricing::earned::in_force(&policies, Date::new(y, m, d).unwrap());
+    assert_eq!([on(2011, 1, 1), on(2011, 6, 15), on(2012, 1, 1)], [2.0, 3.0, 4.0]);
+}
+
+#[test]
+fn werner_modlin_chapter_4_six_month_policies() {
+    // Tables 4.18 to 4.21: each six-month policy is half an exposure.
+    let policies = werner_modlin(6, 0.5);
+    let valuation = Some(Date::new(2013, 1, 1).unwrap());
+    let calendar = by_year(&policies, PeriodKind::Calendar, valuation);
+    for (row, (written, earned)) in calendar.iter().zip([(0.5, 0.25), (2.0, 2.00), (0.5, 0.75)]) {
+        assert_eq!(row[0], written);
+        assert!((row[1] - earned).abs() < 6e-3, "{} against {earned}", row[1]);
+    }
+    let policy = by_year(&policies, PeriodKind::Policy, valuation);
+    for (row, written) in policy.iter().zip([0.5, 2.0, 0.5]) {
+        assert_eq!(row[0], written);
+        assert!((row[1] - written).abs() < 1e-12);
+    }
+    // Table 4.22 counts houses insured, one a policy, whatever the term.
+    let houses = werner_modlin(6, 1.0);
+    let on = |y, m, d| prospicio_pricing::earned::in_force(&houses, Date::new(y, m, d).unwrap());
+    assert_eq!([on(2011, 1, 1), on(2011, 6, 15), on(2012, 1, 1)], [2.0, 2.0, 2.0]);
+}
