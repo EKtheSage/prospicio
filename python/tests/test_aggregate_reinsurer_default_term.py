@@ -101,6 +101,11 @@ def test_the_errors():
     for n_years in (0, 1, 3):
         with pytest.raises(ValueError):
             panel.apply_term(term, n_years)
+    for n_years in (2**40, 2**64 - 1):
+        with pytest.raises(ValueError, match="needs components in every year"):
+            panel.apply_term(term, n_years)
+        with pytest.raises(ValueError, match="needs components in every year"):
+            panel.by_reinsurer_term(term, n_years)
     with pytest.raises(ValueError, match="path-year"):
         panel.with_driver([1.0] * 30).apply_term(term, 2)
     with pytest.raises(ValueError):

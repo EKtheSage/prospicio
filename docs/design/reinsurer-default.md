@@ -306,11 +306,13 @@ exactly `1..=n_years`, a one-year result, and a driver without
 `n_paths * n_years` values; `apply` refuses a term and names
 `apply_term`. The provenance gains `default_term_years`, and
 `default_streams` reads "3 << 62 plus the path". With a constant
-probability `p` and years whose drivers are independent (independent
-default, or the factor ranked on independent years), a reinsurer is in
-default by year `t` with probability `1 - (1 - p)^t`; a driver correlated
-across a path's years would change that, since the factors of one path
-would then move together. Python binds `Panel.apply_term(result, n_years,
+probability `p` and independent default, a reinsurer is in default by
+year `t` with probability `1 - (1 - p)^t`. With the factor this holds
+only when the years' drivers are independent and identically
+distributed: the ranks are taken over all path-years together, so a
+driver that trends or changes in spread from year to year moves defaults
+between years, and a driver correlated across a path's years moves one
+path's factors together. Python binds `Panel.apply_term(result, n_years,
 seed=0)` and `by_reinsurer_term`, R `apply_panel_term(panel, result,
 n_years, seed = 0)` and `panel_by_reinsurer_term()` (after
 `apply_tower_term()`), and R's `reinsurer_panel` gains a `reinsurers`

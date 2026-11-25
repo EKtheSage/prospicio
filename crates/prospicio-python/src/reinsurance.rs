@@ -3676,10 +3676,13 @@ impl PyPanel {
     /// driver ranked among all path-years (the gross loss, or a driver given
     /// path-major: year ``t`` of path ``j`` at ``j * n_years + t``, from 0).
     /// Path ``j`` draws from its own stream, its years in order, so a term
-    /// of one year draws as :meth:`apply` does on that year. With
-    /// independent default (correlation 0, or a driver independent from
-    /// year to year) and probability ``p``, a reinsurer is in default by
-    /// year ``t`` with probability ``1 - (1 - p)**t``.
+    /// of one year draws as :meth:`apply` does on that year. With a
+    /// constant probability ``p`` and independent default (correlation 0),
+    /// a reinsurer is in default by year ``t`` with probability
+    /// ``1 - (1 - p)**t``. With a correlation above 0 this holds only when
+    /// the years' drivers are independent and identically distributed: the
+    /// ranks are taken over all path-years together, so a driver that
+    /// trends from year to year moves defaults between years.
     ///
     /// The result has the input's components, copied bit for bit, then for
     /// each year in turn the components :meth:`apply` adds, with the year

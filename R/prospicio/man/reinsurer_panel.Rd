@@ -103,10 +103,13 @@ each year in default the collateral still held is set against that
 year's exposure, and what it covered is gone for the later years. Each
 path-year's factor comes from its driver ranked among all path-years (a
 driver is given path-major: year \code{t} of path \code{j} at \code{(j - 1) * n_years + t}). Each path draws from its own stream, its years in order, so a term
-of one year draws as \code{apply_panel()} does on that year. With independent
-default (correlation 0, or a driver independent from year to year) and
-probability \code{p}, a reinsurer is in default by year \code{t} with probability
-\code{1 - (1 - p)^t}.
+of one year draws as \code{apply_panel()} does on that year. With a constant
+probability \code{p} and independent default (correlation 0), a reinsurer is
+in default by year \code{t} with probability \code{1 - (1 - p)^t}. With a
+correlation above 0 this holds only when the years' drivers are
+independent and identically distributed: the ranks are taken over all
+path-years together, so a driver that trends from year to year moves
+defaults between years.
 
 The lines of a layer the panel names must sum to 1 (to 1e-9), and every
 layer a line names must be in the result; both are checked when the

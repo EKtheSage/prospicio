@@ -351,10 +351,13 @@ impl Panel {
     /// The result has the input's components, copied bit for bit, then for
     /// each year in turn the components [`apply`](Self::apply) adds, with
     /// the year (`1..=n_years`) as the last key, as the term's own
-    /// components have it. With independent default (`rho = 0`, or a
-    /// driver independent from year to year) and probability `p`, a
-    /// reinsurer is in default by year `t` with probability `1 - (1 -
-    /// p)^t`.
+    /// components have it. With a constant probability `p` and
+    /// independent default (`rho = 0`), a reinsurer is in default by year
+    /// `t` with probability `1 - (1 - p)^t`. With `rho > 0` this holds only
+    /// when the years' drivers are independent and identically
+    /// distributed: the ranks are taken over all path-years together, so a
+    /// driver that trends or changes in spread from year to year moves
+    /// defaults between years.
     ///
     /// Fails as [`apply`](Self::apply) does, and on a result whose dims
     /// are not `["kind", "layer", "year"]` or whose years are not exactly
@@ -539,6 +542,16 @@ impl<'a> Overlay<'a> {
             }
             Some(n) => n,
         };
+        // Each year needs at least one component, so a term longer than the
+        // result's component count cannot match it; refusing it here also
+        // keeps a huge `n_years` from reaching the allocations below.
+        if term.is_some() && n_years > tower.n_components() {
+            return Err(Error::Data(format!(
+                "a term of {n_years} years needs components in every year, but the result \
+                 has only {} components",
+                tower.n_components()
+            )));
+        }
         // The year index of each component: 0 for a one-year result.
         let mut seen = vec![false; n_years];
         let mut year_of = Vec::with_capacity(tower.n_components());
@@ -1586,6 +1599,13 @@ mod tests {
         assert!(ok.apply_term(&term, 1, 1).is_err());
         assert!(ok.apply_term(&term, 3, 1).is_err());
         assert!(ok.apply_term(&term, 2, 1).is_ok());
+        // A term far longer than the result is refused before anything is
+        // allocated for its years, not aborted.
+        for huge in [1 << 40, usize::MAX] {
+            let err = ok.apply_term(&term, huge, 1).unwrap_err().to_string();
+            assert!(err.contains("needs components in every year"), "{err}");
+            assert!(ok.by_reinsurer_term(&term, huge, 1).is_err());
+        }
         // Year 2 of the term alone has years outside 1..=1.
         let year2 = term.select("year", &[KeyValue::Int(2)]).unwrap();
         assert!(ok.apply_term(&year2, 1, 1).is_err());
