@@ -1,5 +1,6 @@
 //! `prospicio.distributions`: wrappers over `prospicio_prob` distributions.
 
+use numpy::PyArray2;
 use prospicio_core::StreamRng;
 use prospicio_prob::{
     ComponentKey, Counting, DiscretizationReport, Dist, Distribution, Empirical, Grid, KeyValue,
@@ -9,6 +10,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+use crate::arrays::{Matrix, view};
 use crate::to_py;
 
 /// Lognormal distribution: ``ln X ~ Normal(meanlog, sdlog**2)``.
@@ -1555,22 +1557,12 @@ impl PyPredictiveDistribution {
 #[pymethods]
 impl PyPredictiveDistribution {
     #[new]
-    fn new(
-        dims: Vec<String>,
-        components: Vec<Vec<KeyArg>>,
-        draws: Vec<Vec<f64>>,
-    ) -> PyResult<Self> {
-        let width = components.len();
-        if let Some(bad) = draws.iter().position(|row| row.len() != width) {
-            return Err(PyValueError::new_err(format!(
-                "row {bad} has {} values, expected one per component ({width})",
-                draws[bad].len()
-            )));
-        }
+    fn new(dims: Vec<String>, components: Vec<Vec<KeyArg>>, draws: Matrix<'_>) -> PyResult<Self> {
+        let draws = draws.row_major(components.len(), "component")?;
         let inner = PredictiveDistribution::from_draws(
             dims,
             components.into_iter().map(key_from_py).collect(),
-            draws.into_iter().flatten().collect(),
+            draws,
             Provenance::new("python"),
         )
         .map_err(to_py)?;
@@ -1716,6 +1708,35 @@ impl PyPredictiveDistribution {
             .chunks_exact(self.inner.n_components())
             .map(<[f64]>::to_vec)
             .collect()
+    }
+
+    /// All draws as a read-only NumPy array, one row per simulation and one
+    /// column per component, in the order of ``components()``. The array is
+    /// a view of the distribution's own buffer: nothing is copied, and it
+    /// keeps the distribution alive (#978). ``numpy.array(pd.to_numpy())``
+    /// gives a writeable copy.
+    ///
+    /// Returns
+    /// -------
+    /// numpy.ndarray
+    ///     Float64, of shape ``(n_sims, n_components)``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> import numpy as np
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> pd = PredictiveDistribution(["line"], [("A",), ("B",)], np.array([[1.0, 2.0], [3.0, 4.5]]))
+    /// >>> pd.to_numpy()
+    /// array([[1. , 2. ],
+    ///        [3. , 4.5]])
+    /// >>> pd.to_numpy().flags.writeable
+    /// False
+    fn to_numpy<'py>(slf: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let pd = &slf.get().inner;
+        let (rows, cols) = (pd.n_sims(), pd.n_components());
+        let data = pd.draw_matrix();
+        // SAFETY: the class is frozen, and its draws never change or move.
+        unsafe { view(slf.clone().into_any(), data, rows, cols) }
     }
 
     /// Joins distributions of different models into one portfolio, with a
