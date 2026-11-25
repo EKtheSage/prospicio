@@ -104,6 +104,75 @@ pub fn var_linear_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     Ok(sorted[j] + (h - j as f64) * (sorted[j + 1] - sorted[j]))
 }
 
+/// R's four-ulp fuzz in `quantile`'s types 1 to 9.
+const R_FUZZ: f64 = 4.0 * f64::EPSILON;
+
+/// `p` as R's `quantile` takes it: within `100` ulps of `[0, 1]`, and
+/// clamped to it.
+fn r_probability(p: f64) -> Result<f64> {
+    let eps = 100.0 * f64::EPSILON;
+    if !(-eps..=1.0 + eps).contains(&p) {
+        return Err(Error::InvalidProbability(p));
+    }
+    Ok(p.clamp(0.0, 1.0))
+}
+
+/// R's `quantile(x, p, type = 1)` of sorted values, bit for bit: the
+/// inverse of the empirical cdf, as [`var_sorted`], but with R's four-ulp
+/// fuzz on `n p`, so that a `p` computed as `j / n` with a rounding error
+/// gives R's order statistic, and with a `p` up to 100 ulps outside
+/// `[0, 1]` clamped to it, as R does. For code that must match R's
+/// numbers (ALEPlot's grid, #837); a risk measure uses [`var_sorted`].
+///
+/// `sorted` must be non-empty and sorted ascending; this is checked only in
+/// debug builds.
+///
+/// ```
+/// use prospicio_prob::risk::quantile_type1_sorted;
+///
+/// let x = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+/// // 10 * 0.3 is 3.0000000000000004: R's fuzz still gives the third value.
+/// assert_eq!(quantile_type1_sorted(&x, 0.1 * 3.0), Ok(3.0));
+/// assert_eq!(quantile_type1_sorted(&x, 1.0 + 1e-15), Ok(10.0));
+/// ```
+pub fn quantile_type1_sorted(sorted: &[f64], p: f64) -> Result<f64> {
+    let p = r_probability(p)?;
+    check_draws(sorted)?;
+    debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
+    let n = sorted.len();
+    let nppm = n as f64 * p;
+    let j = (nppm + R_FUZZ).floor();
+    let k = if nppm > j + R_FUZZ { j + 1.0 } else { j };
+    Ok(sorted[(k.max(1.0) as usize).min(n) - 1])
+}
+
+/// R's default `quantile(x, p, type = 7)` of sorted values, bit for bit:
+/// [`var_linear_sorted`]'s interpolation with R's four-ulp fuzz on the
+/// position `(n - 1) p`, and a `p` up to 100 ulps outside `[0, 1]` clamped
+/// to it. For code that must match R's numbers (ALEPlot's distances,
+/// #837).
+///
+/// `sorted` must be non-empty and sorted ascending; this is checked only in
+/// debug builds.
+///
+/// ```
+/// use prospicio_prob::risk::quantile_type7_sorted;
+///
+/// let x = [1.0, 2.0, 3.0, 4.0];
+/// assert_eq!(quantile_type7_sorted(&x, 0.5), Ok(2.5));
+/// assert_eq!(quantile_type7_sorted(&x, 1.0), Ok(4.0));
+/// ```
+pub fn quantile_type7_sorted(sorted: &[f64], p: f64) -> Result<f64> {
+    let p = r_probability(p)?;
+    check_draws(sorted)?;
+    debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
+    let n = sorted.len();
+    let h = (n - 1) as f64 * p;
+    let lo = ((h + R_FUZZ).floor() as usize).min(n - 1);
+    let hi = (lo + 1).min(n - 1);
+    Ok(sorted[lo] + (h - lo as f64) * (sorted[hi] - sorted[lo]))
+}
+
 /// Tail value at risk as the mean of [`var_linear_sorted`]'s piecewise
 /// linear quantile function over `[p, 1]`: trapezoids on the positions
 /// `0, ..., n - 1`, from `h = p (n - 1)` to the largest draw.
@@ -553,6 +622,25 @@ fn is_sorted(x: &[f64]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn r_quantiles_take_rs_fuzz_and_range() {
+        let x: Vec<f64> = (1..=10).map(f64::from).collect();
+        // n p = 3.0000000000000004: R gives the third value, the exact
+        // inverse cdf the fourth.
+        let p = 0.1 * 3.0;
+        assert_eq!(quantile_type1_sorted(&x, p), Ok(3.0));
+        assert_eq!(var_sorted(&x, p), Ok(4.0));
+        assert_eq!(quantile_type1_sorted(&x, 0.0), Ok(1.0));
+        assert_eq!(quantile_type1_sorted(&x, 0.25), Ok(3.0));
+        assert_eq!(quantile_type7_sorted(&x, 0.25), Ok(3.25));
+        assert_eq!(quantile_type7_sorted(&x, -1e-15), Ok(1.0));
+        assert_eq!(quantile_type7_sorted(&x, 1.0 + 1e-15), Ok(10.0));
+        assert!(quantile_type1_sorted(&x, 1.001).is_err());
+        assert!(quantile_type7_sorted(&x, f64::NAN).is_err());
+        assert!(quantile_type7_sorted(&[], 0.5).is_err());
+        assert_eq!(quantile_type7_sorted(&[2.0], 0.7), Ok(2.0));
+    }
 
     #[test]
     fn the_linear_quantile_of_draws_with_a_nan_is_nan() {
