@@ -13,11 +13,45 @@ NULL
 # errors, attributed to the user-facing call: by default the function that
 # called rust_result(). Methods pass `call` themselves, because their own
 # frame's call names the method (or, under S7 dispatch, cannot be deparsed).
+# A setting a method does not support comes back from Rust with the prefix
+# "[prospicio_not_supported] " (`NOT_SUPPORTED_PREFIX` in
+# crates/prospicio-r/src/reserving/common.rs), since an extendr error carries
+# only a message: it is removed and the error signalled with the condition
+# class `prospicio_not_supported` (#580, reserving-v02.md decision 29), which
+# tryCatch(..., prospicio_not_supported = ) catches.
 rust_result <- function(x, call = sys.call(-1)) {
   if (inherits(x, "extendr_error")) {
-    stop(errorCondition(as.character(x$value), call = call))
+    msg <- as.character(x$value)
+    prefix <- "[prospicio_not_supported] "
+    if (startsWith(msg, prefix)) {
+      stop(errorCondition(substring(msg, nchar(prefix) + 1L),
+                          class = "prospicio_not_supported", call = call))
+    }
+    stop(errorCondition(msg, call = call))
   }
   x
+}
+
+# The generated wrappers in extendr-wrappers.R pass the result of every
+# native function whose Rust signature returns a Result through this (#957),
+# so a Rust error is raised even where the calling code forgets
+# rust_result(). When the wrapper runs inside a rust_result() or
+# reserving_result() call of its caller, as in `rust_result(f_rust(x), call)`,
+# the error is returned as it is, so that call's own attribution stands;
+# otherwise it is raised in the name of the wrapper's caller.
+rust_native_result <- function(x) {
+  if (!inherits(x, "extendr_error")) {
+    return(x)
+  }
+  wrapper <- sys.parent(1)
+  caller <- sys.parent(2)
+  for (k in seq_len(max(wrapper - caller - 1L, 0L)) + caller) {
+    f <- sys.function(k)
+    if (identical(f, rust_result) || identical(f, reserving_result)) {
+      return(x)
+    }
+  }
+  rust_result(x, call = sys.call(if (caller > 0) caller else wrapper))
 }
 
 # The other spellings Python and Excel accept for an option (#834), mapped
@@ -946,7 +980,8 @@ reordered <- function(x, dim, out, index) {
 group_spearman <- function(x, dim) {
   groups <- as.character(unique(x@keys[[dim]]))
   m <- rust_result(group_spearman_rust(x@ptr, dim))
-  matrix(m, length(groups), byrow = TRUE, dimnames = list(groups, groups))
+  dimnames(m) <- list(groups, groups)
+  m
 }
 
 #' Blend predictive distributions

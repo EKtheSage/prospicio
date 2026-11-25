@@ -174,7 +174,8 @@ ledger_stack <- function(ledgers, impacts = NULL) {
   cols <- c("EX", "SD", "CV", "Skew", sprintf("P%02d", c(1, 5, 10, 25, 50, 75, 90, 95, 99)))
   part <- function(k) vapply(impacts, function(imp) as.character(imp[[k]]), character(1))
   out <- rust_result(pnl_stack_rust(ledgers, part(1), part(2), part(3)))
-  m <- matrix(out$values, ncol = length(cols), byrow = TRUE, dimnames = list(NULL, cols))
+  m <- out$values
+  colnames(m) <- cols
   data.frame(label = out$label, m, row.names = NULL, stringsAsFactors = FALSE)
 }
 

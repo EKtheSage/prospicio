@@ -13,7 +13,7 @@ use prospicio_pricing::cashflow::{
 };
 use prospicio_pricing::returns::TieredFee;
 
-use crate::{to_r, whole};
+use crate::{row_major, to_r, whole};
 
 fn bad(what: &str, value: &str, choices: &str) -> Error {
     Error::Other(format!("unknown {what} {value:?}; use {choices}"))
@@ -369,7 +369,7 @@ impl Cashflow {
         }
         .map_err(to_r)?;
         Ok(list!(
-            flows = out.flows().to_vec(),
+            flows = row_major(out.flows(), out.months()),
             months = out.months() as i32,
             funded = out.funded().to_vec(),
             opening = out.opening().to_vec(),
@@ -447,8 +447,10 @@ impl Cashflow {
         let f = v
             .run(u, commission, self::conditioning(conditioning)?)
             .map_err(to_r)?;
+        let rows = f.kept().len();
         let since = if has_flows {
-            Robj::from(f.since_inception_rows().map_err(to_r)?)
+            let v = f.since_inception_rows().map_err(to_r)?;
+            Robj::from(row_major(&v, v.len().checked_div(rows).unwrap_or(0)))
         } else {
             Robj::from(())
         };
@@ -463,9 +465,9 @@ impl Cashflow {
             kept = kept,
             ultimate = f.ultimate().to_vec(),
             nav = f.nav(),
-            flows = out.flows().to_vec(),
+            flows = row_major(out.flows(), out.months()),
             months = out.months() as i32,
-            forward_rows = f.forward_rows(),
+            forward_rows = row_major(&f.forward_rows(), out.months()),
             since_inception_rows = since,
             forward_moic = f.forward_moic().map_err(to_r)?,
             since_inception_moic = since_moic,
@@ -517,7 +519,7 @@ impl Cashflow {
             expected = r.expected,
             ratio = r.ratio,
             percentile = r.percentile,
-            quantiles = r.quantiles
+            quantiles = row_major(&r.quantiles, levels.len())
         ))
     }
 

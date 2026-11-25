@@ -412,8 +412,9 @@ fn co_statistics_rust(
         .map_err(to_r)?;
     let columns: Vec<&[f64]> = items.chunks(n).collect();
     let stats = grid.co_statistics(driver, &columns, rule).map_err(to_r)?;
-    let values: Vec<f64> = stats.iter().flat_map(|st| st.values.clone()).collect();
-    Ok(list!(names = grid.co_names(), values = values))
+    let names = grid.co_names();
+    let values = RMatrix::new_matrix(stats.len(), names.len(), |r, c| stats[r].values[c]);
+    Ok(list!(names = names, values = values))
 }
 
 /// Risk ratios of draws: `names` and `values`.
