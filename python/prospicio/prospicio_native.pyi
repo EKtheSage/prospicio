@@ -2330,6 +2330,7 @@ class BayesGlmFit:
     """
     A sampled Bayesian GLM, from ``BayesGlm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def chains(self, /) -> int:
         """
@@ -2349,6 +2350,25 @@ class BayesGlmFit:
     def divergences(self, /) -> int:
         """
         Divergent transitions among the kept draws.
+        """
+    @staticmethod
+    def from_json(text: str) -> BayesGlmFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        BayesGlmFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     def log_likelihood(self, /, design: Design, y: Sequence[float]) -> list[list[float]]:
         """
@@ -2457,6 +2477,31 @@ class BayesGlmFit:
         Returns
         -------
         list of dict
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the specification with its
+        priors and sampler settings, the names, and every kept draw of the
+        coefficients and the dispersion, numbers bit for bit (#978), so a
+        loaded fit summarizes and predicts as this one. ``from_json`` reads
+        it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import BayesGlm, BayesGlmFit, Design
+        >>> x = [(i % 4) - 1.5 for i in range(20)]
+        >>> y = [[1.0, 2.0, 3.0, 5.0][i % 4] for i in range(20)]
+        >>> d = Design([[1.0] * 20, x], ["(Intercept)", "x"])
+        >>> fit = BayesGlm("poisson", chains=1, tune=50, draws=20).fit(d, y)
+        >>> BayesGlmFit.from_json(fit.to_json()).posterior_mean == fit.posterior_mean
+        True
+        >>> pickle.loads(pickle.dumps(fit)).predict(d) == fit.predict(d)
+        True
         """
 
 @final
