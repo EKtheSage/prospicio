@@ -131,6 +131,8 @@ credibility_premiums_rust <- function(ratios, weights, nrow, ncol, levels, withi
 
 credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p, k, cv)
 
+credibility_weighted_rust <- function(estimate, credibility, complement) .Call(wrap__credibility_weighted_rust, estimate, credibility, complement)
+
 crps_rust <- function(draws, y) .Call(wrap__crps_rust, draws, y)
 
 cumulative_loss_ratio_rust <- function(loss_ratios, premiums) .Call(wrap__cumulative_loss_ratio_rust, loss_ratios, premiums)
@@ -168,6 +170,8 @@ elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, lin
 elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, relax, theta, power, link_power) .Call(wrap__elastic_net_fit_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, relax, theta, power, link_power)
 
 elpd_loo_rust <- function(log_lik, n, r_eff) .Call(wrap__elpd_loo_rust, log_lik, n, r_eff)
+
+elpd_lppd_rust <- function(log_lik, n) .Call(wrap__elpd_lppd_rust, log_lik, n)
 
 elpd_waic_rust <- function(log_lik, n) .Call(wrap__elpd_waic_rust, log_lik, n)
 
@@ -385,6 +389,8 @@ pnl_occurrence_source <- function(frequency, step, probs, occurrence, points_a, 
 
 pnl_program_rust <- function(net_loss, net_combined_ratio, expense_ratio, ceded_loss, share, combined_ratio, stated, aggregate, stated_premium) .Call(wrap__pnl_program_rust, net_loss, net_combined_ratio, expense_ratio, ceded_loss, share, combined_ratio, stated, aggregate, stated_premium)
 
+pnl_stack_rust <- function(ledgers, impact_labels, impact_targets, impact_bases) .Call(wrap__pnl_stack_rust, ledgers, impact_labels, impact_targets, impact_bases)
+
 poisson_tail_rust <- function(expected, observed) .Call(wrap__poisson_tail_rust, expected, observed)
 
 pooled_trend_rust <- function(triangle, column) .Call(wrap__pooled_trend_rust, triangle, column)
@@ -561,7 +567,11 @@ time_splits_rust <- function(periods, n_test, window, horizon, gap, step) .Call(
 
 trend_by_age_rust <- function(triangle, column) .Call(wrap__trend_by_age_rust, triangle, column)
 
+trend_factor_rust <- function(rate, years) .Call(wrap__trend_factor_rust, rate, years)
+
 trend_fit_rust <- function(times, values, kind) .Call(wrap__trend_fit_rust, times, values, kind)
+
+trended_present_rates_rust <- function(prior_indicated, prior_implemented, trend) .Call(wrap__trended_present_rates_rust, prior_indicated, prior_implemented, trend)
 
 tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rust, values, probs, p)
 

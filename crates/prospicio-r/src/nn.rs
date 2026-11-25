@@ -8,7 +8,7 @@ use prospicio_models::{Family, Fitted, Link, Model};
 use prospicio_nn::onnx::{OnnxModel, OnnxPredictor, OnnxTensor, OutputScale};
 use prospicio_nn::{
     AttentionCann, AttentionCannFit, Cann, CannFit, EarlyStopping, Head, TabularNet, TabularNetFit,
-    Target,
+    Target, TokenAttention,
 };
 
 use crate::distributions::PredictiveDistribution;
@@ -241,7 +241,7 @@ impl AttentionCannModel {
     /// `rows`, `heads`, `tokens` and `weights` row-major `[row][head][token]`.
     fn attention(&self, x: &[f64], names: Vec<String>) -> Result<List> {
         let d = design(x, names, &[], &[])?;
-        let a = self.inner.attention(&d).map_err(to_r)?;
+        let a: TokenAttention = self.inner.attention(&d).map_err(to_r)?;
         Ok(list!(
             rows = a.rows as f64,
             heads = a.heads as f64,

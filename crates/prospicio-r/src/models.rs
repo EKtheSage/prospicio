@@ -2146,7 +2146,7 @@ fn elpd_list(e: prospicio_bayes::elpd::Elpd) -> List {
 fn elpd_loo_rust(log_lik: &[f64], n: f64, r_eff: &[f64]) -> Result<List> {
     let n = whole(n, "n")? as usize;
     let r = (!r_eff.is_empty()).then_some(r_eff);
-    let l = prospicio_bayes::elpd::loo(log_lik, n, r).map_err(to_r)?;
+    let l: prospicio_bayes::elpd::Loo = prospicio_bayes::elpd::loo(log_lik, n, r).map_err(to_r)?;
     Ok(list!(
         estimates = vec![l.estimate.elpd, l.estimate.se, l.estimate.p, l.estimate.ic],
         pointwise = l.estimate.pointwise,
@@ -2274,6 +2274,14 @@ fn read_stan_csv_rust(paths: Vec<String>) -> Result<List> {
         sampler_names = sampler_names,
         warmup_dropped = fit.warmup_dropped as f64
     ))
+}
+
+/// The log pointwise predictive density `sum_i log mean_s p(y_i | theta_s)`
+/// of a row-major `S × n` log-likelihood.
+#[extendr]
+fn elpd_lppd_rust(log_lik: &[f64], n: f64) -> Result<f64> {
+    let n = whole(n, "n")? as usize;
+    prospicio_bayes::elpd::lppd(log_lik, n).map_err(to_r)
 }
 
 #[extendr]
@@ -2717,7 +2725,8 @@ fn loo_pit_rust(
     seed: f64,
 ) -> Result<List> {
     let r = (!r_eff.is_empty()).then_some(r_eff);
-    let p = ppc::loo_pit(observed, replicated, log_lik, r, whole(seed, "seed")?).map_err(to_r)?;
+    let p: ppc::LooPit =
+        ppc::loo_pit(observed, replicated, log_lik, r, whole(seed, "seed")?).map_err(to_r)?;
     Ok(list!(pit = p.pit, pareto_k = p.pareto_k, ks = p.ks))
 }
 
@@ -3387,6 +3396,7 @@ extendr_module! {
     fn time_splits_rust;
     fn mcmc_diagnostics_rust;
     fn elpd_loo_rust;
+    fn elpd_lppd_rust;
     fn elpd_waic_rust;
     fn draws_summary_rust;
     fn draws_loo_rust;

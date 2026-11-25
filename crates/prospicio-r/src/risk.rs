@@ -6,7 +6,7 @@ use prospicio_core::StreamRng;
 use prospicio_prob::capital::{AllocationMethod, LevelAllocation, LevelMeasure};
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
-use prospicio_prob::mvn::{MvnSettings, mvn_probability};
+use prospicio_prob::mvn::{MvnEstimate, MvnSettings, mvn_probability};
 use prospicio_prob::qmc::{Scramble, Sobol};
 use prospicio_prob::statistics::{QuantileMethod, StatisticsGrid, TvarMethod};
 use prospicio_prob::{
@@ -1362,7 +1362,8 @@ fn mvn_cdf_rust(
         scrambles: whole(scrambles, "scrambles")? as usize,
         seed: whole(seed, "seed")?,
     };
-    let e = mvn_probability(lower, upper, correlation, settings).map_err(Error::Other)?;
+    let e: MvnEstimate =
+        mvn_probability(lower, upper, correlation, settings).map_err(Error::Other)?;
     Ok(vec![
         e.value,
         e.error,

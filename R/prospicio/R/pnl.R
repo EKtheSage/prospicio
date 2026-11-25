@@ -172,16 +172,10 @@ ledger_ratios <- function(ledger) as.data.frame(ledger$ptr$ratios(), stringsAsFa
 #' @export
 ledger_stack <- function(ledgers, impacts = NULL) {
   cols <- c("EX", "SD", "CV", "Skew", sprintf("P%02d", c(1, 5, 10, 25, 50, 75, 90, 95, 99)))
-  stats <- lapply(ledgers, function(l) rust_result(l$ptr$result_stats()))
-  for (imp in impacts) {
-    if (!all(imp[2:3] %in% names(stats))) {
-      stop(sprintf("impact %s names a ledger that is not stacked", imp[[1]]))
-    }
-    stats[[imp[[1]]]] <- stats[[imp[[2]]]] - stats[[imp[[3]]]]
-  }
-  m <- do.call(rbind, stats)
-  colnames(m) <- cols
-  data.frame(label = names(stats), m, row.names = NULL, stringsAsFactors = FALSE)
+  part <- function(k) vapply(impacts, function(imp) as.character(imp[[k]]), character(1))
+  out <- rust_result(pnl_stack_rust(ledgers, part(1), part(2), part(3)))
+  m <- matrix(out$values, ncol = length(cols), byrow = TRUE, dimnames = list(NULL, cols))
+  data.frame(label = out$label, m, row.names = NULL, stringsAsFactors = FALSE)
 }
 
 #' @rdname pnl_ledger
