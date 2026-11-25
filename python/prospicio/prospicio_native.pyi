@@ -14005,7 +14005,7 @@ class EventSet:
         (2, [15.0], [])
         """
     @staticmethod
-    def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0, labels: dict |None = None) -> EventSet:
+    def from_long(years: Incomplete |Sequence[int], losses: Incomplete |Sequence[float], n_years: int, seed: int = 0, labels: dict |None = None) -> EventSet:
         """
         Years of losses in long form, as a year loss table lists them: one
         row per loss with its year, an index from 0 to ``n_years - 1``.
@@ -14039,7 +14039,7 @@ class EventSet:
         {'peril': ['quake']}
         """
     @staticmethod
-    def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0, times: Sequence[Sequence[float]] |None = None) -> EventSet:
+    def from_years(years: Sequence[Incomplete |Sequence[float]], sums_insured: Sequence[Incomplete |Sequence[float]] |None = None, seed: int = 0, times: Sequence[Incomplete |Sequence[float]] |None = None) -> EventSet:
         """
         Years of losses from elsewhere (your own simulation, or a
         catastrophe model's event loss table by year), optionally with the
@@ -14071,7 +14071,7 @@ class EventSet:
         ([2, 0, 1], [50.0])
         """
     @staticmethod
-    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None, losses_negative: bool = False) -> EventSet:
+    def from_ylt(years: Incomplete |Sequence[int], losses: Incomplete |Sequence[float], *, slots: Incomplete |Sequence[int] |None = None, times: Incomplete |Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None, losses_negative: bool = False) -> EventSet:
         """
         Years of losses from a year loss table's columns, checked and
         expanded to a run's simulations.
@@ -14084,13 +14084,13 @@ class EventSet:
         
         Parameters
         ----------
-        years : list of int
+        years : list of int or numpy.ndarray
             Each row's year, from 1.
-        losses : list of float
+        losses : list of float or numpy.ndarray
             Finite and non-negative.
-        slots : list of int, optional
+        slots : list of int or numpy.ndarray, optional
             Each row's event slot, which orders a year's rows.
-        times : list of float, optional
+        times : list of float or numpy.ndarray, optional
             Each row's time of loss, the fraction of its year elapsed, in
             ``[0, 1]``. Rows are then ordered by time within a year, the
             slot (or the given order) breaking ties, and the events carry
@@ -14354,6 +14354,31 @@ class EventSet:
         Returns
         -------
         list of float or None
+        """
+    def to_numpy(self, /) -> tuple[Incomplete, Incomplete]:
+        """
+        Every year's losses as read-only NumPy arrays, without copying
+        (#978): ``losses``, all the losses year after year, and ``offsets``,
+        where each year starts, so year ``i``'s losses are
+        ``losses[offsets[i]:offsets[i + 1]]``. Both are views of the event
+        set's own buffers and keep it alive.
+        
+        Returns
+        -------
+        tuple of numpy.ndarray
+            ``(losses, offsets)``: float64 of length ``offsets[-1]``, and
+            uint64 of length ``n_sims + 1``, from 0.
+        
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[1.0, 2.0], [], [3.5]])
+        >>> losses, offsets = e.to_numpy()
+        >>> losses, offsets
+        (array([1. , 2. , 3.5]), array([0, 2, 2, 3], dtype=uint64))
+        >>> np.add.reduceat(losses, offsets[:-1].astype(np.intp))[np.diff(offsets) > 0]
+        array([3. , 3.5])
         """
     def totals(self, /) -> PredictiveDistribution:
         """

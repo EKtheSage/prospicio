@@ -5,8 +5,8 @@
 //! its numbers in one immutable row-major buffer hands NumPy a read-only
 //! view of that buffer, which keeps the container alive and copies nothing.
 
-use numpy::ndarray::ArrayView2;
-use numpy::{PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::ndarray::{ArrayView1, ArrayView2};
+use numpy::{Element, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -68,6 +68,44 @@ impl Vector<'_> {
             },
             Vector::List(v) => v,
         }
+    }
+}
+
+/// An argument of non-negative integers: a 1-D int64 NumPy array, read in
+/// one pass, or a sequence of ints.
+#[derive(FromPyObject)]
+pub(crate) enum Indices<'py> {
+    Array(PyReadonlyArray1<'py, i64>),
+    List(Vec<u64>),
+}
+
+impl Indices<'_> {
+    /// The values; `what` names the argument in the error for a negative
+    /// one.
+    pub(crate) fn into_u64(self, what: &str) -> PyResult<Vec<u64>> {
+        match self {
+            Indices::Array(a) => a
+                .as_array()
+                .iter()
+                .map(|&v| {
+                    u64::try_from(v).map_err(|_| {
+                        PyValueError::new_err(format!("{what} must be non-negative, got {v}"))
+                    })
+                })
+                .collect(),
+            Indices::List(v) => Ok(v),
+        }
+    }
+
+    /// The values as indices.
+    pub(crate) fn into_usize(self, what: &str) -> PyResult<Vec<usize>> {
+        self.into_u64(what)?
+            .into_iter()
+            .map(|v| {
+                usize::try_from(v)
+                    .map_err(|_| PyValueError::new_err(format!("{what} {v} is too large")))
+            })
+            .collect()
     }
 }
 
@@ -134,6 +172,23 @@ pub(crate) unsafe fn view<'py>(
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
     // SAFETY: the caller's contract; NumPy holds a reference to `owner`.
     let array = unsafe { PyArray2::borrow_from_array(&shape, owner) };
+    array.getattr("flags")?.setattr("writeable", false)?;
+    Ok(array)
+}
+
+/// A read-only 1-D NumPy view of `data`, which `owner` holds.
+///
+/// # Safety
+///
+/// As for [`view`]: `data` lives in the frozen `owner` and never changes
+/// or moves.
+pub(crate) unsafe fn view1<'py, T: Element>(
+    owner: Bound<'py, PyAny>,
+    data: &[T],
+) -> PyResult<Bound<'py, PyArray1<T>>> {
+    let shape = ArrayView1::from(data);
+    // SAFETY: the caller's contract; NumPy holds a reference to `owner`.
+    let array = unsafe { PyArray1::borrow_from_array(&shape, owner) };
     array.getattr("flags")?.setattr("writeable", false)?;
     Ok(array)
 }

@@ -1930,6 +1930,18 @@ impl EventSet {
         &self.losses[self.offsets[sim]..self.offsets[sim + 1]]
     }
 
+    /// Every year's losses, year after year: year `sim`'s are
+    /// `losses()[offsets()[sim]..offsets()[sim + 1]]`.
+    pub fn losses(&self) -> &[f64] {
+        &self.losses
+    }
+
+    /// Where each year's losses start in [`losses`](Self::losses), with
+    /// the total number of losses last: `n_sims() + 1` values, from 0.
+    pub fn offsets(&self) -> &[usize] {
+        &self.offsets
+    }
+
     /// Number of losses in each year.
     pub fn counts(&self) -> Vec<usize> {
         self.offsets.windows(2).map(|w| w[1] - w[0]).collect()
