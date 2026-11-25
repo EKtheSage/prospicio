@@ -4,7 +4,11 @@
 
 use prospicio_core::{Error, Result};
 use prospicio_math::fft::Complex64;
-use prospicio_math::special::ln_gamma;
+use prospicio_math::integrate::adaptive_gauss_legendre;
+use prospicio_math::roots::{Stop, illinois, try_bisect};
+use prospicio_math::special::{ln_gamma, norm_cdf};
+
+use crate::distribution::{Distribution, check_probability};
 
 use std::f64::consts::PI;
 
@@ -531,6 +535,273 @@ impl Stable {
     }
 }
 
+/// The integrals of the stable law's cumulative distribution function are
+/// taken to this absolute accuracy.
+const CDF_TOL: f64 = 1e-14;
+
+/// `(P(Z ≤ z), P(Z > z))` for the standard S0 law `S(α, β, 1, 0; 0)`, each
+/// computed directly, so that neither tail loses precision to `1 − p`:
+/// Nolan's (1997) integral representation, `Z ≤ ζ` by reflection,
+/// `F(z; α, β) = 1 − F(−z; α, −β)`.
+fn standard_tails(alpha: f64, beta: f64, z: f64) -> (f64, f64) {
+    if alpha == 2.0 {
+        return (norm_cdf(z / 2f64.sqrt()), norm_cdf(-z / 2f64.sqrt()));
+    }
+    let swap = |(c, s): (f64, f64)| (s, c);
+    if alpha == 1.0 {
+        if beta == 0.0 {
+            // Cauchy, each tail as an arctangent of `1/|z|`.
+            return if z > 0.0 {
+                let s = (1.0 / z).atan() / PI;
+                (1.0 - s, s)
+            } else if z < 0.0 {
+                let c = (-1.0 / z).atan() / PI;
+                (c, 1.0 - c)
+            } else {
+                (0.5, 0.5)
+            };
+        }
+        if beta < 0.0 {
+            return swap(standard_tails(alpha, -beta, -z));
+        }
+        // β > 0: F(z) = (1/π) ∫_{−π/2}^{π/2} exp(−e^{−πz/(2β)} V(θ)) dθ,
+        // integrated in the distance `d` from the nearer end, so that
+        // `cos θ = sin d` keeps its precision there.
+        // In logarithms, so that `e^{−πz/(2β)}` and the exponential in `V`
+        // do not underflow and overflow separately.
+        let ln_c = -PI * z / (2.0 * beta);
+        // `h = π/2 + βθ` and `tan θ` from the distance `d` to either end.
+        let g = |h: f64, d: f64, tan: f64| {
+            (ln_c + (2.0 / PI * h / d.sin()).ln() + h * tan / beta).exp()
+        };
+        let left = |d: f64| g((1.0 - beta) * PI / 2.0 + beta * d, d, -1.0 / d.tan());
+        let right = |d: f64| g((1.0 + beta) * PI / 2.0 - beta * d, d, 1.0 / d.tan());
+        let (i1, j1) = integrals(left, 0.0, PI / 2.0);
+        let (i2, j2) = integrals(right, 0.0, PI / 2.0);
+        let (i, j) = (i1 + i2, j1 + j2);
+        return (i / PI, j / PI);
+    }
+    let tan = (PI * alpha / 2.0).tan();
+    let zeta = -beta * tan;
+    // θ₀ = arctan(β tan(πα/2)) / α, exact at |β| = 1, where an end of the
+    // range is a zero of the integrand's factors.
+    let theta0 = if beta.abs() == 1.0 {
+        beta * if alpha < 1.0 {
+            PI / 2.0
+        } else {
+            PI / 2.0 - PI / alpha
+        }
+    } else {
+        (beta * tan).atan() / alpha
+    };
+    let at_zeta = (PI / 2.0 - theta0) / PI;
+    if z < zeta {
+        return swap(standard_tails(alpha, -beta, -z));
+    }
+    if z == zeta {
+        return (at_zeta, 1.0 - at_zeta);
+    }
+    let e = alpha / (alpha - 1.0);
+    let ln_scale = e * (z - zeta).ln() + (alpha * theta0).cos().ln() / (alpha - 1.0);
+    // In the distances `a = θ + θ₀` and `b = π/2 − θ` from the two ends,
+    // `V = (sin b / sin αa)^(α/(α−1)) sin(αa + b) / sin b`, each factor
+    // accurate near its end; each half of the range is integrated in the
+    // distance from its own end, and `g` is formed in logarithms.
+    let width = PI / 2.0 + theta0;
+    let g = |a: f64, b: f64| {
+        (ln_scale + e * (b.sin() / (alpha * a).sin()).ln() + ((alpha * a + b).sin() / b.sin()).ln())
+            .exp()
+    };
+    let (i1, j1) = integrals(|a| g(a, width - a), 0.0, width / 2.0);
+    let (i2, j2) = integrals(|b| g(width - b, b), 0.0, width / 2.0);
+    // I = ∫ exp(−g), J = ∫ (1 − exp(−g)) over [−θ₀, π/2], I + J = π/2 + θ₀.
+    let (i, j) = (i1 + i2, j1 + j2);
+    if alpha < 1.0 {
+        (at_zeta + i / PI, j / PI)
+    } else {
+        (at_zeta + j / PI, i / PI)
+    }
+}
+
+/// The midpoint of [`try_bisect`]'s final bracket.
+fn halve(lo: f64, hi: f64, stop: Stop, mut below: impl FnMut(f64) -> bool) -> f64 {
+    let Ok((a, b)) = try_bisect(lo, hi, stop, |x| {
+        Ok::<_, std::convert::Infallible>(below(x))
+    });
+    0.5 * (a + b)
+}
+
+/// `(∫ exp(−g), ∫ (1 − exp(−g)))` over `[lo, hi]` for a monotone exponent
+/// `g ≥ 0`, infinite or undefined at an end read as its limit there.
+///
+/// Each integrand changes from near 0 to near 1 in a band that can be
+/// narrow, and far in a tail one of them is tiny everywhere and lives near
+/// the end where `g` is least. So the range is split where `g` crosses
+/// fixed levels and levels above its least value, and each piece is
+/// integrated adaptively, again to a tolerance relative to its first
+/// estimate when that is small.
+fn integrals(g: impl Fn(f64) -> f64, lo: f64, hi: f64) -> (f64, f64) {
+    let g = |t: f64| {
+        let v = g(t);
+        if v.is_nan() {
+            f64::INFINITY
+        } else {
+            v.max(0.0)
+        }
+    };
+    if hi <= lo {
+        return (0.0, 0.0);
+    }
+    let nudge = 1e-12 * (hi - lo);
+    let (g_lo, g_hi) = (g(lo + nudge), g(hi - nudge));
+    let rising = g_hi >= g_lo;
+    let least = g_lo.min(g_hi);
+    let mut cuts = vec![lo, hi];
+    let levels = [0.01, 0.1, 1.0, 10.0]
+        .into_iter()
+        .chain([0.1, 1.0, 4.0, 10.0, 30.0, 100.0].map(|c| least + c));
+    for level in levels {
+        if level > g_lo.min(g_hi) && level < g_lo.max(g_hi) {
+            // The point where g crosses `level`: below it on the low side.
+            // A cut need not be exact, only near the crossing.
+            cuts.push(halve(lo + nudge, hi - nudge, Stop::absolute(1e-9), |t| {
+                (g(t) < level) == rising
+            }));
+        }
+    }
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup();
+    // A first pass to `CDF_TOL`; a second, only for a total below 0.1, to
+    // 1e-12 of that total, so that a far tail keeps its relative accuracy.
+    let total = |f: &dyn Fn(f64) -> f64| {
+        let rough: f64 = cuts
+            .windows(2)
+            .map(|w| adaptive_gauss_legendre(f, w[0], w[1], CDF_TOL * (w[1] - w[0]), 40))
+            .sum();
+        if rough > 1e-250 && rough < 0.1 {
+            let width = hi - lo;
+            cuts.windows(2)
+                .map(|w| {
+                    let tol = 1e-12 * rough * (w[1] - w[0]) / width;
+                    adaptive_gauss_legendre(f, w[0], w[1], tol, 30)
+                })
+                .sum()
+        } else {
+            rough
+        }
+    };
+    let i = total(&|t| (-g(t)).exp());
+    let j = total(&|t| -(-g(t)).exp_m1());
+    (i, j)
+}
+
+impl Stable {
+    /// `(P(X ≤ x), P(X > x))`.
+    fn tails(&self, x: f64) -> (f64, f64) {
+        if x.is_nan() {
+            return (f64::NAN, f64::NAN);
+        }
+        let (lo, hi) = self.support();
+        if x < lo {
+            return (0.0, 1.0);
+        }
+        if x >= hi {
+            return (1.0, 0.0);
+        }
+        let z = (x - self.loc0()) / self.scale;
+        let (c, s) = standard_tails(self.alpha, self.beta, z);
+        (c.clamp(0.0, 1.0), s.clamp(0.0, 1.0))
+    }
+}
+
+/// The stable law's distribution function by Nolan's (1997) integral
+/// representation, each tail computed on its own to about `1e-14`
+/// absolute, and its quantile by bisection on it. The mean and variance
+/// are infinite or undefined below `α = 2` and `α = 1` (see
+/// [`Stable::mean`]), so the summary statistics that need them do too.
+impl Distribution for Stable {
+    fn mean(&self) -> f64 {
+        Stable::mean(self)
+    }
+
+    fn variance(&self) -> f64 {
+        Stable::variance(self)
+    }
+
+    fn cdf(&self, x: f64) -> f64 {
+        self.tails(x).0
+    }
+
+    fn survival(&self, x: f64) -> f64 {
+        self.tails(x).1
+    }
+
+    fn quantile(&self, p: f64) -> Result<f64> {
+        check_probability(p)?;
+        let (lo, hi) = self.support();
+        if p == 0.0 {
+            return Ok(lo);
+        }
+        if p == 1.0 {
+            return Ok(hi);
+        }
+        // A score increasing in `x` and zero at the quantile: the log of the
+        // distribution function below the median and of the survival
+        // function above it, so that a far tail keeps its precision and its
+        // power law is near linear for the root finder.
+        let score = |x: f64| {
+            let (c, s) = self.tails(x);
+            if p <= 0.5 {
+                c.max(1e-300).ln() - p.ln()
+            } else {
+                (1.0 - p).ln() - s.max(1e-300).ln()
+            }
+        };
+        // A bracket from the centre outwards, the step growing fourfold.
+        let centre = self.loc0().clamp(lo, hi);
+        let f_centre = score(centre);
+        if f_centre == 0.0 {
+            return Ok(centre);
+        }
+        let up = f_centre < 0.0;
+        let (mut near, mut f_near) = (centre, f_centre);
+        let mut step = self.body_scale();
+        loop {
+            let far = if up {
+                (centre + step).min(hi)
+            } else {
+                (centre - step).max(lo)
+            };
+            if !far.is_finite() {
+                // Past the largest float: the quantile is beyond f64's range.
+                return Ok(far);
+            }
+            let f_far = score(far);
+            if (f_far >= 0.0) == up || far == lo || far == hi {
+                let (a, b, fa, fb) = if up {
+                    (near, far, f_near, f_far)
+                } else {
+                    (far, near, f_far, f_near)
+                };
+                let x = illinois(a, b, fa, fb, score);
+                if score(x).abs() <= 1e-13 {
+                    return Ok(x);
+                }
+                // Regula falsi can stall where the score bends hard (the
+                // light end of a one-sided law): finish by bisection.
+                let stop = Stop {
+                    max_steps: 400,
+                    absolute: 1e-15 * self.body_scale(),
+                    relative: 4e-16,
+                };
+                return Ok(halve(a, b, stop, |x| score(x) < 0.0));
+            }
+            (near, f_near) = (far, f_far);
+            step *= 4.0;
+        }
+    }
+}
+
 /// `δ₀ − δ₁`.
 fn location_shift(alpha: f64, beta: f64, scale: f64) -> f64 {
     if alpha == 1.0 {
@@ -669,5 +940,115 @@ mod tests {
         assert!((st.tail_constant() / (lam * th.powf(a)) - 1.0).abs() < 1e-12);
         assert_eq!(st.loc(), 600.0);
         assert!(Stable::from_compound_pareto(lam, 0.9, th, 1.0).is_err());
+    }
+
+    #[test]
+    fn the_distribution_function_matches_scipy() {
+        // scipy.stats.levy_stable.cdf (S1, its default), scipy 1.16.
+        let cases: [(f64, f64, f64, f64, f64, f64); 36] = [
+            (1.5, 0.5, 2.0, 1.0, -5.0, 0.03920759052742784),
+            (1.5, 0.5, 2.0, 1.0, -1.0, 0.3219871538583492),
+            (1.5, 0.5, 2.0, 1.0, 0.0, 0.46218656010166814),
+            (1.5, 0.5, 2.0, 1.0, 0.5, 0.5322046078223568),
+            (1.5, 0.5, 2.0, 1.0, 3.0, 0.7967806891350713),
+            (1.5, 0.5, 2.0, 1.0, 20.0, 0.9895258435629473),
+            (0.7, -0.3, 1.0, 0.0, -5.0, 0.15460731267444516),
+            (0.7, -0.3, 1.0, 0.0, -1.0, 0.4238623893483695),
+            (0.7, -0.3, 1.0, 0.0, 0.0, 0.741975078342593),
+            (0.7, -0.3, 1.0, 0.0, 0.5, 0.8173177988840885),
+            (0.7, -0.3, 1.0, 0.0, 3.0, 0.9103212782894183),
+            (0.7, -0.3, 1.0, 0.0, 20.0, 0.9707959198151488),
+            (1.0, 0.8, 1.5, -1.0, -5.0, 0.019941231896847524),
+            (1.0, 0.8, 1.5, -1.0, -1.0, 0.3367906527936897),
+            (1.0, 0.8, 1.5, -1.0, 0.0, 0.5091069682588063),
+            (1.0, 0.8, 1.5, -1.0, 0.5, 0.5764179460436523),
+            (1.0, 0.8, 1.5, -1.0, 3.0, 0.7708707262327552),
+            (1.0, 0.8, 1.5, -1.0, 20.0, 0.9551625746219026),
+            (0.5, 1.0, 1.0, 0.0, -5.0, 0.0),
+            (0.5, 1.0, 1.0, 0.0, -1.0, 0.0),
+            (0.5, 1.0, 1.0, 0.0, 0.0, 0.0),
+            (0.5, 1.0, 1.0, 0.0, 0.5, 0.15729920705028522),
+            (0.5, 1.0, 1.0, 0.0, 3.0, 0.5637028616507731),
+            (0.5, 1.0, 1.0, 0.0, 20.0, 0.8230632737581215),
+            (1.9, -1.0, 0.5, 0.0, -5.0, 0.001284492862568598),
+            (1.9, -1.0, 0.5, 0.0, -1.0, 0.08507177997488236),
+            (1.9, -1.0, 0.5, 0.0, 0.0, 0.47368421052631576),
+            (1.9, -1.0, 0.5, 0.0, 0.5, 0.7425401384601096),
+            (1.9, -1.0, 0.5, 0.0, 3.0, 0.9999962624439694),
+            (1.9, -1.0, 0.5, 0.0, 20.0, 1.0),
+            (1.2, 0.0, 1.0, 0.0, -5.0, 0.042285439635577404),
+            (1.2, 0.0, 1.0, 0.0, -1.0, 0.24663218873659032),
+            (1.2, 0.0, 1.0, 0.0, 0.0, 0.5),
+            (1.2, 0.0, 1.0, 0.0, 0.5, 0.6428420576949292),
+            (1.2, 0.0, 1.0, 0.0, 3.0, 0.9205024558200386),
+            (1.2, 0.0, 1.0, 0.0, 20.0, 0.9922810413566971),
+        ];
+        for (a, b, g, d, x, want) in cases {
+            let s = Stable::new(a, b, g, d, StableParameterization::S1).unwrap();
+            let (c, sf) = (Distribution::cdf(&s, x), Distribution::survival(&s, x));
+            assert!(
+                (c - want).abs() < 2e-8,
+                "{a} {b} {g} {d} at {x}: {c} against {want}"
+            );
+            assert!((c + sf - 1.0).abs() < 1e-12, "{c} + {sf}");
+        }
+    }
+
+    #[test]
+    fn closed_forms_and_far_tails() {
+        use prospicio_math::special::norm_cdf;
+        // Lévy: S(1/2, 1, c, μ; 1) has P(X ≤ x) = erfc(√(c / (2(x − μ)))).
+        let levy = Stable::new(0.5, 1.0, 2.0, 1.0, StableParameterization::S1).unwrap();
+        for x in [1.5, 3.0, 10.0, 1e3] {
+            let want = 2.0 * norm_cdf(-(2.0f64 / (x - 1.0)).sqrt());
+            assert!((Distribution::cdf(&levy, x) - want).abs() < 1e-12, "{x}");
+        }
+        assert_eq!(Distribution::cdf(&levy, 0.5), 0.0);
+        // Cauchy and normal.
+        let cauchy = Stable::new(1.0, 0.0, 2.0, 1.0, StableParameterization::S1).unwrap();
+        assert!(
+            (Distribution::survival(&cauchy, 1e9) - (2.0f64 / (1e9 - 1.0)).atan() / PI).abs()
+                < 1e-24
+        );
+        let normal = Stable::new(2.0, 0.0, 1.5, 0.0, StableParameterization::S1).unwrap();
+        assert!(
+            (Distribution::cdf(&normal, 1.0) - norm_cdf(1.0 / (1.5 * 2f64.sqrt()))).abs() < 1e-15
+        );
+        // The far right tail follows A x^(−α) without cancelling.
+        let s = Stable::new(1.5, 0.5, 1.0, 0.0, StableParameterization::S1).unwrap();
+        let x = 1e6;
+        let ratio = Distribution::survival(&s, x) / (s.tail_constant() * x.powf(-1.5));
+        assert!((ratio - 1.0).abs() < 1e-3, "{ratio}");
+    }
+
+    #[test]
+    fn the_quantile_inverts_the_distribution_function() {
+        for (a, b) in [
+            (1.5, 0.5),
+            (0.7, -0.3),
+            (1.0, 0.8),
+            (0.5, 1.0),
+            (1.9, -1.0),
+            (1.0, 0.0),
+        ] {
+            let s = Stable::new(a, b, 2.0, 1.0, StableParameterization::S1).unwrap();
+            for p in [1e-4, 0.01, 0.3, 0.5, 0.9, 0.999] {
+                let q = s.quantile(p).unwrap();
+                // Each tail against its own probability, relatively.
+                let (back, want) = if p <= 0.5 {
+                    (Distribution::cdf(&s, q), p)
+                } else {
+                    (Distribution::survival(&s, q), 1.0 - p)
+                };
+                assert!(
+                    (back / want - 1.0).abs() < 1e-11,
+                    "{a} {b} at {p}: {q} gives {back}"
+                );
+            }
+        }
+        let levy = Stable::new(0.5, 1.0, 1.0, 0.0, StableParameterization::S1).unwrap();
+        assert_eq!(levy.quantile(0.0).unwrap(), 0.0);
+        assert_eq!(levy.quantile(1.0).unwrap(), f64::INFINITY);
+        assert!(levy.quantile(1.5).is_err());
     }
 }
