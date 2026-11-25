@@ -12,6 +12,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyString};
 
+use crate::distributions::PyPredictiveDistribution;
 use crate::odp_glm::PyOdpGlmFit;
 use crate::reserving::{PyChainLadderFit, PyTriangle, err, pick, py_repr};
 
@@ -670,6 +671,64 @@ impl PyIndexation {
         let (ix, data) = (&self.inner, &cells.inner);
         let inner = py.detach(|| ix.reinflate(data)).map_err(err)?;
         Ok(PyReinflated { inner })
+    }
+
+    /// Simulated future increments at the base level re-inflated to the
+    /// money of their payment periods, one index path per simulation.
+    ///
+    /// ``draws`` is keyed by cell, an ``origin`` dimension and an age in
+    /// months named ``development`` (as ``OdpGlmFit.predict_distribution``
+    /// gives) or ``age``; other dimensions are kept. Simulation ``i`` is
+    /// scaled by ``paths[i]``'s ``I(p) / I(base)``; without ``paths`` every
+    /// simulation takes this indexation's index, as ``reinflate`` does.
+    /// ``aggregate(["origin"])`` of the result gives the reserves.
+    ///
+    /// Parameters
+    /// ----------
+    /// draws : PredictiveDistribution
+    /// paths : list of CalendarIndex, optional
+    ///     One per simulation.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///     The same components and simulation order.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``paths`` is not one per simulation, the draws are not keyed
+    ///     by origin and age, or a path does not cover the base or a cell's
+    ///     payment period.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> from prospicio.reserving import CalendarIndex, Indexation
+    /// >>> draws = PredictiveDistribution(
+    /// ...     ["origin", "development"], [(2022, 24)], [[100.0], [200.0]]
+    /// ... )
+    /// >>> at_2022 = Indexation(CalendarIndex("2022", [1.0], future_rate=0.05), "2022-01")
+    /// >>> paths = [CalendarIndex("2022", [1.0], future_rate=r) for r in (0.10, 0.0)]
+    /// >>> [round(x[0], 6) for x in at_2022.reinflate_draws(draws, paths).draw_matrix()]
+    /// [110.0, 200.0]
+    #[pyo3(signature = (draws, paths = None))]
+    fn reinflate_draws(
+        &self,
+        py: Python<'_>,
+        draws: PyRef<'_, PyPredictiveDistribution>,
+        paths: Option<Vec<PyRef<'_, PyCalendarIndex>>>,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let paths: Vec<CalendarIndex> = paths
+            .unwrap_or_default()
+            .iter()
+            .map(|p| p.inner.clone())
+            .collect();
+        let (ix, data) = (&self.inner, &draws.inner);
+        let inner = py
+            .detach(|| ix.reinflate_draws(data, &paths))
+            .map_err(err)?;
+        Ok(PyPredictiveDistribution { inner })
     }
 
     fn __getnewargs__(&self) -> (PyCalendarIndex, String) {

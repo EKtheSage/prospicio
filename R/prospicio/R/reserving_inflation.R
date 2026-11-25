@@ -39,6 +39,9 @@ month_labels <- function(x, arg = "month") {
 #'   default) leaves a period past the last an error.
 #' @param index A `calendar_index`.
 #' @param month Months as `"YYYY-MM"` labels or dates.
+#' @param draws A [predictive_distribution] of future cells at the base level.
+#' @param paths A list of [calendar_index()] objects, one per simulation, or
+#'   `NULL`.
 #' @returns `calendar_index()`: a `calendar_index` with the properties
 #'   `first`, `values`, `future_rate` and `periods` (the given periods, one
 #'   per value). `calendar_index_value()`: a numeric vector, one value per
@@ -108,6 +111,13 @@ calendar_index_value <- function(index, month) {
 #' * `reinflate()` takes future increments at the base level to the money of
 #'   their payment periods and sums them by origin. The index past its last
 #'   given period needs a `future_rate`.
+#' * `reinflate_draws()` takes simulated future increments at the base level
+#'   (a [predictive_distribution] keyed by `origin` and `development` or
+#'   `age`, as [odp_glm_fit]'s `predict_distribution()` gives) to the money
+#'   of their payment periods, simulation `i` by its own index path
+#'   `paths[[i]]`, or by `x`'s index in every simulation when `paths` is
+#'   `NULL` (design note decision 11). Aggregate the result by `origin` for
+#'   the reserves.
 #' * `indexation_factor()` is `I(p) / I(base)` at each month: the factor
 #'   that takes an amount at the base level to the money of `p`.
 #'
@@ -124,7 +134,8 @@ calendar_index_value <- function(index, month) {
 #'   [triangle()]. `reinflate()`: a `reinflated` with the properties `cells`
 #'   (the re-inflated [future_cells()]), `reserves` and `base_reserves` (one
 #'   per origin), `total_reserve` and `total_base_reserve`.
-#'   `indexation_factor()`: a numeric vector.
+#'   `reinflate_draws()`: a [predictive_distribution] with the same
+#'   components. `indexation_factor()`: a numeric vector.
 #' @seealso [calendar_index()], [future_cells()]
 #' @export
 #' @examples
@@ -314,4 +325,22 @@ reinflate <- function(x, cells) {
     reserves = out$reserves,
     base_reserves = out$base_reserves
   )
+}
+
+#' @rdname indexation
+#' @export
+reinflate_draws <- function(x, draws, paths = NULL) {
+  x <- check_indexation(x)
+  if (!S7::S7_inherits(draws, predictive_distribution)) {
+    stop("draws must be a predictive_distribution", call. = FALSE)
+  }
+  if (is.null(paths)) paths <- list()
+  if (!is.list(paths)) stop("paths must be a list of calendar_index() objects or NULL", call. = FALSE)
+  for (p in paths) check_calendar_index(p)
+  rate <- vapply(paths, function(p) if (is.null(p@future_rate)) NA_real_ else p@future_rate, 0)
+  ptr <- reserving_result(reinflate_draws_rust(
+    x@index@first, x@index@values, x@index@future_rate, x@base, draws@ptr,
+    vapply(paths, function(p) p@first, ""), lapply(paths, function(p) p@values), rate
+  ))
+  predictive_distribution(ptr = ptr)
 }

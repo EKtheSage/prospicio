@@ -7,6 +7,7 @@
 \alias{inflate}
 \alias{reinflated}
 \alias{reinflate}
+\alias{reinflate_draws}
 \title{Indexation of a triangle and re-inflation of its projection}
 \usage{
 indexation(index, base)
@@ -24,6 +25,8 @@ reinflated(
 )
 
 reinflate(x, cells)
+
+reinflate_draws(x, draws, paths = NULL)
 }
 \arguments{
 \item{index}{A \code{\link[=calendar_index]{calendar_index()}}.}
@@ -40,6 +43,11 @@ month (a \code{"YYYY-MM"} label or a date).}
 \item{column}{The column to restate; \code{NULL} for the triangle's only one.}
 
 \item{cells}{\code{\link[=future_cells]{future_cells()}} at the base level.}
+
+\item{draws}{A \link{predictive_distribution} of future cells at the base level.}
+
+\item{paths}{A list of \code{\link[=calendar_index]{calendar_index()}} objects, one per simulation, or
+\code{NULL}.}
 }
 \value{
 \code{indexation()}: an \code{indexation} with the properties \code{index} and
@@ -47,7 +55,8 @@ month (a \code{"YYYY-MM"} label or a date).}
 \code{\link[=triangle]{triangle()}}. \code{reinflate()}: a \code{reinflated} with the properties \code{cells}
 (the re-inflated \code{\link[=future_cells]{future_cells()}}), \code{reserves} and \code{base_reserves} (one
 per origin), \code{total_reserve} and \code{total_base_reserve}.
-\code{indexation_factor()}: a numeric vector.
+\code{reinflate_draws()}: a \link{predictive_distribution} with the same
+components. \code{indexation_factor()}: a numeric vector.
 }
 \description{
 An \code{\link[=calendar_index]{calendar_index()}} restates each increment of a triangle at the price
@@ -67,6 +76,13 @@ increment after a hole is restated at its own cell's period.
 \item \code{reinflate()} takes future increments at the base level to the money of
 their payment periods and sums them by origin. The index past its last
 given period needs a \code{future_rate}.
+\item \code{reinflate_draws()} takes simulated future increments at the base level
+(a \link{predictive_distribution} keyed by \code{origin} and \code{development} or
+\code{age}, as \link{odp_glm_fit}'s \code{predict_distribution()} gives) to the money
+of their payment periods, simulation \code{i} by its own index path
+\code{paths[[i]]}, or by \code{x}'s index in every simulation when \code{paths} is
+\code{NULL} (design note decision 11). Aggregate the result by \code{origin} for
+the reserves.
 \item \code{indexation_factor()} is \code{I(p) / I(base)} at each month: the factor
 that takes an amount at the base level to the money of \code{p}.
 }

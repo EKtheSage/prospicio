@@ -13,6 +13,7 @@ use prospicio_reserving::{
     CalendarIndex, FutureCell, FutureCells, Grain, Indexation, Month, Period, Reinflated,
 };
 
+use crate::distributions::PredictiveDistribution;
 use crate::odp_glm::OdpGlmFit;
 use crate::reserving::{ChainLadderFit, Triangle, to_r};
 
@@ -298,8 +299,52 @@ fn reinflate_rust(
     ))
 }
 
+/// The draws of `draws` re-inflated, one index path per simulation:
+/// `path_first`, `path_values` (a list of numeric vectors) and `path_rate`
+/// (`NA` for none) give the paths, all empty for the indexation's own
+/// index in every simulation.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn reinflate_draws_rust(
+    first: &str,
+    values: Vec<f64>,
+    rate: Nullable<f64>,
+    base: &str,
+    draws: &PredictiveDistribution,
+    path_first: Vec<String>,
+    path_values: List,
+    path_rate: Vec<f64>,
+) -> Result<PredictiveDistribution> {
+    let ix = indexation(first, values, rate, base)?;
+    if path_values.len() != path_first.len() || path_rate.len() != path_first.len() {
+        return Err(Error::Other(
+            "paths must give a first period, values and a rate each".into(),
+        ));
+    }
+    let paths = path_first
+        .iter()
+        .zip(path_values.values())
+        .zip(&path_rate)
+        .map(|((f, v), r)| {
+            let v: Vec<f64> = v
+                .as_real_vector()
+                .ok_or_else(|| Error::Other("a path's values must be numeric".into()))?;
+            // NA, a NaN here, for a path without a future rate.
+            let r = if r.is_nan() {
+                Nullable::Null
+            } else {
+                Nullable::NotNull(*r)
+            };
+            index(f, v, r)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let inner = ix.reinflate_draws(&draws.inner, &paths).map_err(to_r)?;
+    Ok(PredictiveDistribution { inner })
+}
+
 extendr_module! {
     mod reserving_inflation;
+    fn reinflate_draws_rust;
     fn calendar_index_periods_rust;
     fn calendar_index_value_rust;
     fn indexation_check_rust;

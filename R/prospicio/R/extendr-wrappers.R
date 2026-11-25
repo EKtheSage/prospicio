@@ -491,6 +491,8 @@ recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap
 
 recommend_portfolio_grid_rust <- function(frequencies, severities, log2, p, p_star) .Call(wrap__recommend_portfolio_grid_rust, frequencies, severities, log2, p, p_star)
 
+reinflate_draws_rust <- function(first, values, rate, base, draws, path_first, path_values, path_rate) .Call(wrap__reinflate_draws_rust, first, values, rate, base, draws, path_first, path_values, path_rate)
+
 reinflate_rust <- function(first, values, rate, base, origins, origin, age, valuation, value) .Call(wrap__reinflate_rust, first, values, rate, base, origins, origin, age, valuation, value)
 
 reliability_rust <- function(y, pred, weights, bins) .Call(wrap__reliability_rust, y, pred, weights, bins)

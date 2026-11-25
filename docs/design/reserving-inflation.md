@@ -48,6 +48,18 @@ recorded as decisions 11 to 16.
   names of `coefficients`), with the arithmetic separation as a Poisson GLM
   (`Separation.glm`, `separation_glm()`), in new module files, tested
   against every row of the Python `apc` reference.
+* **PR 8 is built** (branch `claude/project-thread-1n3mjz-979`,
+  2026-11-25), and with it the issue: `Indexation::reinflate_draws` takes
+  a `PredictiveDistribution` keyed by `origin` (a period, or a year as an
+  integer or label) and `development` or `age`, as
+  `OdpGlmFit::predict_distribution` gives, and one `CalendarIndex` per
+  simulation (none for the indexation's own index in every one), and
+  returns the same components in the money of each simulation's payment
+  periods, the draws' seed kept in the provenance. Python's
+  `Indexation.reinflate_draws(draws, paths=None)` and R's
+  `reinflate_draws(x, draws, paths = NULL)`. Checked by exact identities
+  with `reinflate` simulation by simulation on GenIns
+  (`validation/tests/reserving_inflation_draws.rs`).
 
 Lane: Reserving (`crates/prospicio-reserving/`; the
 bindings in new module files of `prospicio-python` and `prospicio-r`) ·

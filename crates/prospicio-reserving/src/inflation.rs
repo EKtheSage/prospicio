@@ -29,6 +29,7 @@ use crate::error::{Error, Result};
 use crate::odp_glm::OdpGlmFit;
 use crate::triangle::Triangle;
 use prospicio_core::{Lag, Month, Period};
+use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
 
 fn inflation_err<T>(why: impl Into<String>) -> Result<T> {
     Err(Error::Inflation(why.into()))
@@ -249,6 +250,139 @@ impl Indexation {
             reserves,
             base_reserves,
         })
+    }
+
+    /// Simulated future increments at the base level re-inflated to the
+    /// money of their payment periods, one index path per simulation
+    /// (decision 11).
+    ///
+    /// `draws` is keyed by cell: an `origin` dimension (a period, or a
+    /// year as an integer or a label) and an age in months, named
+    /// `development` (as [`OdpGlmFit::predict_distribution`]) or `age` (as
+    /// the compartmental model's paths); other dimensions (a line) are
+    /// kept. `paths` holds
+    /// one [`CalendarIndex`] per simulation, simulation `i`'s increments
+    /// scaled by `I_i(p) / I_i(base)`, or is empty for [`index`](Self::index)
+    /// in every simulation, which matches [`reinflate`](Self::reinflate) on
+    /// each simulation. The result has the same components and simulation
+    /// order; [`aggregate`](PredictiveDistribution::aggregate) by `origin`
+    /// gives the re-inflated reserves.
+    ///
+    /// ```
+    /// use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
+    /// use prospicio_reserving::{CalendarIndex, Indexation, Month, Period};
+    ///
+    /// // One cell, origin 2022 at 24 months (paid in 2023), two simulations.
+    /// let draws = PredictiveDistribution::from_draws(
+    ///     vec!["origin".into(), "development".into()],
+    ///     vec![vec![KeyValue::Period(Period::year(2022)), KeyValue::Int(24)]],
+    ///     vec![100.0, 200.0],
+    ///     Provenance::new("example"),
+    /// )?;
+    /// let history = |rate| CalendarIndex::new(Period::year(2022), vec![1.0])?.with_future_rate(rate);
+    /// let at_2022 = Indexation { index: history(0.05)?, base: Month::january(2022) };
+    /// // Simulation 0 sees 10% inflation in 2023, simulation 1 sees none.
+    /// let paths = [history(0.10)?, history(0.0)?];
+    /// let out = at_2022.reinflate_draws(&draws, &paths)?;
+    /// assert!((out.row(0).unwrap()[0] - 110.0).abs() < 1e-9);
+    /// assert_eq!(out.row(1).unwrap()[0], 200.0);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// Fails with [`Error::Inflation`] if `paths` is neither empty nor one
+    /// per simulation, the draws have no origin or age dimension, a key is
+    /// not a period or year and an age in months, or a path does not cover
+    /// the base or a cell's payment period.
+    pub fn reinflate_draws(
+        &self,
+        draws: &PredictiveDistribution,
+        paths: &[CalendarIndex],
+    ) -> Result<PredictiveDistribution> {
+        let n_sims = draws.n_sims();
+        if !paths.is_empty() && paths.len() != n_sims {
+            return inflation_err(format!(
+                "{} index paths for {n_sims} simulations: give one per simulation, or none",
+                paths.len()
+            ));
+        }
+        let dims = draws.dims();
+        let position = |names: &[&str]| dims.iter().position(|d| names.contains(&d.as_str()));
+        let Some(o) = position(&["origin"]) else {
+            return inflation_err("the draws have no \"origin\" dimension");
+        };
+        let Some(a) = position(&["development", "age"]) else {
+            return inflation_err("the draws have no \"development\" or \"age\" dimension");
+        };
+        let valuations = draws
+            .components()
+            .iter()
+            .map(|key| {
+                let origin = match &key[o] {
+                    KeyValue::Period(p) => *p,
+                    KeyValue::Int(year) => match i32::try_from(*year) {
+                        Ok(y) => Period::year(y),
+                        Err(_) => {
+                            return inflation_err(format!("origin year {year} is out of range"));
+                        }
+                    },
+                    KeyValue::Text(label) => match label.trim().parse::<i32>() {
+                        Ok(y) => Period::year(y),
+                        Err(_) => {
+                            return inflation_err(format!(
+                                "origin {label:?} is not a period or a year"
+                            ));
+                        }
+                    },
+                };
+                let age = match &key[a] {
+                    KeyValue::Int(m) if *m >= 1 => *m,
+                    other => {
+                        return inflation_err(format!(
+                            "age {other} is not a positive number of months"
+                        ));
+                    }
+                };
+                Ok(origin.start().add_months(age - 1))
+            })
+            .collect::<Result<Vec<Month>>>()?;
+        let factors = |index: &CalendarIndex| -> Result<Vec<f64>> {
+            let base = index.value(self.base)?;
+            valuations
+                .iter()
+                .map(|&m| Ok(index.value(m)? / base))
+                .collect()
+        };
+        let fixed = if paths.is_empty() {
+            Some(factors(&self.index)?)
+        } else {
+            None
+        };
+        let width = valuations.len();
+        let mut out = draws.draw_matrix().to_vec();
+        for (i, row) in out.chunks_exact_mut(width).enumerate() {
+            let path;
+            let f = match &fixed {
+                Some(f) => f,
+                None => {
+                    path = factors(&paths[i])?;
+                    &path
+                }
+            };
+            for (x, k) in row.iter_mut().zip(f) {
+                *x *= k;
+            }
+        }
+        let provenance = Provenance::new("reinflate_draws")
+            .param("base", self.base)
+            .param("paths", if paths.is_empty() { 1 } else { paths.len() })
+            .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
+            .draws_from(draws.provenance());
+        Ok(PredictiveDistribution::from_draws(
+            dims.to_vec(),
+            draws.components().to_vec(),
+            out,
+            provenance,
+        )?)
     }
 }
 
