@@ -1577,6 +1577,54 @@ impl PyPredictiveDistribution {
         Ok(Self { inner })
     }
 
+    /// The distribution as a JSON document: dimensions, component keys,
+    /// provenance and draws, numbers bit for bit (#978). ``from_json``
+    /// reads it back; ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> pd = PredictiveDistribution(["line"], [("A",), ("B",)], [[1.0, 2.0], [3.0, 4.5]])
+    /// >>> back = PredictiveDistribution.from_json(pd.to_json())
+    /// >>> back.draw_matrix() == pd.draw_matrix() and back.components() == pd.components()
+    /// True
+    /// >>> pickle.loads(pickle.dumps(pd)).draw_matrix() == pd.draw_matrix()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A distribution from a document written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the text is not such a document, or is from a newer version.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: PredictiveDistribution::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// ``n_sims`` draws of a multivariate normal or lognormal joint.
     ///
     /// Simulation ``i`` draws only from stream ``i`` of ``seed``, so the

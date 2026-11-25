@@ -402,7 +402,9 @@ impl Glmm {
             q,
             integration: self.integration,
             nodes: match self.integration {
-                Integration::Quadrature { nodes } => gauss_hermite(nodes),
+                Integration::Quadrature { nodes } => {
+                    prospicio_math::integrate::gauss_hermite(nodes)
+                }
                 Integration::Laplace => (Vec::new(), Vec::new()),
             },
         };
@@ -1216,48 +1218,6 @@ impl Problem<'_> {
         }
         Ok(total)
     }
-}
-
-/// Gauss–Hermite nodes `x` and `log w + x²` for `∫ e^(-x²) f(x) dx`, by
-/// Newton's method on the orthonormal Hermite recurrence (Press et al.,
-/// *Numerical Recipes*, 4.6).
-fn gauss_hermite(n: usize) -> (Vec<f64>, Vec<f64>) {
-    let mut x = vec![0.0; n];
-    let mut w = vec![0.0; n];
-    let pim4 = std::f64::consts::PI.powf(-0.25);
-    let nf = n as f64;
-    let mut z = 0.0f64;
-    for i in 0..n.div_ceil(2) {
-        z = match i {
-            0 => (2.0 * nf + 1.0).sqrt() - 1.85575 * (2.0 * nf + 1.0).powf(-1.0 / 6.0),
-            1 => z - 1.14 * nf.powf(0.426) / z,
-            2 => 1.86 * z - 0.86 * x[0],
-            3 => 1.91 * z - 0.91 * x[1],
-            _ => 2.0 * z - x[i - 2],
-        };
-        let mut pp = 0.0;
-        for _ in 0..100 {
-            let (mut p1, mut p2) = (pim4, 0.0);
-            for j in 1..=n {
-                let p3 = p2;
-                p2 = p1;
-                let jf = j as f64;
-                p1 = z * (2.0 / jf).sqrt() * p2 - ((jf - 1.0) / jf).sqrt() * p3;
-            }
-            pp = (2.0 * nf).sqrt() * p2;
-            let z1 = z;
-            z = z1 - p1 / pp;
-            if (z - z1).abs() <= 1e-15 * z.abs().max(1.0) {
-                break;
-            }
-        }
-        x[i] = z;
-        x[n - 1 - i] = -z;
-        w[i] = 2.0 / (pp * pp);
-        w[n - 1 - i] = w[i];
-    }
-    let lw = x.iter().zip(&w).map(|(xi, wi)| wi.ln() + xi * xi).collect();
-    (x, lw)
 }
 
 /// Central-difference gradient of `f` at `x`.

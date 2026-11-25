@@ -41,9 +41,84 @@ pub fn gauss_legendre<E>(
     Ok(sum * half)
 }
 
+/// The `n`-point Gauss–Hermite rule for `∫ e^(-x²) f(x) dx`: the nodes `x`,
+/// in descending order, and `log w + x²` for each node's weight `w`, the
+/// scale on which a caller adds the log of `e^(x²) f(x)` without
+/// underflow. Found by Newton's method on the orthonormal Hermite
+/// recurrence (Press et al., *Numerical Recipes*, 4.6); exact for
+/// polynomials of degree up to `2n - 1`.
+///
+/// ```
+/// use prospicio_math::integrate::gauss_hermite;
+///
+/// let (x, lw) = gauss_hermite(5);
+/// // ∫ e^(-x²) x² dx = √π / 2.
+/// let m2: f64 = x.iter().zip(&lw).map(|(x, l)| (l - x * x).exp() * x * x).sum();
+/// assert!((m2 - std::f64::consts::PI.sqrt() / 2.0).abs() < 1e-13);
+/// ```
+pub fn gauss_hermite(n: usize) -> (Vec<f64>, Vec<f64>) {
+    let mut x = vec![0.0; n];
+    let mut w = vec![0.0; n];
+    let pim4 = std::f64::consts::PI.powf(-0.25);
+    let nf = n as f64;
+    let mut z = 0.0f64;
+    for i in 0..n.div_ceil(2) {
+        z = match i {
+            0 => (2.0 * nf + 1.0).sqrt() - 1.85575 * (2.0 * nf + 1.0).powf(-1.0 / 6.0),
+            1 => z - 1.14 * nf.powf(0.426) / z,
+            2 => 1.86 * z - 0.86 * x[0],
+            3 => 1.91 * z - 0.91 * x[1],
+            _ => 2.0 * z - x[i - 2],
+        };
+        let mut pp = 0.0;
+        for _ in 0..100 {
+            let (mut p1, mut p2) = (pim4, 0.0);
+            for j in 1..=n {
+                let p3 = p2;
+                p2 = p1;
+                let jf = j as f64;
+                p1 = z * (2.0 / jf).sqrt() * p2 - ((jf - 1.0) / jf).sqrt() * p3;
+            }
+            pp = (2.0 * nf).sqrt() * p2;
+            let z1 = z;
+            z = z1 - p1 / pp;
+            if (z - z1).abs() <= 1e-15 * z.abs().max(1.0) {
+                break;
+            }
+        }
+        x[i] = z;
+        x[n - 1 - i] = -z;
+        w[i] = 2.0 / (pp * pp);
+        w[n - 1 - i] = w[i];
+    }
+    let lw = x.iter().zip(&w).map(|(xi, wi)| wi.ln() + xi * xi).collect();
+    (x, lw)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gauss_hermite_integrates_polynomials() {
+        let (x, lw) = gauss_hermite(7);
+        let w: Vec<f64> = x
+            .iter()
+            .zip(&lw)
+            .map(|(xi, l)| (l - xi * xi).exp())
+            .collect();
+        let pi = std::f64::consts::PI;
+        let m = |k: i32| {
+            x.iter()
+                .zip(&w)
+                .map(|(xi, wi)| wi * xi.powi(k))
+                .sum::<f64>()
+        };
+        assert!((m(0) - pi.sqrt()).abs() < 1e-13);
+        assert!((m(2) - pi.sqrt() / 2.0).abs() < 1e-13);
+        assert!((m(4) - 3.0 * pi.sqrt() / 4.0).abs() < 1e-12);
+        assert!((m(12) - 10395.0 * pi.sqrt() / 64.0).abs() < 1e-9);
+    }
 
     #[test]
     fn integrates_smooth_functions() {

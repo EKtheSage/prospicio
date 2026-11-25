@@ -48,11 +48,12 @@ use arrow_array::{Array, ArrayRef, Float64Array, RecordBatch};
 use arrow_ipc::reader::FileReader;
 use arrow_ipc::writer::FileWriter;
 use arrow_schema::{ArrowError, DataType, Field, Schema};
-use prospicio_core::{Grain, Month, Period};
 use serde_json::{Value, json};
 
-use crate::predictive::{ComponentKey, KeyValue, PredictiveDistribution};
-use crate::provenance::Provenance;
+use crate::predictive::{ComponentKey, PredictiveDistribution};
+use crate::predictive_json::{
+    component_key_from_json, key_value_to_json, provenance_from_json, provenance_to_json,
+};
 
 /// Schema metadata key naming the format.
 pub const FORMAT_KEY: &str = "risk_rs.format";
@@ -202,7 +203,8 @@ fn from_batches(
         .as_array()
         .and_then(|a| a.iter().map(|d| d.as_str().map(String::from)).collect())
         .ok_or_else(|| format_error(format!("{DIMS_KEY} is not an array of strings")))?;
-    let provenance = provenance_from_json(&parse_json(get(PROVENANCE_KEY)?, PROVENANCE_KEY)?)?;
+    let provenance = provenance_from_json(&parse_json(get(PROVENANCE_KEY)?, PROVENANCE_KEY)?)
+        .map_err(format_error)?;
 
     let mut components = Vec::with_capacity(schema.fields().len());
     for field in schema.fields() {
@@ -216,7 +218,8 @@ fn from_batches(
         let raw = field.metadata().get(COMPONENT_KEY).ok_or_else(|| {
             format_error(format!("column {:?} has no {COMPONENT_KEY}", field.name()))
         })?;
-        components.push(component_key_from_json(&parse_json(raw, COMPONENT_KEY)?)?);
+        components
+            .push(component_key_from_json(&parse_json(raw, COMPONENT_KEY)?).map_err(format_error)?);
     }
 
     let n_components = components.len();
@@ -260,157 +263,14 @@ fn field_name(key: &ComponentKey) -> String {
         .join("/")
 }
 
-/// Spelled out rather than taken from `Grain`'s `Display`, so the file
-/// format cannot change with it.
-fn grain_code(grain: Grain) -> &'static str {
-    match grain {
-        Grain::Month => "M",
-        Grain::Quarter => "Q",
-        Grain::Semester => "S",
-        Grain::Year => "Y",
-    }
-}
-
-fn key_value_to_json(v: &KeyValue) -> Value {
-    match v {
-        KeyValue::Int(i) => json!({ "int": i }),
-        KeyValue::Text(s) => json!({ "text": s }),
-        KeyValue::Period(p) => json!({ "period": {
-            "start": p.start().to_string(),
-            "grain": grain_code(p.grain()),
-        }}),
-    }
-}
-
-fn component_key_from_json(v: &Value) -> Result<ComponentKey, IpcError> {
-    v.as_array()
-        .ok_or_else(|| format_error(format!("{COMPONENT_KEY} is not an array")))?
-        .iter()
-        .map(key_value_from_json)
-        .collect()
-}
-
-fn key_value_from_json(v: &Value) -> Result<KeyValue, IpcError> {
-    let bad = || format_error(format!("{v} is not a key value"));
-    let obj = v.as_object().filter(|o| o.len() == 1).ok_or_else(bad)?;
-    let (tag, inner) = obj.iter().next().ok_or_else(bad)?;
-    match tag.as_str() {
-        "int" => inner.as_i64().map(KeyValue::Int).ok_or_else(bad),
-        "text" => inner
-            .as_str()
-            .map(|s| KeyValue::Text(s.into()))
-            .ok_or_else(bad),
-        "period" => {
-            let start = inner.get("start").and_then(Value::as_str).ok_or_else(bad)?;
-            let grain = match inner.get("grain").and_then(Value::as_str) {
-                Some("M") => Grain::Month,
-                Some("Q") => Grain::Quarter,
-                Some("S") => Grain::Semester,
-                Some("Y") => Grain::Year,
-                _ => return Err(bad()),
-            };
-            let (year, month) = start.rsplit_once('-').ok_or_else(bad)?;
-            let month = Month::new(
-                year.parse().map_err(|_| bad())?,
-                month.parse().map_err(|_| bad())?,
-            )
-            .map_err(|_| bad())?;
-            let period = Period::containing(month, grain);
-            if period.start() != month {
-                return Err(format_error(format!(
-                    "period start {start} is not the first month of a {grain} period"
-                )));
-            }
-            Ok(KeyValue::Period(period))
-        }
-        _ => Err(bad()),
-    }
-}
-
-fn pairs_to_json(pairs: &[(String, String)]) -> Value {
-    pairs.iter().map(|(k, v)| json!([k, v])).collect()
-}
-
-fn pairs_from_json(v: Option<&Value>, what: &str) -> Result<Vec<(String, String)>, IpcError> {
-    let bad = || {
-        format_error(format!(
-            "provenance {what} is not an array of [name, value]"
-        ))
-    };
-    v.and_then(Value::as_array)
-        .ok_or_else(bad)?
-        .iter()
-        .map(|pair| match pair.as_array().map(Vec::as_slice) {
-            Some([Value::String(k), Value::String(v)]) => Ok((k.clone(), v.clone())),
-            _ => Err(bad()),
-        })
-        .collect()
-}
-
-fn provenance_to_json(p: &Provenance) -> Value {
-    json!({
-        "model": p.model,
-        "parameters": pairs_to_json(&p.parameters),
-        "seed": p.seed.map(|s| s.to_string()),
-        "stream_scheme": p.stream_scheme,
-        "samplers": p.samplers.as_deref().map(pairs_to_json),
-        "versions": pairs_to_json(&p.versions),
-        "input_hash": p.input_hash,
-    })
-}
-
-fn provenance_from_json(v: &Value) -> Result<Provenance, IpcError> {
-    let optional_str = |name: &str| -> Result<Option<String>, IpcError> {
-        match v.get(name) {
-            None | Some(Value::Null) => Ok(None),
-            Some(Value::String(s)) => Ok(Some(s.clone())),
-            Some(_) => Err(format_error(format!("provenance {name} is not a string"))),
-        }
-    };
-    let model = v
-        .get("model")
-        .and_then(Value::as_str)
-        .ok_or_else(|| format_error("provenance has no model"))?
-        .to_string();
-    let seed = optional_str("seed")?
-        .map(|s| {
-            s.parse()
-                .map_err(|_| format_error(format!("provenance seed {s:?} is not a u64")))
-        })
-        .transpose()?;
-    // Absent from files written before samplers were recorded
-    // (2026-10-08). Families must be strictly increasing, one id each, as
-    // written, so that records equal as sets compare equal in
-    // `Provenance::replays_same_draws`.
-    let samplers = match v.get("samplers") {
-        None | Some(Value::Null) => None,
-        Some(s) => {
-            let pairs = pairs_from_json(Some(s), "samplers")?;
-            if !pairs.windows(2).all(|w| w[0].0 < w[1].0) {
-                return Err(format_error(
-                    "provenance samplers are not sorted by family, one id per family",
-                ));
-            }
-            Some(pairs)
-        }
-    };
-    Ok(Provenance {
-        model,
-        parameters: pairs_from_json(v.get("parameters"), "parameters")?,
-        seed,
-        stream_scheme: optional_str("stream_scheme")?,
-        samplers,
-        versions: pairs_from_json(v.get("versions"), "versions")?,
-        input_hash: optional_str("input_hash")?,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
 
     use super::*;
+    use crate::provenance::Provenance;
     use crate::provenance::{GAMMA_SAMPLER, InputHasher, SIM_INDEX_SCHEME};
+    use prospicio_core::{Grain, Month, Period};
 
     fn sample() -> PredictiveDistribution {
         let q = |y, m| Period::containing(Month::new(y, m).unwrap(), Grain::Quarter);

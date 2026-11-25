@@ -205,7 +205,7 @@ def test_the_geometric_methods_need_positive_increments_and_three_origins():
         Separation("geometric", future_rate=0.05).fit(negative, "paid")
     ok = two_by_two(150.0)
     two = Separation("geometric", future_rate=0.05).fit(ok, "paid")
-    assert math.isnan(two.log_variance)
+    assert two.log_variance is None
     with pytest.raises(ValueError, match="3 origins"):
         Separation("geometric_lognormal", future_rate=0.05).fit(ok, "paid")
 

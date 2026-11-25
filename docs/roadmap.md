@@ -639,10 +639,14 @@ what it is aiming for by v1.0.
   2,000 draws at 144 months in about 0.4 s on 16 cores (decision 30,
   #717): done.
   Next for 0.3.0: calendar-year and superimposed inflation (#979,
-  `reserving-inflation.md`, Proposed 2026-11-24): a triangle restated by a
+  `reserving-inflation.md`, Accepted 2026-11-24): a triangle restated by a
   calendar index and its projection re-inflated (PRs 1 and 2), Taylor's
-  separation method, arithmetic and geometric (PRs 3 to 5), and an
-  age-period-cohort GLM with calendar extrapolation (PRs 6 and 7).
+  separation method, arithmetic and geometric (PRs 3 to 5), an
+  age-period-cohort GLM with calendar extrapolation (PRs 6 and 7), and
+  stochastic re-inflation of future-cell draws with one index path per
+  simulation (PR 8, `IndexPaths`, `Indexation::reinflate_draws`): done.
+  Left: the bootstraps' draws by future cell, so they can be re-inflated
+  too (`[reinflate-bootstrap-cells]`).
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 
