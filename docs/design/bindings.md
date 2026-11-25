@@ -38,3 +38,32 @@ in two or three front ends, starting with those whose accepted names
 already differ: `MackProcess` (Excel lists its names in another order than Python and R), then
 `PairFamily`, `Archimedean`, `AnnualReading`, `Statistic`, `Smoothing`
 and `CorrelationKind`.
+
+## Method documentation (#991)
+
+A method's definition, formulas, assumptions and references are written
+once, in the Rust doc comment of the type or function that implements it
+(`docs/architecture.md`, "Documentation"). A binding's documentation
+describes the language API: what the object is for in a sentence or two,
+its parameters, defaults, return values, errors and examples. In place of
+the method's exposition it links to the Rust reference on docs.rs, at the
+item's page under `latest`:
+
+- **Python** (numpydoc in the PyO3 doc comment): a sentence that ends with
+  the bare URL, as in "The method, its formulas and its reference are
+  documented once, in the Rust reference: https://docs.rs/...". A bare
+  URL is clickable on the great-docs site and readable in `help()`.
+- **R** (roxygen2 with markdown): the same sentence with a markdown link,
+  `[Rust reference](https://docs.rs/...)`, which roxygen writes as
+  `\href{}{}`: a link on the pkgdown site and in the HTML help, and the
+  URL in text help.
+
+The link names the crate that defines the item (`prospicio-pricing`, not
+the umbrella `prospicio`). A formula that
+the user needs to read a return value (a column's definition, say) may
+stay in the binding's `Returns` section.
+
+Limited fluctuation credibility (`LimitedFluctuation`,
+`credibility_standard()`) is the pilot. The next families, a PR each, are
+the ones whose binding docs repeat formulas: the Mack bootstrap, then the
+other credibility models (Buhlmann-Straub, Hachemeister).
