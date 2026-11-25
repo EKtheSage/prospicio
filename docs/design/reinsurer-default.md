@@ -1,7 +1,7 @@
 # Design note: reinsurer default on a tower
 
-Status: **Accepted** (#980; decisions (a) to (l) accepted by the user on
-2026-11-24 as recommended; PRs 2 to 5 built) · v0.3 ·
+Status: **Done** (#980; decisions (a) to (l) accepted by the user on
+2026-11-24 as recommended; PRs 2 to 6 built, #980 done) · v0.4 ·
 Depends on: `aggregate.md` (`Tower`, `EventSet`, the tower's simulated years
 in parallel, #970), `predictive-distribution.md`, `rng.md` · Lane: Aggregate
 
@@ -163,7 +163,8 @@ impl Panel {
     pub fn new(reinsurers: Vec<Reinsurer>) -> Result<Self>;
     /// Reinsurer `reinsurer` writes `line` of layer `layer`'s ceded loss.
     pub fn line(self, reinsurer: &str, layer: &str, line: f64) -> Result<Self>;
-    /// Rank the years by this driver instead of the gross loss.
+    /// Rank the years by this driver instead of the gross loss: one value
+    /// per year, or over a term one per path-year, path-major.
     pub fn driver(self, by_year: Vec<f64>) -> Result<Self>;
     /// A one-year result (`apply`, `apply_aggregate`, `apply_annual`) after default.
     pub fn apply(&self, tower: &PredictiveDistribution, seed: u64)
@@ -171,6 +172,9 @@ impl Panel {
     /// A term's paths (`apply_term`, `apply_aggregate_term`) after default.
     pub fn apply_term(&self, tower: &PredictiveDistribution, n_years: usize, seed: u64)
         -> Result<PredictiveDistribution>;
+    /// `by_reinsurer` over a term's paths, from `apply_term`'s draws.
+    pub fn by_reinsurer_term(&self, tower: &PredictiveDistribution, n_years: usize,
+        seed: u64) -> Result<PredictiveDistribution>;
     /// Credit loss, exposure and default by reinsurer, from the same draws.
     pub fn by_reinsurer(&self, tower: &PredictiveDistribution, seed: u64)
         -> Result<PredictiveDistribution>;
@@ -181,7 +185,8 @@ pub mod solvency2 {
     pub fn probability_by_step(step: u8) -> Result<f64>;          // Art 199(2)
     pub fn probability_by_ratio(scr_ratio: f64) -> Result<f64>;   // Art 199(3)
     /// `lgd_share` is 0.5, or 0.9 for a counterparty with 60 % or more of
-    /// its assets collateralised; `factor` is F, or F' in the 90 % case.
+    /// its assets collateralised; `factor` is F, or in the 90 % case F'
+    /// (F''' from 2027-01-30, Delegated Regulation (EU) 2026/269).
     pub fn reinsurance_lgd(recoverables: f64, risk_mitigation: f64,
         collateral: f64, lgd_share: f64, factor: f64) -> Result<f64>; // Art 192(2)
     pub fn type1(exposures: &[(f64, f64)]) -> Result<Type1>;       // Arts 200, 201
@@ -280,6 +285,44 @@ file's means and default frequencies on stratified years (the gross loss
 at the lognormal's quantiles `(i + 1/2) / n`, 100,000 of them), so the
 only sampling error is the default draws', at five standard errors.
 
+As built in PR 6 (`Panel::apply_term` and `Panel::by_reinsurer_term`
+in `panel.rs`), where the note left a choice open: one core serves both
+entry points, a one-year result being a path of one year, so `apply_term`
+on a term of one year gives `apply`'s bits on that year (a unit test
+checks it). `by_reinsurer_term` was added beside `apply_term` (dims
+`["kind", "reinsurer", "year"]`, `by_reinsurer`'s components for each
+year in turn): whether a reinsurer is in default cannot be read from the
+credit loss in a year with no exposure, and the closed form below needs
+it. Its `exposure` is the exposure after the collateral still held at the
+start of the year, and its `default` is 1 in every year from the one the
+reinsurer defaults in. Collateral is used only in years in default: in
+such a year the collateral still held covers up to that year's exposure,
+and what it covered is gone; before a default the collateral is untouched.
+The new components come year by year after the input's, as the term's
+own do (year 1's `credit_loss` by layer, `recovered` by layer and
+`net_after_default`, then year 2's). `apply_term` refuses a result whose
+dims are not exactly `["kind", "layer", "year"]`, whose years are not
+exactly `1..=n_years`, a one-year result, and a driver without
+`n_paths * n_years` values; `apply` refuses a term and names
+`apply_term`. The provenance gains `default_term_years`, and
+`default_streams` reads "3 << 62 plus the path". With a constant
+probability `p` and independent default, a reinsurer is in default by
+year `t` with probability `1 - (1 - p)^t`. With the factor this holds
+only when the years' drivers are independent and identically
+distributed: the ranks are taken over all path-years together, so a
+driver that trends or changes in spread from year to year moves defaults
+between years, and a driver correlated across a path's years moves one
+path's factors together. Python binds `Panel.apply_term(result, n_years,
+seed=0)` and `by_reinsurer_term`, R `apply_panel_term(panel, result,
+n_years, seed = 0)` and `panel_by_reinsurer_term()` (after
+`apply_tower_term()`), and R's `reinsurer_panel` gains a `reinsurers`
+property returning the `reinsurer` objects, as Python's
+`Panel.reinsurers`. The tests are the unit tests in `panel.rs`,
+`aggregate_reinsurer_default_threads.rs` (terms on 1, 2, 3 and 8
+threads) and `validation/tests/aggregate_reinsurer_default_term.rs`
+(closed forms within four standard errors, with a power check against a
+default that is not final), and new files in Python and R.
+
 ## Decisions
 
 Accepted by the user on 2026-11-24 as the lane recommended them:
@@ -373,13 +416,16 @@ best estimate of recoverables, the risk-mitigating effect `RM_re` and the
 risk-adjusted collateral are the caller's (the library has no standard
 formula underwriting SCR to compute `RM_re` from), and the factor of
 Article 197(7) is an argument (F is 100 % or 50 %; F' is 100 % or 18 %, a
-figure EIOPA Q&A 3119 questions), as is the share, 50 % or the 90 % of a
+figure EIOPA Q&A 3119 questions, until 2027-01-29, and from 2027-01-30
+Delegated Regulation (EU) 2026/269 puts F''' of 100 % or 90 % in its
+place), as is the share, 50 % or the 90 % of a
 counterparty with 60 % or more of its assets collateralised.
 `probability_by_ratio` clamps at both ends (0.01 % above 196 %, 4.2 %
 below 75 %). `type1` groups exposures by probability of default and
 returns `V_inter` (over all ordered pairs `(j, k)`, the diagonal included,
 so each pair of different groups counts twice; a term with both
-probabilities 0 is 0, EIOPA Q&A 2530), `V_intra`, the standard deviation
+probabilities 0 is 0, EIOPA Q&A 2530, written into Art 201(2)(a) by
+2026/269 from 2027-01-30), `V_intra`, the standard deviation
 and `SCR_def,1`.
 
 (l) *Weighted years.* `simulate_events_weighted` returns its weights apart
@@ -469,8 +515,10 @@ The Next items with ids in `docs/lanes/aggregate.md`:
 
 ## Sources
 
-- Commission Delegated Regulation (EU) 2015/35, Articles 189 to 202, as
-  amended by 2016/467 and 2019/981: Art 192(2) (loss given default of a
+- Commission Delegated Regulation (EU) 2015/35, Articles 189 to 202, in
+  the consolidated texts of 2024-11-14 and 2027-01-30 (the latter after
+  Delegated Regulation (EU) 2026/269), checked constant by constant in
+  `knowledge/references/solvency2-counterparty-default.md`: Art 192(2) (loss given default of a
   reinsurance arrangement), Art 196 (risk-mitigating effect), Art 197
   (collateral, factors F), Art 199 (probability of default by credit
   quality step and by solvency ratio), Art 200 (`SCR_def,1`), Art 201

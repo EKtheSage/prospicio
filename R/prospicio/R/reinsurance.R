@@ -1545,13 +1545,15 @@ solvency2_probability_by_ratio <- function(scr_ratio) {
 #' @param lgd_share 0.5, or 0.9 for a counterparty with 60 % or more of its
 #'   assets under collateral arrangements; any value in `[0, 1]` is accepted.
 #' @param factor The factor of Art 197(7) on the collateral, in `[0, 1]`: F
-#'   (1 or 0.5) with the 50 % share, F' (1 or 0.18) with the 90 % share.
+#'   (1 or 0.5) with the 50 % share; with the 90 % share F' (1 or 0.18)
+#'   until 2027-01-29 and F''' (1 or 0.9) from 2027-01-30 (Delegated
+#'   Regulation (EU) 2026/269).
 #' @returns A number.
 #' @seealso [solvency2_type1()].
 #' @export
 #' @examples
 #' solvency2_reinsurance_lgd(100, 40, 30)
-#' solvency2_reinsurance_lgd(100, 40, 30, lgd_share = 0.9, factor = 0.5)
+#' solvency2_reinsurance_lgd(100, 40, 30, lgd_share = 0.9, factor = 0.18)
 solvency2_reinsurance_lgd <- function(recoverables, risk_mitigation, collateral,
                                       lgd_share = 0.5, factor = 1) {
   rust_result(solvency2_reinsurance_lgd_rust(
@@ -1567,13 +1569,17 @@ solvency2_reinsurance_lgd <- function(recoverables, risk_mitigation, collateral,
 #' grouped by probability of default; `v_inter` sums over every ordered pair
 #' of groups, the diagonal included, `PD_j (1 - PD_j) PD_k (1 - PD_k) /
 #' (1.25 (PD_j + PD_k) - PD_j PD_k)` times the groups' total losses given
-#' default (a term whose two probabilities are both 0 is 0, EIOPA Q&A 2530),
+#' default (a term whose two probabilities are both 0 is 0, EIOPA Q&A 2530
+#' and Art 201(2)(a) as amended by 2026/269),
 #' and `v_intra` sums `1.5 PD_j (1 - PD_j) / (2.5 - PD_j)` times each group's
 #' squared losses given default. The charge `scr` is `3 sigma` if
 #' `sigma = sqrt(v_inter + v_intra)` is at most 7 % of the total loss given
 #' default, `5 sigma` if at most 20 %, and the total otherwise.
 #'
-#' @param pd Each exposure's probability of default, in `[0, 1]`.
+#' @param pd Each exposure's probability of default, in `[0, 1]`. Each
+#'   element is one single name exposure (Art 199(1)); Art 201(3) squares
+#'   each one's loss given default, so one reinsurer split over several
+#'   elements with the same probability understates `v_intra`.
 #' @param lgd Each exposure's loss given default, non-negative, as
 #'   [solvency2_reinsurance_lgd()] gives it for a reinsurer.
 #' @returns A list with `v_inter`, `v_intra`, `sigma`, `total_lgd` and `scr`.
@@ -1650,7 +1656,9 @@ S7::method(print, reinsurer) <- function(x, ...) {
 #' ceded loss (after the layer's `share`); `panel_driver()` ranks the years
 #' by another quantity than the gross loss; `apply_panel()` gives the
 #' tower's result after default and `panel_by_reinsurer()` each reinsurer's
-#' credit loss, exposure and default.
+#' credit loss, exposure and default; `apply_panel_term()` and
+#' `panel_by_reinsurer_term()` do the same over a term's paths
+#' ([apply_tower_term()]).
 #'
 #' Reinsurer `r`'s exposure in a year is `E = sum over l of s_rl X_l`, with
 #' `X_l` layer `l`'s ceded loss and `s_rl` its line; if it defaults, the
@@ -1663,25 +1671,55 @@ S7::method(print, reinsurer) <- function(x, ...) {
 #' have the highest probability of default. Each year draws from its own
 #' random stream, so the result has the same bits on any number of threads.
 #'
+#' Over a term each row is a path, and a default is final: a reinsurer that
+#' defaults in year `t` of a path is in default in every later year of it.
+#' The collateral is held once per reinsurer and path and is used up: in
+#' each year in default the collateral still held is set against that
+#' year's exposure, and what it covered is gone for the later years. Each
+#' path-year's factor comes from its driver ranked among all path-years (a
+#' driver is given path-major: year `t` of path `j` at `(j - 1) * n_years +
+#' t`). Each path draws from its own stream, its years in order, so a term
+#' of one year draws as `apply_panel()` does on that year. With a constant
+#' probability `p` and independent default (correlation 0), a reinsurer is
+#' in default by year `t` with probability `1 - (1 - p)^t`. With a
+#' correlation above 0 this holds only when the years' drivers are
+#' independent and identically distributed: the ranks are taken over all
+#' path-years together, so a driver that trends from year to year moves
+#' defaults between years.
+#'
 #' The lines of a layer the panel names must sum to 1 (to 1e-9), and every
 #' layer a line names must be in the result; both are checked when the
 #' panel is applied, since a panel is built before it meets a tower. A
 #' layer the panel does not name carries no credit risk.
 #'
+#' `apply_panel_term()` and `panel_by_reinsurer_term()` stop with an error
+#' for an `n_years` that is not a whole number of at least 1, a one-year
+#' result, a result whose years are not exactly 1 to `n_years`, a driver
+#' without one value per path-year, a result the panel was already applied
+#' to, lines that break the rules above, or a seed that is not a
+#' non-negative whole number.
+#' `apply_panel()` and `panel_by_reinsurer()` likewise refuse a term.
+#'
 #' @param reinsurers A list of [reinsurer] objects with unique names.
 #' @param panel A `reinsurer_panel`.
 #' @param reinsurer,layer,line The reinsurer's name, the layer's name and
-#'   the line, in `(0, 1]`; equal lengths (or length 1), one line each.
+#'   the line, in `(0, 1]`; equal lengths (or length 1, at least one), one
+#'   line each.
 #' @param by_year One finite value per simulated year, in the order of the
-#'   tower's result.
+#'   tower's result (over a term, one per path-year, path-major).
 #' @param result A tower's one-year result from [apply_tower()] (on an
-#'   [event_set], a [predictive_distribution] or annual losses).
+#'   [event_set], a [predictive_distribution] or annual losses), or for
+#'   `apply_panel_term()` and `panel_by_reinsurer_term()` a term's paths
+#'   from [apply_tower_term()].
+#' @param n_years The term's years; the result's years must be exactly 1 to
+#'   `n_years`.
 #' @param seed The default draws' seed, a non-negative whole number; their
 #'   streams are apart from the events' even with the events' seed.
 #' @param ptr Internal: an existing panel to wrap.
 #' @returns `reinsurer_panel()`, `panel_line()` and `panel_driver()`: a
-#'   `reinsurer_panel`, whose `reinsurer_names` property lists its
-#'   reinsurers in panel order. `apply_panel()`: a [predictive_distribution]
+#'   `reinsurer_panel`, whose `reinsurers` property lists its [reinsurer]
+#'   objects and `reinsurer_names` property their names, in panel order.
+#'   `apply_panel()`: a [predictive_distribution]
 #'   with the result's components, copied bit for bit, then
 #'   `("credit_loss", <layer>)` for every layer of the result (zero on a
 #'   layer the panel does not name), `("recovered", <layer>)`, the layer's
@@ -1693,6 +1731,13 @@ S7::method(print, reinsurer) <- function(x, ...) {
 #'   `kind` and `reinsurer`: `("credit_loss", r)`, `("exposure", r)` (after
 #'   collateral) and `("default", r)` (1 or 0) for every reinsurer, from the
 #'   same draws as `apply_panel()` with the same seed.
+#'   `apply_panel_term()`: the term's components, copied bit for bit, then
+#'   for each year in turn the components `apply_panel()` adds, with the
+#'   year as the last key. `panel_by_reinsurer_term()`: dimensions `kind`,
+#'   `reinsurer` and `year`, `panel_by_reinsurer()`'s components for each
+#'   year, the exposure after the collateral still held at the start of the
+#'   year and `default` 1 in every year from the one the reinsurer defaults
+#'   in.
 #' @seealso [reinsurer()], [apply_tower()], [solvency2_type1()] for the
 #'   Solvency II standard formula's charge.
 #' @export
@@ -1705,6 +1750,18 @@ S7::method(print, reinsurer) <- function(x, ...) {
 #' marginal(after, list("credit_loss", "10x10"))@draws
 #' marginal(after, list("net_after_default", "retained"))@draws
 #' draw_matrix(panel_by_reinsurer(panel, years, seed = 7))
+#' # Over a term: one path of two years, ceding 5 and then 10. Re C
+#' # certainly defaults, recovers nothing and has collateral of 8: year 1
+#' # uses 5 of it, year 2 the 3 left.
+#' term <- apply_tower_term(
+#'   reinsurance_tower(list(xol_layer("10x10", 10, 10))),
+#'   list(events_from_years(list(15)), events_from_years(list(25)))
+#' )
+#' re_c <- reinsurer("Re C", 1, 0, collateral = 8)
+#' panel_c <- panel_line(reinsurer_panel(list(re_c)), "Re C", "10x10", 1)
+#' after <- apply_panel_term(panel_c, term, n_years = 2)
+#' marginal(after, list("credit_loss", "10x10", 2L))@draws
+#' draw_matrix(panel_by_reinsurer_term(panel_c, term, n_years = 2))
 reinsurer_panel <- S7::new_class(
   "reinsurer_panel",
   package = "prospicio",
@@ -1712,6 +1769,10 @@ reinsurer_panel <- S7::new_class(
     ptr = S7::new_S3_class("ReinsurerPanel"),
     reinsurer_names = S7::new_property(
       S7::class_character, getter = function(self) self@ptr$reinsurer_names()
+    ),
+    reinsurers = S7::new_property(
+      S7::class_list,
+      getter = function(self) lapply(self@ptr$reinsurers(), function(p) reinsurer(ptr = p))
     )
   ),
   constructor = function(reinsurers, ptr = NULL) {
@@ -1737,7 +1798,11 @@ S7::method(print, reinsurer_panel) <- function(x, ...) {
 #' @rdname reinsurer_panel
 #' @export
 panel_line <- function(panel, reinsurer, layer, line) {
+  check_panel(panel)
   args <- list(as.character(reinsurer), as.character(layer), as.double(line))
+  if (any(lengths(args) == 0L)) {
+    stop("reinsurer, layer and line must each have at least one value", call. = FALSE)
+  }
   n <- max(lengths(args))
   if (any(!lengths(args) %in% c(1L, n))) {
     stop("reinsurer, layer and line must have equal lengths or length 1", call. = FALSE)
@@ -1753,13 +1818,18 @@ panel_line <- function(panel, reinsurer, layer, line) {
 #' @rdname reinsurer_panel
 #' @export
 panel_driver <- function(panel, by_year) {
+  check_panel(panel)
   reinsurer_panel(ptr = rust_result(panel@ptr$driver(as.double(by_year))))
 }
 
-check_panel_args <- function(panel, result) {
+check_panel <- function(panel) {
   if (!S7::S7_inherits(panel, reinsurer_panel)) {
     stop("panel must be a reinsurer_panel", call. = FALSE)
   }
+}
+
+check_panel_args <- function(panel, result) {
+  check_panel(panel)
   if (!S7::S7_inherits(result, predictive_distribution)) {
     stop("result must be a predictive_distribution", call. = FALSE)
   }
@@ -1777,4 +1847,22 @@ apply_panel <- function(panel, result, seed = 0) {
 panel_by_reinsurer <- function(panel, result, seed = 0) {
   check_panel_args(panel, result)
   predictive_distribution(ptr = rust_result(panel@ptr$by_reinsurer(result@ptr, as.double(seed))))
+}
+
+#' @rdname reinsurer_panel
+#' @export
+apply_panel_term <- function(panel, result, n_years, seed = 0) {
+  check_panel_args(panel, result)
+  predictive_distribution(ptr = rust_result(
+    panel@ptr$apply_term(result@ptr, as.double(n_years), as.double(seed))
+  ))
+}
+
+#' @rdname reinsurer_panel
+#' @export
+panel_by_reinsurer_term <- function(panel, result, n_years, seed = 0) {
+  check_panel_args(panel, result)
+  predictive_distribution(ptr = rust_result(
+    panel@ptr$by_reinsurer_term(result@ptr, as.double(n_years), as.double(seed))
+  ))
 }

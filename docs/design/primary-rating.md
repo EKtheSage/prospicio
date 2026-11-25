@@ -1,6 +1,8 @@
 # Design note: earned exposure, experience modification and retrospective rating
 
-Status: **Proposed** (#981; decisions (a) to (j) below wait for the user) ·
+Status: **In progress** (#981; the note merged on the user's go-ahead of
+2026-11-24 to start the work, with decisions (a) to (j) as recommended and
+still open to change before the PR each one governs; PR 2 built) ·
 v0.3 · Depends on: `ratemaking.md` (`Period`, `year_fraction`),
 `aggregate.md` (`Grid`, `fft`, per-occurrence limits on a grid),
 `predictive-distribution.md` · Lane: Aggregate
@@ -171,39 +173,64 @@ bisection in `r_H` solves the pair.
 Proposed; the names are open until each PR.
 
 ```rust
-// prospicio_pricing::earned
+// prospicio_pricing::earned (built in PR 5, the daily method)
 pub struct Date { /* days since 1970-01-01 */ }
 impl Date {
     pub fn new(year: i32, month: u8, day: u8) -> Result<Self>;
     pub fn parse(iso: &str) -> Result<Self>;          // "2024-03-15"
-    pub fn year_fraction(&self) -> f64;               // exact, not the half-month grid
+    pub fn ymd(self) -> (i32, u8, u8);
+    pub fn days_since(self, earlier: Date) -> i64;
+    pub fn year_fraction(self) -> f64;                // exact, not the half-month grid
 }
-pub struct Policy { /* effective, expiration, amount, endorsements, cancellation */ }
+pub struct Policy { /* effective, expiration, amount, label; PR 6: endorsements, cancellation */ }
 impl Policy {
     pub fn new(effective: Date, expiration: Date, amount: f64) -> Result<Self>;
+    pub fn with_label(self, label: impl Into<String>) -> Self;
+    pub fn earned_between(&self, from: Date, to: Date) -> f64;
+    pub fn unearned_at(&self, date: Date) -> f64;
+    pub fn in_force_at(&self, date: Date) -> bool;
+    // PR 6:
     pub fn endorsed(self, date: Date, annual_change: f64) -> Result<Self>;
     pub fn cancelled(self, date: Date) -> Result<Self>;
 }
-pub enum EarningMethod { Daily, TwentyFourths }
-pub struct Windows { /* calendar or policy windows: years, quarters, months, or given dates */ }
-pub fn earned_exposure(policies: &[Policy], windows: &Windows, method: EarningMethod)
-    -> Result<EarnedTable>;   // written, earned, and unearned and in force at each window's end
+pub enum EarningMethod { Daily /* PR 6: TwentyFourths */ }      // non_exhaustive
+pub struct Windows { /* consecutive windows between dates */ }
+impl Windows {
+    pub fn new(bounds: Vec<Date>) -> Result<Self>;
+    pub fn years(first: i32, last: i32) -> Result<Self>;   // also quarters, months
+}
+pub fn earned_exposure(policies: &[Policy], windows: &Windows, kind: PeriodKind,
+                       method: EarningMethod, valuation: Option<Date>) -> Result<EarnedTable>;
+pub struct EarnedRow { pub label, pub from, pub to, pub written, pub earned, pub unearned, pub in_force }
+pub fn in_force(policies: &[Policy], date: Date) -> f64;   // the book's in-force as of a date
 
 // prospicio_pricing::retro
-pub struct InsuranceCharge { /* entry ratios with phi and psi; the limit's k if any */ }
+pub struct InsuranceCharge { /* the expected loss and the stop-loss; the limit's k if any */ }
 impl InsuranceCharge {
-    pub fn from_aggregate(aggregate: &dyn Severity) -> Result<Self>;          // Table M
+    // Built in PR 2:
+    pub fn from_severity<S: Severity + Send + Sync + 'static>(aggregate: S) -> Result<Self>; // Table M
     pub fn from_sample(losses: &[f64]) -> Result<Self>;                        // empirical
-    pub fn table_l(limited: &dyn Severity, unlimited_mean: f64) -> Result<Self>;
-    pub fn limited_table_m(limited: &dyn Severity) -> Result<Self>;
+    pub fn expected(&self) -> f64;
     pub fn charge(&self, r: f64) -> f64;
     pub fn savings(&self, r: f64) -> f64;
-    pub fn table(&self, entry_ratios: &[f64]) -> Vec<(f64, f64, f64)>;
+    pub fn table(&self, entry_ratios: &[f64]) -> Vec<ChargeRow>;               // r, phi, psi
+    // Built in PR 3. The limited Table M is the table of the limited
+    // aggregate, from the two constructors above; Table L is made from it:
+    pub fn table_l(self, unlimited_expected: f64) -> Result<Self>;
+    pub fn loss_elimination(&self) -> f64;                                     // k; 0 unless a Table L
 }
-pub struct RetroPlan { /* expected loss, expense, lcf, tax multiplier, minimum, maximum */ }
+// Built in PR 4. Amounts in money; f64::INFINITY for no maximum.
+pub struct RetroPlan { /* E, e, c, T, H, G */ }
 impl RetroPlan {
-    pub fn balance(&self, charge: &InsuranceCharge) -> Result<BalancedPlan>;  // r_H, r_G, basic
-    pub fn premium(&self, basic: f64, losses: f64) -> f64;
+    pub fn new(expected_loss: f64, expense: f64, loss_conversion: f64, tax_multiplier: f64,
+               minimum: f64, maximum: f64) -> Result<Self>;
+    pub fn guaranteed_cost(&self) -> f64;                                      // T (e + E)
+    pub fn loss_sensitive_premium(&self, basic: f64) -> Result<LossSensitivePremium>; // T b, T c, H, G
+    pub fn balance(&self, charge: &InsuranceCharge) -> Result<BalancedPlan>;
+}
+pub struct BalancedPlan {
+    pub basic: f64, pub entry_ratio_minimum: f64, pub entry_ratio_maximum: f64,
+    pub net_insurance_charge: f64, pub expected_premium: f64,
 }
 
 // prospicio_pricing::emod
@@ -220,8 +247,11 @@ impl ExperienceRatioPlan {
 }
 ```
 
-Each type gets its Python and R binding in the PR that adds it
-(`pricing` module files), with dates as ISO strings in R and Excel and as
+`retro`'s types are bound in Python and R in one PR after its three Rust
+PRs, on the allow-list until then, as the reinsurer panel was; `earned`
+is bound the same way after its two Rust PRs (`[earned-bindings]`), and
+`emod` gets its bindings in the PR that adds each type (`pricing` module
+files), with dates as ISO strings in R and Excel and as
 `datetime.date` or ISO strings in Python.
 
 ## Decisions
@@ -245,6 +275,11 @@ Proposed for the user's acceptance; each has a recommendation.
 - (c) **Expiration is exclusive, and days are exact.** A policy effective
   1 January and expiring the next 1 January has 365 or 366 days and earns
   nothing on its expiration date (the 12:01 a.m. convention). *Recommended.*
+  As built (PR 5): "at a window's end", and "as of a valuation date", mean
+  the close of the day before that date. A policy that expires on it is
+  still in force, and one effective on it is not yet written, so the
+  in-force and unearned figures agree with what the window wrote and
+  earned, and unearned rolls forward as opening plus written less earned.
 - (d) **A cancellation earns pro rata to its date.** The return premium
   under a short-rate table is a premium accounting matter, not an
   exposure one; it stays a Next item. *Recommended.*
@@ -266,11 +301,34 @@ Proposed for the user's acceptance; each has a recommendation.
 - (h) **Both limit conventions, named for what they are**: `table_l`
   (entry ratio on the unlimited mean, `k` in the charge) and
   `limited_table_m` (limited throughout). *Recommended.* They answer
-  different filings, and mixing them is the classic error.
+  different filings, and mixing them is the classic error. As built (PR
+  3): the limited Table M needs no function of its own, being the table
+  of the limited aggregate (`from_severity` or `from_sample` on it), and
+  `table_l(unlimited_expected)` is a method that turns that table into a
+  Table L, so the limited aggregate is always the starting point and the
+  module doc sets the two side by side. The curves are one curve on two
+  scales: `phi*(r) = (1 - k) phi_LM(r E / E*) + k`, which the validation
+  test checks.
 - (i) **`RetroPlan::balance` solves for the basic premium given the
   minimum and maximum**, the common case. Solving for the maximum given
   the basic, or for the loss conversion factor, are small variations on
-  the same bisection and can follow as asked. *Recommended.*
+  the same bisection and can follow as asked. *Recommended.* As built
+  (PR 4): a plan with a loss limit balances against a Table L on the
+  unlimited expected loss, with `L` the limited losses, and its basic
+  premium then carries the cost of the limit; the limited Table M, being
+  on another expected loss, is refused with a message that says so. A
+  minimum at or above the guaranteed-cost premium, or a maximum at or
+  below it, has no balancing basic premium and is an error. An entry ratio
+  of the minimum below 0 means the minimum never binds.
+  By the user's decisions of 2026-11-25: the plan's premium has one name,
+  the existing `LossSensitivePremium` (the reinsurance terms' and the
+  P&L's), which `RetroPlan::loss_sensitive_premium(basic)` returns with the
+  tax multiplier folded in, and `RetroPlan::premium` is gone; and a plan
+  that would balance only with a negative basic premium is refused. That
+  happens at ordinary minimums too, not only extreme ones: with expected
+  losses 100, expenses 30, `c = 1.1` and `T = 1.03` (guaranteed cost
+  133.9) on the tests' ten-year sample, a minimum of 95 with no maximum
+  already needs a basic premium of -19.6.
 - (j) **Order: retrospective rating, then earned exposure, then the
   modifications.** The charge builds on what the lane already has (the
   aggregate on a grid) and has closed forms to validate against; earned
@@ -289,12 +347,20 @@ Proposed for the user's acceptance; each has a recommendation.
   aggregate distribution, computed directly, equals `T (e + E)` to
   round-off; a plan with no minimum and an unreachable maximum has
   `b = e - (c - 1) E`.
-- **Earned exposure.** Werner and Modlin, chapter 4: the written, earned,
-  unearned and in-force exposures of its six policies, by calendar year
-  and by policy year, and its premium examples with a mid-term change in
-  chapter 5. Twenty-fourths against daily on policies written at
-  mid-month, where they agree. Totals: the earned amounts over all
-  windows sum to the written amount net of cancellations.
+- **Earned exposure.** As built (PR 5): Werner and Modlin's chapter 4
+  exhibits, read from the CAS study note
+  (`validation/tests/pricing_earned_exposure.rs`): the six annual policies'
+  written exposures by calendar year (Table 4.7) and by policy year (4.9)
+  and their policy year earned exposures (4.13) exactly; their calendar
+  year earned exposures (4.11: 0.25, 3.25, 2.50) within two days in the
+  year, since the book counts months and the daily method counts days
+  (92/365 for its 0.25); the in-force exposures as of three dates (4.15)
+  exactly, by `in_force`; and the same for its six-month policies (4.18 to
+  4.22). Exact parity on the earned tables needs a method on the book's
+  half-month grid, proposed for PR 6. Also a day-by-day count over a fixed
+  book of 60 policies with terms of three months to two years across leap
+  days, by label and quarter, to 1e-9. Still to come from the book: its
+  premium examples with a mid-term change in chapter 5 (PR 6).
 - **Modifications.** Worked exhibits from the CAS study note on
   individual risk rating (Fisher, McTaggart, Petker and Pettingell) and
   from the bureaus' public explanatory material. These texts are the
@@ -312,13 +378,29 @@ Stacked, each on the one before:
 
 1. This note and the lane's Next bullets. Docs only.
 2. `retro::InsuranceCharge` from a `Severity` and from a sample, with
-   `charge`, `savings` and `table`; Python and R bindings; the closed-form
-   tests.
-3. `table_l` and `limited_table_m`; bindings; the identities.
-4. `RetroPlan::balance` and `premium`; bindings; the balance test.
-5. `earned::Date`, `Policy` and `earned_exposure` with the daily method;
-   bindings; the Werner and Modlin chapter 4 exhibit.
-6. Endorsements, cancellations and the twenty-fourths method; bindings.
+   `charge`, `savings` and `table`; the closed-form tests; allow-list
+   entries (reason: bound in PR 4b). Done.
+3. `table_l` and `loss_elimination`; the identities, and an FFT aggregate
+   with a per-occurrence limit against the definition. Done.
+4. `RetroPlan::balance` and `premium`; the balance tests (the mean
+   premium over a sample, an exponential's closed integral, a loss limit
+   against Table L). Done.
+4b. Python and R bindings for `retro` (`[retro-bindings]`), their tests in
+   new files, the allow-list entries removed. Done: `InsuranceCharge`
+   (`from_grid`, `from_sample`, `table_l`) and `RetroPlan` in
+   `prospicio.pricing`; `insurance_charge()` and `retro_balance()` in R,
+   which are functions of the aggregate (a `grid_distribution` or a vector
+   of totals), not objects. R's `retro_premium()` already existed, as the
+   reinsurance module's `LossSensitivePremium`: `RetroPlan::premium` is
+   that premium with the tax multiplier folded into the basic premium and
+   the loss conversion factor, and a test holds the two together.
+5. `earned::Date`, `Policy`, `Windows` and `earned_exposure` with the
+   daily method, by calendar or policy period and as of a valuation date;
+   allow-list entries (reason: bound in PR 6b). Done.
+6. Endorsements, cancellations and the twenty-fourths method, and
+   earning on the book's half-month grid (`ratemaking::year_fraction`),
+   which reproduces chapter 4's earned tables exactly.
+6b. Python and R bindings for `earned` (`[earned-bindings]`).
 7. `emod::SplitPlan`; bindings; a reference exhibit.
 8. `emod::ExperienceRatioPlan`; bindings; a reference exhibit; the Done
    bullet `#981`.
@@ -330,8 +412,8 @@ taught nothing new), and a changelog fragment under "Pricing".
 ## Next
 
 The Next items with ids in `docs/lanes/aggregate.md`: `[retro-charge]`,
-`[retro-limited]`, `[retro-balance]`, `[earned-daily]`,
-`[earned-endorsements]`, `[emod-split]`, `[emod-ratio]`, and after #981:
+`[retro-limited]`, `[retro-balance]`, `[retro-bindings]`, `[earned-daily]`,
+`[earned-endorsements]`, `[earned-bindings]`, `[emod-split]`, `[emod-ratio]`, and after #981:
 `[earned-short-rate]`, `[retro-deductible-dividend]`.
 
 ## Sources

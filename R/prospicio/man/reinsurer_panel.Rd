@@ -6,6 +6,8 @@
 \alias{panel_driver}
 \alias{apply_panel}
 \alias{panel_by_reinsurer}
+\alias{apply_panel_term}
+\alias{panel_by_reinsurer_term}
 \title{Reinsurer default on a tower}
 \usage{
 reinsurer_panel(reinsurers, ptr = NULL)
@@ -17,6 +19,10 @@ panel_driver(panel, by_year)
 apply_panel(panel, result, seed = 0)
 
 panel_by_reinsurer(panel, result, seed = 0)
+
+apply_panel_term(panel, result, n_years, seed = 0)
+
+panel_by_reinsurer_term(panel, result, n_years, seed = 0)
 }
 \arguments{
 \item{reinsurers}{A list of \link{reinsurer} objects with unique names.}
@@ -26,21 +32,28 @@ panel_by_reinsurer(panel, result, seed = 0)
 \item{panel}{A \code{reinsurer_panel}.}
 
 \item{reinsurer, layer, line}{The reinsurer's name, the layer's name and
-the line, in \verb{(0, 1]}; equal lengths (or length 1), one line each.}
+the line, in \verb{(0, 1]}; equal lengths (or length 1, at least one), one
+line each.}
 
 \item{by_year}{One finite value per simulated year, in the order of the
-tower's result.}
+tower's result (over a term, one per path-year, path-major).}
 
 \item{result}{A tower's one-year result from \code{\link[=apply_tower]{apply_tower()}} (on an
-\link{event_set}, a \link{predictive_distribution} or annual losses).}
+\link{event_set}, a \link{predictive_distribution} or annual losses), or for
+\code{apply_panel_term()} and \code{panel_by_reinsurer_term()} a term's paths
+from \code{\link[=apply_tower_term]{apply_tower_term()}}.}
 
 \item{seed}{The default draws' seed, a non-negative whole number; their
 streams are apart from the events' even with the events' seed.}
+
+\item{n_years}{The term's years; the result's years must be exactly 1 to
+\code{n_years}.}
 }
 \value{
 \code{reinsurer_panel()}, \code{panel_line()} and \code{panel_driver()}: a
-\code{reinsurer_panel}, whose \code{reinsurer_names} property lists its
-reinsurers in panel order. \code{apply_panel()}: a \link{predictive_distribution}
+\code{reinsurer_panel}, whose \code{reinsurers} property lists its \link{reinsurer}
+objects and \code{reinsurer_names} property their names, in panel order.
+\code{apply_panel()}: a \link{predictive_distribution}
 with the result's components, copied bit for bit, then
 \verb{("credit_loss", <layer>)} for every layer of the result (zero on a
 layer the panel does not name), \verb{("recovered", <layer>)}, the layer's
@@ -51,6 +64,13 @@ each, and on a labelled result the new components get \code{""} labels.
 \code{kind} and \code{reinsurer}: \verb{("credit_loss", r)}, \verb{("exposure", r)} (after
 collateral) and \verb{("default", r)} (1 or 0) for every reinsurer, from the
 same draws as \code{apply_panel()} with the same seed.
+\code{apply_panel_term()}: the term's components, copied bit for bit, then
+for each year in turn the components \code{apply_panel()} adds, with the
+year as the last key. \code{panel_by_reinsurer_term()}: dimensions \code{kind},
+\code{reinsurer} and \code{year}, \code{panel_by_reinsurer()}'s components for each
+year, the exposure after the collateral still held at the start of the
+year and \code{default} 1 in every year from the one the reinsurer defaults
+in.
 }
 \description{
 A panel holds the reinsurers on a tower and their signed lines, and
@@ -60,7 +80,9 @@ with no lines; \code{panel_line()} adds lines, each a share of a layer's
 ceded loss (after the layer's \code{share}); \code{panel_driver()} ranks the years
 by another quantity than the gross loss; \code{apply_panel()} gives the
 tower's result after default and \code{panel_by_reinsurer()} each reinsurer's
-credit loss, exposure and default.
+credit loss, exposure and default; \code{apply_panel_term()} and
+\code{panel_by_reinsurer_term()} do the same over a term's paths
+(\code{\link[=apply_tower_term]{apply_tower_term()}}).
 }
 \details{
 Reinsurer \code{r}'s exposure in a year is \verb{E = sum over l of s_rl X_l}, with
@@ -74,10 +96,33 @@ loss, or \code{panel_driver()}), ties broken at random, so the worst years
 have the highest probability of default. Each year draws from its own
 random stream, so the result has the same bits on any number of threads.
 
+Over a term each row is a path, and a default is final: a reinsurer that
+defaults in year \code{t} of a path is in default in every later year of it.
+The collateral is held once per reinsurer and path and is used up: in
+each year in default the collateral still held is set against that
+year's exposure, and what it covered is gone for the later years. Each
+path-year's factor comes from its driver ranked among all path-years (a
+driver is given path-major: year \code{t} of path \code{j} at \code{(j - 1) * n_years + t}). Each path draws from its own stream, its years in order, so a term
+of one year draws as \code{apply_panel()} does on that year. With a constant
+probability \code{p} and independent default (correlation 0), a reinsurer is
+in default by year \code{t} with probability \code{1 - (1 - p)^t}. With a
+correlation above 0 this holds only when the years' drivers are
+independent and identically distributed: the ranks are taken over all
+path-years together, so a driver that trends from year to year moves
+defaults between years.
+
 The lines of a layer the panel names must sum to 1 (to 1e-9), and every
 layer a line names must be in the result; both are checked when the
 panel is applied, since a panel is built before it meets a tower. A
 layer the panel does not name carries no credit risk.
+
+\code{apply_panel_term()} and \code{panel_by_reinsurer_term()} stop with an error
+for an \code{n_years} that is not a whole number of at least 1, a one-year
+result, a result whose years are not exactly 1 to \code{n_years}, a driver
+without one value per path-year, a result the panel was already applied
+to, lines that break the rules above, or a seed that is not a
+non-negative whole number.
+\code{apply_panel()} and \code{panel_by_reinsurer()} likewise refuse a term.
 }
 \examples{
 years <- apply_tower(reinsurance_tower(list(xol_layer("10x10", 10, 10))), c(5, 15, 30))
@@ -88,6 +133,18 @@ after <- apply_panel(panel, years, seed = 7)
 marginal(after, list("credit_loss", "10x10"))@draws
 marginal(after, list("net_after_default", "retained"))@draws
 draw_matrix(panel_by_reinsurer(panel, years, seed = 7))
+# Over a term: one path of two years, ceding 5 and then 10. Re C
+# certainly defaults, recovers nothing and has collateral of 8: year 1
+# uses 5 of it, year 2 the 3 left.
+term <- apply_tower_term(
+  reinsurance_tower(list(xol_layer("10x10", 10, 10))),
+  list(events_from_years(list(15)), events_from_years(list(25)))
+)
+re_c <- reinsurer("Re C", 1, 0, collateral = 8)
+panel_c <- panel_line(reinsurer_panel(list(re_c)), "Re C", "10x10", 1)
+after <- apply_panel_term(panel_c, term, n_years = 2)
+marginal(after, list("credit_loss", "10x10", 2L))@draws
+draw_matrix(panel_by_reinsurer_term(panel_c, term, n_years = 2))
 }
 \seealso{
 \code{\link[=reinsurer]{reinsurer()}}, \code{\link[=apply_tower]{apply_tower()}}, \code{\link[=solvency2_type1]{solvency2_type1()}} for the

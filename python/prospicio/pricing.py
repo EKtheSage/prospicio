@@ -16,7 +16,9 @@ deal's monthly cash flows (CashflowTerms, CollateralRequirement,
 PremiumAdjustment, Cashflows) and the deal valued after binding
 (Valuation, Forward, condition_on_paid, deal_ave), and a book of deals on one shared simulation
 (DealRun, DealBook, BookCashflows), and bonus-malus scales as Markov
-chains (BonusMalus)."""
+chains (BonusMalus), and retrospective rating: the insurance charge and
+savings of an aggregate (InsuranceCharge: Table M, Table L) and the basic
+premium that balances a plan (RetroPlan)."""
 
 from .prospicio_native import (
     AsIf,
@@ -36,6 +38,7 @@ from .prospicio_native import (
     Forward,
     IlfTable,
     IndexClause,
+    InsuranceCharge,
     IrrResult,
     LargeLossExperience,
     LossRatioExperience,
@@ -58,6 +61,7 @@ from .prospicio_native import (
     Quote,
     RateHistory,
     RateLevel,
+    RetroPlan,
     RiskProfile,
     StandAlone,
     Valuation,
@@ -163,6 +167,8 @@ __all__ = [
     "IndexClause",
     "AsIf",
     "BonusMalus",
+    "InsuranceCharge",
+    "RetroPlan",
     "PaymentPattern",
     "PayoutPrice",
     "price_over_payout",

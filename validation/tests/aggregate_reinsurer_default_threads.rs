@@ -1,8 +1,8 @@
 //! A panel's default draws give the same bits whatever the number of
-//! threads (#980): the years' ranks are computed once, and each year draws
-//! from its own stream, in parallel.
+//! threads (#980): the years' ranks are computed once, and each year (each
+//! path, over a term) draws from its own stream, in parallel.
 
-use prospicio_aggregate::{Layer, Panel, Reinsurer, Tower, simulate_events};
+use prospicio_aggregate::{EventSet, Layer, Panel, Reinsurer, Tower, simulate_events};
 use prospicio_prob::{Lognormal, Poisson, PredictiveDistribution};
 
 /// Enough years that every thread count below splits them into many tasks.
@@ -68,12 +68,24 @@ fn the_default_draws_give_the_same_bits_on_any_number_of_threads() {
     .unwrap();
     let flat = tower.apply(&events).unwrap();
     let by_label = tower.apply(&labelled).unwrap();
+    // A term of three years: the events split into consecutive blocks.
+    let years: Vec<EventSet> = (0..3)
+        .map(|t| {
+            let block = (t * N_SIMS / 3..(t + 1) * N_SIMS / 3)
+                .map(|i| events.events(i).to_vec())
+                .collect();
+            EventSet::from_years(block, 11).unwrap()
+        })
+        .collect();
+    let term = tower.apply_term(&years).unwrap();
     let panel = panel();
     let run = || {
         (
             bits(&panel.apply(&flat, 5).unwrap()),
             bits(&panel.apply(&by_label, 5).unwrap()),
             bits(&panel.by_reinsurer(&flat, 5).unwrap()),
+            bits(&panel.apply_term(&term, 3, 5).unwrap()),
+            bits(&panel.by_reinsurer_term(&term, 3, 5).unwrap()),
         )
     };
     let one = in_pool(1, run);

@@ -275,6 +275,8 @@ industry_prior_rust <- function(triangles, column, premiums, settings) .Call(wra
 
 industry_prior_segments_rust <- function(triangle, column, exposure, settings) .Call(wrap__industry_prior_segments_rust, triangle, column, exposure, settings)
 
+insurance_charge_rust <- function(aggregate, entry_ratios, unlimited_expected) .Call(wrap__insurance_charge_rust, aggregate, entry_ratios, unlimited_expected)
+
 isotonic_rust <- function(x, y, weights, increasing, y_min, y_max) .Call(wrap__isotonic_rust, x, y, weights, increasing, y_min, y_max)
 
 join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
@@ -500,6 +502,8 @@ reliability_rust <- function(y, pred, weights, bins) .Call(wrap__reliability_rus
 reorder_groups_by_copula_rust <- function(pd, dim, copula, seed) .Call(wrap__reorder_groups_by_copula_rust, pd, dim, copula, seed)
 
 reorder_groups_rust <- function(pd, dim, correlation, seed, kind) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed, kind)
+
+retro_balance_rust <- function(aggregate, unlimited_expected, expected_loss, expense, loss_conversion, tax_multiplier, minimum, maximum) .Call(wrap__retro_balance_rust, aggregate, unlimited_expected, expected_loss, expense, loss_conversion, tax_multiplier, minimum, maximum)
 
 retro_premium_rust <- function(losses, basic, lcm, minimum, maximum) .Call(wrap__retro_premium_rust, losses, basic, lcm, minimum, maximum)
 
@@ -3999,7 +4003,11 @@ ReinsurerPanel <- new.env(parent = emptyenv())
 
 ReinsurerPanel$apply <- function(result, seed) .Call(wrap__ReinsurerPanel__apply, self, result, seed)
 
+ReinsurerPanel$apply_term <- function(result, n_years, seed) .Call(wrap__ReinsurerPanel__apply_term, self, result, n_years, seed)
+
 ReinsurerPanel$by_reinsurer <- function(result, seed) .Call(wrap__ReinsurerPanel__by_reinsurer, self, result, seed)
+
+ReinsurerPanel$by_reinsurer_term <- function(result, n_years, seed) .Call(wrap__ReinsurerPanel__by_reinsurer_term, self, result, n_years, seed)
 
 ReinsurerPanel$driver <- function(by_year) .Call(wrap__ReinsurerPanel__driver, self, by_year)
 
@@ -4008,6 +4016,8 @@ ReinsurerPanel$line <- function(reinsurer, layer, line) .Call(wrap__ReinsurerPan
 ReinsurerPanel$new <- function(reinsurers) .Call(wrap__ReinsurerPanel__new, reinsurers)
 
 ReinsurerPanel$reinsurer_names <- function() .Call(wrap__ReinsurerPanel__reinsurer_names, self)
+
+ReinsurerPanel$reinsurers <- function() .Call(wrap__ReinsurerPanel__reinsurers, self)
 
 #' @export
 `$.ReinsurerPanel` <- function (self, name) { func <- ReinsurerPanel[[name]]; environment(func) <- environment(); func }

@@ -1221,6 +1221,12 @@ pub(crate) struct ReinsurerPanel {
     pub(crate) inner: Panel,
 }
 
+/// The number of years of a term an R caller passed.
+fn n_years_arg(x: f64) -> Result<usize> {
+    let n = whole(x, "n_years")?;
+    usize::try_from(n).map_err(|_| Error::Other("n_years is too large".into()))
+}
+
 /// The tower result an R caller passed.
 fn tower_result(result: &Robj) -> Result<&PredictiveDistribution> {
     <&PredictiveDistribution>::try_from(result)
@@ -1257,6 +1263,16 @@ impl ReinsurerPanel {
         Ok(Self { inner })
     }
 
+    /// The panel's reinsurers, in panel order, as a list.
+    fn reinsurers(&self) -> List {
+        List::from_values(
+            self.inner
+                .reinsurers()
+                .iter()
+                .map(|r| Robj::from(PanelReinsurer { inner: r.clone() })),
+        )
+    }
+
     fn reinsurer_names(&self) -> Vec<String> {
         self.inner
             .reinsurers()
@@ -1277,6 +1293,35 @@ impl ReinsurerPanel {
         let inner = self
             .inner
             .by_reinsurer(&tower_result(&result)?.inner, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+
+    fn apply_term(&self, result: Robj, n_years: f64, seed: f64) -> Result<PredictiveDistribution> {
+        let inner = self
+            .inner
+            .apply_term(
+                &tower_result(&result)?.inner,
+                n_years_arg(n_years)?,
+                whole(seed, "seed")?,
+            )
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+
+    fn by_reinsurer_term(
+        &self,
+        result: Robj,
+        n_years: f64,
+        seed: f64,
+    ) -> Result<PredictiveDistribution> {
+        let inner = self
+            .inner
+            .by_reinsurer_term(
+                &tower_result(&result)?.inner,
+                n_years_arg(n_years)?,
+                whole(seed, "seed")?,
+            )
             .map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }

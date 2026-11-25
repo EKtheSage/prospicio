@@ -47,6 +47,7 @@ mod reserving_expense;
 mod reserving_inflation;
 mod reserving_inflation_draws;
 mod reserving_separation;
+mod retro;
 mod risk;
 
 fn to_py(e: prospicio_core::Error) -> PyErr {
@@ -253,6 +254,8 @@ mod prospicio_native {
     use super::reserving_inflation_draws::PyIndexPaths;
     #[pymodule_export]
     use super::reserving_separation::{PySeparation, PySeparationFit};
+    #[pymodule_export]
+    use super::retro::{PyInsuranceCharge, PyRetroPlan};
     #[pymodule_export]
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,

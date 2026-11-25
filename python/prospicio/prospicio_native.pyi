@@ -19474,6 +19474,169 @@ class IndustryPrior:
         """
 
 @final
+class InsuranceCharge:
+    """
+    The insurance charge and savings of an aggregate loss distribution, at
+    any entry ratio: a Table M without the rows.
+    
+    For aggregate losses ``A`` with mean ``E`` and an entry ratio ``r``,
+    the charge is ``phi(r) = E[max(A / E - r, 0)]`` and the savings
+    ``psi(r) = E[max(r - A / E, 0)]``, with ``phi(r) - psi(r) = 1 - r``.
+    
+    Build one with ``InsuranceCharge.from_grid`` (an aggregate on a grid,
+    from ``fft`` or ``panjer``) or ``InsuranceCharge.from_sample``
+    (simulated or observed totals). With a per-occurrence limit, build it
+    from the limited aggregate (the limited Table M) and call ``table_l``
+    for a Table L.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import InsuranceCharge
+    >>> table = InsuranceCharge.from_sample([0.0, 50.0, 100.0, 250.0])
+    >>> table.expected
+    100.0
+    >>> table.charge(1.0), table.savings(1.0)
+    (0.375, 0.375)
+    """
+    def __repr__(self, /) -> str: ...
+    def charge(self, /, entry_ratio: float) -> float:
+        """
+        The insurance charge ``phi(r)``.
+        
+        Parameters
+        ----------
+        entry_ratio : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def expected(self, /) -> float:
+        """
+        What the entry ratios multiply: the expected aggregate loss, and
+        for a Table L the expected loss without the limit.
+        """
+    @staticmethod
+    def from_grid(aggregate: Grid) -> InsuranceCharge:
+        """
+        The table of an aggregate loss distribution on a grid.
+        
+        Parameters
+        ----------
+        aggregate : Grid
+            The aggregate losses, as ``fft`` or ``panjer`` return them.
+        
+        Returns
+        -------
+        InsuranceCharge
+        
+        Raises
+        ------
+        ValueError
+            If the grid's mean is not positive.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Grid
+        >>> from prospicio.pricing import InsuranceCharge
+        >>> agg = Grid(50.0, [0.25, 0.25, 0.25, 0.0, 0.0, 0.25])
+        >>> InsuranceCharge.from_grid(agg).charge(0.5)
+        0.625
+        """
+    @staticmethod
+    def from_sample(losses: Sequence[float]) -> InsuranceCharge:
+        """
+        The table of a sample of aggregate losses, each equally likely:
+        simulated years, or the experience of a group of similar risks.
+        
+        Parameters
+        ----------
+        losses : list of float
+            The totals, in any order.
+        
+        Returns
+        -------
+        InsuranceCharge
+        
+        Raises
+        ------
+        ValueError
+            If the sample is empty, holds a negative or non-finite loss, or
+            has mean zero.
+        """
+    @property
+    def loss_elimination(self, /) -> float:
+        """
+        A Table L's share of expected losses removed by the limit; 0 for
+        any other table.
+        """
+    def savings(self, /, entry_ratio: float) -> float:
+        """
+        The insurance savings ``psi(r) = phi(r) + r - 1``.
+        
+        Parameters
+        ----------
+        entry_ratio : float
+        
+        Returns
+        -------
+        float
+        """
+    def table(self, /, entry_ratios: Sequence[float]) -> dict:
+        """
+        The table at the given entry ratios.
+        
+        Parameters
+        ----------
+        entry_ratios : list of float
+        
+        Returns
+        -------
+        dict
+            Columns ``entry_ratio``, ``charge`` and ``savings``, one value
+            per entry ratio, in their order.
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import InsuranceCharge
+        >>> t = InsuranceCharge.from_sample([0.0, 50.0, 100.0, 250.0]).table([0.0, 0.5, 1.0])
+        >>> t["charge"], t["savings"]
+        ([1.0, 0.625, 0.375], [0.0, 0.125, 0.375])
+        """
+    def table_l(self, /, unlimited_expected: float) -> InsuranceCharge:
+        """
+        This table of a limited aggregate as a Table L: entry ratios become
+        multiples of the unlimited expected loss, and the charge takes on
+        the share of losses the per-occurrence limit removes.
+        
+        Parameters
+        ----------
+        unlimited_expected : float
+            The expected aggregate loss without the limit.
+        
+        Returns
+        -------
+        InsuranceCharge
+        
+        Raises
+        ------
+        ValueError
+            If ``unlimited_expected`` is below the limited mean or not
+            finite, or the table is already a Table L.
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import InsuranceCharge
+        >>> limited = InsuranceCharge.from_sample([110.0, 100.0, 0.0, 200.0])
+        >>> table = limited.table_l(132.5)
+        >>> round(table.loss_elimination, 6)
+        0.226415
+        >>> table.charge(0.0)
+        1.0
+        """
+
+@final
 class InverseGamma:
     """
     Inverse gamma distribution with shape ``alpha`` and scale ``theta``:
@@ -28605,6 +28768,72 @@ class Panel:
             was already applied to, a line on a layer the result does not
             have, a named layer whose lines do not sum to 1, or a driver of
             the wrong length.
+        OverflowError
+            For a negative seed or a seed of ``2**64`` or more.
+        """
+    def apply_term(self, /, result: PredictiveDistribution, n_years: int, seed: int = 0) -> PredictiveDistribution:
+        """
+        A term's paths after reinsurer default.
+        
+        Each row is a path of ``n_years`` years, and a default is final: a
+        reinsurer that defaults in year ``t`` of a path is in default in
+        every later year of it. The collateral is held once per reinsurer
+        and path and is used up: in each year in default the collateral
+        still held is set against that year's exposure, and what it covered
+        is gone for the later years. Each path-year's factor comes from its
+        driver ranked among all path-years (the gross loss, or a driver given
+        path-major: year ``t`` of path ``j`` at ``j * n_years + t``, from 0).
+        Path ``j`` draws from its own stream, its years in order, so a term
+        of one year draws as :meth:`apply` does on that year. With a
+        constant probability ``p`` and independent default (correlation 0),
+        a reinsurer is in default by year ``t`` with probability
+        ``1 - (1 - p)**t``. With a correlation above 0 this holds only when
+        the years' drivers are independent and identically distributed: the
+        ranks are taken over all path-years together, so a driver that
+        trends from year to year moves defaults between years.
+        
+        The result has the input's components, copied bit for bit, then for
+        each year in turn the components :meth:`apply` adds, with the year
+        (from 1) as the last key.
+        
+        Parameters
+        ----------
+        result : PredictiveDistribution
+            A term's paths (``Tower.apply_term``, ``apply_aggregate_term`` or
+            ``apply_timeline``).
+        n_years : int
+            The term's years; the result's years must be exactly ``1`` to
+            ``n_years``.
+        seed : int, default 0
+            The default draws' seed.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            As :meth:`apply` does, and for a result that is no term's paths
+            of ``n_years`` years, or a driver without one value per
+            path-year.
+        OverflowError
+            For a negative ``n_years`` or seed, or a seed of ``2**64`` or
+            more.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
+        >>> # One path of two years, ceding 5 and then 10.
+        >>> years = [EventSet.from_years([[15.0]]), EventSet.from_years([[25.0]])]
+        >>> term = Tower([Layer("10x10", 10.0, 10.0)]).apply_term(years)
+        >>> # Re A certainly defaults, recovers nothing and has collateral of 8:
+        >>> # year 1 uses 5 of it, year 2 the 3 left.
+        >>> panel = Panel([Reinsurer("Re A", 1.0, 0.0, collateral=8.0)]).with_line("Re A", "10x10", 1.0)
+        >>> after = panel.apply_term(term, 2)
+        >>> [list(after.marginal(["credit_loss", "10x10", t]).draws) for t in (1, 2)]
+        [[0.0], [7.0]]
         """
     def by_reinsurer(self, /, result: PredictiveDistribution, seed: int = 0) -> PredictiveDistribution:
         """
@@ -28629,6 +28858,8 @@ class Panel:
         ------
         ValueError
             As :meth:`apply` does.
+        OverflowError
+            For a negative seed or a seed of ``2**64`` or more.
         
         Examples
         --------
@@ -28640,6 +28871,48 @@ class Panel:
         [0.0, 3.0, 8.0]
         >>> [round(x, 12) for x in by.marginal(["credit_loss", "Re A"]).draws]
         [0.0, 1.8, 4.8]
+        """
+    def by_reinsurer_term(self, /, result: PredictiveDistribution, n_years: int, seed: int = 0) -> PredictiveDistribution:
+        """
+        Each reinsurer's credit loss, exposure and default in each year of
+        a term's paths, from the same draws as :meth:`apply_term` with the
+        same ``seed``.
+        
+        Parameters
+        ----------
+        result : PredictiveDistribution
+            A term's paths.
+        n_years : int
+        seed : int, default 0
+        
+        Returns
+        -------
+        PredictiveDistribution
+            Dimensions ``["kind", "reinsurer", "year"]``: the components of
+            :meth:`by_reinsurer` for each year in turn, with the year (from
+            1) as the last key. ``("exposure", r, t)`` is the exposure after
+            the collateral still held at the start of year ``t``, and
+            ``("default", r, t)`` is 1 in every year from the one the
+            reinsurer defaults in.
+        
+        Raises
+        ------
+        ValueError
+            As :meth:`apply_term` does.
+        OverflowError
+            For a negative ``n_years`` or seed, or a seed of ``2**64`` or
+            more.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
+        >>> years = [EventSet.from_years([[15.0]]), EventSet.from_years([[25.0]])]
+        >>> term = Tower([Layer("10x10", 10.0, 10.0)]).apply_term(years)
+        >>> panel = Panel([Reinsurer("Re A", 1.0, 0.0, collateral=8.0)]).with_line("Re A", "10x10", 1.0)
+        >>> by = panel.by_reinsurer_term(term, 2)
+        >>> [list(by.marginal(["exposure", "Re A", t]).draws) for t in (1, 2)]
+        [[0.0], [7.0]]
         """
     @property
     def reinsurers(self, /) -> list[Reinsurer]:
@@ -28655,7 +28928,8 @@ class Panel:
         ----------
         by_year : list of float
             One finite value per simulated year, in the order of the tower's
-            result; its length is checked when the panel is applied.
+            result (over a term, one per path-year, path-major); its length is
+            checked when the panel is applied.
         
         Returns
         -------
@@ -28691,8 +28965,8 @@ class Panel:
         Raises
         ------
         ValueError
-            For a reinsurer not on the panel, a line out of range or a line
-            given twice.
+            For a reinsurer not on the panel, an empty layer name, a line out
+            of range or a line given twice.
         """
 
 @final
@@ -32697,6 +32971,117 @@ class RenewalRuin:
     def u(self, /) -> list[float]:
         """
         The initial surplus at each grid point.
+        """
+
+@final
+class RetroPlan:
+    """
+    A retrospective rating plan: the premium ``T (b + c L)`` for losses
+    ``L``, no less than a minimum and no more than a maximum.
+    
+    Amounts are in money. A plan with a loss limit takes ``L`` as the
+    losses with each occurrence limited, and is balanced against a Table L.
+    
+    Parameters
+    ----------
+    expected_loss : float
+        The expected losses ``E``, without any loss limit.
+    expense : float
+        Expenses and profit ``e``, excluding the premium tax.
+    loss_conversion : float, default 1.0
+        The loss conversion factor ``c``.
+    tax_multiplier : float, default 1.0
+        The tax multiplier ``T``.
+    minimum : float, default 0.0
+        The minimum premium ``H``.
+    maximum : float, default inf
+        The maximum premium ``G``.
+    
+    Raises
+    ------
+    ValueError
+        Unless ``E``, ``c`` and ``T`` are positive and finite, ``e`` is
+        non-negative and ``0 <= H < G``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import InsuranceCharge, RetroPlan
+    >>> losses = [0.0, 10.0, 30.0, 50.0, 70.0, 90.0, 120.0, 150.0, 200.0, 280.0]
+    >>> plan = RetroPlan(100.0, 30.0, loss_conversion=1.1, tax_multiplier=1.03,
+    ...                  minimum=80.0, maximum=220.0)
+    >>> balanced = plan.balance(InsuranceCharge.from_sample(losses))
+    >>> terms = plan.loss_sensitive_premium(balanced["basic"])
+    >>> mean = sum(terms.premium(losses)) / 10
+    >>> round(mean, 9) == round(plan.guaranteed_cost(), 9)
+    True
+    """
+    def __new__(cls, /, expected_loss: float, expense: float, loss_conversion: float = 1.0, tax_multiplier: float = 1.0, minimum: float = 0.0, maximum: float = ...) -> RetroPlan: ...
+    def balance(self, /, charge: InsuranceCharge) -> dict:
+        """
+        The basic premium at which the plan collects the guaranteed-cost
+        premium on average.
+        
+        Parameters
+        ----------
+        charge : InsuranceCharge
+            The table of the plan's aggregate losses, on the plan's expected
+            losses: a Table M, or with a loss limit a Table L.
+        
+        Returns
+        -------
+        dict
+            ``basic``, ``entry_ratio_minimum`` and ``entry_ratio_maximum``
+            (where the minimum and the maximum bind; the first is negative
+            when the minimum never binds), ``net_insurance_charge`` and
+            ``expected_premium``.
+        
+        Raises
+        ------
+        ValueError
+            If the table's expected loss is not the plan's, or the minimum
+            is at least the guaranteed-cost premium, or the maximum at most
+            it, or the minimum is high enough that only a negative basic
+            premium would balance the plan.
+        """
+    def guaranteed_cost(self, /) -> float:
+        """
+        The guaranteed-cost premium ``T (e + E)``.
+        
+        Returns
+        -------
+        float
+        """
+    def loss_sensitive_premium(self, /, basic: float) -> LossSensitivePremium:
+        """
+        The plan's premium terms under a basic premium, as a
+        ``prospicio.reinsurance.LossSensitivePremium``: ``T (b + c L)`` for
+        a year's losses ``L``, between the minimum and the maximum, with
+        the tax multiplier folded into its basic premium and its loss
+        conversion factor.
+        
+        Parameters
+        ----------
+        basic : float
+            The basic premium ``b``, before the tax multiplier.
+        
+        Returns
+        -------
+        prospicio.reinsurance.LossSensitivePremium
+            Its ``premium(losses)`` is the retrospective premium of each of
+            a list of losses.
+        
+        Raises
+        ------
+        ValueError
+            If ``basic`` is negative or not finite.
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import RetroPlan
+        >>> plan = RetroPlan(100.0, 30.0, 1.1, 1.03, minimum=80.0, maximum=220.0)
+        >>> terms = plan.loss_sensitive_premium(25.0)
+        >>> terms.premium([0.0, 400.0])
+        [80.0, 220.0]
         """
 
 @final
@@ -43857,7 +44242,9 @@ def solvency2_reinsurance_lgd(recoverables: float, risk_mitigation: float, colla
         under collateral arrangements; any value in ``[0, 1]`` is accepted.
     factor : float, default 1.0
         The factor of Art 197(7) on the collateral: F (1.0 or 0.5) with the
-        50 % share, F' (1.0 or 0.18) with the 90 % share; in ``[0, 1]``.
+        50 % share; with the 90 % share F' (1.0 or 0.18) until 2027-01-29
+        and F''' (1.0 or 0.9) from 2027-01-30 (Delegated Regulation (EU)
+        2026/269); in ``[0, 1]``.
     
     Returns
     -------
@@ -43874,8 +44261,8 @@ def solvency2_reinsurance_lgd(recoverables: float, risk_mitigation: float, colla
     >>> from prospicio.reinsurance import solvency2_reinsurance_lgd
     >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0)
     30.0
-    >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0, lgd_share=0.9, factor=0.5)
-    93.0
+    >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0, lgd_share=0.9, factor=0.18)
+    102.6
     """
 
 def solvency2_type1(exposures: Sequence[tuple[float, float]]) -> Solvency2Type1:
@@ -43887,7 +44274,8 @@ def solvency2_type1(exposures: Sequence[tuple[float, float]]) -> Solvency2Type1:
     over every ordered pair of groups, the diagonal included, ``PD_j (1 -
     PD_j) PD_k (1 - PD_k) / (1.25 (PD_j + PD_k) - PD_j PD_k)`` times the
     groups' total losses given default (a term whose two probabilities are
-    both 0 is 0, EIOPA Q&A 2530), and ``v_intra`` sums ``1.5 PD_j (1 - PD_j)
+    both 0 is 0, EIOPA Q&A 2530 and Art 201(2)(a) as amended by 2026/269),
+    and ``v_intra`` sums ``1.5 PD_j (1 - PD_j)
     / (2.5 - PD_j)`` times each group's squared losses given default. The
     charge is ``3 sigma`` if ``sigma`` is at most 7 % of the total loss given
     default, ``5 sigma`` if at most 20 %, and the total otherwise.
@@ -43896,7 +44284,10 @@ def solvency2_type1(exposures: Sequence[tuple[float, float]]) -> Solvency2Type1:
     ----------
     exposures : list of (float, float)
         Each exposure's probability of default, in ``[0, 1]``, and loss given
-        default, non-negative. An empty list gives a charge of 0.
+        default, non-negative. An empty list gives a charge of 0. Each entry
+        is one single name exposure (Art 199(1)); Art 201(3) squares each
+        one's loss given default, so one reinsurer split over several entries
+        with the same probability understates ``v_intra``.
     
     Returns
     -------

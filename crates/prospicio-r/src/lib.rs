@@ -49,6 +49,7 @@ mod reserving_expense;
 mod reserving_inflation;
 mod reserving_inflation_draws;
 mod reserving_separation;
+mod retro;
 mod risk;
 
 pub(crate) fn to_r(e: prospicio_core::Error) -> Error {
@@ -100,6 +101,7 @@ extendr_module! {
     use pnl;
     use pricing;
     use ratemaking;
+    use retro;
     use reinsurance;
     use reserving;
     use reserving_apc;
