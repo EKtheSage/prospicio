@@ -176,6 +176,11 @@ reference:
       - reinsurance.CessionStatistics
       - reinsurance.aggregate_layer_statistics
       - reinsurance.AggregateLayerStatistics
+  - title: Reinsurer default
+    desc: Reinsurers' default on a tower's recoveries, one Gaussian factor ranked on the gross loss.
+    contents:
+      - reinsurance.Panel
+      - reinsurance.Reinsurer
   - title: Solvency II counterparty default
     desc: The standard formula's counterparty default module for type 1 exposures, Delegated Regulation (EU) 2015/35 Arts 192, 199, 200 and 201.
     contents:
@@ -395,6 +400,7 @@ reference:
       - reserving.MackFit
       - reserving.ClaimsDevelopmentResult
       - reserving.calendar_year_effect
+      - reserving.CalendarIndex
       - reserving.CalendarYearTest
       - reserving.development_correlation
       - reserving.DevelopmentCorrelationTest
@@ -425,14 +431,19 @@ reference:
       - reserving.ExcessPattern
       - reserving.RatioDevelopment
       - reserving.RatioDevelopmentFit
+      - reserving.Reinflated
       - reserving.RiskAdjustmentResult
       - reserving.SegmentRiskAdjustment
+      - reserving.Separation
+      - reserving.SeparationFit
       - reserving.UlaeEstimate
       - reserving.ulae_classical
       - reserving.ulae_kittel
       - reserving.ulae_conger_nolibos
       - reserving.FrequencySeverity
       - reserving.FrequencySeverityFit
+      - reserving.FutureCells
+      - reserving.Indexation
       - reserving.Disposal
       - reserving.DisposalFit
       - reserving.CaseOutstanding

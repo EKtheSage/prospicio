@@ -1,0 +1,3 @@
+### Reserving
+
+- The age-period-cohort reserving GLM (#979, Rust): `ApcGlm` with `ApcEffects` (the full model, or accident-period, age-period and accident-age sub-models) fits the canonical `3k - 3` parameter model of Kuang, Nielsen and Nielsen on a full triangle and projects the future calendar effect by `Extrapolation::I2`, `I1` or `I0`; `ApcGlmFit` gives the canonical coefficients, reserves, `prediction_error()` and `predict_distribution()`, and `FutureCells::from_apc_glm` feeds re-inflation. `Separation::glm` gives the arithmetic separation method as a Poisson GLM with a delta-method prediction error. Python and R bindings follow.
