@@ -30,6 +30,8 @@ use prospicio_math::special::{norm_pdf, norm_quantile};
 use prospicio_models::{Design, Fitted, Model};
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
 
+mod json;
+
 fn check_tau(tau: f64) -> Result<()> {
     if !(tau > 0.0 && tau < 1.0) {
         return Err(Error::InvalidParameter {
