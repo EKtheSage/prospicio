@@ -38454,6 +38454,7 @@ class TweedieFit:
     """
     A Tweedie GLM with its power estimated, from ``TweedieGlm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def at_boundary(self, /) -> bool:
         """
@@ -38463,6 +38464,25 @@ class TweedieFit:
     def dispersion(self, /) -> float:
         """
         The maximum-likelihood dispersion at that power.
+        """
+    @staticmethod
+    def from_json(text: str) -> TweedieFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        TweedieFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def glm(self, /) -> GlmFit:
@@ -38493,6 +38513,31 @@ class TweedieFit:
     def predict(self, /, design: Design) -> list[float]:
         """
         Expected response for each row of ``design``.
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact (format
+        ``risk_rs.tweedie_fit``): the power and dispersion, the profile's
+        interval and evaluations, and the GLM at that power as a nested
+        ``risk_rs.glm_fit`` artifact, numbers bit for bit (#978).
+        ``from_json`` reads it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, TweedieFit, TweedieGlm
+        >>> x = [float(i % 3) for i in range(60)]
+        >>> y = [0.0 if i % 4 == 0 else 1.0 + (i * 7) % 5 + x[i] for i in range(60)]
+        >>> d = Design([[1.0] * 60, x], ["(Intercept)", "x"])
+        >>> fit = TweedieGlm().fit(d, y)
+        >>> TweedieFit.from_json(fit.to_json()).power == fit.power
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
 
 @final

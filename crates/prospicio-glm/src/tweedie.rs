@@ -24,6 +24,8 @@ use rayon::prelude::*;
 
 use crate::{Dispersion, Glm, GlmFit};
 
+mod json;
+
 /// The profile log-likelihood of a Tweedie GLM's power, from
 /// [`tweedie_profile`].
 #[derive(Debug, Clone)]
