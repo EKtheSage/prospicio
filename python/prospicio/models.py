@@ -58,6 +58,12 @@ from .prospicio_native import (
     vuong,
     crps,
     deviance,
+    mean_deviance,
+    base_score,
+    monotone_violations,
+    pearson_dispersion,
+    pearson_terms,
+    weighted_quantile,
     elpd_loo,
     elpd_waic,
     confusion_matrix,
@@ -170,6 +176,12 @@ __all__ = [
     "Gam",
     "GamFit",
     "deviance",
+    "mean_deviance",
+    "base_score",
+    "monotone_violations",
+    "pearson_dispersion",
+    "pearson_terms",
+    "weighted_quantile",
     "gini",
     "normalized_gini",
     "double_lift",
@@ -305,8 +317,8 @@ def deviance_score(family, theta=None, power=None):
     """
 
     def score(y, pred, design):
-        w = design.weights
-        return deviance(family, y, pred, weights=w, theta=theta, power=power) / sum(w)
+        return mean_deviance(family, list(y), list(pred), weights=list(design.weights),
+                             theta=theta, power=power)
 
     return score
 
