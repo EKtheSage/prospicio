@@ -28,6 +28,7 @@ Collate:
     'chf.R'
     'credibility.R'
     'discrete.R'
+    'earned.R'
     'reserving.R'
     'excess.R'
     'extendr-wrappers.R'
