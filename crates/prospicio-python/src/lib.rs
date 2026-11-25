@@ -17,6 +17,7 @@ mod aggregate;
 mod arrays;
 mod bonus_malus;
 mod book;
+mod boosting;
 mod cashflow;
 mod casualty;
 mod chf;
@@ -92,6 +93,11 @@ mod prospicio_native {
     use super::bonus_malus::PyBonusMalus;
     #[pymodule_export]
     use super::book::{PyBookCashflows, PyDealBook, PyDealRun};
+    #[pymodule_export]
+    use super::boosting::{
+        base_score, mean_deviance, monotone_violations, pearson_dispersion, pearson_terms,
+        weighted_quantile,
+    };
     #[pymodule_export]
     use super::cashflow::{
         PyCashflowTerms, PyCashflows, PyCollateralRequirement, PyForward, PyPremiumAdjustment,

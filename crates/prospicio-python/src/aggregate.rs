@@ -810,6 +810,60 @@ impl From<EventSet> for PyEventSet {
 
 #[pymethods]
 impl PyEventSet {
+    /// The years as a JSON document: losses, and their sums insured,
+    /// times, labels and aggregate parts when present, with the seed and
+    /// provenance, numbers bit for bit (#978). ``from_json`` reads it back;
+    /// ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> e = EventSet.from_years([[5.0, 2.0], [], [9.0]], seed=3)
+    /// >>> EventSet.from_json(e.to_json()) == e
+    /// True
+    /// >>> pickle.loads(pickle.dumps(e)) == e
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// An event set from a document written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// EventSet
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the text is not such a document, or is from a newer version.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        EventSet::from_json(text).map(Self::from).map_err(to_py)
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
+    /// Whether ``other`` is an event set with the same years, losses and
+    /// everything they carry.
+    fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
+        other
+            .extract::<PyRef<'_, PyEventSet>>()
+            .is_ok_and(|o| o.inner == self.inner)
+    }
+
     /// Years of losses from elsewhere (your own simulation, or a
     /// catastrophe model's event loss table by year), optionally with the
     /// sum insured of the risk each loss hit, which a surplus treaty needs.

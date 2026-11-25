@@ -1342,12 +1342,10 @@ severity_fit <- function(family, losses, reporting_thresholds = NULL, censored =
     optional_arg(censored), optional_arg(weights), optional_arg(truncated_above),
     if (is.null(t)) NaN else as.double(t)
   ))
-  k <- length(r$parameters)
   list(
     distribution = wrap_dist(r$family, r$ptr), parameters = r$parameters,
     standard_errors = r$standard_errors,
-    covariance = matrix(r$covariance, k, k, byrow = TRUE,
-                        dimnames = list(names(r$parameters), names(r$parameters))),
+    covariance = square_names(r$covariance, names(r$parameters)),
     log_likelihood = r$log_likelihood, aic = r$aic, bic = r$bic, converged = r$converged
   )
 }
@@ -1546,12 +1544,10 @@ grouped_fit <- function(family, bounds, counts, method = "ml") {
   r <- rust_result(grouped_fit_rust(
     as.character(family), as.double(bounds), as.double(counts), as.character(method)
   ))
-  k <- length(r$parameters)
   list(
     distribution = wrap_dist(r$family, r$ptr), parameters = r$parameters,
     standard_errors = r$standard_errors,
-    covariance = matrix(r$covariance, k, k, byrow = TRUE,
-                        dimnames = list(names(r$parameters), names(r$parameters))),
+    covariance = square_names(r$covariance, names(r$parameters)),
     chi_square = r$chi_square, log_likelihood = r$log_likelihood, expected = r$expected,
     degrees_of_freedom = r$degrees_of_freedom, p_value = r$p_value, converged = r$converged
   )
@@ -1574,4 +1570,10 @@ lev_distance_fit <- function(family, sizes, empirical, weights = NULL, start = N
     distribution = wrap_dist(r$family, r$ptr), parameters = r$parameters,
     distance = r$distance, fitted = r$fitted, converged = r$converged
   )
+}
+
+# A square matrix from Rust with `names` on both of its dimensions.
+square_names <- function(m, names) {
+  dimnames(m) <- list(names, names)
+  m
 }

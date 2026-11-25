@@ -56,9 +56,7 @@ bonus_malus_scale <- S7::new_class(
     ptr = S7::new_S3_class("BonusMalusR"),
     levels = S7::new_property(S7::class_double, getter = function(self) self@ptr$levels()),
     start = S7::new_property(S7::class_double, getter = function(self) self@ptr$start()),
-    transitions = S7::new_property(S7::class_any, getter = function(self) {
-      matrix(self@ptr$transitions(), nrow = self@levels, byrow = TRUE)
-    })
+    transitions = S7::new_property(S7::class_any, getter = function(self) self@ptr$transitions())
   ),
   constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
 )
@@ -98,8 +96,7 @@ S7::method(print, bonus_malus_scale) <- function(x, ...) {
 #' r <- bonus_malus_portfolio(scale, 0.1, cv = 1)$relativity
 #' bonus_malus_efficiency(scale, c(0.05, 0.1, 0.2), r)
 bonus_malus_transition <- function(scale, lambda) {
-  n <- scale@levels
-  matrix(rust_result(scale@ptr$transition_matrix(as.double(lambda))), n, n, byrow = TRUE)
+  rust_result(scale@ptr$transition_matrix(as.double(lambda)))
 }
 
 #' @rdname bonus_malus_transition
