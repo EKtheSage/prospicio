@@ -1,8 +1,11 @@
 //! The Solvency II standard formula's counterparty default module for type 1
 //! exposures (reinsurers and other rated counterparties), as pure functions:
-//! Commission Delegated Regulation (EU) 2015/35, as amended by 2016/467 and
-//! 2019/981, Articles 192(2), 199, 200 and 201 (#980,
-//! `docs/design/reinsurer-default.md` decision (k)).
+//! Commission Delegated Regulation (EU) 2015/35, Articles 192(2), 199, 200
+//! and 201, as in the consolidated text of 2024-11-14 (#980,
+//! `docs/design/reinsurer-default.md` decision (k)). Delegated Regulation
+//! (EU) 2026/269 changes the factor of the 90 % case from 2027-01-30 (see
+//! [`reinsurance_lgd`]); the factor is the caller's argument, so the
+//! functions hold under both texts.
 //!
 //! Every input is the caller's: the best estimate of the recoverables, the
 //! risk-mitigating effect `RM_re` (Art 196, the underwriting SCR without the
@@ -151,8 +154,9 @@ pub fn probability_by_ratio(scr_ratio: f64) -> Result<f64> {
 /// - `factor`: the factor of Art 197(7) on the collateral, F (100 %, or
 ///   50 % when the undertaking's share of the insolvency estate above the
 ///   collateral takes account of receiving the collateral) in the 50 %
-///   case, F' (100 % or 18 %, a figure EIOPA Q&A 3119 questions) in the
-///   90 % case.
+///   case. In the 90 % case it is F' (100 % or 18 %, a figure EIOPA Q&A
+///   3119 questions) until 2027-01-29, and F''' (100 % or 90 %) from
+///   2027-01-30, when Delegated Regulation (EU) 2026/269 applies.
 ///
 /// Any share and factor in [0, 1] is accepted, so that a later amendment or
 /// a supervisor's reading needs no new version; the two regulatory shares
@@ -234,6 +238,12 @@ pub struct Type1 {
 /// exposures (Arts 200 and 201), from each exposure's probability of default
 /// and loss given default, `(pd, lgd)`.
 ///
+/// Each entry is one single name exposure (Art 199(1): the counterparties of
+/// one group take the LGD-weighted average of their probabilities). Art
+/// 201(3) squares each single name exposure's loss given default, so one
+/// reinsurer split over several entries with the same probability
+/// understates `V_intra`.
+///
 /// The exposures are grouped by probability of default (exactly equal
 /// values share a group); `TLGD_j` is the sum of the losses given default in
 /// group `j` and `PD_j` its probability. Then
@@ -242,7 +252,8 @@ pub struct Type1 {
 ///   diagonal included (so each pair of different groups counts twice), of
 ///   `PD_j (1 - PD_j) PD_k (1 - PD_k) / (1.25 (PD_j + PD_k) - PD_j PD_k)
 ///   TLGD_j TLGD_k`, a term whose two probabilities are both 0 being 0
-///   (EIOPA Q&A 2530);
+///   (EIOPA Q&A 2530, and Art 201(2)(a) as amended by 2026/269 from
+///   2027-01-30);
 /// - `V_intra` is the sum over the groups of `1.5 PD_j (1 - PD_j) / (2.5 -
 ///   PD_j)` times the sum of the squared losses given default in group `j`;
 /// - `SCR_def,1` is `3 sigma` if `sigma = sqrt(V_inter + V_intra)` is at

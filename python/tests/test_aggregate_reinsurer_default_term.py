@@ -8,7 +8,8 @@ import math
 
 import pytest
 
-from prospicio.aggregate import EventSet
+from prospicio.aggregate import EventSet, Exposure, Timeline
+from prospicio.distributions import PredictiveDistribution
 from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
 
 
@@ -111,3 +112,23 @@ def test_the_errors():
             panel.by_reinsurer_term(term, 2, seed=seed)
     with pytest.raises(OverflowError):
         panel.apply_term(term, -1)
+
+
+def test_aggregate_and_timeline_terms():
+    # apply_aggregate_term: one path ceding 5 then 10 on a 10x10 aggregate
+    # cover; Re A certainly defaults with collateral 8.
+    panel = Panel([Reinsurer("Re A", 1.0, 0.0, collateral=8.0)]).with_line("Re A", "XL", 1.0)
+    totals = [PredictiveDistribution(["line"], [("a",)], [[x]]) for x in (15.0, 25.0)]
+    agg = Tower([Layer("XL", 10.0, 10.0)]).apply_aggregate_term(totals)
+    after = panel.apply_term(agg, 2)
+    assert [draws(after, "credit_loss", "XL", t) for t in (1, 2)] == [[0.0], [7.0]]
+    # apply_timeline, risks attaching: an event in month 14 of 24 split 1:3
+    # over the two contract years cedes 5 and then 50.
+    events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+    shares = [[0.0] * 24, [0.0] * 24]
+    shares[0][13], shares[1][13] = 0.25, 0.75
+    tower = Tower([Layer("XL", 50.0, 20.0)]).with_cover_basis("risks_attaching")
+    rad = tower.apply_timeline(Timeline(events, 24), Exposure(shares))
+    after = panel.apply_term(rad, 2)
+    # Year 1's 5 is covered by the collateral; year 2 loses 50 less the 3 left.
+    assert [draws(after, "credit_loss", "XL", t) for t in (1, 2)] == [[0.0], [47.0]]

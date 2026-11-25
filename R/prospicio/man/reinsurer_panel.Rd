@@ -112,6 +112,14 @@ The lines of a layer the panel names must sum to 1 (to 1e-9), and every
 layer a line names must be in the result; both are checked when the
 panel is applied, since a panel is built before it meets a tower. A
 layer the panel does not name carries no credit risk.
+
+\code{apply_panel_term()} and \code{panel_by_reinsurer_term()} stop with an error
+for an \code{n_years} that is not a whole number of at least 1, a one-year
+result, a result whose years are not exactly 1 to \code{n_years}, a driver
+without one value per path-year, a result the panel was already applied
+to, lines that break the rules above, or a seed that is not a
+non-negative whole number.
+\code{apply_panel()} and \code{panel_by_reinsurer()} likewise refuse a term.
 }
 \examples{
 years <- apply_tower(reinsurance_tower(list(xol_layer("10x10", 10, 10))), c(5, 15, 30))
@@ -129,8 +137,8 @@ term <- apply_tower_term(
   reinsurance_tower(list(xol_layer("10x10", 10, 10))),
   list(events_from_years(list(15)), events_from_years(list(25)))
 )
-panel_c <- panel_line(reinsurer_panel(list(reinsurer("Re C", 1, 0, collateral = 8))),
-                      "Re C", "10x10", 1)
+re_c <- reinsurer("Re C", 1, 0, collateral = 8)
+panel_c <- panel_line(reinsurer_panel(list(re_c)), "Re C", "10x10", 1)
 after <- apply_panel_term(panel_c, term, n_years = 2)
 marginal(after, list("credit_loss", "10x10", 2L))@draws
 draw_matrix(panel_by_reinsurer_term(panel_c, term, n_years = 2))

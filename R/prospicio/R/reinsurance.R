@@ -1545,13 +1545,15 @@ solvency2_probability_by_ratio <- function(scr_ratio) {
 #' @param lgd_share 0.5, or 0.9 for a counterparty with 60 % or more of its
 #'   assets under collateral arrangements; any value in `[0, 1]` is accepted.
 #' @param factor The factor of Art 197(7) on the collateral, in `[0, 1]`: F
-#'   (1 or 0.5) with the 50 % share, F' (1 or 0.18) with the 90 % share.
+#'   (1 or 0.5) with the 50 % share; with the 90 % share F' (1 or 0.18)
+#'   until 2027-01-29 and F''' (1 or 0.9) from 2027-01-30 (Delegated
+#'   Regulation (EU) 2026/269).
 #' @returns A number.
 #' @seealso [solvency2_type1()].
 #' @export
 #' @examples
 #' solvency2_reinsurance_lgd(100, 40, 30)
-#' solvency2_reinsurance_lgd(100, 40, 30, lgd_share = 0.9, factor = 0.5)
+#' solvency2_reinsurance_lgd(100, 40, 30, lgd_share = 0.9, factor = 0.18)
 solvency2_reinsurance_lgd <- function(recoverables, risk_mitigation, collateral,
                                       lgd_share = 0.5, factor = 1) {
   rust_result(solvency2_reinsurance_lgd_rust(
@@ -1567,13 +1569,17 @@ solvency2_reinsurance_lgd <- function(recoverables, risk_mitigation, collateral,
 #' grouped by probability of default; `v_inter` sums over every ordered pair
 #' of groups, the diagonal included, `PD_j (1 - PD_j) PD_k (1 - PD_k) /
 #' (1.25 (PD_j + PD_k) - PD_j PD_k)` times the groups' total losses given
-#' default (a term whose two probabilities are both 0 is 0, EIOPA Q&A 2530),
+#' default (a term whose two probabilities are both 0 is 0, EIOPA Q&A 2530
+#' and Art 201(2)(a) as amended by 2026/269),
 #' and `v_intra` sums `1.5 PD_j (1 - PD_j) / (2.5 - PD_j)` times each group's
 #' squared losses given default. The charge `scr` is `3 sigma` if
 #' `sigma = sqrt(v_inter + v_intra)` is at most 7 % of the total loss given
 #' default, `5 sigma` if at most 20 %, and the total otherwise.
 #'
-#' @param pd Each exposure's probability of default, in `[0, 1]`.
+#' @param pd Each exposure's probability of default, in `[0, 1]`. Each
+#'   element is one single name exposure (Art 199(1)); Art 201(3) squares
+#'   each one's loss given default, so one reinsurer split over several
+#'   elements with the same probability understates `v_intra`.
 #' @param lgd Each exposure's loss given default, non-negative, as
 #'   [solvency2_reinsurance_lgd()] gives it for a reinsurer.
 #' @returns A list with `v_inter`, `v_intra`, `sigma`, `total_lgd` and `scr`.
@@ -1683,6 +1689,14 @@ S7::method(print, reinsurer) <- function(x, ...) {
 #' panel is applied, since a panel is built before it meets a tower. A
 #' layer the panel does not name carries no credit risk.
 #'
+#' `apply_panel_term()` and `panel_by_reinsurer_term()` stop with an error
+#' for an `n_years` that is not a whole number of at least 1, a one-year
+#' result, a result whose years are not exactly 1 to `n_years`, a driver
+#' without one value per path-year, a result the panel was already applied
+#' to, lines that break the rules above, or a seed that is not a
+#' non-negative whole number.
+#' `apply_panel()` and `panel_by_reinsurer()` likewise refuse a term.
+#'
 #' @param reinsurers A list of [reinsurer] objects with unique names.
 #' @param panel A `reinsurer_panel`.
 #' @param reinsurer,layer,line The reinsurer's name, the layer's name and
@@ -1740,8 +1754,8 @@ S7::method(print, reinsurer) <- function(x, ...) {
 #'   reinsurance_tower(list(xol_layer("10x10", 10, 10))),
 #'   list(events_from_years(list(15)), events_from_years(list(25)))
 #' )
-#' panel_c <- panel_line(reinsurer_panel(list(reinsurer("Re C", 1, 0, collateral = 8))),
-#'                       "Re C", "10x10", 1)
+#' re_c <- reinsurer("Re C", 1, 0, collateral = 8)
+#' panel_c <- panel_line(reinsurer_panel(list(re_c)), "Re C", "10x10", 1)
 #' after <- apply_panel_term(panel_c, term, n_years = 2)
 #' marginal(after, list("credit_loss", "10x10", 2L))@draws
 #' draw_matrix(panel_by_reinsurer_term(panel_c, term, n_years = 2))

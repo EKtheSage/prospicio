@@ -163,7 +163,8 @@ impl Panel {
     pub fn new(reinsurers: Vec<Reinsurer>) -> Result<Self>;
     /// Reinsurer `reinsurer` writes `line` of layer `layer`'s ceded loss.
     pub fn line(self, reinsurer: &str, layer: &str, line: f64) -> Result<Self>;
-    /// Rank the years by this driver instead of the gross loss.
+    /// Rank the years by this driver instead of the gross loss: one value
+    /// per year, or over a term one per path-year, path-major.
     pub fn driver(self, by_year: Vec<f64>) -> Result<Self>;
     /// A one-year result (`apply`, `apply_aggregate`, `apply_annual`) after default.
     pub fn apply(&self, tower: &PredictiveDistribution, seed: u64)
@@ -184,7 +185,8 @@ pub mod solvency2 {
     pub fn probability_by_step(step: u8) -> Result<f64>;          // Art 199(2)
     pub fn probability_by_ratio(scr_ratio: f64) -> Result<f64>;   // Art 199(3)
     /// `lgd_share` is 0.5, or 0.9 for a counterparty with 60 % or more of
-    /// its assets collateralised; `factor` is F, or F' in the 90 % case.
+    /// its assets collateralised; `factor` is F, or in the 90 % case F'
+    /// (F''' from 2027-01-30, Delegated Regulation (EU) 2026/269).
     pub fn reinsurance_lgd(recoverables: f64, risk_mitigation: f64,
         collateral: f64, lgd_share: f64, factor: f64) -> Result<f64>; // Art 192(2)
     pub fn type1(exposures: &[(f64, f64)]) -> Result<Type1>;       // Arts 200, 201
@@ -412,13 +414,16 @@ best estimate of recoverables, the risk-mitigating effect `RM_re` and the
 risk-adjusted collateral are the caller's (the library has no standard
 formula underwriting SCR to compute `RM_re` from), and the factor of
 Article 197(7) is an argument (F is 100 % or 50 %; F' is 100 % or 18 %, a
-figure EIOPA Q&A 3119 questions), as is the share, 50 % or the 90 % of a
+figure EIOPA Q&A 3119 questions, until 2027-01-29, and from 2027-01-30
+Delegated Regulation (EU) 2026/269 puts F''' of 100 % or 90 % in its
+place), as is the share, 50 % or the 90 % of a
 counterparty with 60 % or more of its assets collateralised.
 `probability_by_ratio` clamps at both ends (0.01 % above 196 %, 4.2 %
 below 75 %). `type1` groups exposures by probability of default and
 returns `V_inter` (over all ordered pairs `(j, k)`, the diagonal included,
 so each pair of different groups counts twice; a term with both
-probabilities 0 is 0, EIOPA Q&A 2530), `V_intra`, the standard deviation
+probabilities 0 is 0, EIOPA Q&A 2530, written into Art 201(2)(a) by
+2026/269 from 2027-01-30), `V_intra`, the standard deviation
 and `SCR_def,1`.
 
 (l) *Weighted years.* `simulate_events_weighted` returns its weights apart
@@ -508,8 +513,10 @@ The Next items with ids in `docs/lanes/aggregate.md`:
 
 ## Sources
 
-- Commission Delegated Regulation (EU) 2015/35, Articles 189 to 202, as
-  amended by 2016/467 and 2019/981: Art 192(2) (loss given default of a
+- Commission Delegated Regulation (EU) 2015/35, Articles 189 to 202, in
+  the consolidated texts of 2024-11-14 and 2027-01-30 (the latter after
+  Delegated Regulation (EU) 2026/269), checked constant by constant in
+  `knowledge/references/solvency2-counterparty-default.md`: Art 192(2) (loss given default of a
   reinsurance arrangement), Art 196 (risk-mitigating effect), Art 197
   (collateral, factors F), Art 199 (probability of default by credit
   quality step and by solvency ratio), Art 200 (`SCR_def,1`), Art 201

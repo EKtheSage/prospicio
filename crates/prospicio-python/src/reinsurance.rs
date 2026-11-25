@@ -3266,7 +3266,9 @@ pub(crate) fn solvency2_probability_by_ratio(scr_ratio: f64) -> PyResult<f64> {
 ///     under collateral arrangements; any value in ``[0, 1]`` is accepted.
 /// factor : float, default 1.0
 ///     The factor of Art 197(7) on the collateral: F (1.0 or 0.5) with the
-///     50 % share, F' (1.0 or 0.18) with the 90 % share; in ``[0, 1]``.
+///     50 % share; with the 90 % share F' (1.0 or 0.18) until 2027-01-29
+///     and F''' (1.0 or 0.9) from 2027-01-30 (Delegated Regulation (EU)
+///     2026/269); in ``[0, 1]``.
 ///
 /// Returns
 /// -------
@@ -3283,8 +3285,8 @@ pub(crate) fn solvency2_probability_by_ratio(scr_ratio: f64) -> PyResult<f64> {
 /// >>> from prospicio.reinsurance import solvency2_reinsurance_lgd
 /// >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0)
 /// 30.0
-/// >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0, lgd_share=0.9, factor=0.5)
-/// 93.0
+/// >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0, lgd_share=0.9, factor=0.18)
+/// 102.6
 #[pyfunction]
 #[pyo3(signature = (recoverables, risk_mitigation, collateral, lgd_share = 0.5, factor = 1.0))]
 pub(crate) fn solvency2_reinsurance_lgd(
@@ -3311,7 +3313,8 @@ pub(crate) fn solvency2_reinsurance_lgd(
 /// over every ordered pair of groups, the diagonal included, ``PD_j (1 -
 /// PD_j) PD_k (1 - PD_k) / (1.25 (PD_j + PD_k) - PD_j PD_k)`` times the
 /// groups' total losses given default (a term whose two probabilities are
-/// both 0 is 0, EIOPA Q&A 2530), and ``v_intra`` sums ``1.5 PD_j (1 - PD_j)
+/// both 0 is 0, EIOPA Q&A 2530 and Art 201(2)(a) as amended by 2026/269),
+/// and ``v_intra`` sums ``1.5 PD_j (1 - PD_j)
 /// / (2.5 - PD_j)`` times each group's squared losses given default. The
 /// charge is ``3 sigma`` if ``sigma`` is at most 7 % of the total loss given
 /// default, ``5 sigma`` if at most 20 %, and the total otherwise.
@@ -3320,7 +3323,10 @@ pub(crate) fn solvency2_reinsurance_lgd(
 /// ----------
 /// exposures : list of (float, float)
 ///     Each exposure's probability of default, in ``[0, 1]``, and loss given
-///     default, non-negative. An empty list gives a charge of 0.
+///     default, non-negative. An empty list gives a charge of 0. Each entry
+///     is one single name exposure (Art 199(1)); Art 201(3) squares each
+///     one's loss given default, so one reinsurer split over several entries
+///     with the same probability understates ``v_intra``.
 ///
 /// Returns
 /// -------
@@ -3540,7 +3546,8 @@ impl PyPanel {
     /// ----------
     /// by_year : list of float
     ///     One finite value per simulated year, in the order of the tower's
-    ///     result; its length is checked when the panel is applied.
+    ///     result (over a term, one per path-year, path-major); its length is
+    ///     checked when the panel is applied.
     ///
     /// Returns
     /// -------

@@ -278,7 +278,9 @@ impl Panel {
 
     /// Ranks the years by `by_year` instead of the gross loss (an industry
     /// loss, say), one finite value per simulated year in the order of the
-    /// tower's result; its length is checked when the panel is applied.
+    /// tower's result; over a term ([`Panel::apply_term`]), one value per
+    /// path-year, path-major (year `t` of path `j` at `j * n_years + t`,
+    /// `t` from 0). Its length is checked when the panel is applied.
     pub fn driver(mut self, by_year: Vec<f64>) -> Result<Self> {
         if by_year.is_empty() {
             return Err(Error::Data("a driver needs one value per year".into()));
@@ -453,7 +455,8 @@ struct PathDraws {
     exposure: Vec<f64>,
     /// Each year's exposure after the collateral still held, by reinsurer.
     uncovered: Vec<f64>,
-    /// Whether each reinsurer is in default in each year.
+    /// Whether each reinsurer is in default in each year: from its first
+    /// default on, for the rest of the path.
     default: Vec<bool>,
     /// Each reinsurer's credit loss in each year, 0 when not in default.
     credit: Vec<f64>,
@@ -549,9 +552,14 @@ impl<'a> Overlay<'a> {
                     seen[y as usize - 1] = true;
                     year_of.push(y as usize - 1);
                 }
-                ref y => {
+                KeyValue::Int(y) => {
                     return Err(Error::Data(format!(
                         "the term has a component in year {y}, outside 1..={n_years}"
+                    )));
+                }
+                ref y => {
+                    return Err(Error::Data(format!(
+                        "the term has a component whose year {y} is not an integer"
                     )));
                 }
             }
