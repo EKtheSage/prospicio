@@ -15027,12 +15027,32 @@ class ExpectileFit:
     """
     A fitted expectile regression, from ``ExpectileRegression.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def coefficients(self, /) -> list[float]: ...
     @property
     def covariance(self, /) -> list[list[float]]:
         """
         The sandwich covariance, a list of rows.
+        """
+    @staticmethod
+    def from_json(text: str) -> ExpectileFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        ExpectileFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def iterations(self, /) -> int: ...
@@ -15062,6 +15082,28 @@ class ExpectileFit:
         """
     @property
     def tau(self, /) -> float: ...
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the level, the names, the
+        estimates and their covariance, and the fit statistics, numbers bit
+        for bit (#978). ``from_json`` reads it back; ``pickle`` uses the
+        same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, ExpectileRegression, ExpectileFit
+        >>> d = Design([[1.0] * 6, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]], ["(Intercept)", "x"])
+        >>> fit = ExpectileRegression(0.5).fit(d, [1.0, 2.5, 2.0, 4.0, 5.5, 5.0])
+        >>> ExpectileFit.from_json(fit.to_json()).coefficients == fit.coefficients
+        True
+        >>> pickle.loads(pickle.dumps(fit)).coefficients == fit.coefficients
+        True
+        """
 
 @final
 class ExpectileRegression:
@@ -32026,6 +32068,7 @@ class QuantileFit:
     """
     A fitted quantile regression, from ``QuantileRegression.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def bandwidth(self, /) -> float:
         """
@@ -32037,6 +32080,25 @@ class QuantileFit:
     def covariance(self, /) -> list[list[float]]:
         """
         The kernel sandwich covariance, a list of rows.
+        """
+    @staticmethod
+    def from_json(text: str) -> QuantileFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        QuantileFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def iterations(self, /) -> int: ...
@@ -32068,6 +32130,28 @@ class QuantileFit:
         """
     @property
     def tau(self, /) -> float: ...
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the level, the names, the
+        estimates and their covariance, and the fit statistics, numbers bit
+        for bit (#978). ``from_json`` reads it back; ``pickle`` uses the
+        same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, QuantileRegression, QuantileFit
+        >>> d = Design([[1.0] * 6, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]], ["(Intercept)", "x"])
+        >>> fit = QuantileRegression(0.5).fit(d, [1.0, 2.5, 2.0, 4.0, 5.5, 5.0])
+        >>> QuantileFit.from_json(fit.to_json()).coefficients == fit.coefficients
+        True
+        >>> pickle.loads(pickle.dumps(fit)).coefficients == fit.coefficients
+        True
+        """
 
 @final
 class QuantileFits:
