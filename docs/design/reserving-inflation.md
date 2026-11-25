@@ -498,6 +498,69 @@ takes the fit instead.
     seeds and the dependence between the paths and the claims out of
     this crate.
 
+## Open decisions (`[reinflate-bootstrap-cells]`, 2026-11-25)
+
+Decision 11 (amended) leaves the bootstraps' draws out of
+`reinflate_draws`, since their reserves are by origin. The ODP and Mack
+bootstraps simulate each future cell (`bootstrap.rs` `Simulation::run`,
+`mack_bootstrap.rs` `run_off`) and sum the cells into each origin's
+reserve without keeping them. Keeping them is the item. These choices
+change its shape; each has a recommendation.
+
+A. **How the cells are asked for.** (a) New methods,
+   `fit_with_cells` and `fit_segments_with_cells` on `OdpBootstrap` and
+   `MackBootstrap`, which return the usual fit with a new field
+   `cells: Option<PredictiveDistribution>` set; `fit` and `fit_segments`
+   leave it `None`. (b) A setting `cells: bool` on `OdpBootstrap` and
+   `MackBootstrap`, default false. (c) Always present. **Recommend (a).**
+   Storage is `n_sims` times the number of cells (about 4 MB on RAA, 66 MB
+   on a 40 by 40 quarterly triangle and 580 MB on a 120 by 120 monthly
+   one at 10,000 simulations, twice that at peak), so it must be opt-in;
+   a new setting field breaks the struct literals in the Excel add-in
+   (`crates/prospicio-xll/src/reserving.rs`, another lane) and in the
+   bindings, which (a) leaves alone. In Python and R the option is a
+   `cells=False` argument of `fit` and a `cells` property of the fit.
+B. **Simulated cells or pattern spreading.** (a) Keep the cells as
+   simulated, with their process noise; they sum to the reserves. (b)
+   Spread each simulation's reserve by its `DevelopmentPatterns`, as
+   `Discountable` does: no change to the simulation, but each cell's
+   variance is wrong and, for the ODP bootstrap, the cells do not start
+   from the pseudo latest diagonal. **Recommend (a).**
+C. **The tail cell.** One more cell per origin when a tail is in use,
+   at the oldest age plus the last step (decision 5, `pattern_ages`,
+   `FutureCells::from_chain_ladder`), kept in every simulation even when
+   its value is 0, so the components are the same in each. **Recommend
+   this.** It differs from `FutureCells`, which drops a tail cell no
+   bigger than round-off.
+D. **The Mack bootstrap's cells are increments.** The recursion is on
+   cumulative paid; the cells are `c_new - c_prev` from the observed
+   latest value (the tail cell the ultimate less the value at the oldest
+   age), so that `reinflate_draws` reads payments (decision 20). The
+   reserves stay `c - latest`, bit-identical; the cells sum to them to
+   round-off. **Recommend this.**
+E. **Dimensions and keys.** `key_names + ["origin", "development"]`
+   (the segment keys, then a period and an age in months), as the
+   reserves' `origin_keys` plus the age and as `OdpGlmFit`'s draws.
+   Fully developed origins with no tail have no cells. **Recommend
+   this.**
+F. **Dependence.** Under `SegmentDependence::RankCorrelation` the
+   segments' simulations are reordered by their totals; each segment's
+   cells are permuted with the same order as its reserves and patterns,
+   and are kept out of the rank-correlated matrix. `Synchronized` and
+   `Independent` need nothing. **Recommend this.**
+G. **No cell at all.** A fully developed triangle with no tail has no
+   future cell; `fit_with_cells` fails then, as
+   `OdpGlmFit::predict_distribution` does. **Recommend this.**
+H. **Provenance and identity.** Asking for the cells draws no other
+   random number, so the reserves and patterns are bit-identical with
+   and without them, and the reserves' provenance is unchanged; the
+   cells' provenance adds `cells = incremental`. **Recommend this.**
+I. **Pull requests.** One Rust PR for both bootstraps (the cells, the
+   refusal removed from `reinflate_draws`'s doc, the tests in
+   `validation/tests/reserving_bootstrap_cells.rs`), then one for the
+   Python and R bindings stacked on it. The one-year bootstrap is out of
+   scope: its claims development result holds no future payments.
+
 ## Validation targets
 
 1. **Indexation (PR 1).** No independent package restates a triangle by
