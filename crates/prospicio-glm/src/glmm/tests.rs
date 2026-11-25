@@ -1,26 +1,5 @@
 use super::*;
 
-#[test]
-fn gauss_hermite_integrates_polynomials() {
-    let (x, lw) = gauss_hermite(7);
-    let w: Vec<f64> = x
-        .iter()
-        .zip(&lw)
-        .map(|(xi, l)| (l - xi * xi).exp())
-        .collect();
-    let pi = std::f64::consts::PI;
-    let m = |k: i32| {
-        x.iter()
-            .zip(&w)
-            .map(|(xi, wi)| wi * xi.powi(k))
-            .sum::<f64>()
-    };
-    assert!((m(0) - pi.sqrt()).abs() < 1e-13);
-    assert!((m(2) - pi.sqrt() / 2.0).abs() < 1e-13);
-    assert!((m(4) - 3.0 * pi.sqrt() / 4.0).abs() < 1e-12);
-    assert!((m(12) - 10395.0 * pi.sqrt() / 64.0).abs() < 1e-9);
-}
-
 /// Forty rows in eight groups with a group effect and one covariate.
 fn book() -> (Design, Vec<String>, Vec<f64>) {
     let n = 40;

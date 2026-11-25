@@ -433,7 +433,9 @@ reference:
       - ulae_estimate
       - frequency_severity
       - future_cells
+      - index_paths
       - indexation
+      - reinflate_draws
       - apc_glm_fit
       - separation_fit
       - disposal_method

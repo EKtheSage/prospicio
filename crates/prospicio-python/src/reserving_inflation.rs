@@ -12,11 +12,13 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyString};
 
+use crate::distributions::PyPredictiveDistribution;
 use crate::odp_glm::PyOdpGlmFit;
 use crate::reserving::{PyChainLadderFit, PyTriangle, err, pick, py_repr};
+use crate::reserving_inflation_draws::PyIndexPaths;
 
 /// A period as a label: `"2020"`, `"2020H2"`, `"2020Q3"` or `"2020-07"`.
-fn parse_period(text: &str) -> Option<Period> {
+pub(crate) fn parse_period(text: &str) -> Option<Period> {
     let text = text.trim();
     let num = |s: &str| s.parse::<i32>().ok();
     let (grain, year, within) = if let Some((y, q)) = text.split_once('Q') {
@@ -46,7 +48,7 @@ fn parse_period(text: &str) -> Option<Period> {
     ))
 }
 
-fn period_of(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Period> {
+pub(crate) fn period_of(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Period> {
     if !obj.is_instance_of::<PyBool>()
         && let Ok(year) = obj.extract::<i32>()
     {
@@ -670,6 +672,85 @@ impl PyIndexation {
         let (ix, data) = (&self.inner, &cells.inner);
         let inner = py.detach(|| ix.reinflate(data)).map_err(err)?;
         Ok(PyReinflated { inner })
+    }
+
+    /// Simulated future increments at the base level re-inflated to the
+    /// money of their payment periods, simulation by simulation.
+    ///
+    /// ``draws`` holds one component per future cell. Its dimensions must
+    /// include ``origin`` and exactly one of ``development`` or ``age``: the
+    /// age in months at the end of the cell's development period. An origin
+    /// key is a period (as a model gives it), a period label such as
+    /// ``"2020"`` or ``"2020Q3"``, or an integer year. The cell is paid in
+    /// the month ``age - 1`` months after the origin's first month, as in
+    /// ``FutureCells.from_odp_glm``. Other dimensions pass through.
+    ///
+    /// Without ``paths``, each cell of every simulation is multiplied by
+    /// the ``factor`` of its payment month: ``reinflate`` applied to each
+    /// simulation's cells. With ``paths``, simulation ``i`` of ``draws``
+    /// takes path ``i``, and the paths replace the future rate: a payment
+    /// period inside the given index takes its given value, one from the
+    /// paths' first period on takes that simulation's level, and one past
+    /// the paths' last period is an error.
+    ///
+    /// ``OdpGlmFit.predict_distribution`` and
+    /// ``ApcGlmFit.predict_distribution`` give such draws. The bootstraps'
+    /// reserve draws are by origin only and are refused. The compartmental
+    /// model's ``paid`` draws are cumulative: difference them by origin
+    /// first.
+    ///
+    /// Parameters
+    /// ----------
+    /// draws : PredictiveDistribution
+    /// paths : IndexPaths, optional
+    ///     One index path per simulation, starting in the period right
+    ///     after the index's last given one, at the index's grain; the base
+    ///     must then be one of the given periods.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///     The same dimensions, components (in the same order) and
+    ///     simulations, re-inflated, with the provenance of ``draws`` and a
+    ///     ``reinflated`` parameter. ``aggregate(["origin"])`` gives the
+    ///     re-inflated reserves by origin.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For a missing or mistyped origin or age, both ``development``
+    ///     and ``age``, an age below 1, two origin keys that name the same
+    ///     period, paths that do not start right after the index or
+    ///     have another number of simulations, a payment period the index
+    ///     or the paths do not cover, or with paths a base outside the
+    ///     given periods.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> from prospicio.reserving import CalendarIndex, IndexPaths, Indexation
+    /// >>> draws = PredictiveDistribution(
+    /// ...     ["origin", "development"], [("2022", 24), ("2022", 36)],
+    /// ...     [[100.0, 50.0], [120.0, 40.0]],
+    /// ... )
+    /// >>> at_2022 = Indexation(CalendarIndex("2021", [1.0, 1.1]), "2022-01")
+    /// >>> paths = IndexPaths("2023", [[1.21, 1.331], [1.155, 1.21]])
+    /// >>> out = at_2022.reinflate_draws(draws, paths)
+    /// >>> [[round(x, 6) for x in row] for row in out.draw_matrix()]
+    /// [[110.0, 60.5], [126.0, 44.0]]
+    #[pyo3(signature = (draws, paths=None))]
+    fn reinflate_draws(
+        &self,
+        py: Python<'_>,
+        draws: PyRef<'_, PyPredictiveDistribution>,
+        paths: Option<PyRef<'_, PyIndexPaths>>,
+    ) -> PyResult<PyPredictiveDistribution> {
+        crate::reserving_inflation_draws::reinflate_draws(
+            py,
+            &self.inner,
+            &draws.inner,
+            paths.as_ref().map(|p| &p.inner),
+        )
     }
 
     fn __getnewargs__(&self) -> (PyCalendarIndex, String) {

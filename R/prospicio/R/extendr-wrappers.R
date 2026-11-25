@@ -271,6 +271,8 @@ iman_conover_reorder <- function(pd, correlation, seed, dof, scores, shuffle_row
 
 in_force_amount_rust <- function(effective, expiration, amount, at, change_policy, change_date, change_amount, cancellation) .Call(wrap__in_force_amount_rust, effective, expiration, amount, at, change_policy, change_date, change_amount, cancellation)
 
+index_paths_periods_rust <- function(first, n_sims, values) .Call(wrap__index_paths_periods_rust, first, n_sims, values)
+
 indexation_apply_rust <- function(triangle, column, first, values, rate, base, inflate) .Call(wrap__indexation_apply_rust, triangle, column, first, values, rate, base, inflate)
 
 indexation_check_rust <- function(first, values, rate, base) .Call(wrap__indexation_check_rust, first, values, rate, base)
@@ -502,6 +504,8 @@ rearrange_rust <- function(x, ncol, rotate, seed, tolerance) .Call(wrap__rearran
 recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap__recommend_grid_rust, frequency, severity, log2, p, p_star)
 
 recommend_portfolio_grid_rust <- function(frequencies, severities, log2, p, p_star) .Call(wrap__recommend_portfolio_grid_rust, frequencies, severities, log2, p, p_star)
+
+reinflate_draws_rust <- function(draws, first, values, rate, base, paths_first, n_sims, path_values) .Call(wrap__reinflate_draws_rust, draws, first, values, rate, base, paths_first, n_sims, path_values)
 
 reinflate_rust <- function(first, values, rate, base, origins, origin, age, valuation, value) .Call(wrap__reinflate_rust, first, values, rate, base, origins, origin, age, valuation, value)
 

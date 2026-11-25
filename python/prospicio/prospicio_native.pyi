@@ -18982,6 +18982,71 @@ class IndexClause:
         """
 
 @final
+class IndexPaths:
+    """
+    One index path per simulation for the periods after a
+    ``CalendarIndex``'s last given period: index levels on the index's
+    scale, not rates. ``Indexation.reinflate_draws`` pairs simulation ``i``
+    of the draws with path ``i``.
+    
+    Parameters
+    ----------
+    first : str or int
+        The first period of every path: ``"2023"`` (or the integer 2023),
+        ``"2023H1"``, ``"2023Q1"`` or ``"2023-01"``. Each level after the
+        first is one period of its grain later.
+    values : list of list of float or 2-D numpy array
+        One row per simulation, all of one length (at least 1): the index
+        levels from ``first`` on, finite and positive.
+    
+    Raises
+    ------
+    ValueError
+        For no rows, empty or ragged rows, or a level that is not finite
+        and positive.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import IndexPaths
+    >>> paths = IndexPaths("2023", [[1.10, 1.20], [1.05, 1.08]])
+    >>> paths.n_sims, paths.n_periods
+    (2, 2)
+    >>> paths.periods
+    ['2023', '2024']
+    >>> paths.values[1]
+    [1.05, 1.08]
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[str, list[list[float]]]: ...
+    def __new__(cls, /, first: Any, values: Sequence[Sequence[float]]) -> IndexPaths: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def first(self, /) -> str:
+        """
+        The first period of every path.
+        """
+    @property
+    def n_periods(self, /) -> int:
+        """
+        The number of periods of each path.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        The number of simulations (paths).
+        """
+    @property
+    def periods(self, /) -> list[str]:
+        """
+        The periods of the paths, from ``first`` at its grain.
+        """
+    @property
+    def values(self, /) -> list[list[float]]:
+        """
+        The levels, one row per simulation.
+        """
+
+@final
 class Indexation:
     """
     Restating a triangle at one price level by a ``CalendarIndex``, and
@@ -19074,6 +19139,73 @@ class Indexation:
         ValueError
             If the index does not cover a cell's payment period (set a
             ``future_rate``).
+        """
+    def reinflate_draws(self, /, draws: PredictiveDistribution, paths: IndexPaths |None = None) -> PredictiveDistribution:
+        """
+        Simulated future increments at the base level re-inflated to the
+        money of their payment periods, simulation by simulation.
+        
+        ``draws`` holds one component per future cell. Its dimensions must
+        include ``origin`` and exactly one of ``development`` or ``age``: the
+        age in months at the end of the cell's development period. An origin
+        key is a period (as a model gives it), a period label such as
+        ``"2020"`` or ``"2020Q3"``, or an integer year. The cell is paid in
+        the month ``age - 1`` months after the origin's first month, as in
+        ``FutureCells.from_odp_glm``. Other dimensions pass through.
+        
+        Without ``paths``, each cell of every simulation is multiplied by
+        the ``factor`` of its payment month: ``reinflate`` applied to each
+        simulation's cells. With ``paths``, simulation ``i`` of ``draws``
+        takes path ``i``, and the paths replace the future rate: a payment
+        period inside the given index takes its given value, one from the
+        paths' first period on takes that simulation's level, and one past
+        the paths' last period is an error.
+        
+        ``OdpGlmFit.predict_distribution`` and
+        ``ApcGlmFit.predict_distribution`` give such draws. The bootstraps'
+        reserve draws are by origin only and are refused. The compartmental
+        model's ``paid`` draws are cumulative: difference them by origin
+        first.
+        
+        Parameters
+        ----------
+        draws : PredictiveDistribution
+        paths : IndexPaths, optional
+            One index path per simulation, starting in the period right
+            after the index's last given one, at the index's grain; the base
+            must then be one of the given periods.
+        
+        Returns
+        -------
+        PredictiveDistribution
+            The same dimensions, components (in the same order) and
+            simulations, re-inflated, with the provenance of ``draws`` and a
+            ``reinflated`` parameter. ``aggregate(["origin"])`` gives the
+            re-inflated reserves by origin.
+        
+        Raises
+        ------
+        ValueError
+            For a missing or mistyped origin or age, both ``development``
+            and ``age``, an age below 1, two origin keys that name the same
+            period, paths that do not start right after the index or
+            have another number of simulations, a payment period the index
+            or the paths do not cover, or with paths a base outside the
+            given periods.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> from prospicio.reserving import CalendarIndex, IndexPaths, Indexation
+        >>> draws = PredictiveDistribution(
+        ...     ["origin", "development"], [("2022", 24), ("2022", 36)],
+        ...     [[100.0, 50.0], [120.0, 40.0]],
+        ... )
+        >>> at_2022 = Indexation(CalendarIndex("2021", [1.0, 1.1]), "2022-01")
+        >>> paths = IndexPaths("2023", [[1.21, 1.331], [1.155, 1.21]])
+        >>> out = at_2022.reinflate_draws(draws, paths)
+        >>> [[round(x, 6) for x in row] for row in out.draw_matrix()]
+        [[110.0, 60.5], [126.0, 44.0]]
         """
     def restate(self, /, triangle: Triangle, column: str) -> Triangle:
         """
@@ -33709,9 +33841,9 @@ class SeparationFit:
     reserves : list of float
         The sum of each origin's future cells: the first origin's is 0.
     log_variance : float or None
-        The geometric methods' residual variance on the log scale (``nan``
-        with no degrees of freedom left, as on 2 origins); ``None`` for the
-        arithmetic method.
+        The geometric methods' residual variance on the log scale; ``None``
+        for the arithmetic method and when no degrees of freedom are left (as
+        on 2 origins).
     total_reserve : float
     """
     def __eq__(self, other: object, /) -> bool: ...
