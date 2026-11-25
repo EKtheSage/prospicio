@@ -7,4 +7,4 @@
   one-year result with `credit_loss` and `recovered` by layer and
   `net_after_default`) and `by_reinsurer(result, seed=0)`. R binds
   `reinsurer()`, `reinsurer_panel()`, `panel_line()`, `panel_driver()`,
-  `apply_panel()` and `panel_by_reinsurer()` (#980).
+  `apply_panel()` and `panel_by_reinsurer()` (#980, #1084).
