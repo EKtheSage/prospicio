@@ -34,6 +34,8 @@
 //! - [`ratemaking`]: premium at the current rate level by the
 //!   parallelogram method, and trend: fits, factors and the average written
 //!   and earned dates that set trend lengths (Werner and Modlin).
+//! - [`earned`]: written, earned, unearned and in-force exposure or premium
+//!   by calendar or policy period, from the policies' dates.
 //! - [`retro`]: retrospective rating: the insurance charge and savings
 //!   of an aggregate loss distribution or a sample (Table M).
 //! - [`tower`]: matching a tower of reinsurance layer prices with
@@ -48,6 +50,7 @@ pub mod cashflow;
 pub mod casualty;
 pub mod classical;
 pub mod credibility;
+pub mod earned;
 pub mod experience;
 pub mod exposure;
 pub mod frontier;

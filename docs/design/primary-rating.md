@@ -173,23 +173,35 @@ bisection in `r_H` solves the pair.
 Proposed; the names are open until each PR.
 
 ```rust
-// prospicio_pricing::earned
+// prospicio_pricing::earned (built in PR 5, the daily method)
 pub struct Date { /* days since 1970-01-01 */ }
 impl Date {
     pub fn new(year: i32, month: u8, day: u8) -> Result<Self>;
     pub fn parse(iso: &str) -> Result<Self>;          // "2024-03-15"
-    pub fn year_fraction(&self) -> f64;               // exact, not the half-month grid
+    pub fn ymd(self) -> (i32, u8, u8);
+    pub fn days_since(self, earlier: Date) -> i64;
+    pub fn year_fraction(self) -> f64;                // exact, not the half-month grid
 }
-pub struct Policy { /* effective, expiration, amount, endorsements, cancellation */ }
+pub struct Policy { /* effective, expiration, amount, label; PR 6: endorsements, cancellation */ }
 impl Policy {
     pub fn new(effective: Date, expiration: Date, amount: f64) -> Result<Self>;
+    pub fn with_label(self, label: impl Into<String>) -> Self;
+    pub fn earned_between(&self, from: Date, to: Date) -> f64;
+    pub fn unearned_at(&self, date: Date) -> f64;
+    pub fn in_force_at(&self, date: Date) -> bool;
+    // PR 6:
     pub fn endorsed(self, date: Date, annual_change: f64) -> Result<Self>;
     pub fn cancelled(self, date: Date) -> Result<Self>;
 }
-pub enum EarningMethod { Daily, TwentyFourths }
-pub struct Windows { /* calendar or policy windows: years, quarters, months, or given dates */ }
-pub fn earned_exposure(policies: &[Policy], windows: &Windows, method: EarningMethod)
-    -> Result<EarnedTable>;   // written, earned, and unearned and in force at each window's end
+pub enum EarningMethod { Daily /* PR 6: TwentyFourths */ }      // non_exhaustive
+pub struct Windows { /* consecutive windows between dates */ }
+impl Windows {
+    pub fn new(bounds: Vec<Date>) -> Result<Self>;
+    pub fn years(first: i32, last: i32) -> Result<Self>;   // also quarters, months
+}
+pub fn earned_exposure(policies: &[Policy], windows: &Windows, kind: PeriodKind,
+                       method: EarningMethod, valuation: Option<Date>) -> Result<EarnedTable>;
+pub struct EarnedRow { pub label, pub from, pub to, pub written, pub earned, pub unearned, pub in_force }
 
 // prospicio_pricing::retro
 pub struct InsuranceCharge { /* the expected loss and the stop-loss; the limit's k if any */ }
@@ -236,7 +248,8 @@ impl ExperienceRatioPlan {
 
 `retro`'s types are bound in Python and R in one PR after its three Rust
 PRs, on the allow-list until then, as the reinsurer panel was; `earned`
-and `emod` get theirs in the PR that adds each type (`pricing` module
+is bound the same way after its two Rust PRs (`[earned-bindings]`), and
+`emod` gets its bindings in the PR that adds each type (`pricing` module
 files), with dates as ISO strings in R and Excel and as
 `datetime.date` or ISO strings in Python.
 
@@ -261,6 +274,11 @@ Proposed for the user's acceptance; each has a recommendation.
 - (c) **Expiration is exclusive, and days are exact.** A policy effective
   1 January and expiring the next 1 January has 365 or 366 days and earns
   nothing on its expiration date (the 12:01 a.m. convention). *Recommended.*
+  As built (PR 5): "at a window's end", and "as of a valuation date", mean
+  the close of the day before that date. A policy that expires on it is
+  still in force, and one effective on it is not yet written, so the
+  in-force and unearned figures agree with what the window wrote and
+  earned, and unearned rolls forward as opening plus written less earned.
 - (d) **A cancellation earns pro rata to its date.** The return premium
   under a short-rate table is a premium accounting matter, not an
   exposure one; it stays a Next item. *Recommended.*
@@ -328,10 +346,17 @@ Proposed for the user's acceptance; each has a recommendation.
   aggregate distribution, computed directly, equals `T (e + E)` to
   round-off; a plan with no minimum and an unreachable maximum has
   `b = e - (c - 1) E`.
-- **Earned exposure.** Werner and Modlin, chapter 4: the written, earned,
-  unearned and in-force exposures of its six policies, by calendar year
-  and by policy year, and its premium examples with a mid-term change in
-  chapter 5. Twenty-fourths against daily on policies written at
+- **Earned exposure.** As built (PR 5): a day-by-day count over a fixed
+  book of 60 policies with terms of three months to two years across leap
+  days, by label and quarter, to 1e-9
+  (`validation/tests/pricing_earned_exposure.rs`), and six annual policies
+  written a quarter apart, in the manner of Werner and Modlin's chapter 4,
+  against exact day counts and, within two days in the year, the figures
+  a count of months gives (0.25, 3.25, 2.5 by calendar year). The book's
+  own exhibit was not at hand in the cloud session, so its numbers are not
+  transcribed and no parity with it is claimed; when the user supplies
+  the exhibit it becomes a reference file. Still to come from the book:
+  its premium examples with a mid-term change in chapter 5 (PR 6). Twenty-fourths against daily on policies written at
   mid-month, where they agree. Totals: the earned amounts over all
   windows sum to the written amount net of cancellations.
 - **Modifications.** Worked exhibits from the CAS study note on
@@ -367,9 +392,11 @@ Stacked, each on the one before:
    reinsurance module's `LossSensitivePremium`: `RetroPlan::premium` is
    that premium with the tax multiplier folded into the basic premium and
    the loss conversion factor, and a test holds the two together.
-5. `earned::Date`, `Policy` and `earned_exposure` with the daily method;
-   bindings; the Werner and Modlin chapter 4 exhibit.
-6. Endorsements, cancellations and the twenty-fourths method; bindings.
+5. `earned::Date`, `Policy`, `Windows` and `earned_exposure` with the
+   daily method, by calendar or policy period and as of a valuation date;
+   allow-list entries (reason: bound in PR 6b). Done.
+6. Endorsements, cancellations and the twenty-fourths method.
+6b. Python and R bindings for `earned` (`[earned-bindings]`).
 7. `emod::SplitPlan`; bindings; a reference exhibit.
 8. `emod::ExperienceRatioPlan`; bindings; a reference exhibit; the Done
    bullet `#981`.
@@ -382,7 +409,7 @@ taught nothing new), and a changelog fragment under "Pricing".
 
 The Next items with ids in `docs/lanes/aggregate.md`: `[retro-charge]`,
 `[retro-limited]`, `[retro-balance]`, `[retro-bindings]`, `[earned-daily]`,
-`[earned-endorsements]`, `[emod-split]`, `[emod-ratio]`, and after #981:
+`[earned-endorsements]`, `[earned-bindings]`, `[emod-split]`, `[emod-ratio]`, and after #981:
 `[earned-short-rate]`, `[retro-deductible-dividend]`.
 
 ## Sources
