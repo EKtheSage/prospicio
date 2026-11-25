@@ -146,8 +146,14 @@ the formulas there are images, which were read one by one.
 | `V_inter` | 1.25 in `1.25 (PD_j + PD_k) - PD_j PD_k`, every ordered pair, a pair of zero probabilities 0 | the same, "all possible combinations (j,k)" (from 2027-01-30 excluding PD_j = PD_k = 0) | Art 201(2) |
 | `V_intra` | 1.5 and 2.5 in `1.5 PD_j (1 - PD_j) / (2.5 - PD_j)` times the sum of `LGD_i^2` | the same | Art 201(3) |
 
-Amendments after 2020 that exist: Delegated Regulations (EU) 2021/1256,
-2024/2765 and 2026/269. Of these only 2026/269 (published 2026-02-18,
-applying from 2027-01-30) changes these articles: the 90% case's factor
-(Art 192(2)) and the zero-probability exclusion (Art 201(2)(a)), both
-described above.
+The 2027-01-30 consolidation lists thirteen amending regulations (M1 to
+M13). Within Arts 192 to 201 its markers are only M6 (2019/981) and M13
+(Delegated Regulation (EU) 2026/269, published 2026-02-18, applying from
+2027-01-30), and EUR-Lex has no consolidation between 2024-11-14 and
+2027-01-30, so the 2024-11-14 text is the one in force on 2026-11-24. Of
+what 2026/269 changes there, the parts used here are the 90% case's
+factor (Art 192(2)), the wording of Art 197(7) (it drops "in excess of
+the collateral" and adds Arts 194 to 196; the factors' values stay) and
+the zero-probability exclusion (Art 201(2)(a)), all described above; its
+other changes (Art 192(3) onward and Art 199(12)) concern derivatives,
+which this module does not cover.
