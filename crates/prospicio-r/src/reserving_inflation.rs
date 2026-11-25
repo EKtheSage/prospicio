@@ -17,7 +17,7 @@ use crate::odp_glm::OdpGlmFit;
 use crate::reserving::{ChainLadderFit, Triangle, to_r};
 
 /// A period as a label: `"2020"`, `"2020H2"`, `"2020Q3"` or `"2020-07"`.
-fn parse_period(text: &str) -> Option<Period> {
+pub(crate) fn parse_period(text: &str) -> Option<Period> {
     let text = text.trim();
     let num = |s: &str| s.parse::<i32>().ok();
     let (grain, year, within) = if let Some((y, q)) = text.split_once('Q') {
@@ -47,7 +47,7 @@ fn parse_period(text: &str) -> Option<Period> {
     ))
 }
 
-fn period(text: &str, what: &str) -> Result<Period> {
+pub(crate) fn period(text: &str, what: &str) -> Result<Period> {
     parse_period(text).ok_or_else(|| {
         Error::Other(format!(
             "{what} must be a period such as \"2020\", \"2020H2\", \"2020Q3\" or \"2020-07\", \
@@ -72,7 +72,7 @@ pub(crate) fn index(first: &str, values: Vec<f64>, rate: Nullable<f64>) -> Resul
     Ok(index)
 }
 
-fn indexation(
+pub(crate) fn indexation(
     first: &str,
     values: Vec<f64>,
     rate: Nullable<f64>,

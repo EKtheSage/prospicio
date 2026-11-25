@@ -74,6 +74,7 @@ pub mod frame;
 pub mod frequency_severity;
 pub mod industry_prior;
 pub mod inflation;
+pub mod inflation_draws;
 #[cfg(feature = "io")]
 pub mod io;
 pub mod latest_diagonal;
@@ -147,6 +148,7 @@ pub use frequency_severity::{
 };
 pub use industry_prior::{IndustryPrior, IndustryPriorSettings, PatternPrior, PriorReport};
 pub use inflation::{CalendarIndex, FutureCell, FutureCells, Indexation, Reinflated};
+pub use inflation_draws::IndexPaths;
 #[cfg(feature = "io")]
 pub use io::FileLayout;
 pub use latest_diagonal::{

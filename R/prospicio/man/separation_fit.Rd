@@ -80,8 +80,8 @@ the triangle's last, up to the last future cell's, and their \code{index}),
 origins by ages, \code{NA} on the future ones), \code{future} (the future cells as
 \code{\link[=future_cells]{future_cells()}}, with no tail past the oldest age), \code{reserves} (the sum
 of each origin's future cells; the first origin's is 0), \code{log_variance}
-(the geometric methods' residual variance on the log scale, \code{NaN} with
-no degrees of freedom left; \code{NULL} for the arithmetic method) and
+(the geometric methods' residual variance on the log scale; \code{NULL} for
+the arithmetic method and with no degrees of freedom left) and
 \code{total_reserve}.
 \code{separation_glm()} returns an \link{odp_glm_fit}.
 }
