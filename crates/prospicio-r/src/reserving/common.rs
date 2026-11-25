@@ -476,15 +476,8 @@ pub(crate) fn bootstrap(
     if n_sims == 0 {
         return Err(Error::Other("n_sims must be positive".into()));
     }
-    let process = match process {
-        "gamma" => ProcessDistribution::Gamma,
-        "none" => ProcessDistribution::None,
-        _ => {
-            return Err(Error::Other(format!(
-                "process must be \"gamma\" or \"none\", got \"{process}\""
-            )));
-        }
-    };
+    let process = ProcessDistribution::from_name(process)
+        .ok_or_else(|| crate::unknown_name("process", process, ProcessDistribution::NAMES))?;
     Ok(OdpBootstrap {
         n_sims,
         seed: whole(seed, "seed")?,
