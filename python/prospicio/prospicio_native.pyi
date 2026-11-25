@@ -33283,9 +33283,9 @@ class SeparationFit:
     reserves : list of float
         The sum of each origin's future cells: the first origin's is 0.
     log_variance : float or None
-        The geometric methods' residual variance on the log scale (``nan``
-        with no degrees of freedom left, as on 2 origins); ``None`` for the
-        arithmetic method.
+        The geometric methods' residual variance on the log scale; ``None``
+        for the arithmetic method and when no degrees of freedom are left (as
+        on 2 origins).
     total_reserve : float
     """
     def __eq__(self, other: object, /) -> bool: ...

@@ -133,7 +133,7 @@ two_by_two <- function(second) {
 }
 expect_error_like(separation(two_by_two(90), kind = "geometric", future_rate = 0.05), "positive")
 two <- separation(two_by_two(150), kind = "geometric", future_rate = 0.05)
-stopifnot(is.nan(two@log_variance))
+stopifnot(is.null(two@log_variance))
 expect_error_like(
   separation(two_by_two(150), kind = "geometric_lognormal", future_rate = 0.05), "3 origins"
 )

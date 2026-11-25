@@ -117,7 +117,11 @@ calendar_index_value <- function(index, month) {
 #' @param x An `indexation`.
 #' @param triangle A [triangle()].
 #' @param column The column to restate; `NULL` for the triangle's only one.
-#' @param cells [future_cells()] at the base level.
+#' @param cells [future_cells()] at the base level; for `reinflated()`, the
+#'   re-inflated cells.
+#' @param reserves,base_reserves For `reinflated()`: the reserves by origin in
+#'   the money of the payment periods and at the base level. A `reinflated`
+#'   is made by `reinflate()`; the constructor only holds its fields.
 #' @param month Months as `"YYYY-MM"` labels or dates.
 #' @returns `indexation()`: an `indexation` with the properties `index` and
 #'   `base` (a `"YYYY-MM"` label). `restate()` and `inflate()`: a
@@ -233,6 +237,9 @@ future_cells <- S7::new_class(
     })
   ),
   constructor = function(x, segment = NULL, origins = NULL) {
+    if (missing(x)) {
+      stop("x must be a chain_ladder_fit, an odp_glm_fit or a data frame", call. = FALSE)
+    }
     if (S7::S7_inherits(x, chain_ladder_fit)) {
       keys <- if (is.null(segment)) character() else names(segment)
       values <- if (is.null(segment)) character() else as.character(unlist(segment, use.names = FALSE))
@@ -250,8 +257,13 @@ future_cells <- S7::new_class(
       }
       origin <- as.character(x$origin)
       if (is.null(origins)) origins <- unique(origin)
+      age <- x$age
+      bad <- if (is.numeric(age)) which(is.na(age) | age != round(age) | age < 0) else 1L
+      if (length(bad)) {
+        stop(sprintf("age %s is not an age in months", format(age[bad[1]])), call. = FALSE)
+      }
       out <- reserving_result(future_cells_check_rust(
-        as.character(origins), origin, as.integer(x$age),
+        as.character(origins), origin, as.integer(age),
         month_labels(x$valuation, "valuation"), as.double(x$value)
       ))
     } else {
@@ -284,7 +296,15 @@ reinflated <- S7::new_class(
     total_base_reserve = S7::new_property(S7::class_double, getter = function(self) {
       sum(self@base_reserves)
     })
-  )
+  ),
+  constructor = function(cells, reserves, base_reserves) {
+    if (missing(cells) || missing(reserves) || missing(base_reserves)) {
+      stop("a reinflated is made by reinflate(); give cells, reserves and base_reserves",
+           call. = FALSE)
+    }
+    S7::new_object(S7::S7_object(), cells = cells, reserves = reserves,
+                   base_reserves = base_reserves)
+  }
 )
 
 S7::method(print, reinflated) <- function(x, ...) {
