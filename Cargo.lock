@@ -4147,6 +4147,7 @@ dependencies = [
  "prospicio-core",
  "prospicio-math",
  "prospicio-prob",
+ "serde_json",
 ]
 
 [[package]]

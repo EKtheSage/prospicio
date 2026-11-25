@@ -11138,6 +11138,7 @@ class DealBook:
     """
     def __len__(self, /) -> int: ...
     def __new__(cls, /, deals: Sequence[DealRun]) -> DealBook: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def adequacy(self, /, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> dict:
         """
@@ -11210,6 +11211,13 @@ class DealBook:
         >>> d["total"]["TVaR 50"], d["contribution"]["a"]["TVaR 50"]
         (8.5, 6.0)
         """
+    @staticmethod
+    def from_json(text: str) -> DealBook:
+        """
+        Reads a document written by ``to_json``; raises ``ValueError`` for
+        malformed JSON, another format, a newer format version or a
+        book the constructor would refuse.
+        """
     @property
     def items(self, /) -> list[str]:
         """
@@ -11263,6 +11271,18 @@ class DealBook:
         mean premium, as columns ``deal``, ``item``, ``mean`` and ``ratio``.
         The book's ratios are sums over sums.
         """
+    def to_json(self, /) -> str:
+        """
+        The book as a versioned JSON document (format
+        ``risk_rs.deal_book``), numbers bit for bit (#978). ``from_json`` reads
+        it back; ``pickle`` uses the same document.
+        
+        >>> import pickle
+        >>> from prospicio.pricing import DealBook, DealRun
+        >>> book = DealBook([DealRun("a", [100.0], [40.0]), DealRun("b", [300.0], [150.0])])
+        >>> pickle.loads(pickle.dumps(book)).to_json() == book.to_json()
+        True
+        """
 
 @final
 class DealRun:
@@ -11283,7 +11303,15 @@ class DealRun:
     (2, 6)
     """
     def __new__(cls, /, name: str, premium: Sequence[float], loss: Sequence[float], *, deductions: dict |None = None, inception: int = 0) -> DealRun: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
+    @staticmethod
+    def from_json(text: str) -> DealRun:
+        """
+        Reads a document written by ``to_json``; raises ``ValueError`` for
+        malformed JSON, another format, a newer format version or a
+        run the constructor would refuse.
+        """
     @staticmethod
     def from_tower(name: str, tower: Tower, result: PredictiveDistribution, layer: str, *, inception: int = 0, reinstatement_premium: bool = True) -> DealRun:
         """
@@ -11337,6 +11365,19 @@ class DealRun:
     def premium(self, /) -> list[float]:
         """
         The premium in each simulation.
+        """
+    def to_json(self, /) -> str:
+        """
+        The run as a versioned JSON document (format
+        ``risk_rs.deal_run``), numbers bit for bit (#978). ``from_json`` reads
+        it back; ``pickle`` uses the same document.
+        
+        >>> import pickle
+        >>> from prospicio.pricing import DealRun
+        >>> run = DealRun("cat", [100.0, 100.0], [40.0, 150.0], inception=6)
+        >>> back = pickle.loads(pickle.dumps(run))
+        >>> (back.name, back.loss, back.inception)
+        ('cat', [40.0, 150.0], 6)
         """
     def with_cashflows(self, /, terms: CashflowTerms, cashflows: Cashflows) -> DealRun:
         """
