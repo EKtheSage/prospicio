@@ -26,6 +26,13 @@ recorded as decisions 11 to 16.
   lognormal means (decisions 12 and 13; at least 3 origins),
   `SeparationFit::log_variance`, in Rust, at parity with statsmodels'
   OLS (1e-9).
+* **PR 5 is built** (branch `claude/separation-bindings`, 2026-11-24):
+  `Separation` and `SeparationFit` in Python and R (`kind` is
+  `"arithmetic"`, `"geometric"` or `"geometric_lognormal"`; exactly one of
+  `future_rate`, `future_index` and `trend_periods`; `fit(triangle, column,
+  segment=None)` in Python, `separation()` in R, whose fit has every field
+  of `SeparationFit` and its future as `FutureCells`), in new module
+  files, at the statsmodels reference and Taylor's Example 1.
 * **PR 6 is built** (branch `claude/apc-glm`, 2026-11-24): `ApcGlm`
   (`ApcEffects`, `Extrapolation`, `fit`), `ApcGlmFit` and
   `FutureCells::from_apc_glm` in `apc.rs`, the canonical `3k - 3`

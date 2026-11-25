@@ -122,7 +122,7 @@ fn month_of(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Month> {
 /// ['2020', '2021', '2022']
 #[pyclass(name = "CalendarIndex", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyCalendarIndex {
-    inner: CalendarIndex,
+    pub(crate) inner: CalendarIndex,
 }
 
 #[pymethods]
@@ -207,7 +207,7 @@ impl PyCalendarIndex {
     }
 }
 
-fn cells_of(inner: FutureCells) -> PyFutureCells {
+pub(crate) fn cells_of(inner: FutureCells) -> PyFutureCells {
     PyFutureCells { inner }
 }
 
