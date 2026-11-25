@@ -1,3 +1,6 @@
+library(prospicio)
+source(file.path(local({ f <- grep("^--file=", commandArgs(FALSE), value = TRUE); if (length(f)) dirname(sub("^--file=", "", f[1])) else file.path("R", "prospicio", "tests") }), "helper.R"))
+
 # The arithmetic R's boosters share with Python's, from the Rust core (#977).
 
 y <- c(5, 1, 3, 2)
