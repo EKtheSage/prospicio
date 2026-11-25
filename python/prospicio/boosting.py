@@ -550,9 +550,7 @@ def _base_score(family, y, w, offset):
 
 
 def _matrix(design):
-    import numpy as np
-
-    return np.column_stack([design.column(j) for j in range(len(design.names))])
+    return design.to_numpy()
 
 
 _FUNCTION_COLUMN = re.compile(r"^(\w+)\(([^,/)]+)")

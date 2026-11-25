@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use numpy::PyArray2;
 use prospicio_bayes::ppc::{self, LooPit, Statistic, StatisticCheck};
 use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing, TensorSpline};
 use prospicio_glm::net::{CvPath, ElasticNet, ElasticNetFit, RelaxedCv};
@@ -15,6 +16,7 @@ use prospicio_models::{
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
+use crate::arrays::{Columns, Vector, from_columns};
 use crate::distributions::{KeyArg, PyPredictiveDistribution, key_from_py};
 use crate::to_py;
 
@@ -96,14 +98,14 @@ fn frame(data: &Bound<'_, PyAny>) -> PyResult<Frame> {
 
 fn with_offset_weights(
     mut d: Design,
-    offset: Option<Vec<f64>>,
-    weights: Option<Vec<f64>>,
+    offset: Option<Vector<'_>>,
+    weights: Option<Vector<'_>>,
 ) -> PyResult<Design> {
     if let Some(o) = offset {
-        d = d.with_offset(o).map_err(to_py)?;
+        d = d.with_offset(o.into_vec()).map_err(to_py)?;
     }
     if let Some(w) = weights {
-        d = d.with_weights(w).map_err(to_py)?;
+        d = d.with_weights(w.into_vec()).map_err(to_py)?;
     }
     Ok(d)
 }
@@ -428,8 +430,8 @@ impl PyCoding {
     fn design(
         &self,
         data: &Bound<'_, PyAny>,
-        offset: Option<Vec<f64>>,
-        weights: Option<Vec<f64>>,
+        offset: Option<Vector<'_>>,
+        weights: Option<Vector<'_>>,
     ) -> PyResult<PyDesign> {
         let d = self.inner.design(&frame(data)?).map_err(to_py)?;
         Ok(PyDesign {
@@ -442,11 +444,12 @@ impl PyCoding {
 ///
 /// Parameters
 /// ----------
-/// columns : list of list of float
-///     One list per column.
+/// columns : list of list of float or numpy.ndarray
+///     One list or 1-D array per column, or a 2-D float64 array whose rows
+///     are the columns (the transpose of ``to_numpy()``), read in one copy.
 /// names : list of str
-/// offset : list of float, optional
-/// weights : list of float, optional
+/// offset : list of float or numpy.ndarray, optional
+/// weights : list of float or numpy.ndarray, optional
 ///
 /// Examples
 /// --------
@@ -464,12 +467,12 @@ impl PyDesign {
     #[new]
     #[pyo3(signature = (columns, names, offset = None, weights = None))]
     fn new(
-        columns: Vec<Vec<f64>>,
+        columns: Columns<'_>,
         names: Vec<String>,
-        offset: Option<Vec<f64>>,
-        weights: Option<Vec<f64>>,
+        offset: Option<Vector<'_>>,
+        weights: Option<Vector<'_>>,
     ) -> PyResult<Self> {
-        let d = Design::new(names, columns).map_err(to_py)?;
+        let d = Design::new(names, columns.into_vecs()).map_err(to_py)?;
         Ok(Self {
             inner: with_offset_weights(d, offset, weights)?,
         })
@@ -513,6 +516,30 @@ impl PyDesign {
             return Err(PyValueError::new_err("column index out of range"));
         }
         Ok(self.inner.column(j).to_vec())
+    }
+
+    /// The design matrix as a NumPy array, one row per observation and one
+    /// column per name, in Fortran order: a new array, each column copied
+    /// once (#978).
+    ///
+    /// Returns
+    /// -------
+    /// numpy.ndarray
+    ///     Float64, of shape ``(n_rows, len(names))``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> import numpy as np
+    /// >>> from prospicio.models import Design
+    /// >>> d = Design(np.array([[1.0, 1.0, 1.0], [0.5, 1.5, 2.5]]), ["(Intercept)", "x"])
+    /// >>> d.to_numpy()
+    /// array([[1. , 0.5],
+    ///        [1. , 1.5],
+    ///        [1. , 2.5]])
+    fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let d = &self.inner;
+        let columns: Vec<&[f64]> = (0..d.n_cols()).map(|j| d.column(j)).collect();
+        from_columns(py, d.n_rows(), &columns)
     }
 
     /// The rows ``rows``, in that order.

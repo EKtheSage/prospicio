@@ -8189,7 +8189,7 @@ class Coding:
     Terms with factor levels learned from training data, from
     ``Terms.fit``.
     """
-    def design(self, /, data: Any, offset: Sequence[float] |None = None, weights: Sequence[float] |None = None) -> Design:
+    def design(self, /, data: Any, offset: Incomplete |Sequence[float] |None = None, weights: Incomplete |Sequence[float] |None = None) -> Design:
         """
         The design matrix for ``data``.
         
@@ -11235,11 +11235,12 @@ class Design:
     
     Parameters
     ----------
-    columns : list of list of float
-        One list per column.
+    columns : list of list of float or numpy.ndarray
+        One list or 1-D array per column, or a 2-D float64 array whose rows
+        are the columns (the transpose of ``to_numpy()``), read in one copy.
     names : list of str
-    offset : list of float, optional
-    weights : list of float, optional
+    offset : list of float or numpy.ndarray, optional
+    weights : list of float or numpy.ndarray, optional
     
     Examples
     --------
@@ -11248,7 +11249,7 @@ class Design:
     >>> d.n_rows, d.names
     (2, ['(Intercept)', 'x'])
     """
-    def __new__(cls, /, columns: Sequence[Sequence[float]], names: Sequence[str], offset: Sequence[float] |None = None, weights: Sequence[float] |None = None) -> Design: ...
+    def __new__(cls, /, columns: Incomplete |Sequence[Incomplete |Sequence[float]], names: Sequence[str], offset: Incomplete |Sequence[float] |None = None, weights: Incomplete |Sequence[float] |None = None) -> Design: ...
     def column(self, /, j: int) -> list[float]:
         """
         Column ``j``.
@@ -11287,6 +11288,27 @@ class Design:
         Returns
         -------
         Design
+        """
+    def to_numpy(self, /) -> Incomplete:
+        """
+        The design matrix as a NumPy array, one row per observation and one
+        column per name, in Fortran order: a new array, each column copied
+        once (#978).
+        
+        Returns
+        -------
+        numpy.ndarray
+            Float64, of shape ``(n_rows, len(names))``.
+        
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from prospicio.models import Design
+        >>> d = Design(np.array([[1.0, 1.0, 1.0], [0.5, 1.5, 2.5]]), ["(Intercept)", "x"])
+        >>> d.to_numpy()
+        array([[1. , 0.5],
+               [1. , 1.5],
+               [1. , 2.5]])
         """
     @property
     def weights(self, /) -> list[float]:
