@@ -23,6 +23,7 @@ mod counts;
 mod credibility;
 mod discrete;
 mod distributions;
+mod earned;
 mod excess;
 mod experience;
 mod grouped_fit;
@@ -40,6 +41,7 @@ mod pricing;
 mod ratemaking;
 mod reinsurance;
 mod reserving;
+mod reserving_apc;
 mod reserving_counts;
 mod reserving_discount;
 mod reserving_expense;
@@ -116,6 +118,8 @@ mod prospicio_native {
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
         PyPredictiveDistribution, PySampled, from_json, to_json,
     };
+    #[pymodule_export]
+    use super::earned::{calendar_windows, earned_exposure, in_force};
     #[pymodule_export]
     use super::excess::{
         PyExcessLayer, PyExcessPattern, PyParetoShape, PyScaleShift, layer_at_shift,
@@ -228,6 +232,8 @@ mod prospicio_native {
         PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear, PyTriangle, PyUltimateExhibit,
         PyUnderwritingBasis, calendar_year_effect, development_correlation, diagonal_backtest,
     };
+    #[pymodule_export]
+    use super::reserving_apc::{PyApcGlm, PyApcGlmFit};
     #[pymodule_export]
     use super::reserving_counts::{
         PyCaseOutstanding, PyCaseOutstandingFit, PyDisposal, PyDisposalFit, PyFrequencySeverity,

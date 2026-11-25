@@ -350,7 +350,7 @@ impl PyOdpGlmFit {
     ///     (``rmsep / reserve``, ``nan`` for a zero reserve), as lists.
     ///     ``pandas.DataFrame(fit.prediction_error())`` lays it out as
     ///     Table 5-4.
-    fn prediction_error<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+    pub(crate) fn prediction_error<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let error = self.inner.prediction_error().map_err(err)?;
         let rows: Vec<&SumPredictionError> = error.by_origin.iter().chain([&error.total]).collect();
         let mut origin = self.origins();
@@ -512,7 +512,7 @@ impl PyOdpGlmFit {
     ///     If ``n_sims`` is 0, the triangle is fully developed, or
     ///     ``parameters`` is unknown.
     #[pyo3(signature = (n_sims, seed, parameters = "mean_preserving"))]
-    fn predict_distribution(
+    pub(crate) fn predict_distribution(
         &self,
         py: Python<'_>,
         n_sims: usize,

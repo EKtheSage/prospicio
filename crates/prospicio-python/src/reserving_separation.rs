@@ -9,6 +9,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+use crate::odp_glm::PyOdpGlmFit;
 use crate::reserving::{PyTriangle, err, pick};
 use crate::reserving_inflation::{PyCalendarIndex, PyFutureCells, cells_of};
 
@@ -218,6 +219,62 @@ impl PySeparation {
             ));
         };
         Ok(PySeparationFit { inner: fit.clone() })
+    }
+
+    /// The Poisson GLM that the arithmetic method is, ``s ~ C(development)
+    /// + C(calendar)`` on the increments of a single-segment triangle, with
+    /// the future indices in its future rows. Its future means and reserves
+    /// equal ``fit``'s; its ``prediction_error`` is the delta method's and
+    /// ``predict_distribution`` draws the future cells. The dispersion is
+    /// Pearson's.
+    ///
+    /// A ``future_rate`` or ``future_index`` is a fixed growth from the last
+    /// fitted index, so the error covers that index's and takes the growth
+    /// as given; a ``trend_periods`` future is linear in the fitted
+    /// calendar effects, so its uncertainty is included.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// column : str
+    ///
+    /// Returns
+    /// -------
+    /// OdpGlmFit
+    ///
+    /// Raises
+    /// ------
+    /// NotSupportedError
+    ///     For a geometric method (least squares on the logs) and with a
+    ///     normaliser (the variance of ``n_i s_ij`` is not an over-dispersed
+    ///     Poisson's: divide the triangle by the normaliser and fit it
+    ///     without one).
+    /// ValueError
+    ///     As ``fit`` does, for a triangle with several segments, and when
+    ///     the GLM does not converge (on increments that are not positive).
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reserving import Separation, Triangle
+    /// >>> rows = [[50.4, 78.6, 87.6, 92.4], [58.0, 87.2, 96.9], [59.5, 92.7], [66.2]]
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2001 + i for i, row in enumerate(rows) for _ in row],
+    /// ...     [12 * (j + 1) for row in rows for j in range(len(row))],
+    /// ...     {"s": [v for row in rows for v in row]},
+    /// ... )
+    /// >>> model = Separation(future_rate=0.10)
+    /// >>> glm = model.glm(tri, "s")
+    /// >>> abs(glm.total_reserve - model.fit(tri, "s").total_reserve) < 1e-6
+    /// True
+    fn glm(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+    ) -> PyResult<PyOdpGlmFit> {
+        let (model, tri) = (&self.inner, &triangle.inner);
+        let inner = py.detach(|| model.glm(tri, column)).map_err(err)?;
+        Ok(PyOdpGlmFit { inner })
     }
 
     #[allow(clippy::type_complexity)]

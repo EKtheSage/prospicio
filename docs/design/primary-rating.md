@@ -182,18 +182,19 @@ impl Date {
     pub fn days_since(self, earlier: Date) -> i64;
     pub fn year_fraction(self) -> f64;                // exact, not the half-month grid
 }
-pub struct Policy { /* effective, expiration, amount, label; PR 6: endorsements, cancellation */ }
+pub struct Policy { /* effective, expiration, amount, label, changes, cancellation */ }
 impl Policy {
     pub fn new(effective: Date, expiration: Date, amount: f64) -> Result<Self>;
     pub fn with_label(self, label: impl Into<String>) -> Self;
     pub fn earned_between(&self, from: Date, to: Date) -> f64;
     pub fn unearned_at(&self, date: Date) -> f64;
     pub fn in_force_at(&self, date: Date) -> bool;
-    // PR 6:
-    pub fn endorsed(self, date: Date, annual_change: f64) -> Result<Self>;
-    pub fn cancelled(self, date: Date) -> Result<Self>;
+    // Built in PR 6:
+    pub fn endorsed(self, date: Date, full_term_amount: f64) -> Result<Self>;
+    pub fn cancelled(self, date: Date) -> Result<Self>;   // the first day not in force
+    pub fn amount_at(&self, date: Date) -> f64;           // the full-term amount in effect
 }
-pub enum EarningMethod { Daily /* PR 6: TwentyFourths */ }      // non_exhaustive
+pub enum EarningMethod { Daily, HalfMonth, TwentyFourths }   // non_exhaustive
 pub struct Windows { /* consecutive windows between dates */ }
 impl Windows {
     pub fn new(bounds: Vec<Date>) -> Result<Self>;
@@ -286,7 +287,16 @@ Proposed for the user's acceptance; each has a recommendation.
 - (e) **Endorsements are changes in the annual amount from a date.** A
   change of exposure and a change of premium are both this. An
   endorsement that changes the expiration date is a cancellation followed
-  by a new policy. *Recommended.*
+  by a new policy. *Recommended.* As built (PR 6), following Werner and
+  Modlin's records (Table 3.1): `endorsed(date, full_term_amount)` gives
+  the new full-term amount from `date`, as the book states a change ("the
+  full-term premium increases from 400 to 800"), not a difference. It is
+  written on `date` as the difference in full-term amounts for the term
+  still to run, and the in-force amount is the full-term amount in effect.
+  `cancelled(date)` takes the first day not in force, like an expiration,
+  and writes the return of what was not yet earned on the last day in
+  force, the day before, so that a policy cancelled on December 31 has its
+  return in that year, as the book's record is dated.
 - (f) **`earned_exposure` returns a table, by window, of written, earned,
   unearned and in force**, and can keep a label per policy (state, class)
   so one call gives the table by label. *Recommended.* It does not return
@@ -356,11 +366,17 @@ Proposed for the user's acceptance; each has a recommendation.
   year, since the book counts months and the daily method counts days
   (92/365 for its 0.25); the in-force exposures as of three dates (4.15)
   exactly, by `in_force`; and the same for its six-month policies (4.18 to
-  4.22). Exact parity on the earned tables needs a method on the book's
-  half-month grid, proposed for PR 6. Also a day-by-day count over a fixed
+  4.22). With `EarningMethod::HalfMonth` the earned tables are exact too
+  (PR 6). Also from PR 6: the cancellation of Policy D (1 and 400 written
+  in 2011, -0.25 and -100 in 2012; all of it in policy year 2011) and of
+  Table 3.1's Policy B (-150 dated 12/31/10); the mid-term change of Table
+  3.1's Policy C (-500 and +600 on 01/01/11, 500 then 600 earned) and of
+  chapter 5's Policy D (600 paid, 400 then 800 in force); the
+  twenty-fourths of Tables 4.23 and 4.24 (230, 210, ... earned in 2010 of
+  240 written each month, and 1,440, 2,880, 1,440 in force); and a policy
+  changed twice and cancelled against a day-by-day count. Also a day-by-day count over a fixed
   book of 60 policies with terms of three months to two years across leap
-  days, by label and quarter, to 1e-9. Still to come from the book: its
-  premium examples with a mid-term change in chapter 5 (PR 6).
+  days, by label and quarter, to 1e-9.
 - **Modifications.** Worked exhibits from the CAS study note on
   individual risk rating (Fisher, McTaggart, Petker and Pettingell) and
   from the bureaus' public explanatory material. These texts are the
@@ -399,8 +415,17 @@ Stacked, each on the one before:
    allow-list entries (reason: bound in PR 6b). Done.
 6. Endorsements, cancellations and the twenty-fourths method, and
    earning on the book's half-month grid (`ratemaking::year_fraction`),
-   which reproduces chapter 4's earned tables exactly.
-6b. Python and R bindings for `earned` (`[earned-bindings]`).
+   which reproduces chapter 4's earned tables exactly. Done.
+6b. Python and R bindings for `earned` (`[earned-bindings]`). Done:
+   `earned_exposure`, `calendar_windows` and `in_force` in
+   `prospicio.pricing`; `earned_exposure()`, `in_force_amount()` and
+   `calendar_windows()` in R. Policies cross as columns (effective,
+   expiration, amount, and optionally label, changes and cancellation),
+   which the core's `policies_from_columns` turns into `Policy`s, and the
+   table comes back as a dict of columns or a data frame. Dates are
+   `datetime.date` or ISO strings in Python and `Date` or ISO strings in R.
+   A change names its policy by position, from 0 in Python and from 1 in
+   R, as each language counts.
 7. `emod::SplitPlan`; bindings; a reference exhibit.
 8. `emod::ExperienceRatioPlan`; bindings; a reference exhibit; the Done
    bullet `#981`.

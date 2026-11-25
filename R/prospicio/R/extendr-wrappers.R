@@ -35,6 +35,8 @@ ale_numeric_rust <- function(interval, lower, upper, k) .Call(wrap__ale_numeric_
 
 ale_order_rust <- function(distance, k) .Call(wrap__ale_order_rust, distance, k)
 
+apc_glm_fit_rust <- function(triangle, column, effects, extrapolation, family, power, tolerance, max_iterations) .Call(wrap__apc_glm_fit_rust, triangle, column, effects, extrapolation, family, power, tolerance, max_iterations)
+
 approximation_eval_rust <- function(moments, kind, values, quantile) .Call(wrap__approximation_eval_rust, moments, kind, values, quantile)
 
 approximation_parameters_rust <- function(moments, kind) .Call(wrap__approximation_parameters_rust, moments, kind)
@@ -72,6 +74,8 @@ buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, ma
 calendar_index_periods_rust <- function(first, values, rate) .Call(wrap__calendar_index_periods_rust, first, values, rate)
 
 calendar_index_value_rust <- function(first, values, rate, months) .Call(wrap__calendar_index_value_rust, first, values, rate, months)
+
+calendar_windows_rust <- function(first_year, last_year, by) .Call(wrap__calendar_windows_rust, first_year, last_year, by)
 
 cann_fit_design <- function(x, names, y, offset, weights, family_name, link_name, power, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience) .Call(wrap__cann_fit_design, x, names, y, offset, weights, family_name, link_name, power, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience)
 
@@ -156,6 +160,8 @@ draws_loo_rust <- function(values, n_iter, n_chain, names, prefix) .Call(wrap__d
 draws_summary_rust <- function(values, n_iter, n_chain, names) .Call(wrap__draws_summary_rust, values, n_iter, n_chain, names)
 
 dyadic_lattice_step_rust <- function(atoms, depth) .Call(wrap__dyadic_lattice_step_rust, atoms, depth)
+
+earned_exposure_rust <- function(effective, expiration, amount, bounds, kind, method, valuation, label, change_policy, change_date, change_amount, cancellation) .Call(wrap__earned_exposure_rust, effective, expiration, amount, bounds, kind, method, valuation, label, change_policy, change_date, change_amount, cancellation)
 
 elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, gammas, theta, power, link_power, foldid) .Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, gammas, theta, power, link_power, foldid)
 
@@ -258,6 +264,8 @@ hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, 
 hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
 
 iman_conover_reorder <- function(pd, correlation, seed, dof, scores, shuffle_rows) .Call(wrap__iman_conover_reorder, pd, correlation, seed, dof, scores, shuffle_rows)
+
+in_force_amount_rust <- function(effective, expiration, amount, at, change_policy, change_date, change_amount, cancellation) .Call(wrap__in_force_amount_rust, effective, expiration, amount, at, change_policy, change_date, change_amount, cancellation)
 
 indexation_apply_rust <- function(triangle, column, first, values, rate, base, inflate) .Call(wrap__indexation_apply_rust, triangle, column, first, values, rate, base, inflate)
 
@@ -512,6 +520,8 @@ round_premium_rust <- function(premium) .Call(wrap__round_premium_rust, premium)
 schedule_trend_rust <- function(years, trend_years, trend_rates, inception, basis, kind, cutoff, before) .Call(wrap__schedule_trend_rust, years, trend_years, trend_rates, inception, basis, kind, cutoff, before)
 
 separation_fit_rust <- function(triangle, column, keys, values, kind, normaliser, future, rate, first, index_values, index_rate, trend_periods) .Call(wrap__separation_fit_rust, triangle, column, keys, values, kind, normaliser, future, rate, first, index_values, index_rate, trend_periods)
+
+separation_glm_rust <- function(triangle, column, normaliser, future, rate, first, index_values, index_rate, trend_periods) .Call(wrap__separation_glm_rust, triangle, column, normaliser, future, rate, first, index_values, index_rate, trend_periods)
 
 settlement_rate_rust <- function(triangle, paid, closed_counts, ultimate, disposal_rates, interpolation) .Call(wrap__settlement_rate_rust, triangle, paid, closed_counts, ultimate, disposal_rates, interpolation)
 

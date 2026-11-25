@@ -1475,3 +1475,50 @@ mod tests {
         );
     }
 }
+
+/// The mean, standard deviation, coefficient of variation and skewness of
+/// a sample, on the population moments (divided by `n`), from
+/// [`sample_moments`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SampleMoments {
+    /// `m = Σ x / n`.
+    pub mean: f64,
+    /// `√m₂`, with `m₂ = Σ (x - m)² / n`.
+    pub sd: f64,
+    /// `sd / m`, NaN when the mean is 0.
+    pub cv: f64,
+    /// `m₃ / m₂^1.5`, with `m₃ = Σ (x - m)³ / n`.
+    pub skewness: f64,
+}
+
+/// The [`SampleMoments`] of `x`, as a year loss table's summary reports
+/// them (the Excel add-in's `PRO.CAT.YLT.STATS`, #976).
+///
+/// ```
+/// use prospicio_prob::statistics::sample_moments;
+///
+/// let m = sample_moments(&[1.0, 2.0, 3.0, 10.0]).unwrap();
+/// assert_eq!(m.mean, 4.0);
+/// assert!((m.sd - 3.5355339059327378).abs() < 1e-15);
+/// assert!(m.skewness > 0.0);
+/// ```
+///
+/// # Errors
+///
+/// [`prospicio_core::Error::Data`] when `x` is empty.
+pub fn sample_moments(x: &[f64]) -> Result<SampleMoments> {
+    if x.is_empty() {
+        return Err(Error::Data("the sample is empty".into()));
+    }
+    let n = x.len() as f64;
+    let mean = x.iter().sum::<f64>() / n;
+    let m2 = x.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
+    let m3 = x.iter().map(|v| (v - mean).powi(3)).sum::<f64>() / n;
+    let sd = m2.sqrt();
+    Ok(SampleMoments {
+        mean,
+        sd,
+        cv: if mean == 0.0 { f64::NAN } else { sd / mean },
+        skewness: m3 / m2.powf(1.5),
+    })
+}
