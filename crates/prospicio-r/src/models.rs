@@ -15,7 +15,7 @@ use prospicio_models::resample;
 use prospicio_models::{Design, Family, FamilyKind, Fitted, Link, LinkKind, Model, metrics};
 
 use crate::distributions::PredictiveDistribution;
-use crate::{to_r, whole};
+use crate::{row_major, to_r, whole};
 
 /// A family from its name; `theta` and `power` are NA when not used.
 pub(crate) fn family(name: &str, theta: f64, power: f64) -> Result<Family> {
@@ -317,6 +317,18 @@ pub(crate) struct DglmModel {
 
 #[extendr]
 impl DglmModel {
+    /// The fit as a versioned JSON artifact, for `save_model()`.
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A fit read back from `to_json()`.
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: DoubleGlmFit::from_json(text).map_err(to_r)?,
+        })
+    }
+
     fn names(&self) -> Vec<String> {
         self.inner.names().to_vec()
     }
@@ -472,6 +484,18 @@ pub(crate) struct GlmmModel {
 
 #[extendr]
 impl GlmmModel {
+    /// The fit as a versioned JSON artifact, for `save_model()`.
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A fit read back from `to_json()`.
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: GlmmFit::from_json(text).map_err(to_r)?,
+        })
+    }
+
     fn names(&self) -> Vec<String> {
         self.inner.names().to_vec()
     }
@@ -704,6 +728,18 @@ pub(crate) struct BayesGlmmModel {
 
 #[extendr]
 impl BayesGlmmModel {
+    /// The fit as a versioned JSON artifact, for `save_model()`.
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A fit read back from `to_json()`.
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: prospicio_bayes::glmm::BayesGlmmFit::from_json(text).map_err(to_r)?,
+        })
+    }
+
     fn names(&self) -> Vec<String> {
         self.inner.names().to_vec()
     }
@@ -712,9 +748,10 @@ impl BayesGlmmModel {
         self.inner.parameters().names().to_vec()
     }
 
-    /// Row-major `n_draws × parameters`.
-    fn parameter_draws(&self) -> Vec<f64> {
-        self.inner.parameters().values().to_vec()
+    /// The parameter draws, `n_draws × parameters`.
+    fn parameter_draws(&self) -> RMatrix<f64> {
+        let p = self.inner.parameters();
+        row_major(p.values(), p.names().len())
     }
 
     /// Each parameter's posterior mean, without copying the draws to R.
@@ -726,9 +763,10 @@ impl BayesGlmmModel {
         self.inner.effects().names().to_vec()
     }
 
-    /// Row-major `n_draws × effects`.
-    fn effect_draws(&self) -> Vec<f64> {
-        self.inner.effects().values().to_vec()
+    /// The random-effect draws, `n_draws × effects`.
+    fn effect_draws(&self) -> RMatrix<f64> {
+        let e = self.inner.effects();
+        row_major(e.values(), e.names().len())
     }
 
     fn divergences(&self) -> f64 {
@@ -2048,12 +2086,14 @@ fn ale_order_rust(distance: &[f64], k: f64) -> Vec<f64> {
         .collect()
 }
 
-/// Exact SHAP values, `n × m` row-major, from the game's value at each of
+/// Exact SHAP values, an `n × m` matrix, from the game's value at each of
 /// the `2^m` coalitions (#837).
 /// @noRd
 #[extendr]
-fn shap_exact_rust(values: &[f64], n: f64, m: f64) -> Result<Vec<f64>> {
-    prospicio_models::explain::shap_exact(values, n as usize, m as usize).map_err(to_r)
+fn shap_exact_rust(values: &[f64], n: f64, m: f64) -> Result<RMatrix<f64>> {
+    let phi =
+        prospicio_models::explain::shap_exact(values, n as usize, m as usize).map_err(to_r)?;
+    Ok(row_major(&phi, m as usize))
 }
 
 #[extendr]
@@ -2374,7 +2414,18 @@ fn actual_vs_expected_rust(
 #[extendr]
 pub(crate) struct BayesGlmModel {
     inner: prospicio_bayes::glm::BayesGlmFit,
-    training: (Design, Vec<f64>),
+    /// The training data, for LOO and the predictive checks; not kept by a
+    /// model loaded from JSON.
+    training: Option<(Design, Vec<f64>)>,
+}
+
+impl BayesGlmModel {
+    fn training(&self) -> Result<(&Design, &[f64])> {
+        self.training
+            .as_ref()
+            .map(|(d, y)| (d, y.as_slice()))
+            .ok_or_else(|| Error::Other("a loaded model has no training data".into()))
+    }
 }
 
 /// Samples a Bayesian GLM on the design `x` (column-major, columns
@@ -2424,12 +2475,25 @@ fn bayes_glm_fit_design(
     let inner = spec.fit(&d, y).map_err(to_r)?;
     Ok(BayesGlmModel {
         inner,
-        training: (d, y.to_vec()),
+        training: Some((d, y.to_vec())),
     })
 }
 
 #[extendr]
 impl BayesGlmModel {
+    /// The fit as a versioned JSON artifact, for `save_model()`.
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A fit read back from `to_json()`.
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: prospicio_bayes::glm::BayesGlmFit::from_json(text).map_err(to_r)?,
+            training: None,
+        })
+    }
+
     fn names(&self) -> Vec<String> {
         self.inner.names().to_vec()
     }
@@ -2438,9 +2502,9 @@ impl BayesGlmModel {
         self.inner.posterior_mean()
     }
 
-    /// Row-major `n_draws × p`.
-    fn coefficient_draws(&self) -> Vec<f64> {
-        self.inner.coefficient_draws().to_vec()
+    /// The coefficient draws, `n_draws × p`.
+    fn coefficient_draws(&self) -> RMatrix<f64> {
+        row_major(self.inner.coefficient_draws(), self.inner.names().len())
     }
 
     fn dispersion_draws(&self) -> Vec<f64> {
@@ -2462,7 +2526,7 @@ impl BayesGlmModel {
     /// PSIS-LOO on the training data: `list(estimates, pointwise, pareto_k,
     /// k_threshold)`.
     fn loo(&self) -> Result<List> {
-        let (d, y) = &self.training;
+        let (d, y) = self.training()?;
         let l = self.inner.loo(d, y).map_err(to_r)?;
         let e = &l.estimate;
         Ok(list!(
@@ -2475,19 +2539,23 @@ impl BayesGlmModel {
 
     /// Training log-likelihood, row-major `n_draws × n`.
     fn log_likelihood(&self) -> Result<Vec<f64>> {
-        let (d, y) = &self.training;
+        let (d, y) = self.training()?;
         self.inner.log_likelihood(d, y).map_err(to_r)
     }
 
-    /// Replicated training datasets, row-major `n_draws × n`.
-    fn replicate(&self, seed: f64) -> Result<Vec<f64>> {
-        let (d, _) = &self.training;
-        self.inner.replicate(d, whole(seed, "seed")?).map_err(to_r)
+    /// Replicated training datasets, `n_draws × n`.
+    fn replicate(&self, seed: f64) -> Result<RMatrix<f64>> {
+        let (d, _) = self.training()?;
+        let r = self
+            .inner
+            .replicate(d, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(row_major(&r, d.n_rows()))
     }
 
     /// Posterior predictive checks on the training data.
     fn ppc(&self, statistics: Vec<String>, seed: f64) -> Result<List> {
-        let (d, y) = &self.training;
+        let (d, y) = self.training()?;
         let stats = ppc_statistics(&statistics)?;
         let checks = self
             .inner
@@ -2498,7 +2566,7 @@ impl BayesGlmModel {
 
     /// The leave-one-out PIT of the training data.
     fn loo_pit(&self, seed: f64) -> Result<List> {
-        let (d, y) = &self.training;
+        let (d, y) = self.training()?;
         let p = self
             .inner
             .loo_pit(d, y, whole(seed, "seed")?)
@@ -2674,14 +2742,12 @@ fn ppc_statistics(names: &[String]) -> Result<Vec<Statistic>> {
         .collect()
 }
 
-/// `list(name, observed, p_value, replicated)`, `replicated` row-major
+/// `list(name, observed, p_value, replicated)`, `replicated` a
 /// draws × statistics.
 fn checks_list(checks: Vec<StatisticCheck>) -> List {
     let s = checks.first().map_or(0, |c| c.replicated.len());
-    let mut replicated = Vec::with_capacity(s * checks.len());
-    for d in 0..s {
-        replicated.extend(checks.iter().map(|c| c.replicated[d]));
-    }
+    // Column `k` is statistic `k`'s replicates, already in R's order.
+    let replicated = RMatrix::new_matrix(s, checks.len(), |d, k| checks[k].replicated[d]);
     list!(
         name = checks.iter().map(|c| c.name.clone()).collect::<Vec<_>>(),
         observed = checks.iter().map(|c| c.observed).collect::<Vec<_>>(),
@@ -2970,6 +3036,18 @@ pub(crate) struct ZeroModel {
 
 #[extendr]
 impl ZeroModel {
+    /// The fit as a versioned JSON artifact, for `save_model()`.
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A fit read back from `to_json()`.
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: prospicio_glm::zero::TwoPartFit::from_json(text).map_err(to_r)?,
+        })
+    }
+
     fn kind(&self) -> &'static str {
         self.inner.kind().name()
     }
@@ -3285,6 +3363,18 @@ pub(crate) struct ExpectregModel {
 
 #[extendr]
 impl ExpectregModel {
+    /// The fit as a versioned JSON artifact, for `save_model()`.
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A fit read back from `to_json()`.
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: prospicio_glm::quantile::ExpectileFit::from_json(text).map_err(to_r)?,
+        })
+    }
+
     fn tau(&self) -> f64 {
         self.inner.tau()
     }

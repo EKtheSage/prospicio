@@ -640,7 +640,7 @@ clash_counts <- function(clash) {
 
 joint_result <- function(r) {
   out <- list(
-    density = matrix(r$probs, nrow = r$rows, ncol = r$cols, byrow = TRUE), steps = r$steps,
+    density = r$probs, steps = r$steps,
     marginal_a = grid_distribution(ptr = r$marginal_a),
     marginal_b = grid_distribution(ptr = r$marginal_b),
     total = grid_distribution(ptr = r$total), means = r$means, variances = r$variances,
@@ -1125,8 +1125,7 @@ timeline_years <- function(timeline, basis, exposure, sources = FALSE) {
 #' @rdname timeline
 #' @export
 uniform_exposure <- function(n_years, policy_months) {
-  r <- rust_result(exposure_uniform_rust(as.double(n_years), as.double(policy_months)))
-  matrix(r$shares, nrow = n_years, ncol = r$months, byrow = TRUE)
+  rust_result(exposure_uniform_rust(as.double(n_years), as.double(policy_months)))$shares
 }
 
 S7::method(print, timeline) <- function(x, ...) {

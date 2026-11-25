@@ -39,6 +39,8 @@ use crate::cashflow::{CashflowTerms, Cashflows, MonthlyPatterns};
 use crate::returns::{Irr, IrrOptions, TimeUnit, irr_rows, moic, npv_rows};
 use crate::risk_load::{PremiumRule, Price, price_portfolio, price_unchecked};
 
+mod json;
+
 /// One deduction of a [`DealRun`]: a commission, the brokerage or another
 /// deduction, an amount in each simulation.
 #[derive(Debug, Clone, PartialEq)]

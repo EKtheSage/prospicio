@@ -339,20 +339,22 @@ robust_vcov <- function(object, type = c("HC0", "HC1"), cluster = NULL) {
 
 #' Save and load a model
 #'
-#' `save_model()` writes a [glm_fit()], [gam_fit()], [elastic_net_fit()],
-#' [cann_fit()] or [attention_cann_fit()] model to an RDS file: the Rust
-#' fit as a versioned JSON artifact (spec, estimates, covariance, fit
-#' statistics, fitted values, and provenance with the package version and
-#' a hash of the training data; for a GAM also the spline knots and
-#' constraints; for an elastic net one artifact per lambda; for a network
-#' its feature scaling and every weight), with the formula terms and
-#' factor levels that
-#' [stats::predict()] needs. `load_model()` reads it back; the estimates
-#' round-trip exactly. A loaded model predicts and simulates but has no
-#' training data, so [robust_vcov()] needs the original fit.
+#' `save_model()` writes a fitted model to an RDS file: the Rust fit as a
+#' versioned JSON artifact (spec, estimates, covariance, fit statistics,
+#' fitted values, and provenance with the package version and a hash of
+#' the training data; for a GAM also the spline knots and constraints; for
+#' an elastic net one artifact per lambda; for a network its feature
+#' scaling and every weight; for a Bayesian model its draws and sampler
+#' diagnostics), with the formula terms, factor levels and other settings
+#' that [stats::predict()] needs. `load_model()` reads it back; the
+#' estimates round-trip exactly. A loaded model predicts and simulates but
+#' has no training data, so [robust_vcov()], and LOO and the posterior
+#' predictive checks of a [bayes_glm_fit()] model, need the original fit.
 #'
-#' @param model A `glm_model`, `gam_model`, `elastic_net_model`,
-#'   `cann_model`, `attention_cann_model` or `tabular_net_model`.
+#' @param model A model from [glm_fit()], [gam_fit()], [elastic_net_fit()],
+#'   [glmm_fit()], [bayes_glm_fit()], [bayes_glmm_fit()], [dglm_fit()],
+#'   [zeroinfl_fit()], [hurdle_fit()], [expectreg_fit()], [cann_fit()],
+#'   [attention_cann_fit()] or [tabular_net_fit()].
 #' @param file Path of the RDS file.
 #' @returns `save_model()`: `file`, invisibly. `load_model()`: a model of
 #'   the class saved.
@@ -365,16 +367,16 @@ robust_vcov <- function(object, type = c("HC0", "HC1"), cluster = NULL) {
 #' m2 <- load_model(f)
 #' identical(coef(m2), coef(m))
 save_model <- function(model, file) {
-  kind <- if (S7::S7_inherits(model, glm_model)) "glm_model"
-    else if (S7::S7_inherits(model, gam_model)) "gam_model"
-    else if (S7::S7_inherits(model, elastic_net_model)) "elastic_net_model"
-    else if (S7::S7_inherits(model, cann_model)) "cann_model"
-    else if (S7::S7_inherits(model, attention_cann_model)) "attention_cann_model"
-    else if (S7::S7_inherits(model, tabular_net_model)) "tabular_net_model"
-    else stop(paste("model must be a glm_model, gam_model, elastic_net_model, cann_model,",
-                    "attention_cann_model or tabular_net_model"))
+  kinds <- saved_model_kinds()
+  hit <- Filter(function(k) S7::S7_inherits(model, k$class), kinds)
+  if (length(hit) == 0) {
+    stop(paste("model must be one of", paste(names(kinds), collapse = ", ")))
+  }
+  kind <- names(hit)[[1]]
+  stored <- stored_properties(hit[[1]]$class)
+  props <- lapply(stats::setNames(stored, stored), function(p) S7::prop(model, p))
   saveRDS(list(format = paste0("prospicio.", kind), artifact = model@ptr$to_json(),
-               terms = model@terms, xlevels = model@xlevels), file)
+               terms = model@terms, xlevels = model@xlevels, props = props), file)
   invisible(file)
 }
 
@@ -383,27 +385,40 @@ save_model <- function(model, file) {
 load_model <- function(file) {
   x <- readRDS(file)
   format <- if (is.list(x)) x$format else NULL
-  switch(if (is.character(format)) format else "",
-    prospicio.glm_model = glm_model(ptr = rust_result(GlmModel$from_json(x$artifact)),
-                                      terms = x$terms, xlevels = x$xlevels),
-    prospicio.gam_model = gam_model(ptr = rust_result(GamModel$from_json(x$artifact)),
-                                      terms = x$terms, xlevels = x$xlevels),
-    prospicio.elastic_net_model = elastic_net_model(
-      ptr = rust_result(ElasticNetPath$from_json(x$artifact)),
-      terms = x$terms, xlevels = x$xlevels
-    ),
-    prospicio.cann_model = cann_model(ptr = rust_result(CannModel$from_json(x$artifact)),
-                                        terms = x$terms, xlevels = x$xlevels),
-    prospicio.attention_cann_model = attention_cann_model(
-      ptr = rust_result(AttentionCannModel$from_json(x$artifact)),
-      terms = x$terms, xlevels = x$xlevels
-    ),
-    prospicio.tabular_net_model = tabular_net_model(
-      ptr = rust_result(TabularNetModel$from_json(x$artifact)),
-      terms = x$terms, xlevels = x$xlevels
-    ),
+  kind <- if (is.character(format)) sub("^prospicio\\.", "", format) else ""
+  k <- saved_model_kinds()[[kind]]
+  if (is.null(k) || !identical(format, paste0("prospicio.", kind))) {
     stop("not a model saved by save_model()")
+  }
+  # Files from before the other settings were saved hold terms and xlevels.
+  props <- if (is.null(x$props)) list(terms = x$terms, xlevels = x$xlevels) else x$props
+  do.call(k$class, c(list(ptr = rust_result(k$rust$from_json(x$artifact))), props))
+}
+
+# The classes save_model() writes, each with the Rust class that reads its
+# artifact back.
+saved_model_kinds <- function() {
+  list(
+    glm_model = list(class = glm_model, rust = GlmModel),
+    gam_model = list(class = gam_model, rust = GamModel),
+    elastic_net_model = list(class = elastic_net_model, rust = ElasticNetPath),
+    glmm_model = list(class = glmm_model, rust = GlmmModel),
+    bayes_glm_model = list(class = bayes_glm_model, rust = BayesGlmModel),
+    bayes_glmm_model = list(class = bayes_glmm_model, rust = BayesGlmmModel),
+    dglm_model = list(class = dglm_model, rust = DglmModel),
+    zero_model = list(class = zero_model, rust = ZeroModel),
+    expectreg_model = list(class = expectreg_model, rust = ExpectregModel),
+    cann_model = list(class = cann_model, rust = CannModel),
+    attention_cann_model = list(class = attention_cann_model, rust = AttentionCannModel),
+    tabular_net_model = list(class = tabular_net_model, rust = TabularNetModel)
   )
+}
+
+# A class's stored properties other than the Rust fit: those without a getter.
+stored_properties <- function(class) {
+  props <- class@properties
+  keep <- vapply(props, function(p) is.null(p$getter), logical(1))
+  setdiff(names(props)[keep], "ptr")
 }
 
 #' Fit an elastic-net GLM
@@ -722,9 +737,9 @@ bayes_glm_model <- S7::new_class(
       as.data.frame(self@ptr$summary())
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- self@ptr$names()
-      matrix(self@ptr$coefficient_draws(), ncol = length(nm), byrow = TRUE,
-             dimnames = list(NULL, nm))
+      m <- self@ptr$coefficient_draws()
+      colnames(m) <- self@ptr$names()
+      m
     }),
     dispersion_draws = S7::new_property(S7::class_double, getter = function(self) {
       self@ptr$dispersion_draws()
@@ -820,9 +835,8 @@ bayes_loo_pit <- function(model, seed = 0) {
 #' @rdname bayes_ppc
 #' @export
 bayes_replicate <- function(model, seed = 0) {
-  r <- rust_result(model@ptr$replicate(as.double(seed)))
-  # One dispersion per draw, so one row per draw.
-  matrix(r, nrow = length(model@ptr$dispersion_draws()), byrow = TRUE)
+  # One row per draw, one column per training row.
+  rust_result(model@ptr$replicate(as.double(seed)))
 }
 
 #' @rdname bayes_ppc
@@ -844,8 +858,9 @@ loo_pit <- function(observed, replicated, log_lik, r_eff = NULL, seed = 0) {
 
 checks_frame <- function(r) {
   out <- data.frame(name = r$name, observed = r$observed, p_value = r$p_value)
-  attr(out, "replicated") <- matrix(r$replicated, ncol = length(r$name), byrow = TRUE,
-                                    dimnames = list(NULL, r$name))
+  replicated <- r$replicated
+  colnames(replicated) <- r$name
+  attr(out, "replicated") <- replicated
   out
 }
 
@@ -1253,9 +1268,8 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
   function(model, test) {
     y <- test[[response]]
     w <- if (is.null(weight_column)) rep(1, nrow(test)) else test[[weight_column]]
-    fa <- family_args(theta, power)
-    rust_result(family_mean_deviance_rust(family, fa$theta, fa$power, as.double(y),
-                                          as.double(stats::predict(model, test)), as.double(w)))
+    family_deviance(family, y, stats::predict(model, test), weights = w, theta = theta,
+                    power = power) / sum(w)
   }
 }
 
@@ -1893,7 +1907,7 @@ ale <- function(model, data, feature, bins = 40, levels = NULL) {
     if (length(unique(x)) < 2) stop(feature, " takes one value: it has no local effect")
     # The grid, the intervals, accumulation and centring are the Rust
     # core's (#837); only the predictions are made here.
-    z <- rust_result(ale_grid_rust(as.double(x), as.double(bins)))
+    z <- ale_grid_rust(as.double(x), as.double(bins))
     a <- ale_intervals_rust(as.double(x), z)
     e <- ale_numeric_rust(a, pred(z[a]), pred(z[a + 1]), as.double(length(z) - 1))
     return(data.frame(value = z, effect = e$effects, count = c(NA, e$counts)))
@@ -1946,8 +1960,7 @@ shap_values <- function(model, data, background, features = NULL, output = NULL,
     values <- unlist(lapply(masks, function(mask) {
       if (!any(mask)) rep(baseline, n) else if (all(mask == 1)) outputs else value(mask)
     }))
-    phi[] <- matrix(rust_result(shap_exact_rust(as.double(values), as.double(n), as.double(m))),
-                    n, m, byrow = TRUE)
+    phi[] <- rust_result(shap_exact_rust(as.double(values), as.double(n), as.double(m)))
     method <- "exact"
   } else {
     if (n_permutations < 1) stop("n_permutations must be at least 1")
@@ -2730,20 +2743,20 @@ bayes_glmm_model <- S7::new_class(
     groups = S7::class_list,
     coefficients = S7::new_property(S7::class_double, getter = function(self) {
       nm <- self@ptr$names()
-      stats::setNames(self@ptr$parameter_means()[seq_along(nm)], nm)
+      stats::setNames(colMeans(self@draws)[seq_along(nm)], nm)
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
       as.data.frame(self@ptr$summary())
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- self@ptr$parameter_names()
-      matrix(self@ptr$parameter_draws(), ncol = length(nm), byrow = TRUE,
-             dimnames = list(NULL, nm))
+      m <- self@ptr$parameter_draws()
+      colnames(m) <- self@ptr$parameter_names()
+      m
     }),
     effect_draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- self@ptr$effect_names()
-      matrix(self@ptr$effect_draws(), ncol = length(nm), byrow = TRUE,
-             dimnames = list(NULL, nm))
+      m <- self@ptr$effect_draws()
+      colnames(m) <- self@ptr$effect_names()
+      m
     }),
     random_effects = S7::new_property(S7::class_list, getter = function(self) {
       lapply(self@ptr$random_effects(), as.data.frame)

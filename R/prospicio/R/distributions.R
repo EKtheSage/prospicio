@@ -980,7 +980,8 @@ reordered <- function(x, dim, out, index) {
 group_spearman <- function(x, dim) {
   groups <- as.character(unique(x@keys[[dim]]))
   m <- rust_result(group_spearman_rust(x@ptr, dim))
-  matrix(m, length(groups), byrow = TRUE, dimnames = list(groups, groups))
+  dimnames(m) <- list(groups, groups)
+  m
 }
 
 #' Blend predictive distributions

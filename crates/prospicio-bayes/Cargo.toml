@@ -20,3 +20,4 @@ prospicio-models.workspace = true
 prospicio-prob.workspace = true
 nuts-rs.workspace = true
 rayon.workspace = true
+serde_json.workspace = true

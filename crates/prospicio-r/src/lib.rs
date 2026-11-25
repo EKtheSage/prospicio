@@ -58,6 +58,15 @@ pub(crate) fn to_r(e: prospicio_core::Error) -> Error {
     Error::Other(e.to_string())
 }
 
+/// A row-major matrix of `ncol` columns as an R matrix (#978). R stores by
+/// column, so this is the one copy, in place of a flat vector and
+/// `matrix(..., byrow = TRUE)`, which made two. With no columns the matrix
+/// is `0 × 0`.
+pub(crate) fn row_major(values: &[f64], ncol: usize) -> RMatrix<f64> {
+    let nrow = values.len().checked_div(ncol).unwrap_or(0);
+    RMatrix::new_matrix(nrow, ncol, |r, c| values[r * ncol + c])
+}
+
 /// The error for an option name not in a core enum's `NAMES` (#834): one
 /// message format, `arg must be "a", "b" or "c", got "x"`.
 pub(crate) fn unknown_name<T>(arg: &str, got: &str, names: &[(&str, T)]) -> Error {

@@ -101,6 +101,25 @@ impl GaussianCopula {
         &self.chol
     }
 
+    /// A Gaussian copula from the Cholesky factor `L` that
+    /// [`factor`](Self::factor) returns, kept bit for bit (the bindings'
+    /// pickling uses it, #978). `L` must be lower triangular with a positive
+    /// diagonal and rows of unit length to within `1e-12`.
+    ///
+    /// ```
+    /// use prospicio_prob::copula::GaussianCopula;
+    ///
+    /// let c = GaussianCopula::new(&[1.0, 0.3, 0.3, 1.0], 2).unwrap();
+    /// assert_eq!(GaussianCopula::from_factor(c.factor(), 2).unwrap(), c);
+    /// ```
+    pub fn from_factor(factor: &[f64], dim: usize) -> Result<Self> {
+        check_factor(factor, dim)?;
+        Ok(Self {
+            dim,
+            chol: factor.to_vec(),
+        })
+    }
+
     /// The correlation matrix `L Lᵀ`, row-major.
     pub fn correlation(&self) -> Vec<f64> {
         let d = self.dim;
@@ -268,6 +287,26 @@ impl StudentTCopula {
     /// Degrees of freedom.
     pub fn nu(&self) -> f64 {
         self.nu
+    }
+
+    /// The Cholesky factor `L` of the correlation matrix, row-major.
+    pub fn factor(&self) -> &[f64] {
+        &self.chol
+    }
+
+    /// A t copula from the Cholesky factor [`factor`](Self::factor)
+    /// returns and `nu`, kept bit for bit; `L` is checked as in
+    /// [`GaussianCopula::from_factor`].
+    pub fn from_factor(factor: &[f64], dim: usize, nu: f64) -> Result<Self> {
+        if !nu.is_finite() || nu <= 0.0 {
+            return Err(invalid("nu", nu, "must be finite and positive"));
+        }
+        check_factor(factor, dim)?;
+        Ok(Self {
+            dim,
+            chol: factor.to_vec(),
+            nu,
+        })
     }
 }
 
@@ -1102,6 +1141,35 @@ fn correlation_factor(r: &[f64], dim: usize) -> Result<Vec<f64>> {
     cholesky(r, dim).ok_or_else(|| invalid("correlation", 0.0, "must be positive definite"))
 }
 
+/// Checks that `l` is the Cholesky factor of a `dim × dim` correlation
+/// matrix: lower triangular, finite, a positive diagonal, unit rows.
+fn check_factor(l: &[f64], dim: usize) -> Result<()> {
+    if dim == 0 || l.len() != dim * dim {
+        return Err(invalid(
+            "factor",
+            l.len() as f64,
+            "must be a non-empty dim × dim matrix",
+        ));
+    }
+    if let Some(&bad) = l.iter().find(|x| !x.is_finite()) {
+        return Err(invalid("factor", bad, "must be finite"));
+    }
+    for i in 0..dim {
+        let row = &l[i * dim..(i + 1) * dim];
+        if row[i] <= 0.0 {
+            return Err(invalid("factor", row[i], "diagonal must be positive"));
+        }
+        if let Some(&bad) = row[i + 1..].iter().find(|x| **x != 0.0) {
+            return Err(invalid("factor", bad, "must be lower triangular"));
+        }
+        let norm: f64 = row.iter().map(|x| x * x).sum();
+        if (norm - 1.0).abs() > 1e-12 {
+            return Err(invalid("factor", norm, "rows must have unit length"));
+        }
+    }
+    Ok(())
+}
+
 /// Fills `out` with `L z` for standard normals `z` drawn in order by
 /// inverse transform.
 fn correlated_normals(chol: &[f64], rng: &mut StreamRng, out: &mut [f64]) {
@@ -1129,6 +1197,22 @@ fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {
 mod tests {
     use super::*;
     use std::f64::consts::PI;
+
+    #[test]
+    fn copulas_rebuild_from_their_factor_bit_for_bit() {
+        let r = [1.0, 0.5, 0.2, 0.5, 1.0, -0.3, 0.2, -0.3, 1.0];
+        let g = GaussianCopula::new(&r, 3).unwrap();
+        assert_eq!(GaussianCopula::from_factor(g.factor(), 3).unwrap(), g);
+        let t = StudentTCopula::new(&r, 3, 4.5).unwrap();
+        assert_eq!(StudentTCopula::from_factor(t.factor(), 3, 4.5).unwrap(), t);
+        assert!(StudentTCopula::from_factor(t.factor(), 3, 0.0).is_err());
+        let mut upper = g.factor().to_vec();
+        upper[1] = 0.1;
+        assert!(GaussianCopula::from_factor(&upper, 3).is_err());
+        assert!(GaussianCopula::from_factor(&[2.0], 1).is_err());
+        assert!(GaussianCopula::from_factor(&[-1.0], 1).is_err());
+        assert!(GaussianCopula::from_factor(&[1.0, 0.0], 1).is_err());
+    }
 
     #[test]
     fn correlated_normals_in_place_match_a_separate_buffer() {

@@ -806,6 +806,7 @@ class ArchimedeanCopula:
     (3, 'clayton')
     """
     def __new__(cls, /, family: str, theta: float, dim: int) -> ArchimedeanCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
     def cdf(self, /, u: Sequence[float]) -> float:
         """
         The copula's distribution function at the point ``u``, each
@@ -2330,6 +2331,7 @@ class BayesGlmFit:
     """
     A sampled Bayesian GLM, from ``BayesGlm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def chains(self, /) -> int:
         """
@@ -2349,6 +2351,25 @@ class BayesGlmFit:
     def divergences(self, /) -> int:
         """
         Divergent transitions among the kept draws.
+        """
+    @staticmethod
+    def from_json(text: str) -> BayesGlmFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        BayesGlmFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     def log_likelihood(self, /, design: Design, y: Sequence[float]) -> list[list[float]]:
         """
@@ -2458,6 +2479,31 @@ class BayesGlmFit:
         -------
         list of dict
         """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the specification with its
+        priors and sampler settings, the names, and every kept draw of the
+        coefficients and the dispersion, numbers bit for bit (#978), so a
+        loaded fit summarizes and predicts as this one. ``from_json`` reads
+        it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import BayesGlm, BayesGlmFit, Design
+        >>> x = [(i % 4) - 1.5 for i in range(20)]
+        >>> y = [[1.0, 2.0, 3.0, 5.0][i % 4] for i in range(20)]
+        >>> d = Design([[1.0] * 20, x], ["(Intercept)", "x"])
+        >>> fit = BayesGlm("poisson", chains=1, tune=50, draws=20).fit(d, y)
+        >>> BayesGlmFit.from_json(fit.to_json()).posterior_mean == fit.posterior_mean
+        True
+        >>> pickle.loads(pickle.dumps(fit)).predict(d) == fit.predict(d)
+        True
+        """
 
 @final
 class BayesGlmm:
@@ -2520,6 +2566,7 @@ class BayesGlmmFit:
     """
     A sampled Bayesian GLMM, from ``BayesGlmm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def divergences(self, /) -> int:
         """
@@ -2535,6 +2582,25 @@ class BayesGlmmFit:
     def effect_names(self, /) -> list[str]:
         """
         The random effects' names, ``b[g|level|term]``.
+        """
+    @staticmethod
+    def from_json(text: str) -> BayesGlmmFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        BayesGlmmFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def laplace(self, /) -> GlmmFit:
@@ -2582,6 +2648,31 @@ class BayesGlmmFit:
         Returns
         -------
         list of dict
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the specification with its
+        priors and sampler settings, the posterior draws of the parameters
+        and the random effects, their layout, and the Laplace fit the chains
+        started from, numbers bit for bit (#978). ``from_json`` reads it
+        back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import BayesGlmm, BayesGlmmFit, Design
+        >>> y = [float((i * 7) % 5 + i % 4) for i in range(40)]
+        >>> site = [f"s{i % 4}" for i in range(40)]
+        >>> d = Design([[1.0] * 40], ["(Intercept)"])
+        >>> fit = BayesGlmm(chains=1, tune=60, draws=20).fit(d, {"site": site}, y)
+        >>> BayesGlmmFit.from_json(fit.to_json()).to_json() == fit.to_json()
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
 
 @final
@@ -8189,7 +8280,8 @@ class Coding:
     Terms with factor levels learned from training data, from
     ``Terms.fit``.
     """
-    def design(self, /, data: Any, offset: Sequence[float] |None = None, weights: Sequence[float] |None = None) -> Design:
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
+    def design(self, /, data: Any, offset: Incomplete |Sequence[float] |None = None, weights: Incomplete |Sequence[float] |None = None) -> Design:
         """
         The design matrix for ``data``.
         
@@ -8208,10 +8300,51 @@ class Coding:
         ValueError
             If a column is missing or a factor level was not seen in training.
         """
+    @staticmethod
+    def from_json(text: str) -> Coding:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        Coding
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            an invalid term.
+        """
     @property
     def names(self, /) -> list[str]:
         """
         Design matrix column names.
+        """
+    def to_json(self, /) -> str:
+        """
+        The coding, with the levels and knots training learned, as a versioned JSON artifact (format
+        ``risk_rs.coding``), numbers bit for bit (#978).
+        ``from_json`` reads it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Coding, Terms
+        >>> data = {"age": [30.0, 45.0, 60.0], "region": ["N", "S", "W"]}
+        >>> coding = Terms().intercept().numeric("age").factor("region").fit(data)
+        >>> back = pickle.loads(pickle.dumps(coding))
+        >>> back.names
+        ['(Intercept)', 'age', 'region[S]', 'region[W]']
+        >>> Coding.from_json(coding.to_json()).to_json() == coding.to_json()
+        True
         """
 
 @final
@@ -11005,6 +11138,7 @@ class DealBook:
     """
     def __len__(self, /) -> int: ...
     def __new__(cls, /, deals: Sequence[DealRun]) -> DealBook: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def adequacy(self, /, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> dict:
         """
@@ -11077,6 +11211,13 @@ class DealBook:
         >>> d["total"]["TVaR 50"], d["contribution"]["a"]["TVaR 50"]
         (8.5, 6.0)
         """
+    @staticmethod
+    def from_json(text: str) -> DealBook:
+        """
+        Reads a document written by ``to_json``; raises ``ValueError`` for
+        malformed JSON, another format, a newer format version or a
+        book the constructor would refuse.
+        """
     @property
     def items(self, /) -> list[str]:
         """
@@ -11130,6 +11271,18 @@ class DealBook:
         mean premium, as columns ``deal``, ``item``, ``mean`` and ``ratio``.
         The book's ratios are sums over sums.
         """
+    def to_json(self, /) -> str:
+        """
+        The book as a versioned JSON document (format
+        ``risk_rs.deal_book``), numbers bit for bit (#978). ``from_json`` reads
+        it back; ``pickle`` uses the same document.
+        
+        >>> import pickle
+        >>> from prospicio.pricing import DealBook, DealRun
+        >>> book = DealBook([DealRun("a", [100.0], [40.0]), DealRun("b", [300.0], [150.0])])
+        >>> pickle.loads(pickle.dumps(book)).to_json() == book.to_json()
+        True
+        """
 
 @final
 class DealRun:
@@ -11150,7 +11303,15 @@ class DealRun:
     (2, 6)
     """
     def __new__(cls, /, name: str, premium: Sequence[float], loss: Sequence[float], *, deductions: dict |None = None, inception: int = 0) -> DealRun: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
+    @staticmethod
+    def from_json(text: str) -> DealRun:
+        """
+        Reads a document written by ``to_json``; raises ``ValueError`` for
+        malformed JSON, another format, a newer format version or a
+        run the constructor would refuse.
+        """
     @staticmethod
     def from_tower(name: str, tower: Tower, result: PredictiveDistribution, layer: str, *, inception: int = 0, reinstatement_premium: bool = True) -> DealRun:
         """
@@ -11205,6 +11366,19 @@ class DealRun:
         """
         The premium in each simulation.
         """
+    def to_json(self, /) -> str:
+        """
+        The run as a versioned JSON document (format
+        ``risk_rs.deal_run``), numbers bit for bit (#978). ``from_json`` reads
+        it back; ``pickle`` uses the same document.
+        
+        >>> import pickle
+        >>> from prospicio.pricing import DealRun
+        >>> run = DealRun("cat", [100.0, 100.0], [40.0, 150.0], inception=6)
+        >>> back = pickle.loads(pickle.dumps(run))
+        >>> (back.name, back.loss, back.inception)
+        ('cat', [40.0, 150.0], 6)
+        """
     def with_cashflows(self, /, terms: CashflowTerms, cashflows: Cashflows) -> DealRun:
         """
         The run with its investor's flows from ``terms.run(...)``, one
@@ -11235,11 +11409,12 @@ class Design:
     
     Parameters
     ----------
-    columns : list of list of float
-        One list per column.
+    columns : list of list of float or numpy.ndarray
+        One list or 1-D array per column, or a 2-D float64 array whose rows
+        are the columns (the transpose of ``to_numpy()``), read in one copy.
     names : list of str
-    offset : list of float, optional
-    weights : list of float, optional
+    offset : list of float or numpy.ndarray, optional
+    weights : list of float or numpy.ndarray, optional
     
     Examples
     --------
@@ -11248,7 +11423,12 @@ class Design:
     >>> d.n_rows, d.names
     (2, ['(Intercept)', 'x'])
     """
-    def __new__(cls, /, columns: Sequence[Sequence[float]], names: Sequence[str], offset: Sequence[float] |None = None, weights: Sequence[float] |None = None) -> Design: ...
+    def __new__(cls, /, columns: Incomplete |Sequence[Incomplete |Sequence[float]], names: Sequence[str], offset: Incomplete |Sequence[float] |None = None, weights: Incomplete |Sequence[float] |None = None) -> Design: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[list[list[float]], list[str], list[float], list[float]]]:
+        """
+        Pickles as the constructor's arguments: the columns, names, offset
+        and weights, every value as stored (#978).
+        """
     def column(self, /, j: int) -> list[float]:
         """
         Column ``j``.
@@ -11287,6 +11467,27 @@ class Design:
         Returns
         -------
         Design
+        """
+    def to_numpy(self, /) -> Incomplete:
+        """
+        The design matrix as a NumPy array, one row per observation and one
+        column per name, in Fortran order: a new array, each column copied
+        once (#978).
+        
+        Returns
+        -------
+        numpy.ndarray
+            Float64, of shape ``(n_rows, len(names))``.
+        
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from prospicio.models import Design
+        >>> d = Design(np.array([[1.0, 1.0, 1.0], [0.5, 1.5, 2.5]]), ["(Intercept)", "x"])
+        >>> d.to_numpy()
+        array([[1. , 0.5],
+               [1. , 1.5],
+               [1. , 2.5]])
         """
     @property
     def weights(self, /) -> list[float]:
@@ -13019,6 +13220,7 @@ class DoubleGlmFit:
     """
     A fitted double GLM, from ``DoubleGlm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def aic(self, /) -> float: ...
     @property
@@ -13058,6 +13260,25 @@ class DoubleGlmFit:
         """
         The fitted mean of each row.
         """
+    @staticmethod
+    def from_json(text: str) -> DoubleGlmFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        DoubleGlmFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
+        """
     @property
     def iterations(self, /) -> int: ...
     @property
@@ -13087,6 +13308,31 @@ class DoubleGlmFit:
         """
     @property
     def standard_errors(self, /) -> list[float]: ...
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the family, link and method,
+        the mean's and the dispersion's names, estimates and covariances,
+        the fitted means and dispersions, and the fit statistics; numbers
+        bit for bit (#978). ``from_json`` reads it back; ``pickle`` uses the
+        same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, DoubleGlm, DoubleGlmFit
+        >>> urban = [0.0] * 4 + [1.0] * 4
+        >>> d = Design([[1.0] * 8, urban], ["(Intercept)", "urban"])
+        >>> y = [9.0, 11.0, 10.0, 10.5, 4.0, 18.0, 6.0, 15.0]
+        >>> fit = DoubleGlm("gamma", link="log").fit(d, d, y)
+        >>> DoubleGlmFit.from_json(fit.to_json()).coefficients == fit.coefficients
+        True
+        >>> pickle.loads(pickle.dumps(fit)).dispersion_coefficients == fit.dispersion_coefficients
+        True
+        """
 
 @final
 class Draws:
@@ -13120,7 +13366,14 @@ class Draws:
     True
     """
     def __new__(cls, /, names: Sequence[str], chains: Sequence[Sequence[Sequence[float]]], divergences: Sequence[int] |None = None) -> Draws: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str, str |None, int]]: ...
     def __repr__(self, /) -> str: ...
+    @staticmethod
+    def _from_state(draws: str, sampler: str |None, warmup_dropped: int) -> Draws:
+        """
+        Rebuilds pickled draws: the draws', the sampler columns' (or
+        ``None``) artifacts and the warm-up draws dropped.
+        """
     def chains(self, /, name: str) -> list[list[float]]:
         """
         One variable's draws, one list per chain.
@@ -13147,6 +13400,25 @@ class Draws:
     def draws_per_chain(self, /) -> int:
         """
         Draws in each chain.
+        """
+    @staticmethod
+    def from_json(text: str) -> Draws:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        Draws
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     def log_likelihood(self, /, prefix: str = "log_lik") -> list[list[float]]:
         """
@@ -13219,6 +13491,27 @@ class Draws:
         Returns
         -------
         list of dict
+        """
+    def to_json(self, /) -> str:
+        """
+        The draws as a versioned JSON artifact: names, every draw chain
+        by chain, each chain's divergences and the seed, numbers bit for bit
+        (#978). ``from_json`` reads it back; ``pickle`` keeps the sampler's
+        columns and the warm-up count too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Draws
+        >>> d = Draws(["mu"], [[[0.1], [0.3]], [[0.2], [0.4]]], divergences=[0, 1])
+        >>> Draws.from_json(d.to_json()).to_json() == d.to_json()
+        True
+        >>> pickle.loads(pickle.dumps(d)).to_json() == d.to_json()
+        True
         """
     @property
     def warmup_dropped(self, /) -> int:
@@ -13797,6 +14090,12 @@ class EventSet:
     the generator keyed by ``seed``, so results do not depend on the number of
     threads.
     """
+    def __eq__(self, other: object, /) -> bool:
+        """
+        Whether ``other`` is an event set with the same years, losses and
+        everything they carry.
+        """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def aggregate_part(self, /, sim: int) -> list[float] |None:
         """
@@ -13983,7 +14282,25 @@ class EventSet:
         (2, [15.0], [])
         """
     @staticmethod
-    def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0, labels: dict |None = None) -> EventSet:
+    def from_json(text: str) -> EventSet:
+        """
+        An event set from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        EventSet
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
+        """
+    @staticmethod
+    def from_long(years: Incomplete |Sequence[int], losses: Incomplete |Sequence[float], n_years: int, seed: int = 0, labels: dict |None = None) -> EventSet:
         """
         Years of losses in long form, as a year loss table lists them: one
         row per loss with its year, an index from 0 to ``n_years - 1``.
@@ -14017,7 +14334,7 @@ class EventSet:
         {'peril': ['quake']}
         """
     @staticmethod
-    def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0, times: Sequence[Sequence[float]] |None = None) -> EventSet:
+    def from_years(years: Sequence[Incomplete |Sequence[float]], sums_insured: Sequence[Incomplete |Sequence[float]] |None = None, seed: int = 0, times: Sequence[Incomplete |Sequence[float]] |None = None) -> EventSet:
         """
         Years of losses from elsewhere (your own simulation, or a
         catastrophe model's event loss table by year), optionally with the
@@ -14049,7 +14366,7 @@ class EventSet:
         ([2, 0, 1], [50.0])
         """
     @staticmethod
-    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, times: Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None, losses_negative: bool = False) -> EventSet:
+    def from_ylt(years: Incomplete |Sequence[int], losses: Incomplete |Sequence[float], *, slots: Incomplete |Sequence[int] |None = None, times: Incomplete |Sequence[float] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None, losses_negative: bool = False) -> EventSet:
         """
         Years of losses from a year loss table's columns, checked and
         expanded to a run's simulations.
@@ -14062,13 +14379,13 @@ class EventSet:
         
         Parameters
         ----------
-        years : list of int
+        years : list of int or numpy.ndarray
             Each row's year, from 1.
-        losses : list of float
+        losses : list of float or numpy.ndarray
             Finite and non-negative.
-        slots : list of int, optional
+        slots : list of int or numpy.ndarray, optional
             Each row's event slot, which orders a year's rows.
-        times : list of float, optional
+        times : list of float or numpy.ndarray, optional
             Each row's time of loss, the fraction of its year elapsed, in
             ``[0, 1]``. Rows are then ordered by time within a year, the
             slot (or the given order) breaking ties, and the events carry
@@ -14332,6 +14649,52 @@ class EventSet:
         Returns
         -------
         list of float or None
+        """
+    def to_json(self, /) -> str:
+        """
+        The years as a JSON document: losses, and their sums insured,
+        times, labels and aggregate parts when present, with the seed and
+        provenance, numbers bit for bit (#978). ``from_json`` reads it back;
+        ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[5.0, 2.0], [], [9.0]], seed=3)
+        >>> EventSet.from_json(e.to_json()) == e
+        True
+        >>> pickle.loads(pickle.dumps(e)) == e
+        True
+        """
+    def to_numpy(self, /) -> tuple[Incomplete, Incomplete]:
+        """
+        Every year's losses as read-only NumPy arrays, without copying
+        (#978): ``losses``, all the losses year after year, and ``offsets``,
+        where each year starts, so year ``i``'s losses are
+        ``losses[offsets[i]:offsets[i + 1]]``. Both are views of the event
+        set's own buffers and keep it alive.
+        
+        Returns
+        -------
+        tuple of numpy.ndarray
+            ``(losses, offsets)``: float64 of length ``offsets[-1]``, and
+            uint64 of length ``n_sims + 1``, from 0.
+        
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[1.0, 2.0], [], [3.5]])
+        >>> losses, offsets = e.to_numpy()
+        >>> losses, offsets
+        (array([1. , 2. , 3.5]), array([0, 2, 2, 3], dtype=uint64))
+        >>> np.add.reduceat(losses, offsets[:-1].astype(np.intp))[np.diff(offsets) > 0]
+        array([3. , 3.5])
         """
     def totals(self, /) -> PredictiveDistribution:
         """
@@ -14977,12 +15340,32 @@ class ExpectileFit:
     """
     A fitted expectile regression, from ``ExpectileRegression.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def coefficients(self, /) -> list[float]: ...
     @property
     def covariance(self, /) -> list[list[float]]:
         """
         The sandwich covariance, a list of rows.
+        """
+    @staticmethod
+    def from_json(text: str) -> ExpectileFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        ExpectileFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def iterations(self, /) -> int: ...
@@ -15012,6 +15395,28 @@ class ExpectileFit:
         """
     @property
     def tau(self, /) -> float: ...
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the level, the names, the
+        estimates and their covariance, and the fit statistics, numbers bit
+        for bit (#978). ``from_json`` reads it back; ``pickle`` uses the
+        same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, ExpectileRegression, ExpectileFit
+        >>> d = Design([[1.0] * 6, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]], ["(Intercept)", "x"])
+        >>> fit = ExpectileRegression(0.5).fit(d, [1.0, 2.5, 2.0, 4.0, 5.5, 5.0])
+        >>> ExpectileFit.from_json(fit.to_json()).coefficients == fit.coefficients
+        True
+        >>> pickle.loads(pickle.dumps(fit)).coefficients == fit.coefficients
+        True
+        """
 
 @final
 class ExpectileRegression:
@@ -16208,6 +16613,13 @@ class GaussianCopula:
     (3, True)
     """
     def __new__(cls, /, correlation: Sequence[Sequence[float]]) -> GaussianCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
+    @staticmethod
+    def _from_factor(factor: Sequence[float], dim: int) -> GaussianCopula:
+        """
+        Rebuilds the copula from its Cholesky factor, bit for bit: what
+        ``pickle`` calls.
+        """
     def cdf(self, /, u: Sequence[float]) -> float:
         """
         The copula's distribution function at the point ``u``, each
@@ -17065,6 +17477,7 @@ class GlmmFit:
     """
     A GLM with random intercepts and slopes, from ``Glmm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def aic(self, /) -> float: ...
     @property
@@ -17104,6 +17517,25 @@ class GlmmFit:
     def fitted(self, /) -> list[float]:
         """
         Each row's mean with its random effects.
+        """
+    @staticmethod
+    def from_json(text: str) -> GlmmFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        GlmmFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def group_names(self, /) -> list[str]:
@@ -17160,6 +17592,32 @@ class GlmmFit:
     def term_names(self, /) -> list[str]:
         """
         Each random term's name, ``"(Intercept)"`` or a slope's covariate.
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the specification, the fixed
+        effects and their covariance, the variance components, the
+        optimizer's parameters, the dispersion, every factor's predicted
+        random effects with their variances, and the fit statistics;
+        numbers bit for bit (#978). ``from_json`` reads it back and predicts
+        as the fit did; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, Glmm, GlmmFit
+        >>> y = [float((i * 7) % 5 + i % 4) for i in range(40)]
+        >>> site = [f"s{i % 4}" for i in range(40)]
+        >>> d = Design([[1.0] * 40], ["(Intercept)"])
+        >>> fit = Glmm().fit(d, {"site": site}, y)
+        >>> GlmmFit.from_json(fit.to_json()).predict(d, {"site": site}) == fit.predict(d, {"site": site})
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
 
 @final
@@ -24405,6 +24863,7 @@ class MarsFit:
     ``max(0, x - k)``, ``"down"`` for ``max(0, k - x)`` and ``"linear"``
     for ``x``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def add_terms(self, /, terms: Terms) -> Terms:
         """
@@ -24429,6 +24888,25 @@ class MarsFit:
     def forward_terms(self, /) -> list[tuple[str, float, str]]:
         """
         The forward pass's terms, before the backward pass.
+        """
+    @staticmethod
+    def from_json(text: str) -> MarsFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        MarsFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def gcv(self, /) -> float:
@@ -24480,6 +24958,29 @@ class MarsFit:
         """
         The selected terms ``(name, knot, direction)``, in the order the
         forward pass added them, without the intercept.
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the names, the selected and
+        forward terms, the forward pass's steps, the coefficients and the
+        fit statistics, with the GLM fitted on the terms when ``family`` was
+        given; numbers bit for bit (#978). ``from_json`` reads it back;
+        ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import MarsFit, mars
+        >>> x = [float(i) for i in range(60)]
+        >>> fit = mars({"x": x}, [1 + 0.5 * v + 3 * max(0.0, v - 31) for v in x])
+        >>> MarsFit.from_json(fit.to_json()).knots("x")
+        [31.0]
+        >>> pickle.loads(pickle.dumps(fit)).coefficients == fit.coefficients
+        True
         """
 
 @final
@@ -26667,6 +27168,7 @@ class NestedArchimedeanCopula:
     0.5
     """
     def __new__(cls, /, family: str, tree: Any) -> NestedArchimedeanCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
     def cdf(self, /, u: Sequence[float]) -> float:
         """
         The copula's distribution function at the point ``u``.
@@ -28605,6 +29107,7 @@ class PairCopula:
     True
     """
     def __new__(cls, /, family: str, parameter: float = 0.0, rotation: int = 0, nu: float |None = None) -> PairCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
     def __repr__(self, /) -> str: ...
     def cdf(self, /, u: float, v: float) -> float:
         """
@@ -31040,7 +31543,7 @@ class PredictiveDistribution:
     >>> pd.marginal(("A",)).var(0.75)
     0.0
     """
-    def __new__(cls, /, dims: Sequence[str], components: Sequence[Sequence[int |str]], draws: Sequence[Sequence[float]]) -> PredictiveDistribution: ...
+    def __new__(cls, /, dims: Sequence[str], components: Sequence[Sequence[int |str]], draws: Incomplete |Sequence[Sequence[float]]) -> PredictiveDistribution: ...
     def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def aggregate(self, /, keep: Sequence[str]) -> PredictiveDistribution:
@@ -31536,6 +32039,30 @@ class PredictiveDistribution:
         >>> pickle.loads(pickle.dumps(pd)).draw_matrix() == pd.draw_matrix()
         True
         """
+    def to_numpy(self, /) -> Incomplete:
+        """
+        All draws as a read-only NumPy array, one row per simulation and one
+        column per component, in the order of ``components()``. The array is
+        a view of the distribution's own buffer: nothing is copied, and it
+        keeps the distribution alive (#978). ``numpy.array(pd.to_numpy())``
+        gives a writeable copy.
+        
+        Returns
+        -------
+        numpy.ndarray
+            Float64, of shape ``(n_sims, n_components)``.
+        
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(["line"], [("A",), ("B",)], np.array([[1.0, 2.0], [3.0, 4.5]]))
+        >>> pd.to_numpy()
+        array([[1. , 2. ],
+               [3. , 4.5]])
+        >>> pd.to_numpy().flags.writeable
+        False
+        """
     def total(self, /) -> Sampled:
         """
         The total over all components, one value per simulation.
@@ -31976,6 +32503,7 @@ class QuantileFit:
     """
     A fitted quantile regression, from ``QuantileRegression.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def bandwidth(self, /) -> float:
         """
@@ -31987,6 +32515,25 @@ class QuantileFit:
     def covariance(self, /) -> list[list[float]]:
         """
         The kernel sandwich covariance, a list of rows.
+        """
+    @staticmethod
+    def from_json(text: str) -> QuantileFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        QuantileFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def iterations(self, /) -> int: ...
@@ -32018,6 +32565,28 @@ class QuantileFit:
         """
     @property
     def tau(self, /) -> float: ...
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the level, the names, the
+        estimates and their covariance, and the fit statistics, numbers bit
+        for bit (#978). ``from_json`` reads it back; ``pickle`` uses the
+        same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, QuantileRegression, QuantileFit
+        >>> d = Design([[1.0] * 6, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]], ["(Intercept)", "x"])
+        >>> fit = QuantileRegression(0.5).fit(d, [1.0, 2.5, 2.0, 4.0, 5.5, 5.0])
+        >>> QuantileFit.from_json(fit.to_json()).coefficients == fit.coefficients
+        True
+        >>> pickle.loads(pickle.dumps(fit)).coefficients == fit.coefficients
+        True
+        """
 
 @final
 class QuantileFits:
@@ -32399,6 +32968,7 @@ class RVineCopula:
     (0, 2, [1])
     """
     def __new__(cls, /, matrix: Sequence[Sequence[int]], pairs: Sequence[Sequence[PairCopula]]) -> RVineCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
     @property
     def dim(self, /) -> int:
         """
@@ -34519,6 +35089,13 @@ class StudentTCopula:
     2
     """
     def __new__(cls, /, correlation: Sequence[Sequence[float]], nu: float) -> StudentTCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
+    @staticmethod
+    def _from_factor(factor: Sequence[float], dim: int, nu: float) -> StudentTCopula:
+        """
+        Rebuilds the copula from its Cholesky factor, bit for bit: what
+        ``pickle`` calls.
+        """
     def cdf(self, /, u: Sequence[float]) -> float:
         """
         The copula's distribution function at the point ``u``, each
@@ -35228,6 +35805,7 @@ class Terms:
     ['(Intercept)', 'age', 'region[S]', 'region[W]']
     """
     def __new__(cls, /) -> Terms: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def bins(self, /, name: str, cuts: Sequence[float], reference: int |None = None) -> Terms:
         """
         Adds a numeric column cut into bins ``(-inf, c1], (c1, c2], ...,
@@ -35277,6 +35855,25 @@ class Terms:
         ------
         ValueError
             If a column is missing or has the wrong kind.
+        """
+    @staticmethod
+    def from_json(text: str) -> Terms:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        Terms
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            an invalid term.
         """
     def hinges(self, /, name: str, knots: Sequence[float]) -> Terms:
         """
@@ -35429,6 +36026,26 @@ class Terms:
         Returns
         -------
         Terms
+        """
+    def to_json(self, /) -> str:
+        """
+        The terms as a versioned JSON artifact (format
+        ``risk_rs.terms``), numbers bit for bit (#978).
+        ``from_json`` reads it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Terms
+        >>> terms = Terms().intercept().numeric("age").factor("region")
+        >>> Terms.from_json(terms.to_json()).to_json() == terms.to_json()
+        True
+        >>> pickle.loads(pickle.dumps(terms)).to_json() == terms.to_json()
+        True
         """
 
 @final
@@ -36696,6 +37313,7 @@ class Triangle:
     [[100.0, 150.0], [110.0, nan]]
     """
     def __eq__(self, other: object, /) -> bool: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def _repr_html_(self, /) -> str: ...
     @property
@@ -36760,6 +37378,24 @@ class Triangle:
         >>> tri = Triangle.from_frame(df, "year", "age", "paid", keys="lob")
         >>> tri.keys, tri.index, tri.shape
         (['lob'], ['Auto', 'Home'], (2, 1, 2, 2))
+        """
+    @staticmethod
+    def from_json(text: str) -> Triangle:
+        """
+        A triangle from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @staticmethod
     def from_long(origin: Any, development: Any, values: Any, keys: Any |None = None, origin_grain: str = "Y", development_grain: str = "Y", cumulative: bool = True, development_is_valuation: bool = False) -> Triangle:
@@ -37205,6 +37841,28 @@ class Triangle:
         Returns
         -------
         Triangle
+        """
+    def to_json(self, /) -> str:
+        """
+        The triangle as a JSON document: keys, index, measures, origins,
+        ages, grains, valuation and every stored value, numbers bit for bit
+        (#978). ``from_json`` reads it back; ``pickle`` uses the same
+        document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import Triangle
+        >>> tri = Triangle.from_long(origin=[2020, 2020, 2021], development=[12, 24, 12],
+        ...                          values={"paid": [100.0, 150.0, 110.0]})
+        >>> Triangle.from_json(tri.to_json()) == tri
+        True
+        >>> pickle.loads(pickle.dumps(tri)) == tri
+        True
         """
     def to_long(self, /) -> dict:
         """
@@ -37926,6 +38584,7 @@ class TweedieFit:
     """
     A Tweedie GLM with its power estimated, from ``TweedieGlm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def at_boundary(self, /) -> bool:
         """
@@ -37935,6 +38594,25 @@ class TweedieFit:
     def dispersion(self, /) -> float:
         """
         The maximum-likelihood dispersion at that power.
+        """
+    @staticmethod
+    def from_json(text: str) -> TweedieFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        TweedieFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def glm(self, /) -> GlmFit:
@@ -37965,6 +38643,31 @@ class TweedieFit:
     def predict(self, /, design: Design) -> list[float]:
         """
         Expected response for each row of ``design``.
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact (format
+        ``risk_rs.tweedie_fit``): the power and dispersion, the profile's
+        interval and evaluations, and the GLM at that power as a nested
+        ``risk_rs.glm_fit`` artifact, numbers bit for bit (#978).
+        ``from_json`` reads it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, TweedieFit, TweedieGlm
+        >>> x = [float(i % 3) for i in range(60)]
+        >>> y = [0.0 if i % 4 == 0 else 1.0 + (i * 7) % 5 + x[i] for i in range(60)]
+        >>> d = Design([[1.0] * 60, x], ["(Intercept)", "x"])
+        >>> fit = TweedieGlm().fit(d, y)
+        >>> TweedieFit.from_json(fit.to_json()).power == fit.power
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
 
 @final
@@ -38087,6 +38790,7 @@ class TwoPartFit:
     ``Hurdle.fit``. Methods taking ``count`` and ``zero`` designs read both
     parts' columns by name from ``count`` when ``zero`` is ``None``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def aic(self, /) -> float: ...
@@ -38115,6 +38819,25 @@ class TwoPartFit:
     def fitted(self, /) -> list[float]:
         """
         The fitted mean of each row of the data fitted.
+        """
+    @staticmethod
+    def from_json(text: str) -> TwoPartFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        TwoPartFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def iterations(self, /) -> int: ...
@@ -38165,6 +38888,30 @@ class TwoPartFit:
     def theta(self, /) -> float |None:
         """
         The negative binomial's ``theta``, ``None`` for the Poisson.
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the kind, the count
+        distribution and zero link, both parts' names, the parameters and
+        their covariance, the pointwise log-likelihood, the fitted means and
+        the fit statistics; numbers bit for bit (#978). ``from_json`` reads
+        it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, Hurdle, TwoPartFit
+        >>> x = [i % 4 / 3 for i in range(60)]
+        >>> y = [0.0 if i % 3 == 0 else float(1 + i * 7 % 5) for i in range(60)]
+        >>> fit = Hurdle().fit(Design([[1.0] * 60, x], ["(Intercept)", "x"]), y)
+        >>> TwoPartFit.from_json(fit.to_json()).to_json() == fit.to_json()
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     @property
     def zero_coefficients(self, /) -> list[float]:
@@ -38778,6 +39525,7 @@ class VineCopula:
     3
     """
     def __new__(cls, /, kind: str, order: Sequence[int], pairs: Sequence[Sequence[PairCopula]]) -> VineCopula: ...
+    def __reduce__(self, /) -> tuple[Any, tuple]: ...
     @property
     def dim(self, /) -> int:
         """

@@ -588,7 +588,7 @@ S7::method(print, tabular_net_model) <- function(x, ...) {
 #' @export
 network_embeddings <- function(model, factor) {
   e <- rust_result(model@ptr$embeddings(factor))
-  v <- matrix(e$values, ncol = e$dim, byrow = TRUE)
+  v <- e$values
   out <- data.frame(level = e$levels, v)
   names(out) <- c("level", paste0(factor, "_e", seq_len(e$dim)))
   out
