@@ -1,6 +1,6 @@
 ### Reserving
 
-- The age-period-cohort reserving GLM in Python and R (#979, PR 7):
+- The age-period-cohort reserving GLM in Python and R (#979, PR 7, #1086):
   `ApcGlm` (effects `"APC"`, `"AP"`, `"AC"` or `"PC"`; extrapolation `"I0"`,
   `"I1"` or `"I2"`; the Poisson, gamma or Tweedie family) with `fit` and
   `ApcGlmFit` (canonical level, slopes and second differences, fitted
