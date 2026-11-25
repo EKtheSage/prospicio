@@ -2056,6 +2056,23 @@ pub(crate) struct PyGaussianCopula {
 
 #[pymethods]
 impl PyGaussianCopula {
+    /// Rebuilds the copula from its Cholesky factor, bit for bit: what
+    /// ``pickle`` calls.
+    #[staticmethod]
+    fn _from_factor(factor: Vec<f64>, dim: usize) -> PyResult<Self> {
+        Ok(Self {
+            inner: GaussianCopula::from_factor(&factor, dim).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+    ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, pyo3::types::PyTuple>)> {
+        let inner = &slf.get().inner;
+        let args = (inner.factor().to_vec(), inner.dim()).into_pyobject(slf.py())?;
+        Ok((slf.get_type().getattr("_from_factor")?, args))
+    }
+
     #[new]
     fn new(correlation: Vec<Vec<f64>>) -> PyResult<Self> {
         let (r, d) = flatten_square(correlation)?;
@@ -2371,6 +2388,23 @@ pub(crate) struct PyStudentTCopula {
 
 #[pymethods]
 impl PyStudentTCopula {
+    /// Rebuilds the copula from its Cholesky factor, bit for bit: what
+    /// ``pickle`` calls.
+    #[staticmethod]
+    fn _from_factor(factor: Vec<f64>, dim: usize, nu: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: StudentTCopula::from_factor(&factor, dim, nu).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+    ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, pyo3::types::PyTuple>)> {
+        let inner = &slf.get().inner;
+        let args = (inner.factor().to_vec(), inner.dim(), inner.nu()).into_pyobject(slf.py())?;
+        Ok((slf.get_type().getattr("_from_factor")?, args))
+    }
+
     #[new]
     fn new(correlation: Vec<Vec<f64>>, nu: f64) -> PyResult<Self> {
         let (r, d) = flatten_square(correlation)?;
@@ -2457,6 +2491,15 @@ pub(crate) struct PyArchimedeanCopula {
 
 #[pymethods]
 impl PyArchimedeanCopula {
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+    ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, pyo3::types::PyTuple>)> {
+        let py = slf.py();
+        let this = slf.get();
+        let args = (this.family(), this.theta(), this.dim()).into_pyobject(py)?;
+        Ok((slf.get_type().into_any(), args))
+    }
+
     #[new]
     fn new(family: &str, theta: f64, dim: usize) -> PyResult<Self> {
         let family = match family {
@@ -2610,6 +2653,15 @@ pub(crate) struct PyNestedArchimedeanCopula {
 
 #[pymethods]
 impl PyNestedArchimedeanCopula {
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+    ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, pyo3::types::PyTuple>)> {
+        let py = slf.py();
+        let this = slf.get();
+        let args = (this.family(), this.tree(py)?).into_pyobject(py)?;
+        Ok((slf.get_type().into_any(), args))
+    }
+
     #[new]
     fn new(family: &str, tree: &Bound<'_, PyAny>) -> PyResult<Self> {
         let family = archimedean_family(family)?;
@@ -2732,6 +2784,16 @@ pub(crate) struct PyPairCopula {
 
 #[pymethods]
 impl PyPairCopula {
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+    ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, pyo3::types::PyTuple>)> {
+        let py = slf.py();
+        let this = slf.get();
+        let args =
+            (this.family(), this.parameter(), this.rotation(), this.nu()).into_pyobject(py)?;
+        Ok((slf.get_type().into_any(), args))
+    }
+
     #[new]
     #[pyo3(signature = (family, parameter = 0.0, rotation = 0, nu = None))]
     fn new(family: &str, parameter: f64, rotation: u16, nu: Option<f64>) -> PyResult<Self> {
@@ -3024,6 +3086,28 @@ pub(crate) struct PyVineCopula {
 
 #[pymethods]
 impl PyVineCopula {
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+    ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, pyo3::types::PyTuple>)> {
+        let py = slf.py();
+        let this = slf.get();
+        let args = (
+            this.kind(),
+            this.order(),
+            this.inner
+                .pairs()
+                .iter()
+                .map(|t| {
+                    t.iter()
+                        .map(|&inner| PyPairCopula { inner })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
+        )
+            .into_pyobject(py)?;
+        Ok((slf.get_type().into_any(), args))
+    }
+
     #[new]
     fn new(
         kind: &str,
@@ -3156,6 +3240,15 @@ pub(crate) struct PyRVineCopula {
 
 #[pymethods]
 impl PyRVineCopula {
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+    ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, pyo3::types::PyTuple>)> {
+        let py = slf.py();
+        let this = slf.get();
+        let args = (this.matrix(), this.pairs()).into_pyobject(py)?;
+        Ok((slf.get_type().into_any(), args))
+    }
+
     #[new]
     fn new(matrix: Vec<Vec<usize>>, pairs: Vec<Vec<PyRef<'_, PyPairCopula>>>) -> PyResult<Self> {
         let pairs = pairs

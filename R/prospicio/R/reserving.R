@@ -9,24 +9,10 @@
 NULL
 
 # rust_result() for the reserving wrappers (here, in excess.R and in
-# odp_glm.R). A setting the method does not support comes back from Rust
-# with the prefix "[prospicio_not_supported] " (`NOT_SUPPORTED_PREFIX` in
-# crates/prospicio-r/src/reserving.rs), since an extendr error carries only
-# a message: it is removed and the error signalled with the condition class
-# `prospicio_not_supported` (#580, reserving-v02.md decision 29), which
-# tryCatch(..., prospicio_not_supported = ) catches. Any other error is
-# rust_result()'s.
-reserving_result <- function(x, call = sys.call(-1)) {
-  if (inherits(x, "extendr_error")) {
-    msg <- as.character(x$value)
-    prefix <- "[prospicio_not_supported] "
-    if (startsWith(msg, prefix)) {
-      stop(errorCondition(substring(msg, nchar(prefix) + 1L),
-                          class = "prospicio_not_supported", call = call))
-    }
-  }
-  rust_result(x, call = call)
-}
+# odp_glm.R), which once removed the "[prospicio_not_supported] " prefix
+# itself; rust_result() does that now, for the generated wrappers' sake
+# (#957).
+reserving_result <- function(x, call = sys.call(-1)) rust_result(x, call = call)
 
 # Year and month of each element of `x`: a Date, a POSIXct or whole-number
 # years, which mean `month` of that year.
