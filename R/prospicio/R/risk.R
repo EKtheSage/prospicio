@@ -486,8 +486,8 @@ co_statistics <- function(items, driver, percentiles,
     as.double(driver), as.double(unlist(columns, use.names = FALSE)),
     as.double(percentiles), as.double(tvar_levels), as.character(rule)
   ))
-  values <- matrix(st$values, nrow = length(columns), byrow = TRUE,
-                   dimnames = list(NULL, st$names))
+  values <- st$values
+  colnames(values) <- st$names
   values <- as.data.frame(values, check.names = FALSE)
   if (pd) return(cbind(items@keys, values))
   cbind(data.frame(item = names(columns)), values)

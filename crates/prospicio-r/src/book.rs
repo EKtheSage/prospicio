@@ -14,7 +14,7 @@ use crate::distributions::PredictiveDistribution;
 use crate::pricing::{distortion_arg, premium_rule};
 use crate::reinsurance::ReinsuranceTower;
 use crate::risk::{quantile_method, tvar_method};
-use crate::{to_r, whole};
+use crate::{row_major, to_r, whole};
 
 fn month(x: f64, name: &str) -> Result<usize> {
     whole(x, name).map(|m| m as usize)
@@ -342,7 +342,7 @@ impl Book {
         Ok(list!(
             months = out.months as i32,
             deals = out.deals,
-            flows = out.flows,
+            flows = row_major(&out.flows, out.months),
             mean_by_deal = out.mean_by_deal.concat(),
             irr = irr_list(&out.irr),
             npv = out.npv,

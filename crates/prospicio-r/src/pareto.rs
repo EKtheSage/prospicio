@@ -9,7 +9,7 @@ use extendr_api::{Error, Result};
 use prospicio_core::StreamRng;
 use prospicio_prob::{Counting, Distribution, LargeLosses, Severity, Truncation};
 
-use crate::{to_r, whole};
+use crate::{row_major, to_r, whole};
 
 /// The methods every Pareto-family severity shares, generated into the
 /// type's single `#[extendr] impl` block after its own items.
@@ -856,7 +856,7 @@ fn severity_fit_rust(
         ptr = ptr,
         parameters = named(fit.parameters().to_vec())?,
         standard_errors = named(fit.standard_errors())?,
-        covariance = fit.covariance().to_vec(),
+        covariance = row_major(fit.covariance(), fit.parameters().len()),
         log_likelihood = fit.log_likelihood(),
         aic = fit.aic(),
         bic = fit.bic(),
@@ -887,7 +887,7 @@ fn grouped_fit_rust(family: &str, bounds: &[f64], counts: &[f64], method: &str) 
         ptr = crate::distributions::dist_to_robj(fit.dist().clone())?,
         parameters = named(fit.parameters().to_vec())?,
         standard_errors = named(fit.standard_errors())?,
-        covariance = fit.covariance().to_vec(),
+        covariance = row_major(fit.covariance(), fit.parameters().len()),
         chi_square = fit.chi_square(),
         log_likelihood = fit.log_likelihood(),
         expected = fit.expected().to_vec(),

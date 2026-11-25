@@ -6,7 +6,7 @@ use extendr_api::prelude::*;
 use prospicio_pricing::bonus_malus::{BonusMalus, BonusRule, Portfolio};
 use prospicio_prob::count_families::{Mixing, MixingFamily};
 
-use crate::{to_r, whole};
+use crate::{row_major, to_r, whole};
 
 /// A bonus-malus scale.
 #[extendr]
@@ -58,23 +58,21 @@ impl BonusMalusR {
         self.inner.start() as f64
     }
 
-    /// Row-major, 0-based levels.
-    fn transitions(&self) -> Vec<f64> {
-        self.inner
-            .transitions()
-            .iter()
-            .flatten()
-            .map(|&v| v as f64)
-            .collect()
+    /// A level a row, 0-based levels.
+    fn transitions(&self) -> RMatrix<f64> {
+        let t = self.inner.transitions();
+        let cols = t.first().map_or(0, Vec::len);
+        RMatrix::new_matrix(t.len(), cols, |r, c| t[r][c] as f64)
     }
 
     fn cols(&self) -> f64 {
         self.inner.transitions()[0].len() as f64
     }
 
-    /// Row-major.
-    fn transition_matrix(&self, lambda: f64) -> Result<Vec<f64>> {
-        self.inner.transition_matrix(lambda).map_err(to_r)
+    /// The levels' transition probabilities, a level a row.
+    fn transition_matrix(&self, lambda: f64) -> Result<RMatrix<f64>> {
+        let v = self.inner.transition_matrix(lambda).map_err(to_r)?;
+        Ok(row_major(&v, self.inner.levels()))
     }
 
     fn stationary_at(&self, lambda: f64) -> Result<Vec<f64>> {

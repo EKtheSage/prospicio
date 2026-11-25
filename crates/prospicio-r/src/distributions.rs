@@ -10,7 +10,7 @@ use prospicio_prob::{
     SeverityDist,
 };
 
-use crate::{to_r, whole};
+use crate::{row_major, to_r, whole};
 
 /// Lognormal distribution: `ln X ~ Normal(meanlog, sdlog^2)`.
 #[extendr]
@@ -969,12 +969,13 @@ fn correlation_from_pairs_rust(
     pd.inner.correlation_from_pairs(dim, &pairs).map_err(to_r)
 }
 
-/// Spearman's rho between the groups' totals (row-major).
+/// Spearman's rho between the groups' totals, a group a row.
 #[extendr]
-fn group_spearman_rust(pd: Robj, dim: &str) -> Result<Vec<f64>> {
+fn group_spearman_rust(pd: Robj, dim: &str) -> Result<RMatrix<f64>> {
     let pd = <&PredictiveDistribution>::try_from(&pd)
         .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
-    Ok(pd.inner.group_spearman(dim).map_err(to_r)?.1)
+    let (groups, rho) = pd.inner.group_spearman(dim).map_err(to_r)?;
+    Ok(row_major(&rho, groups.len()))
 }
 
 /// TVaR of a discrete distribution at each `p` (`risk::tvar_weighted`).
