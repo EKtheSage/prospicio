@@ -1,6 +1,6 @@
 ### Reserving
 
-- Stochastic re-inflation (#979): `Indexation::reinflate_draws` takes
+- Stochastic re-inflation (#979, #1097): `Indexation::reinflate_draws` takes
   simulated future cells at the base level (as an `OdpGlmFit`'s
   `predict_distribution()` gives) and one calendar index path per
   simulation, and returns the draws in the money of their payment periods;
