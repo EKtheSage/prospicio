@@ -68,6 +68,8 @@ use crate::glm::dll_dphi;
 use crate::nuts::{LogDensity, sample};
 pub use crate::nuts::{ParamSummary, PosteriorDraws, Sampler};
 
+mod json;
+
 /// A Bayesian GLMM: the family (log link), the priors and the sampler.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BayesGlmm {

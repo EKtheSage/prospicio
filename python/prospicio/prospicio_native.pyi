@@ -2565,6 +2565,7 @@ class BayesGlmmFit:
     """
     A sampled Bayesian GLMM, from ``BayesGlmm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def divergences(self, /) -> int:
         """
@@ -2580,6 +2581,25 @@ class BayesGlmmFit:
     def effect_names(self, /) -> list[str]:
         """
         The random effects' names, ``b[g|level|term]``.
+        """
+    @staticmethod
+    def from_json(text: str) -> BayesGlmmFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        BayesGlmmFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def laplace(self, /) -> GlmmFit:
@@ -2627,6 +2647,31 @@ class BayesGlmmFit:
         Returns
         -------
         list of dict
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the specification with its
+        priors and sampler settings, the posterior draws of the parameters
+        and the random effects, their layout, and the Laplace fit the chains
+        started from, numbers bit for bit (#978). ``from_json`` reads it
+        back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import BayesGlmm, BayesGlmmFit, Design
+        >>> y = [float((i * 7) % 5 + i % 4) for i in range(40)]
+        >>> site = [f"s{i % 4}" for i in range(40)]
+        >>> d = Design([[1.0] * 40], ["(Intercept)"])
+        >>> fit = BayesGlmm(chains=1, tune=60, draws=20).fit(d, {"site": site}, y)
+        >>> BayesGlmmFit.from_json(fit.to_json()).to_json() == fit.to_json()
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
 
 @final
@@ -13215,7 +13260,14 @@ class Draws:
     True
     """
     def __new__(cls, /, names: Sequence[str], chains: Sequence[Sequence[Sequence[float]]], divergences: Sequence[int] |None = None) -> Draws: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str, str |None, int]]: ...
     def __repr__(self, /) -> str: ...
+    @staticmethod
+    def _from_state(draws: str, sampler: str |None, warmup_dropped: int) -> Draws:
+        """
+        Rebuilds pickled draws: the draws', the sampler columns' (or
+        ``None``) artifacts and the warm-up draws dropped.
+        """
     def chains(self, /, name: str) -> list[list[float]]:
         """
         One variable's draws, one list per chain.
@@ -13242,6 +13294,25 @@ class Draws:
     def draws_per_chain(self, /) -> int:
         """
         Draws in each chain.
+        """
+    @staticmethod
+    def from_json(text: str) -> Draws:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        Draws
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     def log_likelihood(self, /, prefix: str = "log_lik") -> list[list[float]]:
         """
@@ -13314,6 +13385,27 @@ class Draws:
         Returns
         -------
         list of dict
+        """
+    def to_json(self, /) -> str:
+        """
+        The draws as a versioned JSON artifact: names, every draw chain
+        by chain, each chain's divergences and the seed, numbers bit for bit
+        (#978). ``from_json`` reads it back; ``pickle`` keeps the sampler's
+        columns and the warm-up count too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Draws
+        >>> d = Draws(["mu"], [[[0.1], [0.3]], [[0.2], [0.4]]], divergences=[0, 1])
+        >>> Draws.from_json(d.to_json()).to_json() == d.to_json()
+        True
+        >>> pickle.loads(pickle.dumps(d)).to_json() == d.to_json()
+        True
         """
     @property
     def warmup_dropped(self, /) -> int:
