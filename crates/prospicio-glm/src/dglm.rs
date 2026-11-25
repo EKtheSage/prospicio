@@ -52,6 +52,8 @@ use prospicio_models::{Design, Family, Link, Model};
 
 use crate::Glm;
 
+mod json;
+
 /// How the dispersion's coefficients are estimated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispersionMethod {
@@ -213,7 +215,7 @@ impl DoubleGlm {
 }
 
 /// A fitted double GLM.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DoubleGlmFit {
     family: Family,
     link: Link,
