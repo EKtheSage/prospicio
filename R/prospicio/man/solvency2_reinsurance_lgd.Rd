@@ -26,7 +26,9 @@ non-negative.}
 assets under collateral arrangements; any value in \verb{[0, 1]} is accepted.}
 
 \item{factor}{The factor of Art 197(7) on the collateral, in \verb{[0, 1]}: F
-(1 or 0.5) with the 50 \% share, F' (1 or 0.18) with the 90 \% share.}
+(1 or 0.5) with the 50 \% share; with the 90 \% share F' (1 or 0.18)
+until 2027-01-29 and F''' (1 or 0.9) from 2027-01-30 (Delegated
+Regulation (EU) 2026/269).}
 }
 \value{
 A number.
@@ -36,7 +38,7 @@ A number.
 }
 \examples{
 solvency2_reinsurance_lgd(100, 40, 30)
-solvency2_reinsurance_lgd(100, 40, 30, lgd_share = 0.9, factor = 0.5)
+solvency2_reinsurance_lgd(100, 40, 30, lgd_share = 0.9, factor = 0.18)
 }
 \seealso{
 \code{\link[=solvency2_type1]{solvency2_type1()}}.

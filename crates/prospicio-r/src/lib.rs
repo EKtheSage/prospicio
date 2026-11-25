@@ -45,6 +45,8 @@ mod reserving;
 mod reserving_counts;
 mod reserving_discount;
 mod reserving_expense;
+mod reserving_inflation;
+mod reserving_separation;
 mod risk;
 
 pub(crate) fn to_r(e: prospicio_core::Error) -> Error {
@@ -101,5 +103,7 @@ extendr_module! {
     use reserving_counts;
     use reserving_discount;
     use reserving_expense;
+    use reserving_inflation;
+    use reserving_separation;
     use risk;
 }

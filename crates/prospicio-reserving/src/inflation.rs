@@ -106,10 +106,7 @@ impl CalendarIndex {
         let start = Period::containing(month, grain).start();
         let months = start.months_since(self.first.start());
         if months < 0 {
-            return inflation_err(format!(
-                "the index starts in {}, after the payment period of {month}",
-                self.first
-            ));
+            return inflation_err(format!("the index starts in {}, after {month}", self.first));
         }
         let position = months / grain.months() as i64;
         let last = self.values.len() as i64 - 1;
@@ -323,28 +320,32 @@ impl FutureCells {
 
     /// An [`OdpGlmFit`]'s future cells and their means.
     ///
-    /// Panics if a future cell's origin is not among the fit's origins,
-    /// which a fit from [`OdpGlm`](crate::OdpGlm) never has.
-    pub fn from_odp_glm(fit: &OdpGlmFit) -> Self {
+    /// Fails with [`Error::Inflation`] if a future cell's origin is not
+    /// among the fit's origins, which a fit from
+    /// [`OdpGlm`](crate::OdpGlm) never has.
+    pub fn from_odp_glm(fit: &OdpGlmFit) -> Result<Self> {
         let cells = fit
             .future
             .iter()
             .zip(&fit.future_means)
-            .map(|(&(period, age), &value)| FutureCell {
-                origin: fit
-                    .origins
-                    .iter()
-                    .position(|&p| p == period)
-                    .expect("a future cell's origin is one of the fit's"),
-                age,
-                valuation: period.start().add_months(age as i64 - 1),
-                value,
+            .map(|(&(period, age), &value)| {
+                let Some(origin) = fit.origins.iter().position(|&p| p == period) else {
+                    return inflation_err(format!(
+                        "a future cell's origin {period} is not one of the fit's origins"
+                    ));
+                };
+                Ok(FutureCell {
+                    origin,
+                    age,
+                    valuation: period.start().add_months(age as i64 - 1),
+                    value,
+                })
             })
-            .collect();
-        Self {
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
             origins: fit.origins.clone(),
             cells,
-        }
+        })
     }
 
     /// The sum of the cells by origin; a cell whose origin position is past
@@ -585,9 +586,98 @@ mod tests {
     #[test]
     fn odp_glm_cells_sum_to_its_reserves() {
         let fit = OdpGlm::default().fit(&genins(), "values").unwrap();
-        let cells = FutureCells::from_odp_glm(&fit);
+        let cells = FutureCells::from_odp_glm(&fit).unwrap();
         for (got, want) in cells.reserves().iter().zip(&fit.reserves) {
             assert!(close(*got, *want, 1e-12));
+        }
+    }
+
+    /// One annual origin (2020) of `paid` and `count`, one row per age.
+    fn one_origin(paid: &[f64], count: &[f64], cumulative: bool) -> Triangle {
+        let n = paid.len();
+        Triangle::from_long(&crate::Long {
+            keys: &[],
+            origin: &vec![Month::january(2020); n],
+            development: crate::DevelopmentColumn::Age(
+                &(1..=n as Lag).map(|k| 12 * k).collect::<Vec<_>>(),
+            ),
+            values: &[("paid", paid), ("count", count)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative,
+        })
+        .unwrap()
+    }
+
+    /// 1.0, 1.1, 1.21 for 2020 to 2022, at the 2020 level.
+    fn tenth() -> Indexation {
+        Indexation {
+            index: CalendarIndex::new(Period::year(2020), vec![1.0, 1.1, 1.21]).unwrap(),
+            base: Month::january(2020),
+        }
+    }
+
+    #[test]
+    fn an_incremental_triangle_is_restated_cell_by_cell() {
+        // Increments 100, 55, 30.25 are 100, 50, 25 at 2020 prices.
+        let tri = one_origin(&[100.0, 55.0, 30.25], &[1.0, 2.0, 3.0], false);
+        let restated = tenth().restate(&tri, "paid").unwrap();
+        assert!(!restated.is_cumulative());
+        for (d, want) in [100.0, 50.0, 25.0].into_iter().enumerate() {
+            assert!(close(restated.get(0, 0, 0, d).unwrap(), want, 1e-14), "{d}");
+            // The other column is as it was.
+            assert_eq!(restated.get(0, 1, 0, d), tri.get(0, 1, 0, d));
+        }
+        same(&tenth().inflate(&restated, "paid").unwrap(), &tri);
+    }
+
+    #[test]
+    fn an_increment_after_a_hole_is_scaled_at_its_own_cells_month() {
+        // Cumulative 100, (missing), 300: the third increment, 200, covers
+        // two periods and is restated at the third cell's, 2022, level.
+        let tri = one_origin(&[100.0, f64::NAN, 300.0], &[1.0, 2.0, 3.0], true);
+        assert_eq!(tri.get(0, 0, 0, 1), None);
+        let restated = tenth().restate(&tri, "paid").unwrap();
+        assert_eq!(restated.get(0, 0, 0, 1), None);
+        assert!(close(restated.get(0, 0, 0, 0).unwrap(), 100.0, 1e-14));
+        assert!(close(
+            restated.get(0, 0, 0, 2).unwrap(),
+            100.0 + 200.0 / 1.21,
+            1e-14
+        ));
+        same(&tenth().inflate(&restated, "paid").unwrap(), &tri);
+    }
+
+    #[test]
+    fn every_segment_is_restated_and_other_columns_are_untouched() {
+        let a = one_origin(&[100.0, 155.0], &[1.0, 2.0], true);
+        let b = one_origin(&[200.0, 310.0], &[5.0, 6.0], true);
+        let stacked =
+            Triangle::stack(&[("A", &a), ("B", &b)], "program", &["paid", "count"]).unwrap();
+        let restated = tenth().restate(&stacked, "paid").unwrap();
+        assert_eq!(restated.shape(), stacked.shape());
+        for (i, first) in [(0, 100.0), (1, 200.0)] {
+            assert!(close(restated.get(i, 0, 0, 0).unwrap(), first, 1e-14));
+            assert!(close(restated.get(i, 0, 0, 1).unwrap(), 1.5 * first, 1e-14));
+            for d in 0..2 {
+                assert_eq!(restated.get(i, 1, 0, d), stacked.get(i, 1, 0, d));
+            }
+        }
+        same_all(&tenth().inflate(&restated, "paid").unwrap(), &stacked);
+    }
+
+    /// Every segment and column of `want`, values to 1e-12 relative.
+    fn same_all(got: &Triangle, want: &Triangle) {
+        assert_eq!(got.shape(), want.shape());
+        let [ni, nc, no, nd] = want.shape();
+        for (i, c, o, d) in (0..ni).flat_map(|i| {
+            (0..nc).flat_map(move |c| (0..no).flat_map(move |o| (0..nd).map(move |d| (i, c, o, d))))
+        }) {
+            match (got.get(i, c, o, d), want.get(i, c, o, d)) {
+                (Some(a), Some(b)) => assert!(close(a, b, 1e-12), "{i} {c} {o} {d}"),
+                (None, None) => {}
+                other => panic!("mask differs at {i} {c} {o} {d}: {other:?}"),
+            }
         }
     }
 

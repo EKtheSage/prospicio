@@ -19,6 +19,9 @@ sources:
   - id: makevars
     resource: ../R/prospicio/src/Makevars.win
     title: The Windows link line, and the nightly CI run of 2026-11-17
+  - id: r-lock
+    resource: process:local-session, reinsurer default bindings (branch claude/reinsurer-default-980-bindings)
+    title: 00LOCK-prospicio during cargo xtask generated, 2026-11-24
 ---
 
 # Facts (2026-10-05)
@@ -40,7 +43,10 @@ sources:
   with `NotPresent`: extendr-ffi caches its failed probe for R and does not
   rerun when `R_HOME` changes.
 * `R_LIBS` per worktree keeps parallel sessions from overwriting each
-  other's installed `prospicio` in the shared user library.
+  other's installed `prospicio` in the shared user library. Without it,
+  `cargo xtask generated` (which installs the package) fails with `failed
+  to lock directory ... 00LOCK-prospicio` while another worktree's install
+  runs.[^r-lock]
 * `R_LIBS` must hold Windows paths (`C:/Users/...`), separated by `;`.
   A Git Bash path (`/c/Users/...`) is silently dropped: `R CMD INSTALL
   --library=/c/...` still installs there, but `Rscript` then loads the
@@ -79,3 +85,4 @@ sources:
 [^r-libs]: R_LIBS with a Git Bash path
 [^nuts-toolchain]: NUTS draws of the R and Python builds
 [^makevars]: The Windows link line
+[^r-lock]: 00LOCK-prospicio during cargo xtask generated
