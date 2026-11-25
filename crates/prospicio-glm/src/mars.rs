@@ -39,6 +39,8 @@ use prospicio_models::{Design, Family, Link, Terms};
 
 use crate::{Glm, GlmFit};
 
+mod json;
+
 /// The form of one basis term in a predictor `x` at knot `k`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -986,7 +988,7 @@ impl Gram {
 }
 
 /// The terms MARS selected, with the fit on them.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MarsFit {
     names: Vec<String>,
     terms: Vec<MarsTerm>,
