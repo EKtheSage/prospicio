@@ -394,6 +394,339 @@ class AnnualGrids:
         """
 
 @final
+class ApcGlm:
+    """
+    The age-period-cohort (APC) reserving GLM: ``log mu_ij = delta +
+    alpha_i + beta_j + gamma_(i+j)`` on the increments of a full triangle,
+    with the over-dispersed Poisson error (or the gamma or Tweedie of
+    ``OdpGlm``). The calendar index is the sum of the accident and
+    development indices, so the effects are identified only up to linear
+    trends. The fit uses the canonical parameters of Kuang, Nielsen and
+    Nielsen (2008a): a level, two slopes and the second differences of each
+    effect, ``3k - 3`` parameters on a ``k`` by ``k`` triangle. Fitted
+    values and the deviance do not depend on the identification.
+    
+    The future cells need the calendar effect past the latest diagonal.
+    ``extrapolation`` chooses one of the three rules of R ``apc``, each
+    independent of the identification: ``"I2"`` sets the future second
+    differences to 0 (the last calendar trend continues), ``"I1"`` continues
+    with the mean of the fitted first differences (the first left out, as R
+    ``apc`` does), and ``"I0"`` (R ``apc``'s default, at least 4 origins)
+    puts the future effects on the least-squares line through the effects of
+    the periods from the third on. The rules are linear in the fitted second differences, so the
+    prediction error covers the extrapolated effect.
+    
+    The sub-models drop one effect: ``"AP"`` (development and calendar,
+    Taylor's separation model as a GLM), ``"AC"`` (accident and
+    development, the chain ladder, where the extrapolation does not apply)
+    and ``"PC"`` (accident and calendar).
+    
+    The triangle must be full: as many ages as origins, the origin grain
+    equal to the development grain, no hole.
+    
+    Parameters
+    ----------
+    effects : {"APC", "AP", "AC", "PC"}, default "APC"
+        The effects in the model, as Python and R ``apc`` name them; any
+        case.
+    extrapolation : {"I0", "I1", "I2"}, default "I0"
+        The rule for the calendar effect past the latest diagonal; any case.
+    family : {"poisson", "gamma", "tweedie"}, default "poisson"
+        The error distribution, with the log link and Pearson's dispersion.
+    power : float, optional
+        The Tweedie power, in (1, 2); needed for, and only for, ``"tweedie"``.
+    tolerance : float, default 1e-10
+        IRLS convergence tolerance, as ``OdpGlm``'s.
+    max_iterations : int, default 100
+        Maximum IRLS iterations, as ``OdpGlm``'s.
+    
+    Raises
+    ------
+    ValueError
+        For an unknown ``effects``, ``extrapolation`` or ``family``, a
+        ``power`` given for a family other than the Tweedie, or a Tweedie
+        power missing or outside (1, 2).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import ApcGlm, Triangle
+    >>> rows = [[100.0, 60.0, 20.0, 5.0], [110.0, 70.0, 24.0], [125.0, 75.0], [140.0]]
+    >>> tri = Triangle.from_long(
+    ...     [2001 + i for i, row in enumerate(rows) for _ in row],
+    ...     [12 * (j + 1) for row in rows for j in range(len(row))],
+    ...     {"paid": [v for row in rows for v in row]},
+    ...     cumulative=False,
+    ... )
+    >>> fit = ApcGlm(extrapolation="i1").fit(tri, "paid")
+    >>> fit.effects, fit.extrapolation
+    ('APC', 'I1')
+    >>> len(fit.names), fit.names[:4]
+    (9, ['level', 'slope_age', 'slope_accident', 'dd_age[2]'])
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[str, str, str, float |None, float, int]: ...
+    def __new__(cls, /, effects: str = "APC", extrapolation: str = "I0", family: str = "poisson", power: float |None = None, tolerance: float = 1e-10, max_iterations: int = 100) -> ApcGlm: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def effects(self, /) -> str:
+        """
+        ``"APC"``, ``"AP"``, ``"AC"`` or ``"PC"``.
+        """
+    @property
+    def extrapolation(self, /) -> str:
+        """
+        ``"I0"``, ``"I1"`` or ``"I2"``.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        The error distribution: ``"poisson"``, ``"gamma"`` or ``"tweedie"``.
+        """
+    def fit(self, /, triangle: Triangle, column: str) -> ApcGlmFit:
+        """
+        Fits ``column`` of a single-segment triangle and projects the cells
+        below the latest diagonal.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        ApcGlmFit
+        
+        Raises
+        ------
+        ValueError
+            For an unknown column, a triangle with several segments (fit one
+            at a time), a triangle that is not full, fewer than 3 origins
+            (4 for ``"I0"`` with a calendar effect), a tolerance that is not
+            finite and positive, no iterations, an increment the family
+            cannot fit, or an IRLS that does not converge.
+        """
+    @property
+    def max_iterations(self, /) -> int:
+        """
+        Maximum IRLS iterations.
+        """
+    @property
+    def power(self, /) -> float |None:
+        """
+        The Tweedie power, or ``None`` for the other families.
+        """
+    @property
+    def tolerance(self, /) -> float:
+        """
+        IRLS convergence tolerance.
+        """
+
+@final
+class ApcGlmFit:
+    """
+    A fitted APC GLM, from ``ApcGlm.fit``.
+    
+    Each effect's periods are indexed from 0; the second difference at
+    ``l`` (``l = 2..k - 1``) is the change in the effect's slope at period
+    ``l``.
+    
+    Attributes
+    ----------
+    effects : str
+        ``"APC"``, ``"AP"``, ``"AC"`` or ``"PC"``.
+    extrapolation : str
+        ``"I0"``, ``"I1"`` or ``"I2"``.
+    origins : list of str
+        The origin periods; ``fitted`` and ``reserves`` follow them.
+    ages : list of int
+        The development ages in months; the columns of ``fitted`` follow them.
+    level : float
+        The log mean of the first origin's first age.
+    age_slope : float
+        The step in the log mean from age 0 to age 1, at origin 0.
+    accident_slope : float
+        The step in the log mean from accident 0 to accident 1, at age 0.
+    age_second_differences : list of float
+        The development effect's second differences, ``l = 2..k - 1``;
+        empty without a development effect.
+    accident_second_differences : list of float
+        The accident effect's second differences; empty without it.
+    calendar_second_differences : list of float
+        The calendar effect's fitted second differences; empty without it.
+    future_calendar_second_differences : list of float
+        The two extrapolated calendar second differences, at ``l = k`` and
+        ``l = k + 1`` (all later ones are 0); zeros for ``"I2"`` and without
+        a calendar effect.
+    fitted : list of list of float
+        The fitted mean of each observed cell, one row per origin, ``None``
+        below the latest diagonal.
+    deviance : float
+        The GLM's deviance on the observed cells.
+    reserves : list of float
+        The sum of each origin's future means; the first origin's is 0
+        (no tail past the oldest age).
+    total_reserve : float
+    coefficients : list of float
+        The canonical coefficients, in the order of ``names``.
+    names : list of str
+        ``level``, ``slope_age``, ``slope_accident``, then ``dd_age[l]``,
+        ``dd_accident[l]`` and ``dd_calendar[l]`` for the effects in the
+        model.
+    covariance : list of list of float
+        The coefficients' covariance, as a list of rows.
+    dispersion : float
+        Pearson's dispersion ``phi``.
+    future : FutureCells
+        The future cells' means.
+    odp_fit : OdpGlmFit
+        The GLM on the canonical design, with ``residuals``,
+        ``predict_distribution`` and the rest of ``OdpGlmFit``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def accident_second_differences(self, /) -> list[float]:
+        """
+        The accident effect's second differences; empty without it.
+        """
+    @property
+    def accident_slope(self, /) -> float:
+        """
+        The step in the log mean from accident 0 to accident 1, at age 0.
+        """
+    @property
+    def age_second_differences(self, /) -> list[float]:
+        """
+        The development effect's second differences, ``l = 2..k - 1``; empty without it.
+        """
+    @property
+    def age_slope(self, /) -> float:
+        """
+        The step in the log mean from age 0 to age 1, at origin 0.
+        """
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        The development ages in months; the columns of ``fitted`` follow them.
+        """
+    @property
+    def calendar_second_differences(self, /) -> list[float]:
+        """
+        The calendar effect's fitted second differences; empty without it.
+        """
+    @property
+    def coefficients(self, /) -> list[float]:
+        """
+        The canonical coefficients, in the order of ``names``.
+        """
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        The coefficients' covariance, as a list of rows.
+        """
+    @property
+    def deviance(self, /) -> float:
+        """
+        The GLM's deviance on the observed cells.
+        """
+    @property
+    def dispersion(self, /) -> float:
+        """
+        Pearson's dispersion ``phi``.
+        """
+    @property
+    def effects(self, /) -> str:
+        """
+        ``"APC"``, ``"AP"``, ``"AC"`` or ``"PC"``.
+        """
+    @property
+    def extrapolation(self, /) -> str:
+        """
+        ``"I0"``, ``"I1"`` or ``"I2"``: the rule used for the future cells.
+        """
+    @property
+    def fitted(self, /) -> list[list[float |None]]:
+        """
+        The fitted mean of each observed cell, ``None`` below the latest diagonal.
+        """
+    @property
+    def future(self, /) -> FutureCells:
+        """
+        The future cells' means, as ``FutureCells``.
+        """
+    @property
+    def future_calendar_second_differences(self, /) -> list[float]:
+        """
+        The two extrapolated calendar second differences, at ``l = k`` and ``l = k + 1``.
+        """
+    @property
+    def level(self, /) -> float:
+        """
+        The log mean of the first origin's first age.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        The canonical coefficients' names.
+        """
+    @property
+    def odp_fit(self, /) -> OdpGlmFit:
+        """
+        The GLM on the canonical design, as ``OdpGlmFit``: residuals,
+        ``predict_distribution`` and the future design.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        The origin periods; ``fitted`` and ``reserves`` follow them.
+        """
+    def predict_distribution(self, /, n_sims: int, seed: int, parameters: str = "mean_preserving") -> PredictiveDistribution:
+        """
+        Joint draws of the future cells' increments, as
+        ``OdpGlmFit.predict_distribution``: the same draws as
+        ``fit.odp_fit.predict_distribution`` for the same arguments.
+        
+        Parameters
+        ----------
+        n_sims : int
+        seed : int
+        parameters : {"mean_preserving", "normal", "fixed"}, default "mean_preserving"
+            How the coefficients are drawn, as ``OdpGlmFit``'s.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            If ``n_sims`` is 0 or ``parameters`` is unknown.
+        """
+    def prediction_error(self, /) -> dict:
+        """
+        The reserves' prediction error by origin and in total, as
+        ``OdpGlmFit.prediction_error``: the process error and the parameter
+        error by the delta method. The extrapolated calendar effect is a
+        fixed linear function of the fitted second differences, so its
+        uncertainty is included.
+        
+        Returns
+        -------
+        dict
+            ``origin`` (the labels, then ``"Total"``), ``reserve``,
+            ``process_se``, ``parameter_se``, ``rmsep`` and ``cv``, as lists.
+        """
+    @property
+    def reserves(self, /) -> list[float]:
+        """
+        The sum of each origin's future means; the first origin's is 0.
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        The total reserve.
+        """
+
+@final
 class Approximation:
     """
     A distribution fitted to compound moments, from
@@ -32852,6 +33185,54 @@ class Separation:
     def future_rate(self, /) -> float |None:
         """
         The annual rate past the last period, or ``None``.
+        """
+    def glm(self, /, triangle: Triangle, column: str) -> OdpGlmFit:
+        """
+        The Poisson GLM that the arithmetic method is, ``s ~ C(development)
+        + C(calendar)`` on the increments of a single-segment triangle, with
+        the future indices in its future rows. Its future means and reserves
+        equal ``fit``'s; its ``prediction_error`` is the delta method's and
+        ``predict_distribution`` draws the future cells. The dispersion is
+        Pearson's.
+        
+        A ``future_rate`` or ``future_index`` is a fixed growth from the last
+        fitted index, so the error covers that index's and takes the growth
+        as given; a ``trend_periods`` future is linear in the fitted
+        calendar effects, so its uncertainty is included.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        OdpGlmFit
+        
+        Raises
+        ------
+        NotSupportedError
+            For a geometric method (least squares on the logs) and with a
+            normaliser (the variance of ``n_i s_ij`` is not an over-dispersed
+            Poisson's: divide the triangle by the normaliser and fit it
+            without one).
+        ValueError
+            As ``fit`` does, for a triangle with several segments, and when
+            the GLM does not converge (on increments that are not positive).
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import Separation, Triangle
+        >>> rows = [[50.4, 78.6, 87.6, 92.4], [58.0, 87.2, 96.9], [59.5, 92.7], [66.2]]
+        >>> tri = Triangle.from_long(
+        ...     [2001 + i for i, row in enumerate(rows) for _ in row],
+        ...     [12 * (j + 1) for row in rows for j in range(len(row))],
+        ...     {"s": [v for row in rows for v in row]},
+        ... )
+        >>> model = Separation(future_rate=0.10)
+        >>> glm = model.glm(tri, "s")
+        >>> abs(glm.total_reserve - model.fit(tri, "s").total_reserve) < 1e-6
+        True
         """
     @property
     def kind(self, /) -> str:

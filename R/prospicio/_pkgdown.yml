@@ -424,6 +424,7 @@ reference:
       - frequency_severity
       - future_cells
       - indexation
+      - apc_glm_fit
       - separation_fit
       - disposal_method
       - case_outstanding

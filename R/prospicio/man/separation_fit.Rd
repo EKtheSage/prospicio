@@ -3,6 +3,7 @@
 \name{separation_fit}
 \alias{separation_fit}
 \alias{separation}
+\alias{separation_glm}
 \title{Taylor's separation method}
 \usage{
 separation_fit(
@@ -28,6 +29,15 @@ separation(
   future_index = NULL,
   trend_periods = NULL,
   segment = NULL
+)
+
+separation_glm(
+  triangle,
+  column = NULL,
+  normaliser = NULL,
+  future_rate = NULL,
+  future_index = NULL,
+  trend_periods = NULL
 )
 }
 \arguments{
@@ -73,6 +83,7 @@ of each origin's future cells; the first origin's is 0), \code{log_variance}
 (the geometric methods' residual variance on the log scale; \code{NULL} for
 the arithmetic method and with no degrees of freedom left) and
 \code{total_reserve}.
+\code{separation_glm()} returns an \link{odp_glm_fit}.
 }
 \description{
 Separates development from calendar-year effects (inflation) in an
@@ -100,6 +111,18 @@ triangle's last calendar period are not fitted: give exactly one of
 \code{future_rate}, \code{future_index} and \code{trend_periods}. On a triangle
 already restated by an economic index (\code{\link[=restate]{restate()}}) the indices measure
 superimposed inflation.
+
+\code{separation_glm()} is the arithmetic method as a Poisson GLM, \code{s ~ C(development) + C(calendar)} on the increments with the future indices
+in its future rows: an \link{odp_glm_fit} whose reserves equal
+\code{separation()}'s and whose \code{prediction_error} is the delta method's. A
+\code{future_rate} or \code{future_index} is a fixed growth from the last fitted
+index, so the error is that of the last index, the growth taken as
+given; a \code{trend_periods} future is linear in the fitted calendar effects,
+so its uncertainty is included. The dispersion is Pearson's. It needs a
+triangle of one segment, and it fails with a normaliser (the variance of
+\verb{n_i s_ij} is not an over-dispersed Poisson's: divide the triangle by the
+normaliser and fit it without one). The geometric methods have no GLM
+form.
 }
 \examples{
 # Taylor (1977), Example 1: claims per claim incurred, cumulative.
@@ -112,7 +135,9 @@ long <- data.frame(
 fit <- separation(triangle(long, "year", "age", "s"), future_rate = 0.10)
 round(fit@proportions, 4)
 round(fit@indices, 1)
+glm <- separation_glm(triangle(long, "year", "age", "s"), future_rate = 0.10)
+glm@prediction_error
 }
 \seealso{
-\code{\link[=indexation]{indexation()}}, \code{\link[=calendar_index]{calendar_index()}}, \code{\link[=future_cells]{future_cells()}}
+\code{\link[=indexation]{indexation()}}, \code{\link[=calendar_index]{calendar_index()}}, \code{\link[=future_cells]{future_cells()}}, \code{\link[=apc_glm]{apc_glm()}}
 }
