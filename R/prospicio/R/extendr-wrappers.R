@@ -133,6 +133,8 @@ credibility_premiums_rust <- function(ratios, weights, nrow, ncol, levels, withi
 
 credibility_standards <- function(p, k, cv) rust_native_result(.Call(wrap__credibility_standards, p, k, cv))
 
+credibility_weighted_rust <- function(estimate, credibility, complement) .Call(wrap__credibility_weighted_rust, estimate, credibility, complement)
+
 crps_rust <- function(draws, y) rust_native_result(.Call(wrap__crps_rust, draws, y))
 
 cumulative_loss_ratio_rust <- function(loss_ratios, premiums) rust_native_result(.Call(wrap__cumulative_loss_ratio_rust, loss_ratios, premiums))
@@ -170,6 +172,8 @@ elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, lin
 elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, relax, theta, power, link_power) rust_native_result(.Call(wrap__elastic_net_fit_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, relax, theta, power, link_power))
 
 elpd_loo_rust <- function(log_lik, n, r_eff) rust_native_result(.Call(wrap__elpd_loo_rust, log_lik, n, r_eff))
+
+elpd_lppd_rust <- function(log_lik, n) rust_native_result(.Call(wrap__elpd_lppd_rust, log_lik, n))
 
 elpd_waic_rust <- function(log_lik, n) rust_native_result(.Call(wrap__elpd_waic_rust, log_lik, n))
 
@@ -387,6 +391,8 @@ pnl_occurrence_source <- function(frequency, step, probs, occurrence, points_a, 
 
 pnl_program_rust <- function(net_loss, net_combined_ratio, expense_ratio, ceded_loss, share, combined_ratio, stated, aggregate, stated_premium) rust_native_result(.Call(wrap__pnl_program_rust, net_loss, net_combined_ratio, expense_ratio, ceded_loss, share, combined_ratio, stated, aggregate, stated_premium))
 
+pnl_stack_rust <- function(ledgers, impact_labels, impact_targets, impact_bases) rust_native_result(.Call(wrap__pnl_stack_rust, ledgers, impact_labels, impact_targets, impact_bases))
+
 poisson_tail_rust <- function(expected, observed) rust_native_result(.Call(wrap__poisson_tail_rust, expected, observed))
 
 pooled_trend_rust <- function(triangle, column) rust_native_result(.Call(wrap__pooled_trend_rust, triangle, column))
@@ -563,7 +569,11 @@ time_splits_rust <- function(periods, n_test, window, horizon, gap, step) rust_n
 
 trend_by_age_rust <- function(triangle, column) rust_native_result(.Call(wrap__trend_by_age_rust, triangle, column))
 
+trend_factor_rust <- function(rate, years) .Call(wrap__trend_factor_rust, rate, years)
+
 trend_fit_rust <- function(times, values, kind) rust_native_result(.Call(wrap__trend_fit_rust, times, values, kind))
+
+trended_present_rates_rust <- function(prior_indicated, prior_implemented, trend) .Call(wrap__trended_present_rates_rust, prior_indicated, prior_implemented, trend)
 
 tvar_threshold_rust <- function(values, probs, p) rust_native_result(.Call(wrap__tvar_threshold_rust, values, probs, p))
 

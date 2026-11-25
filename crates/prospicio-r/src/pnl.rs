@@ -7,7 +7,7 @@ use extendr_api::{Error, Result};
 use prospicio_aggregate::pnl::{
     Book, Expense, ExpenseBasis, Face, Group, LADDER, Layout, Ledger, Leg, LegKind, ProgramLayer,
     RatioRow, Role, RowKind, Source, derive_premium, occurrence_source, pnl_program,
-    pnl_program_stated, round_premium, size_premium, snap,
+    pnl_program_stated, round_premium, size_premium, snap, stack,
 };
 
 use crate::discrete::DiscreteDist;
@@ -583,6 +583,45 @@ fn pnl_occurrence_source(
     ))
 }
 
+/// `stack` over a named list of ledgers: each ledger's result statistics,
+/// then one row per impact (`target` less `base`), as `ledger_stack()`'s
+/// `label` and a row-major `n` by 13 block of `EX`, `SD`, `CV`, `Skew`
+/// and `P01` to `P99`, NA where undefined.
+#[extendr]
+fn pnl_stack_rust(
+    ledgers: List,
+    impact_labels: Vec<String>,
+    impact_targets: Vec<String>,
+    impact_bases: Vec<String>,
+) -> Result<List> {
+    let mut held: Vec<(String, &PnlLedger)> = Vec::with_capacity(ledgers.len());
+    for (name, robj) in ledgers.iter() {
+        let ptr = robj
+            .dollar("ptr")
+            .map_err(|_| Error::Other(format!("ledger {name:?} is not a pnl_ledger")))?;
+        let ledger = <&PnlLedger>::try_from(&ptr)
+            .map_err(|_| Error::Other(format!("ledger {name:?} is not a pnl_ledger")))?;
+        held.push((name.to_string(), ledger));
+    }
+    let refs: Vec<(&str, &Ledger)> = held.iter().map(|(k, l)| (k.as_str(), &l.inner)).collect();
+    let impacts: Vec<(&str, &str, &str)> = impact_labels
+        .iter()
+        .zip(&impact_targets)
+        .zip(&impact_bases)
+        .map(|((a, b), c)| (a.as_str(), b.as_str(), c.as_str()))
+        .collect();
+    let rows = stack(&refs, &impacts).map_err(to_r)?;
+    let mut values = Vec::with_capacity(rows.len() * (4 + LADDER.len()));
+    for (_, s) in &rows {
+        values.extend([s.ex, s.sd, na(s.cv), na(s.skew)]);
+        values.extend(s.ladder);
+    }
+    Ok(list!(
+        label = rows.iter().map(|(l, _)| l.clone()).collect::<Vec<_>>(),
+        values = values
+    ))
+}
+
 fn tower_of(tower: &Robj) -> Result<Option<&ReinsuranceTower>> {
     if tower.is_null() {
         return Ok(None);
@@ -667,6 +706,7 @@ extendr_module! {
     fn pnl_derive_premium;
     fn pnl_occurrence_source;
     fn pnl_program_rust;
+    fn pnl_stack_rust;
     fn size_premium_rust;
     fn round_premium_rust;
 }

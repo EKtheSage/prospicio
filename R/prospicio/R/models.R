@@ -2061,9 +2061,10 @@ mcmc_diagnostics <- function(draws) {
 #'
 #' `elpd_loo()` estimates leave-one-out cross-validation from one Bayesian
 #' fit by Pareto-smoothed importance sampling (PSIS-LOO); `elpd_waic()`
-#' computes WAIC. Both take the pointwise log-likelihood
-#' `log p(y_i | theta_s)` of each posterior draw (rows) and observation
-#' (columns), and match the loo package.
+#' computes WAIC; `elpd_lppd()` is the in-sample log pointwise predictive
+#' density `sum_i log mean_s p(y_i | theta_s)` that both correct. All take
+#' the pointwise log-likelihood `log p(y_i | theta_s)` of each posterior
+#' draw (rows) and observation (columns), and match the loo package.
 #'
 #' @param log_lik A matrix, one row per posterior draw and one column per
 #'   observation.
@@ -2072,7 +2073,7 @@ mcmc_diagnostics <- function(draws) {
 #' @returns A list: `estimates` (named `elpd`, `se`, `p` and `ic`, the
 #'   information criterion `-2 elpd`) and `pointwise`; for `elpd_loo()` also
 #'   `pareto_k` per observation and `k_threshold`, above which an
-#'   observation's estimate is unreliable.
+#'   observation's estimate is unreliable. `elpd_lppd()` returns a number.
 #' @name elpd
 #' @examples
 #' set.seed(1)
@@ -2081,6 +2082,7 @@ mcmc_diagnostics <- function(draws) {
 #' ll <- sapply(y, function(yi) dnorm(yi, mu, 1, log = TRUE))
 #' elpd_loo(ll)$estimates
 #' elpd_waic(ll)$estimates
+#' elpd_lppd(ll)
 NULL
 
 elpd_result <- function(r) {
@@ -2327,6 +2329,13 @@ elpd_loo <- function(log_lik, r_eff = NULL) {
   log_lik <- as.matrix(log_lik)
   elpd_result(rust_result(elpd_loo_rust(as.double(t(log_lik)), as.double(ncol(log_lik)),
                                         if (is.null(r_eff)) double() else as.double(r_eff))))
+}
+
+#' @rdname elpd
+#' @export
+elpd_lppd <- function(log_lik) {
+  log_lik <- as.matrix(log_lik)
+  rust_result(elpd_lppd_rust(as.double(t(log_lik)), as.double(ncol(log_lik))))
 }
 
 #' @rdname elpd

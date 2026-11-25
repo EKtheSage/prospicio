@@ -7,7 +7,8 @@ use extendr_api::{Error, Result};
 use prospicio_pricing::ratemaking::{
     Applies, BeforeSchedule, ExpenseCategory, LossRatioExperience, LossRatioYear, Period,
     PeriodKind, Provisions, PurePremiumExperience, PurePremiumYear, RateChange, RateHistory,
-    RateSchedule, ScheduleTrend, TrendBasis, TrendFit, TrendItem,
+    RateLevel, RateSchedule, ScheduleTrend, TrendBasis, TrendFit, TrendItem, TrendKind,
+    credibility_weighted, trend_factor, trended_present_rates,
 };
 
 use crate::to_r;
@@ -94,7 +95,7 @@ fn rate_level_rust(
         RateHistory::new(&changes)
     }
     .map_err(to_r)?;
-    let level = history
+    let level: RateLevel = history
         .rate_level(&period(kind, start, end)?, term)
         .map_err(to_r)?;
     let p = &level.portions;
@@ -118,14 +119,18 @@ fn rate_level_rust(
 /// A least-squares trend: `c(intercept, slope, r_squared, annual_change)`.
 #[extendr]
 fn trend_fit_rust(times: &[f64], values: &[f64], kind: &str) -> Result<Vec<f64>> {
-    let fit = match kind {
-        "exponential" => TrendFit::exponential(times, values),
-        "linear" => TrendFit::linear(times, values),
+    let kind = match kind {
+        "exponential" => TrendKind::Exponential,
+        "linear" => TrendKind::Linear,
         other => {
             return Err(Error::Other(format!(
                 "kind must be \"exponential\" or \"linear\", got {other}"
             )));
         }
+    };
+    let fit = match kind {
+        TrendKind::Exponential => TrendFit::exponential(times, values),
+        TrendKind::Linear => TrendFit::linear(times, values),
     }
     .map_err(to_r)?;
     Ok(vec![
@@ -329,8 +334,53 @@ fn premium_based_expenses_rust(ratio: &[f64], fixed_share: &[f64]) -> Result<Vec
     Ok(vec![fixed, variable])
 }
 
+/// `f` over its arguments recycled to the longest, as R's arithmetic
+/// recycles; a zero-length argument gives a zero-length result.
+fn recycled<const N: usize>(args: [&[f64]; N], f: impl Fn([f64; N]) -> f64) -> Vec<f64> {
+    if args.iter().any(|a| a.is_empty()) {
+        return Vec::new();
+    }
+    let n = args.iter().map(|a| a.len()).max().unwrap_or(0);
+    (0..n)
+        .map(|i| f(std::array::from_fn(|j| args[j][i % args[j].len()])))
+        .collect()
+}
+
+/// [`trend_factor`] element by element, recycled.
+#[extendr]
+fn trend_factor_rust(rate: &[f64], years: &[f64]) -> Vec<f64> {
+    recycled([rate, years], |[r, y]| trend_factor(r, y))
+}
+
+/// [`credibility_weighted`] element by element, recycled.
+#[extendr]
+fn credibility_weighted_rust(
+    estimate: &[f64],
+    credibility: &[f64],
+    complement: &[f64],
+) -> Vec<f64> {
+    recycled([estimate, credibility, complement], |[e, z, c]| {
+        credibility_weighted(e, z, c)
+    })
+}
+
+/// [`trended_present_rates`] element by element, recycled.
+#[extendr]
+fn trended_present_rates_rust(
+    prior_indicated: &[f64],
+    prior_implemented: &[f64],
+    trend: &[f64],
+) -> Vec<f64> {
+    recycled([prior_indicated, prior_implemented, trend], |[i, m, t]| {
+        trended_present_rates(i, m, t)
+    })
+}
+
 extendr_module! {
     mod ratemaking;
+    fn trend_factor_rust;
+    fn credibility_weighted_rust;
+    fn trended_present_rates_rust;
     fn loss_ratio_experience_rust;
     fn pure_premium_experience_rust;
     fn indication_rust;
