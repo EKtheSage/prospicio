@@ -26,7 +26,7 @@ use rayon::prelude::*;
 pub use crate::nuts::{ParamSummary, Sampler};
 use crate::nuts::{run_chain, summarize};
 
-mod json;
+pub(crate) mod json;
 
 /// How the dispersion `φ` is set.
 #[derive(Debug, Clone, Copy, PartialEq)]

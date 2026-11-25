@@ -3292,6 +3292,84 @@ impl PyDraws {
 
 #[pymethods]
 impl PyDraws {
+    /// The draws as a versioned JSON artifact: names, every draw chain
+    /// by chain, each chain's divergences and the seed, numbers bit for bit
+    /// (#978). ``from_json`` reads it back; ``pickle`` keeps the sampler's
+    /// columns and the warm-up count too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Draws
+    /// >>> d = Draws(["mu"], [[[0.1], [0.3]], [[0.2], [0.4]]], divergences=[0, 1])
+    /// >>> Draws.from_json(d.to_json()).to_json() == d.to_json()
+    /// True
+    /// >>> pickle.loads(pickle.dumps(d)).to_json() == d.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// Draws
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_bayes::nuts::PosteriorDraws::from_json(text).map_err(to_py)?,
+            sampler: None,
+            warmup_dropped: 0,
+        })
+    }
+
+    /// Rebuilds pickled draws: the draws', the sampler columns' (or
+    /// ``None``) artifacts and the warm-up draws dropped.
+    #[staticmethod]
+    fn _from_state(draws: &str, sampler: Option<&str>, warmup_dropped: usize) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_bayes::nuts::PosteriorDraws::from_json(draws).map_err(to_py)?,
+            sampler: sampler
+                .map(prospicio_bayes::nuts::PosteriorDraws::from_json)
+                .transpose()
+                .map_err(to_py)?,
+            warmup_dropped,
+        })
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+    ) -> PyResult<(Bound<'py, PyAny>, (String, Option<String>, usize))> {
+        let restore = slf.get_type().getattr("_from_state")?;
+        let d = slf.get();
+        Ok((
+            restore,
+            (
+                d.inner.to_json(),
+                d.sampler
+                    .as_ref()
+                    .map(prospicio_bayes::nuts::PosteriorDraws::to_json),
+                d.warmup_dropped,
+            ),
+        ))
+    }
+
     #[new]
     #[pyo3(signature = (names, chains, divergences = None))]
     fn new(
@@ -5238,6 +5316,59 @@ pub(crate) struct PyBayesGlmmFit {
 
 #[pymethods]
 impl PyBayesGlmmFit {
+    /// The fit as a versioned JSON artifact: the specification with its
+    /// priors and sampler settings, the posterior draws of the parameters
+    /// and the random effects, their layout, and the Laplace fit the chains
+    /// started from, numbers bit for bit (#978). ``from_json`` reads it
+    /// back; ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import BayesGlmm, BayesGlmmFit, Design
+    /// >>> y = [float((i * 7) % 5 + i % 4) for i in range(40)]
+    /// >>> site = [f"s{i % 4}" for i in range(40)]
+    /// >>> d = Design([[1.0] * 40], ["(Intercept)"])
+    /// >>> fit = BayesGlmm(chains=1, tune=60, draws=20).fit(d, {"site": site}, y)
+    /// >>> BayesGlmmFit.from_json(fit.to_json()).to_json() == fit.to_json()
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// BayesGlmmFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_bayes::glmm::BayesGlmmFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// The fixed coefficients' names.
     #[getter]
     fn names(&self) -> Vec<String> {
