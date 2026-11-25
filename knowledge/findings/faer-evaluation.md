@@ -1,10 +1,10 @@
 ---
 type: Finding
 title: faer against prospicio-math's linear algebra
-description: faer 0.24.4 on one thread is no faster than prospicio-math::linalg below 16 by 16, 2 to 9 times faster for Cholesky, inverse and product from 32 by 32 to 512 by 512, and 8 to 126 times for the symmetric eigendecomposition (cyclic Jacobi here); it adds 48 crates and about a minute to a clean build, and no caller in the workspace factors a matrix large enough to gain
+description: faer 0.24.4 on one thread is no faster than prospicio-math::linalg below 16 by 16, 2 to 9 times faster for Cholesky, inverse and product from 32 by 32 to 512 by 512, and 8 to 126 times for the symmetric eigendecomposition (cyclic Jacobi here); it adds 48 crates and about a minute to a clean build, and no caller in the workspace factors a matrix large enough to gain, so the user decided on 2026-11-25 not to adopt it for now
 tags: [math, linalg, faer, performance, dependencies, environment]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-11-24T22:00:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-11-25T06:00:00Z }
 sources:
   - id: linalg
     resource: ../crates/prospicio-math/src/linalg.rs
@@ -89,9 +89,20 @@ coefficients, of smooth basis functions, of units or of segments:
 None of these is in the range where faer is several times faster and the
 factorization is also a visible share of the run.
 
+## Decision
+
+The user decided on 2026-11-25 not to adopt faer now and closed #974,
+with this note kept so the question can be reopened. **Come back to it
+when** a caller factors or decomposes matrices of about 100 by 100 or
+more inside a loop and a profile shows that step: a tensor smooth with
+hundreds of basis functions, a correlation matrix of hundreds of units, a
+GLMM with many random effects. Rerun the harness below on that caller's
+sizes first; the table above is the starting expectation. Reopening is a
+new issue that cites #974.
+
 ## Recommendation
 
-For the user to decide (#974):
+What the evaluation recommended (#974):
 
 1. **Do not adopt faer now.** It would add 48 crates and a minute of
    cold build to every crate for a gain no current caller would see.
