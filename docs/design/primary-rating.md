@@ -206,10 +206,18 @@ impl InsuranceCharge {
     pub fn table_l(self, unlimited_expected: f64) -> Result<Self>;
     pub fn loss_elimination(&self) -> f64;                                     // k; 0 unless a Table L
 }
-pub struct RetroPlan { /* expected loss, expense, lcf, tax multiplier, minimum, maximum */ }
+// Built in PR 4. Amounts in money; f64::INFINITY for no maximum.
+pub struct RetroPlan { /* E, e, c, T, H, G */ }
 impl RetroPlan {
-    pub fn balance(&self, charge: &InsuranceCharge) -> Result<BalancedPlan>;  // r_H, r_G, basic
-    pub fn premium(&self, basic: f64, losses: f64) -> f64;
+    pub fn new(expected_loss: f64, expense: f64, loss_conversion: f64, tax_multiplier: f64,
+               minimum: f64, maximum: f64) -> Result<Self>;
+    pub fn guaranteed_cost(&self) -> f64;                                      // T (e + E)
+    pub fn premium(&self, basic: f64, losses: f64) -> f64;                     // T (b + c L), clamped
+    pub fn balance(&self, charge: &InsuranceCharge) -> Result<BalancedPlan>;
+}
+pub struct BalancedPlan {
+    pub basic: f64, pub entry_ratio_minimum: f64, pub entry_ratio_maximum: f64,
+    pub net_insurance_charge: f64, pub expected_premium: f64,
 }
 
 // prospicio_pricing::emod
@@ -285,7 +293,14 @@ Proposed for the user's acceptance; each has a recommendation.
 - (i) **`RetroPlan::balance` solves for the basic premium given the
   minimum and maximum**, the common case. Solving for the maximum given
   the basic, or for the loss conversion factor, are small variations on
-  the same bisection and can follow as asked. *Recommended.*
+  the same bisection and can follow as asked. *Recommended.* As built
+  (PR 4): a plan with a loss limit balances against a Table L on the
+  unlimited expected loss, with `L` the limited losses, and its basic
+  premium then carries the cost of the limit; the limited Table M, being
+  on another expected loss, is refused with a message that says so. A
+  minimum at or above the guaranteed-cost premium, or a maximum at or
+  below it, has no balancing basic premium and is an error. An entry ratio
+  of the minimum below 0 means the minimum never binds.
 - (j) **Order: retrospective rating, then earned exposure, then the
   modifications.** The charge builds on what the lane already has (the
   aggregate on a grid) and has closed forms to validate against; earned
@@ -331,7 +346,9 @@ Stacked, each on the one before:
    entries (reason: bound in PR 4b). Done.
 3. `table_l` and `loss_elimination`; the identities, and an FFT aggregate
    with a per-occurrence limit against the definition. Done.
-4. `RetroPlan::balance` and `premium`; the balance test.
+4. `RetroPlan::balance` and `premium`; the balance tests (the mean
+   premium over a sample, an exponential's closed integral, a loss limit
+   against Table L). Done.
 4b. Python and R bindings for `retro` (`[retro-bindings]`), their tests in
    new files, the allow-list entries removed.
 5. `earned::Date`, `Policy` and `earned_exposure` with the daily method;

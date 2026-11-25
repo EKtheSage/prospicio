@@ -36,6 +36,17 @@
 //!   Then `φ*(r) − ψ*(r) = 1 − r` still, and `φ*(0) = 1`.
 //!   [`InsuranceCharge::table_l`] turns the limited table into it.
 //!
+//! # Balancing a plan
+//!
+//! A retrospective premium is `R = T (b + c L)`, held between a minimum
+//! `H` and a maximum `G`: `T` the tax multiplier, `c` the loss conversion
+//! factor, `b` the basic premium and `L` the year's losses. The plan is
+//! balanced when its expected premium is the guaranteed-cost premium
+//! `T (e + E)`, with `e` the expenses and profit and `E` the expected
+//! losses. [`RetroPlan::balance`] finds the basic premium that does it,
+//! from the table's charge at the entry ratios where the minimum and the
+//! maximum bind.
+//!
 //! ```
 //! use prospicio_pricing::retro::InsuranceCharge;
 //! use prospicio_prob::Gamma;
@@ -251,6 +262,9 @@ impl InsuranceCharge {
         if entry_ratio <= 0.0 {
             return 1.0 - entry_ratio;
         }
+        if entry_ratio == f64::INFINITY {
+            return self.loss_elimination;
+        }
         ((self.stop_loss)(entry_ratio * self.expected) / self.expected).max(0.0)
             + self.loss_elimination
     }
@@ -288,6 +302,216 @@ impl InsuranceCharge {
                 savings: self.savings(entry_ratio),
             })
             .collect()
+    }
+}
+
+/// A retrospective rating plan: the premium `R = T (b + c L)` for losses
+/// `L`, no less than a minimum and no more than a maximum.
+///
+/// Amounts are in money. A plan with a loss limit takes `L` as the
+/// losses with each occurrence limited, and is balanced against a
+/// Table L ([`InsuranceCharge::table_l`]); its basic premium then carries
+/// the cost of the limit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RetroPlan {
+    expected_loss: f64,
+    expense: f64,
+    loss_conversion: f64,
+    tax_multiplier: f64,
+    minimum: f64,
+    maximum: f64,
+}
+
+/// A balanced plan: [`RetroPlan::balance`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BalancedPlan {
+    /// The basic premium `b`, before the tax multiplier.
+    pub basic: f64,
+    /// The entry ratio `r_H` at and below which the minimum premium
+    /// applies. Negative when the minimum is below `T b`, so that it never
+    /// binds.
+    pub entry_ratio_minimum: f64,
+    /// The entry ratio `r_G` at and above which the maximum premium
+    /// applies; infinite for a plan without a maximum.
+    pub entry_ratio_maximum: f64,
+    /// The net insurance charge `φ(r_G) − ψ(r_H)` as a share of the
+    /// expected losses: what the maximum gives up less what the minimum
+    /// collects.
+    pub net_insurance_charge: f64,
+    /// The expected retrospective premium, the guaranteed-cost premium
+    /// `T (e + E)`.
+    pub expected_premium: f64,
+}
+
+impl RetroPlan {
+    /// A plan with expected losses `expected_loss` (`E`, without any loss
+    /// limit), expenses and profit `expense` (`e`, excluding the premium
+    /// tax), a loss conversion factor (`c`), a tax multiplier (`T`), and a
+    /// minimum and a maximum premium (`H` and `G`; `f64::INFINITY` for no
+    /// maximum, 0 for no minimum).
+    ///
+    /// Fails unless `E`, `c` and `T` are positive and finite, `e` is
+    /// non-negative and finite, and `0 ≤ H < G`.
+    pub fn new(
+        expected_loss: f64,
+        expense: f64,
+        loss_conversion: f64,
+        tax_multiplier: f64,
+        minimum: f64,
+        maximum: f64,
+    ) -> Result<Self> {
+        let positive = |name: &'static str, value: f64| {
+            if value.is_finite() && value > 0.0 {
+                Ok(())
+            } else {
+                Err(Error::InvalidParameter {
+                    name,
+                    value,
+                    reason: "must be positive and finite",
+                })
+            }
+        };
+        positive("expected_loss", expected_loss)?;
+        positive("loss_conversion", loss_conversion)?;
+        positive("tax_multiplier", tax_multiplier)?;
+        if !(expense.is_finite() && expense >= 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "expense",
+                value: expense,
+                reason: "must be non-negative and finite",
+            });
+        }
+        if !(minimum.is_finite() && minimum >= 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "minimum",
+                value: minimum,
+                reason: "must be non-negative and finite",
+            });
+        }
+        if maximum.is_nan() || maximum <= minimum {
+            return Err(Error::InvalidParameter {
+                name: "maximum",
+                value: maximum,
+                reason: "must be above the minimum premium",
+            });
+        }
+        Ok(Self {
+            expected_loss,
+            expense,
+            loss_conversion,
+            tax_multiplier,
+            minimum,
+            maximum,
+        })
+    }
+
+    /// The guaranteed-cost premium `T (e + E)`, which a balanced plan
+    /// collects on average.
+    pub fn guaranteed_cost(&self) -> f64 {
+        self.tax_multiplier * (self.expense + self.expected_loss)
+    }
+
+    /// The retrospective premium for a year's `losses` under the basic
+    /// premium `basic`: `T (b + c L)`, between the minimum and the
+    /// maximum.
+    pub fn premium(&self, basic: f64, losses: f64) -> f64 {
+        (self.tax_multiplier * (basic + self.loss_conversion * losses))
+            .clamp(self.minimum, self.maximum)
+    }
+
+    /// The basic premium at which the plan's expected premium is the
+    /// guaranteed-cost premium, under the aggregate distribution behind
+    /// `charge`.
+    ///
+    /// With `r_H` and `r_G` the entry ratios where the minimum and the
+    /// maximum bind, the plan balances when
+    ///
+    /// ```text
+    /// r_G − r_H         = (G − H) / (c E T)
+    /// φ(r_H) − φ(r_G)   = (e + E − H / T) / (c E)
+    /// ```
+    ///
+    /// and then `b = H / T − c E r_H`, which is
+    /// `e − (c − 1) E + c E (φ(r_G) − ψ(r_H))`. The left side of the second
+    /// equation falls as `r_H` rises with the first held, so one bisection
+    /// solves the pair.
+    ///
+    /// `charge` must be on the plan's expected losses: a Table M of the
+    /// aggregate, or for a plan with a loss limit a Table L.
+    ///
+    /// Fails when the table's expected loss is not the plan's; when the
+    /// minimum premium is at least the guaranteed-cost premium, or the
+    /// maximum at most it (no basic premium balances such a plan); or when
+    /// the charge is not finite.
+    ///
+    /// ```
+    /// use prospicio_pricing::retro::{InsuranceCharge, RetroPlan};
+    ///
+    /// // Ten equally likely years; expected losses 100, expenses 30.
+    /// let losses = [0.0, 10.0, 30.0, 50.0, 70.0, 90.0, 120.0, 150.0, 200.0, 280.0];
+    /// let table = InsuranceCharge::from_sample(&losses).unwrap();
+    /// let plan = RetroPlan::new(100.0, 30.0, 1.1, 1.03, 80.0, 220.0).unwrap();
+    /// let balanced = plan.balance(&table).unwrap();
+    /// // The plan collects the guaranteed-cost premium on average.
+    /// let mean: f64 =
+    ///     losses.iter().map(|&l| plan.premium(balanced.basic, l)).sum::<f64>() / 10.0;
+    /// assert!((mean - plan.guaranteed_cost()).abs() < 1e-10);
+    /// assert!((balanced.expected_premium - 1.03 * 130.0).abs() < 1e-12);
+    /// ```
+    pub fn balance(&self, charge: &InsuranceCharge) -> Result<BalancedPlan> {
+        let (e, big_e, c, t) = (
+            self.expense,
+            self.expected_loss,
+            self.loss_conversion,
+            self.tax_multiplier,
+        );
+        if (charge.expected() / big_e - 1.0).abs() > 1e-9 {
+            return Err(Error::Data(format!(
+                "the table's expected loss {} is not the plan's {big_e}; for a plan with a                  loss limit, pass a Table L on the unlimited expected loss",
+                charge.expected()
+            )));
+        }
+        let spread = (self.maximum - self.minimum) / (c * big_e * t);
+        let target = (e + big_e - self.minimum / t) / (c * big_e);
+        if target <= 0.0 {
+            return Err(Error::Data(format!(
+                "the minimum premium {} is at least the guaranteed-cost premium {}:                  no basic premium balances the plan",
+                self.minimum,
+                self.guaranteed_cost()
+            )));
+        }
+        // φ is 1-Lipschitz, so φ(r) − φ(r + spread) never exceeds spread.
+        if target >= spread {
+            return Err(Error::Data(format!(
+                "the maximum premium {} is at most the guaranteed-cost premium {}:                  no basic premium balances the plan",
+                self.maximum,
+                self.guaranteed_cost()
+            )));
+        }
+        let gap = |r: f64| charge.charge(r) - charge.charge(r + spread);
+        // At r = −spread the gap is spread, above the target; it falls to 0.
+        let lo = if spread.is_finite() { -spread } else { -target };
+        let mut hi = 1.0;
+        while gap(hi) > target {
+            hi *= 2.0;
+            if hi >= 1e12 {
+                return Err(Error::Data(
+                    "the insurance charge does not fall far enough to balance the plan".into(),
+                ));
+            }
+        }
+        if !gap(lo).is_finite() {
+            return Err(Error::Data("the insurance charge is not finite".into()));
+        }
+        let r_h = prospicio_math::roots::bisect(lo, hi, |r| gap(r) > target);
+        let r_g = r_h + spread;
+        Ok(BalancedPlan {
+            basic: self.minimum / t - c * big_e * r_h,
+            entry_ratio_minimum: r_h,
+            entry_ratio_maximum: r_g,
+            net_insurance_charge: charge.charge(r_g) - charge.savings(r_h),
+            expected_premium: self.guaranteed_cost(),
+        })
     }
 }
 
@@ -411,5 +635,104 @@ mod tests {
         assert!(m.clone().table_l(f64::INFINITY).is_err());
         let l = m.table_l(25.0).unwrap();
         assert!(l.table_l(30.0).is_err());
+    }
+
+    fn mean_premium(plan: &RetroPlan, basic: f64, losses: &[f64]) -> f64 {
+        losses.iter().map(|&l| plan.premium(basic, l)).sum::<f64>() / losses.len() as f64
+    }
+
+    const YEARS: [f64; 10] = [
+        0.0, 10.0, 30.0, 50.0, 70.0, 90.0, 120.0, 150.0, 200.0, 280.0,
+    ];
+
+    #[test]
+    fn a_balanced_plan_collects_the_guaranteed_cost_premium() {
+        let table = InsuranceCharge::from_sample(&YEARS).unwrap();
+        for (minimum, maximum) in [
+            (80.0, 220.0),
+            (0.0, 180.0),
+            (120.0, f64::INFINITY),
+            (60.0, 400.0),
+        ] {
+            let plan = RetroPlan::new(100.0, 30.0, 1.1, 1.03, minimum, maximum).unwrap();
+            let b = plan.balance(&table).unwrap();
+            assert!(
+                (mean_premium(&plan, b.basic, &YEARS) - plan.guaranteed_cost()).abs() < 1e-9,
+                "minimum {minimum}, maximum {maximum}"
+            );
+            // The textbook form of the basic premium.
+            let textbook = 30.0 - 0.1 * 100.0 + 1.1 * 100.0 * b.net_insurance_charge;
+            assert!(
+                (b.basic - textbook).abs() < 1e-9,
+                "minimum {minimum}, maximum {maximum}"
+            );
+            // The minimum and the maximum bind at the entry ratios given.
+            let at = |r: f64| 1.03 * (b.basic + 1.1 * 100.0 * r);
+            assert!((at(b.entry_ratio_minimum) - minimum).abs() < 1e-9);
+            if maximum.is_finite() {
+                assert!((at(b.entry_ratio_maximum) - maximum).abs() < 1e-9);
+            } else {
+                assert_eq!(b.entry_ratio_maximum, f64::INFINITY);
+            }
+        }
+    }
+
+    #[test]
+    fn a_plan_that_never_binds_has_the_basic_premium_of_its_expenses() {
+        // No minimum and a maximum above the largest year: b = e − (c − 1) E,
+        // and the entry ratio of the minimum is negative.
+        let table = InsuranceCharge::from_sample(&YEARS).unwrap();
+        let plan = RetroPlan::new(100.0, 30.0, 1.1, 1.03, 0.0, 1_000.0).unwrap();
+        let b = plan.balance(&table).unwrap();
+        assert!((b.basic - 20.0).abs() < 1e-9);
+        assert!(b.entry_ratio_minimum < 0.0 && b.net_insurance_charge.abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_plan_with_a_loss_limit_balances_against_table_l() {
+        // The same ten years with each year's losses limited to 150 (one
+        // occurrence a year, for the test): the plan's losses are the
+        // limited ones and its expected losses the unlimited 100.
+        let limited: Vec<f64> = YEARS.iter().map(|l| l.min(150.0)).collect();
+        let table = InsuranceCharge::from_sample(&limited)
+            .unwrap()
+            .table_l(100.0)
+            .unwrap();
+        let plan = RetroPlan::new(100.0, 30.0, 1.1, 1.03, 80.0, 200.0).unwrap();
+        let b = plan.balance(&table).unwrap();
+        assert!((mean_premium(&plan, b.basic, &limited) - plan.guaranteed_cost()).abs() < 1e-9);
+        // The limited Table M is on another expected loss, and is refused.
+        let limited_m = InsuranceCharge::from_sample(&limited).unwrap();
+        assert!(plan.balance(&limited_m).is_err());
+    }
+
+    #[test]
+    fn a_continuous_aggregate_balances_by_its_own_integral() {
+        // Exponential losses of mean 100: E[min(max(L, a), b)] in closed form.
+        let table = InsuranceCharge::from_severity(Gamma::new(1.0, 100.0).unwrap()).unwrap();
+        let plan = RetroPlan::new(100.0, 25.0, 1.15, 1.04, 90.0, 260.0).unwrap();
+        let b = plan.balance(&table).unwrap();
+        let (lo, hi) = (100.0 * b.entry_ratio_minimum, 100.0 * b.entry_ratio_maximum);
+        let clipped = lo + 100.0 * ((-lo / 100.0).exp() - (-hi / 100.0).exp());
+        let expected = 1.04 * (b.basic + 1.15 * clipped);
+        assert!((expected - plan.guaranteed_cost()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn plans_that_cannot_balance_are_refused() {
+        let table = InsuranceCharge::from_sample(&YEARS).unwrap();
+        let plan = |minimum, maximum| RetroPlan::new(100.0, 30.0, 1.1, 1.03, minimum, maximum);
+        // Guaranteed cost 133.9: a minimum at or above it, a maximum at or below it.
+        assert!(plan(134.0, 300.0).unwrap().balance(&table).is_err());
+        assert!(plan(50.0, 133.0).unwrap().balance(&table).is_err());
+        assert!(plan(100.0, 100.0).is_err() && plan(-1.0, 100.0).is_err());
+        assert!(plan(0.0, f64::NAN).is_err());
+        assert!(RetroPlan::new(0.0, 30.0, 1.1, 1.03, 0.0, 200.0).is_err());
+        assert!(RetroPlan::new(100.0, -1.0, 1.1, 1.03, 0.0, 200.0).is_err());
+        assert!(RetroPlan::new(100.0, 30.0, 0.0, 1.03, 0.0, 200.0).is_err());
+        assert!(RetroPlan::new(100.0, 30.0, 1.1, f64::INFINITY, 0.0, 200.0).is_err());
+        // A table on another expected loss.
+        let other = InsuranceCharge::from_sample(&[1.0, 3.0]).unwrap();
+        assert!(plan(80.0, 220.0).unwrap().balance(&other).is_err());
     }
 }
