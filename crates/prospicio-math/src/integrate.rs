@@ -41,6 +41,58 @@ pub fn gauss_legendre<E>(
     Ok(sum * half)
 }
 
+/// The most panels [`adaptive_gauss_legendre`] splits, so that an
+/// integrand whose rounding noise never meets the tolerance (values near
+/// the subnormal range, say) costs a bounded number of evaluations.
+pub const MAX_PANELS: usize = 1 << 14;
+
+/// `∫_lo^hi f` by adaptive Gauss–Legendre: a panel whose 8-point value
+/// differs from the sum over its two halves by more than its share of
+/// `tol` (absolute) is split, down to `max_depth` halvings and at most
+/// [`MAX_PANELS`] splits in all; the halves' sums are added. For
+/// integrands that are smooth except for a sharp
+/// transition somewhere inside, such as the stable law's integral
+/// representation, whose integrand runs from 0 to 1 across a narrow band.
+///
+/// ```
+/// use prospicio_math::integrate::adaptive_gauss_legendre;
+///
+/// let v = adaptive_gauss_legendre(|x| (-1e4 * (x - 0.3) * (x - 0.3)).exp(), 0.0, 1.0, 1e-14, 40);
+/// assert!((v - (std::f64::consts::PI / 1e4).sqrt()).abs() < 1e-13);
+/// ```
+pub fn adaptive_gauss_legendre(
+    mut f: impl FnMut(f64) -> f64,
+    lo: f64,
+    hi: f64,
+    tol: f64,
+    max_depth: u32,
+) -> f64 {
+    let mut rule = |a: f64, b: f64| {
+        let Ok(v) = gauss_legendre(|x| Ok::<_, std::convert::Infallible>(f(x)), a, b);
+        v
+    };
+    let width = hi - lo;
+    if width <= 0.0 {
+        return 0.0;
+    }
+    let mut total = 0.0;
+    let mut splits = 0usize;
+    let mut stack = vec![(lo, hi, rule(lo, hi), 0u32)];
+    while let Some((a, b, whole, depth)) = stack.pop() {
+        let mid = 0.5 * (a + b);
+        let (left, right) = (rule(a, mid), rule(mid, b));
+        let share = tol * (b - a) / width;
+        if depth >= max_depth || splits >= MAX_PANELS || (left + right - whole).abs() <= share {
+            total += left + right;
+        } else {
+            splits += 1;
+            stack.push((mid, b, right, depth + 1));
+            stack.push((a, mid, left, depth + 1));
+        }
+    }
+    total
+}
+
 /// The `n`-point Gauss–Hermite rule for `∫ e^(-x²) f(x) dx`: the nodes `x`,
 /// in descending order, and `log w + x²` for each node's weight `w`, the
 /// scale on which a caller adds the log of `e^(x²) f(x)` without
@@ -124,6 +176,21 @@ mod tests {
     fn integrates_smooth_functions() {
         let v = gauss_legendre(|x| Ok::<_, ()>(x.exp()), 0.0, 1.0).unwrap();
         assert!((v - (1f64.exp() - 1.0)).abs() < 1e-15);
+    }
+
+    #[test]
+    fn adapts_to_a_sharp_step() {
+        // A logistic step of width 1e-6 at 0.4: its integral over [0, 1]
+        // is 0.6 to within 1e-12.
+        let v = adaptive_gauss_legendre(
+            |x| 1.0 / (1.0 + (-(x - 0.4) / 1e-6).exp()),
+            0.0,
+            1.0,
+            1e-13,
+            60,
+        );
+        assert!((v - 0.6).abs() < 1e-11, "{v}");
+        assert_eq!(adaptive_gauss_legendre(|x| x, 1.0, 1.0, 1e-12, 10), 0.0);
     }
 
     #[test]
