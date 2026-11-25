@@ -33,3 +33,4 @@ Finished items are in [done/aggregate.md](done/aggregate.md), which agents read 
 - [retro-deductible-dividend] large deductible and dividend plans from the charge and savings (`primary-rating.md`); after #981
 - [retro-bindings] #981 Python and R bindings for `retro` (`InsuranceCharge` from a grid or a sample, its tables, and the plan balance), tests in new files, the allow-list entries removed (`primary-rating.md`, PR 4b); after `[retro-balance]`
 - [earned-bindings] #981 Python and R bindings for `earned` (dates as ISO strings or `datetime.date`, policies as columns, the table as a data frame), tests in new files, the allow-list entries removed (`primary-rating.md`, PR 6b); after `[earned-endorsements]`
+- [method-docs-next] #991 next families: the Mack bootstrap's and the other credibility models' binding docs link to their Rust reference instead of restating the method (`docs/design/bindings.md`, "Method documentation")

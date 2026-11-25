@@ -10,9 +10,9 @@ credibility_standard(p = 0.9, k = 0.05, cv = 0)
 limited_fluctuation_credibility(n, standard)
 }
 \arguments{
-\item{p}{Probability in \verb{(0, 1)}.}
+\item{p}{Probability in \verb{(0, 1)} of lying within \code{k} of the mean.}
 
-\item{k}{Tolerance, positive.}
+\item{k}{Tolerance relative to the mean, positive.}
 
 \item{cv}{The severity's coefficient of variation.}
 
@@ -26,13 +26,11 @@ limited_fluctuation_credibility(n, standard)
 credibility factors.
 }
 \description{
-The expected number of claims for an observed value to lie within \code{k} of
-its mean with probability \code{p}, under a Poisson count and the normal
-approximation. With \code{z = qnorm((1 + p) / 2)} and \code{n_F = (z / k)^2}, the
-full standards in claims are \code{n_F} for the frequency, \code{n_F * cv^2} for
-the severity and \code{n_F * (1 + cv^2)} for the pure premium.
-\code{limited_fluctuation_credibility()} is the square root rule
-\code{min(1, sqrt(n / standard))}.
+Full credibility standards in claims for the frequency, the severity and
+the pure premium, and partial credibility by the square root rule
+(\code{limited_fluctuation_credibility()}). The method, its formulas and its
+reference are documented once, in the
+\href{https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.LimitedFluctuation.html}{Rust reference}.
 }
 \examples{
 s <- credibility_standard(0.90, 0.05, cv = 2)
