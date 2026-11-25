@@ -24497,6 +24497,7 @@ class MarsFit:
     ``max(0, x - k)``, ``"down"`` for ``max(0, k - x)`` and ``"linear"``
     for ``x``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def add_terms(self, /, terms: Terms) -> Terms:
         """
@@ -24521,6 +24522,25 @@ class MarsFit:
     def forward_terms(self, /) -> list[tuple[str, float, str]]:
         """
         The forward pass's terms, before the backward pass.
+        """
+    @staticmethod
+    def from_json(text: str) -> MarsFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        MarsFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def gcv(self, /) -> float:
@@ -24572,6 +24592,29 @@ class MarsFit:
         """
         The selected terms ``(name, knot, direction)``, in the order the
         forward pass added them, without the intercept.
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the names, the selected and
+        forward terms, the forward pass's steps, the coefficients and the
+        fit statistics, with the GLM fitted on the terms when ``family`` was
+        given; numbers bit for bit (#978). ``from_json`` reads it back;
+        ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import MarsFit, mars
+        >>> x = [float(i) for i in range(60)]
+        >>> fit = mars({"x": x}, [1 + 0.5 * v + 3 * max(0.0, v - 31) for v in x])
+        >>> MarsFit.from_json(fit.to_json()).knots("x")
+        [31.0]
+        >>> pickle.loads(pickle.dumps(fit)).coefficients == fit.coefficients
+        True
         """
 
 @final
