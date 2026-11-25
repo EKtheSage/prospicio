@@ -33,6 +33,18 @@
 //! including, its expiration date (the 12:01 a.m. convention), so an
 //! annual policy has 365 or 366 days.
 //!
+//! A policy can change mid-term ([`Policy::endorsed`]: a new full-term
+//! amount from a date) and be cancelled ([`Policy::cancelled`]). Each is
+//! written when it happens: a change as the difference in full-term
+//! amounts for the term still to run, a cancellation as the return of
+//! what was not yet earned, on the last day in force. So a calendar
+//! period's written amount can be negative, while a policy period holds
+//! everything its policies wrote, net.
+//!
+//! [`EarningMethod`] says how time is counted: by exact days, on the
+//! half-month grid the ratemaking exhibits use, or by the "15th of the
+//! month" rule (twenty-fourths) for data summarized by month.
+//!
 //! ```
 //! use prospicio_pricing::earned::{Date, EarningMethod, Policy, Windows, earned_exposure};
 //! use prospicio_pricing::ratemaking::PeriodKind;
@@ -189,6 +201,28 @@ impl Date {
         let length = if is_leap(year) { 366.0 } else { 365.0 };
         f64::from(year) + self.days_since(start) as f64 / length
     }
+
+    /// The date `days` days later, or earlier for a negative number.
+    pub fn plus_days(self, days: i64) -> Date {
+        Date {
+            days: (i64::from(self.days) + days) as i32,
+        }
+    }
+
+    /// The date on the half-month grid of
+    /// [`year_fraction`](crate::ratemaking::year_fraction): the first of a
+    /// month is its start, the middle half way, the last day the next
+    /// month's start.
+    fn half_month(self) -> f64 {
+        let (year, month, day) = self.ymd();
+        crate::ratemaking::year_fraction(year, month, day).expect("a Date is a valid date")
+    }
+
+    /// The middle of the date's month, as a year fraction.
+    fn mid_month(self) -> f64 {
+        let (year, month, _) = self.ymd();
+        f64::from(year) + (f64::from(month) - 0.5) / 12.0
+    }
 }
 
 impl fmt::Display for Date {
@@ -198,16 +232,51 @@ impl fmt::Display for Date {
     }
 }
 
-/// A policy: a term and an amount earned evenly over it.
+/// A policy: a term and an amount earned evenly over it, with any
+/// mid-term changes and a cancellation.
 ///
-/// The amount is whatever is being earned: an exposure count (1 for one
-/// car-year on an annual policy) or the term's premium.
+/// The amount is whatever is being earned, for the full term: an exposure
+/// count (1 for one car-year on an annual policy) or the term's premium.
+///
+/// ```
+/// use prospicio_pricing::earned::{Date, Policy};
+///
+/// let d = |y, m, day| Date::new(y, m, day).unwrap();
+/// // Werner and Modlin's Policy D: 400 for the year from 1 July 2011, changed
+/// // on 1 January 2012 to a full-term premium of 800.
+/// let policy = Policy::new(d(2011, 7, 1), d(2012, 7, 1), 400.0)
+///     .unwrap()
+///     .endorsed(d(2012, 1, 1), 800.0)
+///     .unwrap();
+/// assert_eq!(policy.amount_at(d(2011, 12, 31)), 400.0);
+/// assert_eq!(policy.amount_at(d(2012, 1, 1)), 800.0);
+/// // The policyholder pays about half of each: 184 and 182 of 366 days.
+/// let paid = policy.earned_between(d(2011, 7, 1), d(2012, 7, 1));
+/// assert!((paid - (400.0 * 184.0 + 800.0 * 182.0) / 366.0).abs() < 1e-9);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Policy {
     effective: Date,
     expiration: Date,
     amount: f64,
     label: String,
+    /// Mid-term changes: the date and the full-term amount from it on, in
+    /// date order.
+    changes: Vec<(Date, f64)>,
+    /// The first day the policy is no longer in force, if cancelled.
+    cancellation: Option<Date>,
+}
+
+fn check_amount(amount: f64) -> Result<f64> {
+    if amount.is_finite() && amount >= 0.0 {
+        Ok(amount)
+    } else {
+        Err(Error::InvalidParameter {
+            name: "amount",
+            value: amount,
+            reason: "must be finite and non-negative",
+        })
+    }
 }
 
 impl Policy {
@@ -223,18 +292,13 @@ impl Policy {
                  the expiration must be later"
             )));
         }
-        if !(amount.is_finite() && amount >= 0.0) {
-            return Err(Error::InvalidParameter {
-                name: "amount",
-                value: amount,
-                reason: "must be finite and non-negative",
-            });
-        }
         Ok(Self {
             effective,
             expiration,
-            amount,
+            amount: check_amount(amount)?,
             label: String::new(),
+            changes: Vec::new(),
+            cancellation: None,
         })
     }
 
@@ -245,17 +309,70 @@ impl Policy {
         self
     }
 
+    /// The policy with a mid-term change: from `date` on its full-term
+    /// amount is `full_term_amount` (a changed exposure, or the full-term
+    /// premium after an endorsement). The change is written on `date`, as
+    /// the difference between the new and the old amount for the part of
+    /// the term still to run.
+    ///
+    /// Fails unless `date` is inside the term, after any earlier change
+    /// and before any cancellation, and the amount is finite and
+    /// non-negative.
+    pub fn endorsed(mut self, date: Date, full_term_amount: f64) -> Result<Self> {
+        let after = self.changes.last().map_or(self.effective, |c| c.0);
+        if date <= after || date >= self.end() {
+            return Err(Error::Data(format!(
+                "a change on {date} is not after {after} and before {}",
+                self.end()
+            )));
+        }
+        self.changes.push((date, check_amount(full_term_amount)?));
+        Ok(self)
+    }
+
+    /// The policy cancelled: `date` is the first day it is no longer in
+    /// force. What was not yet earned is written off on the last day in
+    /// force, the day before.
+    ///
+    /// Fails unless `date` is after the effective date, after any change
+    /// and before the expiration, or if the policy is already cancelled.
+    pub fn cancelled(mut self, date: Date) -> Result<Self> {
+        if self.cancellation.is_some() {
+            return Err(Error::Data("the policy is already cancelled".into()));
+        }
+        let after = self.changes.last().map_or(self.effective, |c| c.0);
+        if date <= after || date >= self.expiration {
+            return Err(Error::Data(format!(
+                "a cancellation on {date} is not after {after} and before the expiration {}",
+                self.expiration
+            )));
+        }
+        self.cancellation = Some(date);
+        Ok(self)
+    }
+
     /// The effective date.
     pub fn effective(&self) -> Date {
         self.effective
     }
 
-    /// The expiration date, the first day the policy is not in force.
+    /// The expiration date of the term as written, the first day the
+    /// policy would not be in force.
     pub fn expiration(&self) -> Date {
         self.expiration
     }
 
-    /// The amount earned over the term.
+    /// The cancellation date, the first day not in force, if cancelled.
+    pub fn cancellation(&self) -> Option<Date> {
+        self.cancellation
+    }
+
+    /// The mid-term changes: each date with the full-term amount from it.
+    pub fn changes(&self) -> &[(Date, f64)] {
+        &self.changes
+    }
+
+    /// The full-term amount at inception.
     pub fn amount(&self) -> f64 {
         self.amount
     }
@@ -265,49 +382,180 @@ impl Policy {
         &self.label
     }
 
-    /// The term in days.
+    /// The term as written, in days.
     pub fn term_days(&self) -> i64 {
         self.expiration.days_since(self.effective)
     }
 
-    /// The amount earned in `[from, to)`: the amount times the share of
-    /// the term's days inside the window. Zero when they do not overlap.
-    pub fn earned_between(&self, from: Date, to: Date) -> f64 {
-        let start = self.effective.max(from);
-        let end = self.expiration.min(to);
-        if end <= start {
+    /// The first day the policy is not in force: its cancellation, or its
+    /// expiration.
+    fn end(&self) -> Date {
+        self.cancellation.unwrap_or(self.expiration)
+    }
+
+    /// The full-term amount in effect on `date`: Werner and Modlin's
+    /// in-force amount. Zero when the policy is not in force.
+    pub fn amount_at(&self, date: Date) -> f64 {
+        if !self.in_force_at(date) {
             return 0.0;
         }
-        self.amount * end.days_since(start) as f64 / self.term_days() as f64
+        self.changes
+            .iter()
+            .rev()
+            .find(|c| c.0 <= date)
+            .map_or(self.amount, |c| c.1)
     }
 
-    /// The amount not yet earned at `date`: the whole amount before the
-    /// effective date, nothing from the expiration date on.
+    /// The amount earned in `[from, to)` by exact days: each day of the
+    /// term in the window earns the full-term amount then in effect over
+    /// the term's days. Zero when they do not overlap.
+    pub fn earned_between(&self, from: Date, to: Date) -> f64 {
+        let m = EarningMethod::Daily;
+        self.earned_in(m, m.bound(from), m.bound(to))
+    }
+
+    /// The amount still to be earned from `date` on, by exact days: all
+    /// that the policy earns before its effective date, nothing from its
+    /// expiration or cancellation on.
     pub fn unearned_at(&self, date: Date) -> f64 {
-        self.earned_between(date, self.expiration)
+        let m = EarningMethod::Daily;
+        self.earned_in(m, m.bound(date), f64::INFINITY)
     }
 
-    /// Whether the policy is in force on `date`.
+    /// Whether the policy is in force on `date`: effective on or before
+    /// it, and not yet expired or cancelled.
     pub fn in_force_at(&self, date: Date) -> bool {
-        self.effective <= date && date < self.expiration
+        self.effective <= date && date < self.end()
     }
 
-    /// Whether the policy is in force at the close of the day before
-    /// `end`, which is how a window ending at `end` sees it: a policy
-    /// that expires on `end` still is, and one effective on `end` is not
-    /// yet.
-    fn in_force_at_close(&self, end: Date) -> bool {
-        self.effective < end && end <= self.expiration
+    /// The amount earned between the coordinates `a` and `b` of `method`.
+    fn earned_in(&self, method: EarningMethod, a: f64, b: f64) -> f64 {
+        let start = method.event(self.effective);
+        let term = method.event(self.expiration) - start;
+        let end = method.event(self.end());
+        if term <= 0.0 {
+            // A term shorter than the method's grid is earned at once.
+            return if a <= start && start < b {
+                self.amount
+            } else {
+                0.0
+            };
+        }
+        let mut earned = 0.0;
+        let mut from = start;
+        let mut amount = self.amount;
+        let steps = self.changes.iter().map(|c| (method.event(c.0), c.1));
+        for (to, next) in steps.chain(std::iter::once((end, 0.0))) {
+            let to = to.min(end);
+            let overlap = to.min(b) - from.max(a);
+            if overlap > 0.0 {
+                earned += amount * overlap / term;
+            }
+            from = to;
+            amount = next;
+        }
+        earned
+    }
+
+    /// The written transactions: the date each is booked on and its
+    /// amount. The whole amount at inception; at a change, the difference
+    /// in full-term amounts for the term still to run; at a cancellation,
+    /// on the last day in force, the return of what was not yet earned.
+    fn transactions(&self, method: EarningMethod) -> Vec<(Date, f64)> {
+        let start = method.event(self.effective);
+        let expiry = method.event(self.expiration);
+        let term = expiry - start;
+        let to_run = |date: Date| {
+            if term > 0.0 {
+                ((expiry - method.event(date)) / term).clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+        let mut out = vec![(self.effective, self.amount)];
+        let mut amount = self.amount;
+        for &(date, next) in &self.changes {
+            out.push((date, (next - amount) * to_run(date)));
+            amount = next;
+        }
+        if let Some(date) = self.cancellation {
+            out.push((date.plus_days(-1), -amount * to_run(date)));
+        }
+        out
+    }
+
+    /// The full-term amount in force at the close of the day before
+    /// `end`, on `method`'s grid: how a window ending at `end` sees the
+    /// policy. One that expires on `end` is still in force, one effective
+    /// on `end` is not yet, and a change on `end` has not yet happened.
+    fn in_force_at_close(&self, method: EarningMethod, end: Date) -> f64 {
+        let at = method.bound(end);
+        if !(method.event(self.effective) < at && at <= method.event(self.end())) {
+            return 0.0;
+        }
+        self.changes
+            .iter()
+            .rev()
+            .find(|c| method.event(c.0) < at)
+            .map_or(self.amount, |c| c.1)
     }
 }
 
 /// How a policy's amount is earned over its term.
+///
+/// ```
+/// use prospicio_pricing::earned::{Date, EarningMethod, Policy, Windows, earned_exposure};
+/// use prospicio_pricing::ratemaking::PeriodKind;
+///
+/// // An annual policy from 1 October 2010: its share earned in 2010.
+/// let d = |y, m, day| Date::new(y, m, day).unwrap();
+/// let policy = [Policy::new(d(2010, 10, 1), d(2011, 10, 1), 1.0).unwrap()];
+/// let earned_2010 = |method| {
+///     let years = Windows::years(2010, 2011).unwrap();
+///     earned_exposure(&policy, &years, PeriodKind::Calendar, method, None).unwrap().rows()[0].earned
+/// };
+/// assert!((earned_2010(EarningMethod::Daily) - 92.0 / 365.0).abs() < 1e-15);
+/// assert!((earned_2010(EarningMethod::HalfMonth) - 0.25).abs() < 1e-12); // three months of twelve
+/// assert!((earned_2010(EarningMethod::TwentyFourths) - 5.0 / 24.0).abs() < 1e-12); // from 15 October
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum EarningMethod {
     /// Evenly by day, on the exact days of the term.
     #[default]
     Daily,
+    /// Evenly by half month, on the grid of
+    /// [`year_fraction`](crate::ratemaking::year_fraction): every date is
+    /// taken to the nearest start or middle of a month, so a month is a
+    /// twelfth of a year whatever its length. Werner and Modlin's exhibits
+    /// count this way.
+    HalfMonth,
+    /// The "15th of the month" rule, for data summarized by month: every
+    /// policy date (effective, expiration, change, cancellation) is taken
+    /// to the middle of its month, so an annual policy earns 1/24 in the
+    /// month it is written, 2/24 in each of the next eleven and 1/24 in
+    /// the thirteenth.
+    TwentyFourths,
+}
+
+impl EarningMethod {
+    /// A policy date (effective, expiration, change, cancellation) on the
+    /// method's time axis.
+    fn event(self, date: Date) -> f64 {
+        match self {
+            Self::Daily => f64::from(date.days),
+            Self::HalfMonth => date.half_month(),
+            Self::TwentyFourths => date.mid_month(),
+        }
+    }
+
+    /// A window bound or a valuation date on the method's time axis.
+    fn bound(self, date: Date) -> f64 {
+        match self {
+            Self::Daily => f64::from(date.days),
+            Self::HalfMonth | Self::TwentyFourths => date.half_month(),
+        }
+    }
 }
 
 /// Consecutive windows `[b_0, b_1), [b_1, b_2), …` between dates.
@@ -392,8 +640,9 @@ impl Windows {
     }
 }
 
-/// The amount in force on `date`: the sum of the amounts of the policies
-/// with an effective date on or before it and an expiration after it
+/// The amount in force on `date`: the sum of the full-term amounts, as
+/// they stand on that date, of the policies with an effective date on or
+/// before it and an expiration or cancellation after it
 /// (Werner and Modlin's in-force exposure as of a date, a snapshot with no
 /// regard to how long each policy runs).
 ///
@@ -412,11 +661,7 @@ impl Windows {
 /// assert_eq!(in_force(&policies, d(2011, 10, 1)), 1.0); // the first has expired
 /// ```
 pub fn in_force(policies: &[Policy], date: Date) -> f64 {
-    policies
-        .iter()
-        .filter(|p| p.in_force_at(date))
-        .map(Policy::amount)
-        .sum()
+    policies.iter().map(|p| p.amount_at(date)).sum()
 }
 
 /// One window's figures for one label: [`EarnedTable::rows`].
@@ -510,7 +755,6 @@ pub fn earned_exposure(
     method: EarningMethod,
     valuation: Option<Date>,
 ) -> Result<EarnedTable> {
-    let EarningMethod::Daily = method;
     let bounds = windows.bounds();
     let n = windows.len();
     if let Some(v) = valuation
@@ -521,6 +765,12 @@ pub fn earned_exposure(
             bounds[0]
         )));
     }
+    // The window that holds a date.
+    let window_of = |date: Date| match bounds.partition_point(|b| *b <= date) {
+        0 => None,
+        k if k > n => None,
+        k => Some(k - 1),
+    };
     // Per label: written, earned, unearned and in force, by window.
     let mut by_label: BTreeMap<&str, Vec<[f64; 4]>> = BTreeMap::new();
     for policy in policies {
@@ -531,16 +781,18 @@ pub fn earned_exposure(
         let cells = by_label
             .entry(policy.label.as_str())
             .or_insert_with(|| vec![[0.0; 4]; n]);
-        // The window that holds the effective date.
-        let written_in = match bounds.partition_point(|b| *b <= policy.effective) {
-            0 => None,
-            k if k > n => None,
-            k => Some(k - 1),
-        };
+        // What has been booked by the valuation date.
+        let transactions: Vec<(Date, f64)> = policy
+            .transactions(method)
+            .into_iter()
+            .filter(|t| valuation.is_none_or(|v| t.0 < v))
+            .collect();
         match kind {
             PeriodKind::Calendar => {
-                if let Some(k) = written_in {
-                    cells[k][0] += policy.amount;
+                for &(date, amount) in &transactions {
+                    if let Some(k) = window_of(date) {
+                        cells[k][0] += amount;
+                    }
                 }
                 for (k, cell) in cells.iter_mut().enumerate() {
                     let (from, to) = (bounds[k], bounds[k + 1]);
@@ -549,27 +801,29 @@ pub fn earned_exposure(
                     if end <= from {
                         continue;
                     }
-                    cell[1] += policy.earned_between(from, end);
-                    if policy.effective < end {
-                        cell[2] += policy.unearned_at(end);
-                    }
-                    if policy.in_force_at_close(end) {
-                        cell[3] += policy.amount;
-                    }
+                    let (a, b) = (method.bound(from), method.bound(end));
+                    cell[1] += policy.earned_in(method, a, b);
+                    // Written by the window's end, less earned by then.
+                    let written: f64 = transactions.iter().filter(|t| t.0 < end).map(|t| t.1).sum();
+                    cell[2] += written - policy.earned_in(method, f64::NEG_INFINITY, b);
+                    cell[3] += policy.in_force_at_close(method, end);
                 }
             }
             PeriodKind::Policy => {
-                let Some(k) = written_in else { continue };
+                // Everything a policy writes is booked in its own period.
+                let Some(k) = window_of(policy.effective) else {
+                    continue;
+                };
                 let cell = &mut cells[k];
-                cell[0] += policy.amount;
+                let written: f64 = transactions.iter().map(|t| t.1).sum();
+                cell[0] += written;
                 match valuation {
-                    None => cell[1] += policy.amount,
+                    None => cell[1] += written,
                     Some(v) => {
-                        cell[1] += policy.earned_between(policy.effective, v);
-                        cell[2] += policy.unearned_at(v);
-                        if policy.in_force_at_close(v) {
-                            cell[3] += policy.amount;
-                        }
+                        let earned = policy.earned_in(method, f64::NEG_INFINITY, method.bound(v));
+                        cell[1] += earned;
+                        cell[2] += written - earned;
+                        cell[3] += policy.in_force_at_close(method, v);
                     }
                 }
             }

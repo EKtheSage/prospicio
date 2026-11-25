@@ -45,9 +45,9 @@ Three things about how the book counts:
   quarter of 2012 is 91 of 366, 0.2486. `earned_exposure` with
   `EarningMethod::Daily` therefore matches the earned tables to within two
   days in the year (6e-3 in the tests) and no closer, while the written
-  and policy year tables match exactly [earned] [test]. The book's
-  half-month grid (`ratemaking::year_fraction`) would reproduce the earned
-  tables exactly; a method on it is proposed for the next PR.
+  and policy year tables match exactly [earned] [test]. On the book's
+  half-month grid (`ratemaking::year_fraction`), which is
+  `EarningMethod::HalfMonth`, the earned tables are exact too.
 - **The expiration date is the last day in force.** The book writes a
   policy effective 10/01/10 as expiring 09/30/11. `Policy` takes the day
   after, 1 October 2011, so that a term is the difference of its two
@@ -61,3 +61,28 @@ Three things about how the book counts:
 
 "As of 12/31/12" is a valuation date of 1 January 2013 in `earned`, which
 reads a valuation date as the close of the day before.
+
+## Changes, cancellations and twenty-fourths
+
+The book's records (chapter 3, Table 3.1) fix how a mid-term event is
+written, and `earned` follows them [book] [earned] [test]:
+
+- **A cancellation** is a second record of the unearned part, negative,
+  dated the last day in force: Policy B (600 from 04/01/10, cancelled on
+  December 31, 2010, after 75% of its term) has -0.25 exposure and -150
+  dated 12/31/10. Policy D cancelled on March 31, 2012 contributes 1 and
+  400 to calendar year 2011 and -0.25 and -100 to 2012, and all of it to
+  policy year 2011. `Policy::cancelled` takes the first day not in force
+  (1 January 2011 for Policy B) and books the return the day before.
+- **A change** is stated as the new full-term amount: Policy C (1,000 from
+  07/01/10, 1,200 full term from January 1, 2011) has records of -500 and
+  +600 on 01/01/11, so 100 is written then, and 500 and 600 are earned in
+  the two years. The in-force amount is the full-term amount in effect:
+  chapter 5's Policy D is in force at 400 until December 31, 2011, and at
+  800 from January 1, 2012, and pays 600.
+- **Twenty-fourths** ("the 15th of the month rule") take every policy as
+  written at mid-month: an annual policy earns 1/24 in its first month,
+  2/24 in each of the next eleven and 1/24 in the thirteenth (Table 4.24:
+  230, 210, ..., 10 earned in 2010 of 240 written in each month), and is
+  not in force on the first of the month it is written in (Table 4.23:
+  1,440, 2,880 and 1,440 in force on 07/01/10, 01/01/11 and 07/01/11).
