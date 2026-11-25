@@ -1253,8 +1253,9 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
   function(model, test) {
     y <- test[[response]]
     w <- if (is.null(weight_column)) rep(1, nrow(test)) else test[[weight_column]]
-    family_deviance(family, y, stats::predict(model, test), weights = w, theta = theta,
-                    power = power) / sum(w)
+    fa <- family_args(theta, power)
+    rust_result(family_mean_deviance_rust(family, fa$theta, fa$power, as.double(y),
+                                          as.double(stats::predict(model, test)), as.double(w)))
   }
 }
 
@@ -2729,7 +2730,7 @@ bayes_glmm_model <- S7::new_class(
     groups = S7::class_list,
     coefficients = S7::new_property(S7::class_double, getter = function(self) {
       nm <- self@ptr$names()
-      stats::setNames(colMeans(self@draws)[seq_along(nm)], nm)
+      stats::setNames(self@ptr$parameter_means()[seq_along(nm)], nm)
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
       as.data.frame(self@ptr$summary())
