@@ -8,28 +8,7 @@
 
 use prospicio_core::{Error, Result};
 use prospicio_math::linalg::symmetric_eigen;
-
-/// R's four-ulp fuzz in `quantile`.
-const FUZZ: f64 = 4.0 * f64::EPSILON;
-
-/// R's `quantile(type = 1)` of sorted values: the inverse of the empirical
-/// cdf.
-fn quantile_type1(sorted: &[f64], p: f64) -> f64 {
-    let n = sorted.len();
-    let nppm = n as f64 * p;
-    let j = (nppm + FUZZ).floor();
-    let k = if nppm > j + FUZZ { j + 1.0 } else { j };
-    sorted[(k.max(1.0) as usize).min(n) - 1]
-}
-
-/// R's default `quantile(type = 7)` of sorted values.
-fn quantile_type7(sorted: &[f64], p: f64) -> f64 {
-    let n = sorted.len();
-    let h = (n - 1) as f64 * p;
-    let lo = (h + FUZZ).floor() as usize;
-    let hi = (lo + 1).min(n - 1);
-    sorted[lo] + (h - lo as f64) * (sorted[hi] - sorted[lo])
-}
+use prospicio_prob::risk::{quantile_type1_sorted, quantile_type7_sorted};
 
 /// The grid `z_0 < ... < z_K` of a numeric feature's accumulated local
 /// effects: its minimum and its type 1 quantiles at `1/bins, ..., 1` (the
@@ -59,7 +38,9 @@ pub fn ale_grid(x: &[f64], bins: usize) -> Result<Vec<f64>> {
         0.0
     };
     let mut z = vec![s[0]];
-    z.extend((0..bins).map(|j| quantile_type1(&s, 1.0 / k + j as f64 * by)));
+    for j in 0..bins {
+        z.push(quantile_type1_sorted(&s, 1.0 / k + j as f64 * by)?);
+    }
     z.sort_by(f64::total_cmp);
     z.dedup();
     if z.len() < 2 {
@@ -161,8 +142,9 @@ pub fn ale_levels(at: &[usize], k: usize, base: &[f64], up: &[f64], down: &[f64]
 pub fn ale_numeric_distance(values: &[f64], level: &[usize], k: usize) -> Vec<f64> {
     let mut s = values.to_vec();
     s.sort_by(f64::total_cmp);
+    // No values gives a grid of NaN, and so NaN distances.
     let grid: Vec<f64> = (0..100)
-        .map(|q| quantile_type7(&s, q as f64 / 99.0))
+        .map(|q| quantile_type7_sorted(&s, f64::from(q) / 99.0).unwrap_or(f64::NAN))
         .collect();
     let ecdf: Vec<Vec<f64>> = (0..k)
         .map(|l| {

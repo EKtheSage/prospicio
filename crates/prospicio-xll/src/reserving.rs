@@ -571,11 +571,9 @@ pub(crate) fn percentiles(grid: &Grid) -> Result<Vec<f64>> {
 /// only).
 pub(crate) fn process(grid: &Grid) -> Result<ProcessDistribution> {
     match text_option(grid, "process")?.as_deref() {
-        None | Some("gamma") => Ok(ProcessDistribution::Gamma),
-        Some("none") => Ok(ProcessDistribution::None),
-        Some(other) => Err(format!(
-            "process must be \"gamma\" or \"none\", got {other:?}"
-        )),
+        None => Ok(ProcessDistribution::default()),
+        Some(name) => ProcessDistribution::from_name(name)
+            .ok_or_else(|| crate::unknown_name("process", name, ProcessDistribution::NAMES)),
     }
 }
 

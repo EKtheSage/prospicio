@@ -4,16 +4,14 @@
 
 #' Limited fluctuation credibility
 #'
-#' The expected number of claims for an observed value to lie within `k` of
-#' its mean with probability `p`, under a Poisson count and the normal
-#' approximation. With `z = qnorm((1 + p) / 2)` and `n_F = (z / k)^2`, the
-#' full standards in claims are `n_F` for the frequency, `n_F * cv^2` for
-#' the severity and `n_F * (1 + cv^2)` for the pure premium.
-#' `limited_fluctuation_credibility()` is the square root rule
-#' `min(1, sqrt(n / standard))`.
+#' Full credibility standards in claims for the frequency, the severity and
+#' the pure premium, and partial credibility by the square root rule
+#' (`limited_fluctuation_credibility()`). The method, its formulas and its
+#' reference are documented once, in the
+#' [Rust reference](https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.LimitedFluctuation.html).
 #'
-#' @param p Probability in `(0, 1)`.
-#' @param k Tolerance, positive.
+#' @param p Probability in `(0, 1)` of lying within `k` of the mean.
+#' @param k Tolerance relative to the mean, positive.
 #' @param cv The severity's coefficient of variation.
 #' @param n Number of claims.
 #' @param standard A full standard, in claims.
