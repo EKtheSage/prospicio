@@ -1,6 +1,6 @@
 ### Reserving
 
-- Separation and indexation fixes (#979): `SeparationFit::log_variance`
+- Separation and indexation fixes (#979, #1087): `SeparationFit::log_variance`
   (`log_variance` in Python and R) is `None` (`NULL` in R) rather than NaN
   when the geometric method has no degrees of freedom left, so a fit
   compares equal to itself; the geometric method's error for a
