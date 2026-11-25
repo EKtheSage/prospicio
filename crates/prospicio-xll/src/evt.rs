@@ -5,6 +5,7 @@
 //! estimator of the tail index.
 
 use prospicio_prob::evt::{Gpd, PotTail, hill, threshold_diagnostics};
+use prospicio_prob::risk::var_linear_sorted;
 
 use crate::pricing::{numbers, scalar};
 use crate::sheet::{Grid, Value};
@@ -21,18 +22,6 @@ fn sorted(grid: &Grid, min: usize) -> Result<Vec<f64>> {
     Ok(x)
 }
 
-/// The empirical quantile of sorted `x` at `p`, interpolated between order
-/// statistics (R's default, type 7).
-fn quantile(x: &[f64], p: f64) -> f64 {
-    let h = p * (x.len() - 1) as f64;
-    let (lo, frac) = (h.floor() as usize, h.fract());
-    if lo + 1 >= x.len() {
-        x[x.len() - 1]
-    } else {
-        x[lo] + frac * (x[lo + 1] - x[lo])
-    }
-}
-
 /// `PRO.EVT.THRESHOLDS(data, [thresholds])`: at each threshold the number
 /// of values above it, the mean excess with its standard error, and the
 /// GPD fitted to the exceedances (shape, scale and the modified scale
@@ -44,8 +33,8 @@ pub fn thresholds(args: &[Grid]) -> Result<Grid> {
     let x = sorted(&args[0], 3)?;
     let us = if args[1].is_blank() {
         (0..10)
-            .map(|i| quantile(&x, 0.5 + 0.05 * i as f64))
-            .collect()
+            .map(|i| var_linear_sorted(&x, 0.5 + 0.05 * i as f64).map_err(|e| e.to_string()))
+            .collect::<Result<_>>()?
     } else {
         numbers(&args[1], "thresholds")?
     };

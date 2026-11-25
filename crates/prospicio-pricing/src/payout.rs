@@ -304,7 +304,7 @@ impl PaymentPattern {
         self.times
             .iter()
             .zip(&self.shares)
-            .map(|(t, s)| s * (1.0 + rate).powf(-t))
+            .map(|(t, s)| s * discount(rate, *t))
             .sum()
     }
 
@@ -358,6 +358,19 @@ impl PayoutPrice {
     pub fn margin(&self) -> f64 {
         self.premium - self.discounted_loss
     }
+}
+
+/// The present value of 1 paid at time `t` in years, at an annual
+/// effective rate: `(1 + rate)^-t` (#976).
+///
+/// ```
+/// use prospicio_pricing::payout::discount;
+///
+/// assert!((discount(0.05, 2.0) - 1.0 / 1.1025).abs() < 1e-15);
+/// assert_eq!(discount(0.05, 0.0), 1.0);
+/// ```
+pub fn discount(rate: f64, t: f64) -> f64 {
+    (1.0 + rate).powf(-t)
 }
 
 /// A one-period price restated over a payout, at an annual effective
