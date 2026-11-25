@@ -13019,6 +13019,7 @@ class DoubleGlmFit:
     """
     A fitted double GLM, from ``DoubleGlm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def aic(self, /) -> float: ...
     @property
@@ -13058,6 +13059,25 @@ class DoubleGlmFit:
         """
         The fitted mean of each row.
         """
+    @staticmethod
+    def from_json(text: str) -> DoubleGlmFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        DoubleGlmFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
+        """
     @property
     def iterations(self, /) -> int: ...
     @property
@@ -13087,6 +13107,31 @@ class DoubleGlmFit:
         """
     @property
     def standard_errors(self, /) -> list[float]: ...
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the family, link and method,
+        the mean's and the dispersion's names, estimates and covariances,
+        the fitted means and dispersions, and the fit statistics; numbers
+        bit for bit (#978). ``from_json`` reads it back; ``pickle`` uses the
+        same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, DoubleGlm, DoubleGlmFit
+        >>> urban = [0.0] * 4 + [1.0] * 4
+        >>> d = Design([[1.0] * 8, urban], ["(Intercept)", "urban"])
+        >>> y = [9.0, 11.0, 10.0, 10.5, 4.0, 18.0, 6.0, 15.0]
+        >>> fit = DoubleGlm("gamma", link="log").fit(d, d, y)
+        >>> DoubleGlmFit.from_json(fit.to_json()).coefficients == fit.coefficients
+        True
+        >>> pickle.loads(pickle.dumps(fit)).dispersion_coefficients == fit.dispersion_coefficients
+        True
+        """
 
 @final
 class Draws:

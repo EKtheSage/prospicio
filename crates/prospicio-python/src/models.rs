@@ -5329,6 +5329,59 @@ pub(crate) struct PyDoubleGlmFit {
 
 #[pymethods]
 impl PyDoubleGlmFit {
+    /// The fit as a versioned JSON artifact: the family, link and method,
+    /// the mean's and the dispersion's names, estimates and covariances,
+    /// the fitted means and dispersions, and the fit statistics; numbers
+    /// bit for bit (#978). ``from_json`` reads it back; ``pickle`` uses the
+    /// same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Design, DoubleGlm, DoubleGlmFit
+    /// >>> urban = [0.0] * 4 + [1.0] * 4
+    /// >>> d = Design([[1.0] * 8, urban], ["(Intercept)", "urban"])
+    /// >>> y = [9.0, 11.0, 10.0, 10.5, 4.0, 18.0, 6.0, 15.0]
+    /// >>> fit = DoubleGlm("gamma", link="log").fit(d, d, y)
+    /// >>> DoubleGlmFit.from_json(fit.to_json()).coefficients == fit.coefficients
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).dispersion_coefficients == fit.dispersion_coefficients
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// DoubleGlmFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::dglm::DoubleGlmFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// The mean design's column names.
     #[getter]
     fn names(&self) -> Vec<String> {
