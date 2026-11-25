@@ -22386,19 +22386,19 @@ class LevelAllocation:
 @final
 class LimitedFluctuation:
     """
-    Limited fluctuation (classical) credibility: the expected number of
-    claims for the observed value to lie within ``k`` of its mean with
-    probability ``p``, under a Poisson count and the normal approximation.
+    Limited fluctuation (classical) credibility: full credibility standards
+    in claims for the frequency, the severity and the pure premium, and the
+    square root rule for partial credibility.
     
-    With ``z = Phi^-1((1 + p) / 2)`` and ``n_F = (z / k)**2``, the full
-    standards in claims are ``n_F`` for the frequency, ``n_F * cv**2`` for
-    the severity and ``n_F * (1 + cv**2)`` for the pure premium; partial
-    credibility is ``min(1, sqrt(n / standard))``.
+    The method, its formulas and its reference are documented once, in the
+    Rust reference: https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.LimitedFluctuation.html
     
     Parameters
     ----------
     p : float, default 0.90
+        Probability, in ``(0, 1)``, of lying within ``k`` of the mean.
     k : float, default 0.05
+        Tolerance relative to the mean, positive.
     
     Raises
     ------
@@ -22418,7 +22418,8 @@ class LimitedFluctuation:
     def __repr__(self, /) -> str: ...
     def credibility(self, /, n: float, standard: float) -> float:
         """
-        Credibility ``min(1, sqrt(n / standard))`` of ``n`` claims.
+        Partial credibility of ``n`` claims against a full standard, by the
+        square root rule.
         
         Parameters
         ----------
