@@ -1,0 +1,1 @@
+* **Creation**: [S7 refuses some property names](/environment/s7-reserved-property-names.md), from #979 (branch claude/apc-glm-bindings): S7 0.2.2 refuses a property named `names`, `class` or `dim`, so the R `apc_glm_fit` gives the canonical coefficient names as the names of `coefficients`.
