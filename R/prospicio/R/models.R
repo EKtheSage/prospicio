@@ -1892,7 +1892,7 @@ ale <- function(model, data, feature, bins = 40, levels = NULL) {
     if (length(unique(x)) < 2) stop(feature, " takes one value: it has no local effect")
     # The grid, the intervals, accumulation and centring are the Rust
     # core's (#837); only the predictions are made here.
-    z <- ale_grid_rust(as.double(x), as.double(bins))
+    z <- rust_result(ale_grid_rust(as.double(x), as.double(bins)))
     a <- ale_intervals_rust(as.double(x), z)
     e <- ale_numeric_rust(a, pred(z[a]), pred(z[a + 1]), as.double(length(z) - 1))
     return(data.frame(value = z, effect = e$effects, count = c(NA, e$counts)))
@@ -1945,8 +1945,8 @@ shap_values <- function(model, data, background, features = NULL, output = NULL,
     values <- unlist(lapply(masks, function(mask) {
       if (!any(mask)) rep(baseline, n) else if (all(mask == 1)) outputs else value(mask)
     }))
-    phi[] <- matrix(shap_exact_rust(as.double(values), as.double(n), as.double(m)), n, m,
-                    byrow = TRUE)
+    phi[] <- matrix(rust_result(shap_exact_rust(as.double(values), as.double(n), as.double(m))),
+                    n, m, byrow = TRUE)
     method <- "exact"
   } else {
     if (n_permutations < 1) stop("n_permutations must be at least 1")

@@ -10,6 +10,9 @@ sources:
   - id: build
     resource: process:local-session, issue #580 (branch claude/unify-not-supported)
     title: Building the bindings with one not-supported class, 2026-11-02
+  - id: raise
+    resource: process:cloud-session, issue #957 (branch claude/project-thread-1n3mjz-957)
+    title: The generated R wrappers raising Rust errors, 2026-11-25
   - id: note
     resource: ../docs/design/reserving-v02.md
     title: reserving-v02.md decision 29, items 6 and 7
@@ -36,12 +39,26 @@ sources:
   `errorCondition`. [^build]
 * The reserving wrappers therefore prefix the message of a not-supported
   error with `[prospicio_not_supported] ` (`NOT_SUPPORTED_PREFIX` in
-  `crates/prospicio-r/src/reserving.rs`), and `reserving_result()` in
-  `R/prospicio/R/reserving.R`, which replaces `rust_result()` in
-  `reserving.R`, `excess.R` and `odp_glm.R`, removes the prefix and
-  signals `errorCondition(msg, class = "prospicio_not_supported")`. A
-  reserving error that reaches R through another lane's `rust_result()`
-  would keep the prefix in its message. [^note]
+  `crates/prospicio-r/src/reserving/common.rs`). Since #957
+  `rust_result()` itself removes the prefix and signals
+  `errorCondition(msg, class = "prospicio_not_supported")`, so the class
+  survives whichever lane's call raises it; `reserving_result()` in
+  `R/prospicio/R/reserving.R` is now only `rust_result()`. [^note] [^raise]
+* Since #957 the generated `R/prospicio/R/extendr-wrappers.R` passes the
+  `.Call` of every `#[extendr]` function or method whose Rust signature
+  returns a `Result` through `rust_native_result()`, so an `extendr_error`
+  never comes back as a value. `cargo xtask` finds them by reading the
+  signatures in `crates/prospicio-r/src` (rustfmt's layout: `#[extendr]`
+  at column 0, methods at column 4); extendr's own generated wrappers do
+  not say which functions are fallible. `rust_native_result()` leaves the
+  error to the caller when the wrapper runs inside a `rust_result()` or
+  `reserving_result()` call (some frame between the wrapper and its caller
+  is one), because those calls choose the error's `call`, which the R tests
+  check with `conditionCall()`; otherwise it raises in the name of the
+  wrapper's caller, `sys.call(sys.parent())` from the wrapper. `sys.call(-1)`
+  would name `rust_result()` itself when the wrapper is a promise that
+  `rust_result()` forces, since `-1` counts frames on the stack, not
+  parents. [^raise]
 * `R CMD INSTALL` and `cargo check -p prospicio-r` need R visible to
   extendr-ffi's build script; after a check without it, `cargo clean -p
   extendr-ffi` is needed once (as in [Local Windows R](/environment/local-windows-r.md)).
