@@ -38087,6 +38087,7 @@ class TwoPartFit:
     ``Hurdle.fit``. Methods taking ``count`` and ``zero`` designs read both
     parts' columns by name from ``count`` when ``zero`` is ``None``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def aic(self, /) -> float: ...
@@ -38115,6 +38116,25 @@ class TwoPartFit:
     def fitted(self, /) -> list[float]:
         """
         The fitted mean of each row of the data fitted.
+        """
+    @staticmethod
+    def from_json(text: str) -> TwoPartFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        TwoPartFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def iterations(self, /) -> int: ...
@@ -38165,6 +38185,30 @@ class TwoPartFit:
     def theta(self, /) -> float |None:
         """
         The negative binomial's ``theta``, ``None`` for the Poisson.
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the kind, the count
+        distribution and zero link, both parts' names, the parameters and
+        their covariance, the pointwise log-likelihood, the fitted means and
+        the fit statistics; numbers bit for bit (#978). ``from_json`` reads
+        it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, Hurdle, TwoPartFit
+        >>> x = [i % 4 / 3 for i in range(60)]
+        >>> y = [0.0 if i % 3 == 0 else float(1 + i * 7 % 5) for i in range(60)]
+        >>> fit = Hurdle().fit(Design([[1.0] * 60, x], ["(Intercept)", "x"]), y)
+        >>> TwoPartFit.from_json(fit.to_json()).to_json() == fit.to_json()
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     @property
     def zero_coefficients(self, /) -> list[float]:

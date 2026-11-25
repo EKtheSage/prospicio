@@ -6272,6 +6272,58 @@ impl PyTwoPartFit {
 
 #[pymethods]
 impl PyTwoPartFit {
+    /// The fit as a versioned JSON artifact: the kind, the count
+    /// distribution and zero link, both parts' names, the parameters and
+    /// their covariance, the pointwise log-likelihood, the fitted means and
+    /// the fit statistics; numbers bit for bit (#978). ``from_json`` reads
+    /// it back; ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Design, Hurdle, TwoPartFit
+    /// >>> x = [i % 4 / 3 for i in range(60)]
+    /// >>> y = [0.0 if i % 3 == 0 else float(1 + i * 7 % 5) for i in range(60)]
+    /// >>> fit = Hurdle().fit(Design([[1.0] * 60, x], ["(Intercept)", "x"]), y)
+    /// >>> TwoPartFit.from_json(fit.to_json()).to_json() == fit.to_json()
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// TwoPartFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::zero::TwoPartFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// ``"zero_inflated"`` or ``"hurdle"``.
     #[getter]
     fn kind(&self) -> &'static str {
