@@ -528,9 +528,7 @@ def _raw_margin(engine, model, x, start):
 
 
 def _matrix(design):
-    import numpy as np
-
-    return np.column_stack([design.column(j) for j in range(len(design.names))])
+    return design.to_numpy()
 
 
 _FUNCTION_COLUMN = re.compile(r"^(\w+)\(([^,/)]+)")

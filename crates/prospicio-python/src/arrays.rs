@@ -6,7 +6,7 @@
 //! view of that buffer, which keeps the container alive and copies nothing.
 
 use numpy::ndarray::ArrayView2;
-use numpy::{PyArray2, PyReadonlyArray2};
+use numpy::{PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -48,6 +48,73 @@ impl Matrix<'_> {
             }
         }
     }
+}
+
+/// A vector argument: a 1-D float64 NumPy array, read in one copy, or a
+/// sequence of numbers.
+#[derive(FromPyObject)]
+pub(crate) enum Vector<'py> {
+    Array(PyReadonlyArray1<'py, f64>),
+    List(Vec<f64>),
+}
+
+impl Vector<'_> {
+    /// The values, in order.
+    pub(crate) fn into_vec(self) -> Vec<f64> {
+        match self {
+            Vector::Array(a) => match a.as_slice() {
+                Ok(s) => s.to_vec(),
+                Err(_) => a.as_array().iter().copied().collect(),
+            },
+            Vector::List(v) => v,
+        }
+    }
+}
+
+/// A list of columns: a 2-D float64 NumPy array whose rows are the columns,
+/// or a sequence of vectors, each a 1-D array or a list.
+#[derive(FromPyObject)]
+pub(crate) enum Columns<'py> {
+    Array(PyReadonlyArray2<'py, f64>),
+    List(Vec<Vector<'py>>),
+}
+
+impl Columns<'_> {
+    /// The columns, in order.
+    pub(crate) fn into_vecs(self) -> Vec<Vec<f64>> {
+        match self {
+            Columns::Array(a) => a
+                .as_array()
+                .rows()
+                .into_iter()
+                .map(|r| match r.as_slice() {
+                    Some(s) => s.to_vec(),
+                    None => r.iter().copied().collect(),
+                })
+                .collect(),
+            Columns::List(v) => v.into_iter().map(Vector::into_vec).collect(),
+        }
+    }
+}
+
+/// A new `rows` by `columns.len()` NumPy array (Fortran order, so each
+/// column is one contiguous copy) of `columns`, which share one length.
+pub(crate) fn from_columns<'py>(
+    py: Python<'py>,
+    rows: usize,
+    columns: &[&[f64]],
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    let array = PyArray2::<f64>::zeros(py, [rows, columns.len()], true);
+    {
+        let mut rw = array.readwrite();
+        let out = rw
+            .as_slice_mut()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        for (j, c) in columns.iter().enumerate() {
+            out[j * rows..(j + 1) * rows].copy_from_slice(c);
+        }
+    }
+    Ok(array)
 }
 
 /// A read-only `rows` by `cols` NumPy view of `data`, which `owner` holds.
