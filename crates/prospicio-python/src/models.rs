@@ -475,6 +475,28 @@ impl PyDesign {
         })
     }
 
+    /// Pickles as the constructor's arguments: the columns, names, offset
+    /// and weights, every value as stored (#978).
+    #[allow(clippy::type_complexity)]
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+    ) -> PyResult<(
+        Bound<'py, PyAny>,
+        (Vec<Vec<f64>>, Vec<String>, Vec<f64>, Vec<f64>),
+    )> {
+        let d = &slf.get().inner;
+        let columns = (0..d.n_cols()).map(|j| d.column(j).to_vec()).collect();
+        Ok((
+            slf.get_type().into_any(),
+            (
+                columns,
+                d.names().to_vec(),
+                d.offset().to_vec(),
+                d.weights().to_vec(),
+            ),
+        ))
+    }
+
     /// Column names.
     #[getter]
     fn names(&self) -> Vec<String> {
@@ -5383,6 +5405,59 @@ pub(crate) struct PyDoubleGlmFit {
 
 #[pymethods]
 impl PyDoubleGlmFit {
+    /// The fit as a versioned JSON artifact: the family, link and method,
+    /// the mean's and the dispersion's names, estimates and covariances,
+    /// the fitted means and dispersions, and the fit statistics; numbers
+    /// bit for bit (#978). ``from_json`` reads it back; ``pickle`` uses the
+    /// same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Design, DoubleGlm, DoubleGlmFit
+    /// >>> urban = [0.0] * 4 + [1.0] * 4
+    /// >>> d = Design([[1.0] * 8, urban], ["(Intercept)", "urban"])
+    /// >>> y = [9.0, 11.0, 10.0, 10.5, 4.0, 18.0, 6.0, 15.0]
+    /// >>> fit = DoubleGlm("gamma", link="log").fit(d, d, y)
+    /// >>> DoubleGlmFit.from_json(fit.to_json()).coefficients == fit.coefficients
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).dispersion_coefficients == fit.dispersion_coefficients
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// DoubleGlmFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::dglm::DoubleGlmFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// The mean design's column names.
     #[getter]
     fn names(&self) -> Vec<String> {
@@ -5633,6 +5708,57 @@ impl PyMarsFit {
         PyTerms {
             inner: self.inner.add_terms(terms.inner.clone()),
         }
+    }
+
+    /// The fit as a versioned JSON artifact: the names, the selected and
+    /// forward terms, the forward pass's steps, the coefficients and the
+    /// fit statistics, with the GLM fitted on the terms when ``family`` was
+    /// given; numbers bit for bit (#978). ``from_json`` reads it back;
+    /// ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import MarsFit, mars
+    /// >>> x = [float(i) for i in range(60)]
+    /// >>> fit = mars({"x": x}, [1 + 0.5 * v + 3 * max(0.0, v - 31) for v in x])
+    /// >>> MarsFit.from_json(fit.to_json()).knots("x")
+    /// [31.0]
+    /// >>> pickle.loads(pickle.dumps(fit)).coefficients == fit.coefficients
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// MarsFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::mars::MarsFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
     }
 
     fn __repr__(&self) -> String {
@@ -6326,6 +6452,58 @@ impl PyTwoPartFit {
 
 #[pymethods]
 impl PyTwoPartFit {
+    /// The fit as a versioned JSON artifact: the kind, the count
+    /// distribution and zero link, both parts' names, the parameters and
+    /// their covariance, the pointwise log-likelihood, the fitted means and
+    /// the fit statistics; numbers bit for bit (#978). ``from_json`` reads
+    /// it back; ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Design, Hurdle, TwoPartFit
+    /// >>> x = [i % 4 / 3 for i in range(60)]
+    /// >>> y = [0.0 if i % 3 == 0 else float(1 + i * 7 % 5) for i in range(60)]
+    /// >>> fit = Hurdle().fit(Design([[1.0] * 60, x], ["(Intercept)", "x"]), y)
+    /// >>> TwoPartFit.from_json(fit.to_json()).to_json() == fit.to_json()
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// TwoPartFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::zero::TwoPartFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// ``"zero_inflated"`` or ``"hurdle"``.
     #[getter]
     fn kind(&self) -> &'static str {
@@ -6657,6 +6835,56 @@ pub(crate) struct PyQuantileFit {
 
 #[pymethods]
 impl PyQuantileFit {
+    /// The fit as a versioned JSON artifact: the level, the names, the
+    /// estimates and their covariance, and the fit statistics, numbers bit
+    /// for bit (#978). ``from_json`` reads it back; ``pickle`` uses the
+    /// same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Design, QuantileRegression, QuantileFit
+    /// >>> d = Design([[1.0] * 6, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]], ["(Intercept)", "x"])
+    /// >>> fit = QuantileRegression(0.5).fit(d, [1.0, 2.5, 2.0, 4.0, 5.5, 5.0])
+    /// >>> QuantileFit.from_json(fit.to_json()).coefficients == fit.coefficients
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).coefficients == fit.coefficients
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// QuantileFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::quantile::QuantileFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     #[getter]
     fn tau(&self) -> f64 {
         self.inner.tau()
@@ -6838,6 +7066,56 @@ pub(crate) struct PyExpectileFit {
 
 #[pymethods]
 impl PyExpectileFit {
+    /// The fit as a versioned JSON artifact: the level, the names, the
+    /// estimates and their covariance, and the fit statistics, numbers bit
+    /// for bit (#978). ``from_json`` reads it back; ``pickle`` uses the
+    /// same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Design, ExpectileRegression, ExpectileFit
+    /// >>> d = Design([[1.0] * 6, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]], ["(Intercept)", "x"])
+    /// >>> fit = ExpectileRegression(0.5).fit(d, [1.0, 2.5, 2.0, 4.0, 5.5, 5.0])
+    /// >>> ExpectileFit.from_json(fit.to_json()).coefficients == fit.coefficients
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).coefficients == fit.coefficients
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// ExpectileFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::quantile::ExpectileFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     #[getter]
     fn tau(&self) -> f64 {
         self.inner.tau()
