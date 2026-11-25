@@ -320,7 +320,6 @@
 "pnl::Span" = "unbound on 2026-10-28 (seed); review"
 "pnl::Stats" = "unbound on 2026-10-28 (seed); review"
 "pnl::Validation" = "unbound on 2026-10-28 (seed); review"
-"pnl::stack" = "unbound on 2026-10-28 (seed); review"
 "reinsurance::DropDown" = "unbound on 2026-10-28 (seed); review"
 "reinsurance::NthEvent" = "unbound on 2026-10-28 (seed); review"
 "reinsurance::Scope" = "unbound on 2026-10-28 (seed); review"
@@ -330,14 +329,11 @@
 
 [r.prospicio_bayes]
 "credibility::CredibilityPremiums" = "unbound on 2026-10-28 (seed); review"
-"elpd::Loo" = "unbound on 2026-10-28 (seed); review"
-"elpd::lppd" = "unbound on 2026-10-28 (seed); review"
 "elpd::psis" = "unbound on 2026-10-28 (seed); review"
 "ess_quantile" = "unbound on 2026-10-28 (seed); review"
 "glmm::PosteriorEffects" = "unbound on 2026-10-28 (seed); review"
 "nuts::LogDensity" = "trait: the bindings wrap its implementors, not the trait itself (seed); review"
 "nuts::sample" = "unbound on 2026-10-28 (seed); review"
-"ppc::LooPit" = "unbound on 2026-10-28 (seed); review"
 "ppc::check_with" = "unbound on 2026-10-28 (seed); review"
 "stan_csv::StanFit" = "unbound on 2026-10-28 (seed); review"
 "stan_csv::parse" = "unbound on 2026-10-28 (seed); review"
@@ -386,7 +382,6 @@
 "linalg::solve" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "linalg::symmetric_eigenvalues" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "linalg::symmetric_eigen" = "numerical building block; the bindings do not depend on prospicio-math (#837: ALEPlot's level order)"
-"mvn::MvnEstimate" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "mvn::mvn_cdf" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "optimize::Minimum" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
 "optimize::NelderMead" = "numerical building block; the bindings do not depend on prospicio-math (seed); review"
@@ -479,7 +474,6 @@
 [r.prospicio_nn]
 "Embedding" = "a spec item: tabular_net_fit(embeddings = c(factor = dim)) builds it, the reference from the factor's levels"
 "EmbeddingTable" = "a result type: network_embeddings() returns it as a data frame"
-"TokenAttention" = "unbound on 2026-10-28 (seed); review"
 "onnx::OnnxInput" = "unbound on 2026-10-28 (seed); review"
 
 [r.prospicio_pricing]
@@ -518,11 +512,6 @@
 "natural::StandAlone" = "unbound on 2026-10-28 (seed); review"
 "payout::PayoutPrice" = "unbound on 2026-10-28 (seed); review"
 "ratemaking::Portion" = "unbound on 2026-10-28 (seed); review"
-"ratemaking::RateLevel" = "unbound on 2026-10-28 (seed); review"
-"ratemaking::TrendKind" = "unbound on 2026-10-28 (seed); review"
-"ratemaking::credibility_weighted" = "unbound on 2026-10-28 (seed); review"
-"ratemaking::trend_factor" = "unbound on 2026-10-28 (seed); review"
-"ratemaking::trended_present_rates" = "unbound on 2026-10-28 (seed); review"
 "returns::irr" = "unbound on 2026-10-28 (seed); review"
 "returns::npv" = "unbound on 2026-10-28 (seed); review"
 "risk_load::PortfolioPrice" = "unbound on 2026-10-28 (seed); review"

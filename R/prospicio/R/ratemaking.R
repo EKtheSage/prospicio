@@ -139,7 +139,7 @@ trend_fit <- function(times, values, kind = c("exponential", "linear")) {
 #' @rdname trend_fit
 #' @export
 trend_factor <- function(rate, years) {
-  (1 + as.double(rate))^as.double(years)
+  trend_factor_rust(as.double(rate), as.double(years))
 }
 
 #' Trend factors by a calendar-year rate schedule
@@ -353,11 +353,12 @@ premium_based_expenses <- function(ratio, fixed_share) {
 #' @rdname premium_based_expenses
 #' @export
 credibility_weighted <- function(estimate, credibility, complement) {
-  credibility * estimate + (1 - credibility) * complement
+  credibility_weighted_rust(as.double(estimate), as.double(credibility), as.double(complement))
 }
 
 #' @rdname premium_based_expenses
 #' @export
 trended_present_rates <- function(prior_indicated, prior_implemented, trend) {
-  (1 + prior_indicated) / (1 + prior_implemented) * trend - 1
+  trended_present_rates_rust(as.double(prior_indicated), as.double(prior_implemented),
+                             as.double(trend))
 }
