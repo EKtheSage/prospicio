@@ -5119,6 +5119,76 @@ class Burr:
         """
 
 @final
+class CalendarIndex:
+    """
+    An index by calendar period: one value per period of one grain, from a
+    first period on, optionally extended past its last period at a constant
+    annual rate (CPI, wages, a claims-inflation index).
+    
+    Parameters
+    ----------
+    first : str or int
+        The first period: ``"2020"`` (or the integer 2020), ``"2020H2"``,
+        ``"2020Q3"`` or ``"2020-07"``. Its grain is the index's grain.
+    values : list of float
+        The index in ``first``, then one value per period: finite and
+        positive.
+    future_rate : float, optional
+        The annual rate past the last period, compounded by months from the
+        last period's start: finite and above -1. Without it, a period
+        past the last is an error.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import CalendarIndex
+    >>> cpi = CalendarIndex("2020", [100.0, 104.0, 110.0], future_rate=0.05)
+    >>> cpi.value("2021-06")
+    104.0
+    >>> round(cpi.value("2024-01"), 4)
+    121.275
+    >>> cpi.periods
+    ['2020', '2021', '2022']
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[str, list[float], float |None]: ...
+    def __new__(cls, /, first: Any, values: Sequence[float], future_rate: float |None = None) -> CalendarIndex: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def future_rate(self, /) -> float |None:
+        """
+        The annual rate past the last period, or ``None``.
+        """
+    @property
+    def periods(self, /) -> list[str]:
+        """
+        The given periods, one per value.
+        """
+    def value(self, /, month: Any) -> float:
+        """
+        The index of the period that contains a month.
+        
+        Parameters
+        ----------
+        month : str or date
+            ``"YYYY-MM"`` or a date.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            For a month before the first period, or after the last one
+            when no future rate is set.
+        """
+    @property
+    def values(self, /) -> list[float]:
+        """
+        The given values.
+        """
+
+@final
 class CalendarYearTest:
     """
     Mack's test for calendar-year effects (Mack 1994, appendix H; R
@@ -15227,6 +15297,110 @@ class FrequencySeverityFit:
         """
 
 @final
+class FutureCells:
+    """
+    Projected future increments of one segment, one per origin and age, for
+    re-inflation.
+    
+    Parameters
+    ----------
+    origins : list of str or int
+        The origin periods, such as ``["2020", "2021"]``.
+    origin : list of str or int
+        Each cell's origin, one of ``origins``.
+    age : list of int
+        Each cell's development age in months: 0 or more.
+    valuation : list of str or date
+        The month each cell's development period ends in (``"YYYY-MM"`` or
+        a date): its index period is the cell's payment period.
+    value : list of float
+        Each cell's increment, at the base price level.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import FutureCells
+    >>> cells = FutureCells(["2020"], ["2020", "2020"], [24, 36],
+    ...                     ["2021-12", "2022-12"], [50.0, 25.0])
+    >>> cells.reserves()
+    [75.0]
+    >>> cells.cells["age"]
+    [24, 36]
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[list[str], list[str], list[int], list[str], list[float]]: ...
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, origins: Sequence[Any], origin: Sequence[Any], age: Sequence[int], valuation: Sequence[Any], value: Sequence[float]) -> FutureCells: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def cells(self, /) -> dict:
+        """
+        The cells as a dict of columns: ``origin``, ``age``, ``valuation``
+        (``"YYYY-MM"``) and ``value``.
+        """
+    @staticmethod
+    def from_chain_ladder(fit: ChainLadderFit, segment: dict |None = None) -> FutureCells:
+        """
+        A chain ladder's future increments: at each age of the grid after an
+        origin's latest one, the projected cumulative value less the one
+        before, then the rest of the ultimate (the tail) as one increment
+        one development period after the oldest age. The cells sum to the
+        fit's reserves.
+        
+        Parameters
+        ----------
+        fit : ChainLadderFit
+        segment : dict of str to object, optional
+            The key values choosing one segment of a fit over several, as
+            ``fit.segment``; without it the fit must have one segment.
+        
+        Returns
+        -------
+        FutureCells
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments and ``segment`` does not choose
+            exactly one.
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import ChainLadder, FutureCells, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 110.0]}
+        ... )
+        >>> cells = FutureCells.from_chain_ladder(ChainLadder().fit(tri, "paid"))
+        >>> cells.cells["origin"], cells.cells["age"]
+        (['2021'], [24])
+        """
+    @staticmethod
+    def from_odp_glm(fit: OdpGlmFit) -> FutureCells:
+        """
+        An ODP GLM's future increments and their means.
+        
+        Parameters
+        ----------
+        fit : OdpGlmFit
+        
+        Returns
+        -------
+        FutureCells
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        The origin periods the cells refer to.
+        """
+    def reserves(self, /) -> list[float]:
+        """
+        The sum of the cells by origin.
+        
+        Returns
+        -------
+        list of float
+        """
+
+@final
 class Gam:
     """
     A generalized additive model: a ``Glm`` plus P-spline smooths of
@@ -18472,6 +18646,121 @@ class IndexClause:
     def kind(self, /) -> str:
         """
         ``"full"`` or ``"severe"``.
+        """
+
+@final
+class Indexation:
+    """
+    Restating a triangle at one price level by a ``CalendarIndex``, and
+    re-inflating a projection.
+    
+    ``restate`` divides each increment of a column by ``I(p) / I(base)``,
+    ``p`` the index period that contains the cell's valuation month, in the
+    triangle's basis; ``inflate`` is its inverse. A restated triangle is
+    developed by any method; its projected future increments, as
+    ``FutureCells``, are taken back to the money of their payment periods by
+    ``reinflate``.
+    
+    Parameters
+    ----------
+    index : CalendarIndex
+    base : str or date
+        The base price level: the index period that contains this month
+        (``"YYYY-MM"`` or a date).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import CalendarIndex, Indexation, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 155.0, 110.0]},
+    ... )
+    >>> index = CalendarIndex("2020", [1.0, 1.1], future_rate=0.1)
+    >>> at_2020 = Indexation(index, "2020-01")
+    >>> restated = at_2020.restate(tri, "paid")
+    >>> restated.values[0][0]
+    [[100.0, 150.0], [100.0, nan]]
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[CalendarIndex, str]: ...
+    def __new__(cls, /, index: CalendarIndex, base: Any) -> Indexation: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def base(self, /) -> str:
+        """
+        The base month, ``"YYYY-MM"``.
+        """
+    def factor(self, /, month: Any) -> float:
+        """
+        ``I(p) / I(base)``, ``p`` the index period that contains ``month``:
+        the factor that takes an amount at the base level to the money of
+        ``p``.
+        
+        Parameters
+        ----------
+        month : str or date
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def index(self, /) -> CalendarIndex:
+        """
+        The index.
+        """
+    def inflate(self, /, triangle: Triangle, column: str) -> Triangle:
+        """
+        The inverse of ``restate``: the increments of ``column``, at the
+        base level, taken to the money of their payment periods.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        Triangle
+        """
+    def reinflate(self, /, cells: FutureCells) -> Reinflated:
+        """
+        Future increments at the base level re-inflated to the money of
+        their payment periods, summed by origin.
+        
+        Parameters
+        ----------
+        cells : FutureCells
+        
+        Returns
+        -------
+        Reinflated
+        
+        Raises
+        ------
+        ValueError
+            If the index does not cover a cell's payment period (set a
+            ``future_rate``).
+        """
+    def restate(self, /, triangle: Triangle, column: str) -> Triangle:
+        """
+        A copy of the triangle with the increments of ``column`` restated at
+        the base level, in every segment. Other columns are unchanged.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            For an unknown column or a payment period the index does not
+            cover.
         """
 
 @final
@@ -31494,6 +31783,51 @@ class RatioDevelopmentFit:
     def unpaid(self, /) -> list[float]:
         """
         Ultimate less latest; for recoveries, the recoverable.
+        """
+
+@final
+class Reinflated:
+    """
+    A projection re-inflated by ``Indexation.reinflate``.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import CalendarIndex, FutureCells, Indexation
+    >>> index = CalendarIndex("2020", [1.0, 1.1], future_rate=0.1)
+    >>> at_2020 = Indexation(index, "2020-01")
+    >>> cells = FutureCells(["2020"], ["2020"], [24], ["2021-12"], [100.0])
+    >>> out = at_2020.reinflate(cells)
+    >>> round(out.total_reserve, 6), out.total_base_reserve
+    (110.0, 100.0)
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[FutureCells, list[float], list[float]]: ...
+    def __new__(cls, /, cells: FutureCells, reserves: Sequence[float], base_reserves: Sequence[float]) -> Reinflated: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def base_reserves(self, /) -> list[float]:
+        """
+        The reserve of each origin at the base level, before re-inflation.
+        """
+    @property
+    def cells(self, /) -> FutureCells:
+        """
+        The re-inflated cells.
+        """
+    @property
+    def reserves(self, /) -> list[float]:
+        """
+        The re-inflated reserve of each origin.
+        """
+    @property
+    def total_base_reserve(self, /) -> float:
+        """
+        The total reserve at the base level.
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        The re-inflated total reserve.
         """
 
 @final
