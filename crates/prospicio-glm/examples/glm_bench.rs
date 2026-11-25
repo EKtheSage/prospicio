@@ -73,6 +73,23 @@ fn main() {
         }),
     );
 
+    // The same GAM for gamma severities, whose REML score searches the
+    // dispersion at every trial.
+    let mut rng = Rng::new(8);
+    let sev: Vec<f64> = gam_data
+        .y
+        .iter()
+        .map(|&k| 500.0 * (1.0 + k) * (0.2 - rng.uniform().ln()))
+        .collect();
+    let gamma = Gam::new(Glm::new(Family::Gamma, Link::Log), vec![PSpline::new("x1")])
+        .smoothing(Smoothing::Reml);
+    report(
+        "gam_reml_gamma_n50000_p10_spline",
+        time_ms(runs(3), || {
+            black_box(gamma.fit(&gam_design, &sev).unwrap());
+        }),
+    );
+
     // Tweedie profile over a grid of five powers: 100,000 rows, 20 columns,
     // compound Poisson-gamma responses.
     let tw = portfolio(100_000, 20, 2, 11);

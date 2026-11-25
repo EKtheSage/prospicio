@@ -18,6 +18,10 @@
 //!
 //! which are the marginal equations of a Poisson likelihood with
 //! development and calendar factors on `s_ij` (Verbeek 1972; decision 8).
+//! The geometric method fits `ln s_ij = ln r_j + ln lambda_{i+j} + e_ij` by
+//! least squares (PR 4), its proportions normalised to sum to 1 as well
+//! (decision 12) and taken back to amounts by the geometric means or, as an
+//! option, the lognormal means ([`Retransformation`], decision 13).
 //! Future indices are not fitted: they come from a rate, an index or an
 //! exponential trend of the last fitted indices ([`FutureInflation`],
 //! decision 14), and the future increment of origin `i` at age `j` is
@@ -46,6 +50,25 @@ pub enum SeparationKind {
     /// diagonal sums.
     #[default]
     Arithmetic,
+    /// The geometric method: least squares on `ln s_ij` with development
+    /// and calendar effects, `ln s_ij = ln r_j + ln lambda_{i+j} + e_ij`.
+    /// Every increment must be positive. The proportions are normalised to
+    /// sum to 1 as the arithmetic method's (decision 12).
+    Geometric(Retransformation),
+}
+
+/// How the geometric method's log-scale fit is taken back to amounts
+/// (decision 13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Retransformation {
+    /// `exp(eta)`: the geometric means, Taylor's.
+    #[default]
+    GeometricMean,
+    /// `exp(eta + sigma^2 / 2)`: the lognormal means, `sigma^2` the
+    /// residual variance on the log scale (the residual sum of squares
+    /// over the degrees of freedom, which needs at least 3 origins). The
+    /// factor multiplies every index.
+    LognormalMean,
 }
 
 /// The indices of the calendar periods after the triangle's last.
@@ -145,6 +168,10 @@ pub struct SeparationFit {
     /// The sum of each origin's future cells. The first origin's is 0: the
     /// method has no tail past the oldest age.
     pub reserves: Vec<f64>,
+    /// The geometric method's residual variance on the log scale, `sigma^2`
+    /// (NaN with no degrees of freedom left, as on 2 origins); `None` for
+    /// the arithmetic method.
+    pub log_variance: Option<f64>,
 }
 
 impl SeparationFit {
@@ -255,8 +282,27 @@ impl Separation {
             }
         }
 
-        let (proportions, indices) = match self.kind {
-            SeparationKind::Arithmetic => arithmetic(&s)?,
+        let (proportions, indices, log_variance) = match self.kind {
+            SeparationKind::Arithmetic => {
+                let (r, lambda) = arithmetic(&s)?;
+                (r, lambda, None)
+            }
+            SeparationKind::Geometric(how) => {
+                let (r, lambda, sigma2) = geometric(&s, &seg.origins, &seg.ages)?;
+                let lambda = match how {
+                    Retransformation::GeometricMean => lambda,
+                    Retransformation::LognormalMean if sigma2.is_nan() => {
+                        return sep_err(
+                            "lognormal means need a residual variance: at least 3 origins",
+                        );
+                    }
+                    Retransformation::LognormalMean => {
+                        let scale = (sigma2 / 2.0).exp();
+                        lambda.into_iter().map(|l| l * scale).collect()
+                    }
+                };
+                (r, lambda, Some(sigma2))
+            }
         };
 
         let calendar: Vec<Period> = (0..n)
@@ -304,6 +350,7 @@ impl Separation {
                 cells,
             },
             reserves,
+            log_variance,
         })
     }
 
@@ -372,6 +419,73 @@ fn log_slope(y: &[f64]) -> f64 {
         sxx += dx * dx;
     }
     sxy / sxx
+}
+
+/// Least squares on `ln s` over the observed cells of the `n` by `n`
+/// triangle `s`, with an intercept, development effects 1.. and calendar
+/// effects 1.. (treatment coded): the proportions normalised to sum to 1,
+/// the indices `exp(a + c_h) sum_j exp(b_j)`, and the residual variance
+/// (NaN with no degrees of freedom).
+fn geometric(
+    s: &[Vec<f64>],
+    origins: &[Period],
+    ages: &[Lag],
+) -> Result<(Vec<f64>, Vec<f64>, f64)> {
+    let n = s.len();
+    let p = 2 * n - 1;
+    let mut xtx = vec![0.0; p * p];
+    let mut xty = vec![0.0; p];
+    let mut rows = Vec::new();
+    for (i, row) in s.iter().enumerate() {
+        for (j, &v) in row.iter().enumerate().take(n - i) {
+            if v <= 0.0 || !v.is_finite() {
+                return sep_err(format!(
+                    "the geometric method needs positive increments; origin {} has {v} at age {}",
+                    origins[i], ages[j]
+                ));
+            }
+            let mut cols = vec![0];
+            if j > 0 {
+                cols.push(j);
+            }
+            if i + j > 0 {
+                cols.push(n - 1 + i + j);
+            }
+            let y = v.ln();
+            for &a in &cols {
+                xty[a] += y;
+                for &b in &cols {
+                    xtx[a * p + b] += 1.0;
+                }
+            }
+            rows.push((cols, y));
+        }
+    }
+    let Some(l) = prospicio_math::linalg::cholesky(&xtx, p) else {
+        return sep_err("the geometric method's design is singular");
+    };
+    let beta = prospicio_math::linalg::cholesky_solve(&l, &xty);
+    let rss: f64 = rows
+        .iter()
+        .map(|(cols, y)| {
+            let eta: f64 = cols.iter().map(|&c| beta[c]).sum();
+            (y - eta).powi(2)
+        })
+        .sum();
+    let df = rows.len() - p;
+    let sigma2 = if df > 0 { rss / df as f64 } else { f64::NAN };
+    let dev: Vec<f64> = (0..n)
+        .map(|j| if j == 0 { 1.0 } else { beta[j].exp() })
+        .collect();
+    let scale: f64 = dev.iter().sum();
+    let r = dev.iter().map(|e| e / scale).collect();
+    let lambda = (0..n)
+        .map(|h| {
+            let c = if h == 0 { 0.0 } else { beta[n - 1 + h] };
+            (beta[0] + c).exp() * scale
+        })
+        .collect();
+    Ok((r, lambda, sigma2))
 }
 
 /// Taylor's recursion on the `n` by `n` upper-left triangle of `s`
@@ -578,6 +692,97 @@ mod tests {
             let want = r[j] * 100.0 * 1.07_f64.powi((i + j) as i32);
             assert!((cell.value - want).abs() < 1e-9 * want);
         }
+    }
+
+    fn geometric(how: Retransformation) -> Separation {
+        Separation {
+            kind: SeparationKind::Geometric(how),
+            ..arithmetic_at(0.10)
+        }
+    }
+
+    #[test]
+    fn geometric_on_taylors_example_1() {
+        // statsmodels OLS of ln s on development and calendar factors
+        // (2026-11-24): the fitted geometric means.
+        let want = [
+            [50.4, 28.39, 8.873, 4.8],
+            [57.612, 29.469, 9.839, 0.0],
+            [59.801, 32.677, 0.0, 0.0],
+            [66.311, 0.0, 0.0, 0.0],
+        ];
+        let fit = geometric(Retransformation::GeometricMean)
+            .fit(&taylor(), "values")
+            .unwrap();
+        for (i, row) in fit.fitted.iter().enumerate() {
+            for (j, v) in row.iter().enumerate() {
+                if let Some(v) = v {
+                    assert!((v - want[i][j]).abs() < 5e-4, "{i} {j}: {v}");
+                }
+            }
+        }
+        assert!((fit.proportions.iter().sum::<f64>() - 1.0).abs() < 1e-15);
+        let sigma2 = fit.log_variance.unwrap();
+        assert!(sigma2 > 0.0);
+        let lognormal = geometric(Retransformation::LognormalMean)
+            .fit(&taylor(), "values")
+            .unwrap();
+        assert_eq!(lognormal.proportions, fit.proportions);
+        for (a, b) in lognormal.indices.iter().zip(&fit.indices) {
+            assert!((a / b - (sigma2 / 2.0).exp()).abs() < 1e-14);
+        }
+        assert!(lognormal.total_reserve() > fit.total_reserve());
+        assert_eq!(
+            arithmetic_at(0.1)
+                .fit(&taylor(), "values")
+                .unwrap()
+                .log_variance,
+            None
+        );
+    }
+
+    #[test]
+    fn geometric_recovers_a_separable_triangle_and_refuses_what_it_cannot_fit() {
+        let r = [0.5, 0.3, 0.15, 0.05];
+        let rows: Vec<Vec<f64>> = (0..4)
+            .map(|i| {
+                let mut c = 0.0;
+                (0..4 - i)
+                    .map(|j| {
+                        c += r[j] * 100.0 * 1.07_f64.powi((i + j) as i32);
+                        c
+                    })
+                    .collect()
+            })
+            .collect();
+        let rows: Vec<&[f64]> = rows.iter().map(Vec::as_slice).collect();
+        let fit = geometric(Retransformation::GeometricMean)
+            .fit(&annual(2001, &rows), "values")
+            .unwrap();
+        for (got, want) in fit.proportions.iter().zip(r) {
+            assert!((got - want).abs() < 1e-12);
+        }
+        for (h, l) in fit.indices.iter().enumerate() {
+            assert!((l - 100.0 * 1.07_f64.powi(h as i32)).abs() < 1e-9);
+        }
+        assert!(fit.log_variance.unwrap() < 1e-20);
+
+        let negative = annual(2001, &[&[10.0, 8.0], &[5.0]]);
+        assert!(
+            geometric(Retransformation::GeometricMean)
+                .fit(&negative, "values")
+                .is_err()
+        );
+        let two = annual(2001, &[&[10.0, 12.0], &[5.0]]);
+        let fit = geometric(Retransformation::GeometricMean)
+            .fit(&two, "values")
+            .unwrap();
+        assert!(fit.log_variance.unwrap().is_nan());
+        assert!(
+            geometric(Retransformation::LognormalMean)
+                .fit(&two, "values")
+                .is_err()
+        );
     }
 
     #[test]
