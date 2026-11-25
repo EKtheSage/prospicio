@@ -27,6 +27,8 @@ use prospicio_core::{Error, Result, StreamRng};
 use prospicio_prob::{ComponentKey, PredictiveDistribution, Provenance};
 use rayon::prelude::*;
 
+mod json;
+
 /// NUTS settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Sampler {

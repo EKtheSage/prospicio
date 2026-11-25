@@ -5,6 +5,8 @@ use prospicio_prob::provenance::{SIM_INDEX_SCHEME, current_samplers};
 use prospicio_prob::{Counting, Distribution, PredictiveDistribution, Provenance};
 use rayon::prelude::*;
 
+mod json;
+
 /// What [`EventSet::contract_years`] does with the partial contract years
 /// at the two ends of the simulated timeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

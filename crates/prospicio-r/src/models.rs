@@ -718,6 +718,11 @@ impl BayesGlmmModel {
         row_major(p.values(), p.names().len())
     }
 
+    /// Each parameter's posterior mean, without copying the draws to R.
+    fn parameter_means(&self) -> Vec<f64> {
+        self.inner.parameters().mean()
+    }
+
     fn effect_names(&self) -> Vec<String> {
         self.inner.effects().names().to_vec()
     }

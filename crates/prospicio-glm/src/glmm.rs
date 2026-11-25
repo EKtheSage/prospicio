@@ -84,6 +84,8 @@ use prospicio_models::{Design, Family, Link, Model};
 
 use crate::{Dispersion, Glm};
 
+mod json;
+
 /// The name of a factor's random intercept among its terms.
 pub const INTERCEPT: &str = "(Intercept)";
 

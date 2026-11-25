@@ -61,6 +61,35 @@ fn deductions(run: DealRun, given: Option<&Bound<'_, PyDict>>) -> PyResult<DealR
 
 #[pymethods]
 impl PyDealRun {
+    /// The run as a versioned JSON document (format
+    /// ``risk_rs.deal_run``), numbers bit for bit (#978). ``from_json`` reads
+    /// it back; ``pickle`` uses the same document.
+    ///
+    /// >>> import pickle
+    /// >>> from prospicio.pricing import DealRun
+    /// >>> run = DealRun("cat", [100.0, 100.0], [40.0, 150.0], inception=6)
+    /// >>> back = pickle.loads(pickle.dumps(run))
+    /// >>> (back.name, back.loss, back.inception)
+    /// ('cat', [40.0, 150.0], 6)
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads a document written by ``to_json``; raises ``ValueError`` for
+    /// malformed JSON, another format, a newer format version or a
+    /// run the constructor would refuse.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: DealRun::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     #[new]
     #[pyo3(signature = (name, premium, loss, *, deductions = None, inception = 0))]
     fn new(
@@ -324,6 +353,34 @@ pub(crate) struct PyDealBook {
 
 #[pymethods]
 impl PyDealBook {
+    /// The book as a versioned JSON document (format
+    /// ``risk_rs.deal_book``), numbers bit for bit (#978). ``from_json`` reads
+    /// it back; ``pickle`` uses the same document.
+    ///
+    /// >>> import pickle
+    /// >>> from prospicio.pricing import DealBook, DealRun
+    /// >>> book = DealBook([DealRun("a", [100.0], [40.0]), DealRun("b", [300.0], [150.0])])
+    /// >>> pickle.loads(pickle.dumps(book)).to_json() == book.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads a document written by ``to_json``; raises ``ValueError`` for
+    /// malformed JSON, another format, a newer format version or a
+    /// book the constructor would refuse.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: DealBook::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     #[new]
     fn new(deals: Vec<PyDealRun>) -> PyResult<Self> {
         let inner = DealBook::new(deals.into_iter().map(|d| d.inner).collect()).map_err(to_py)?;
