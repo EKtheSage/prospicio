@@ -17110,6 +17110,7 @@ class GlmmFit:
     """
     A GLM with random intercepts and slopes, from ``Glmm.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
     def aic(self, /) -> float: ...
     @property
@@ -17149,6 +17150,25 @@ class GlmmFit:
     def fitted(self, /) -> list[float]:
         """
         Each row's mean with its random effects.
+        """
+    @staticmethod
+    def from_json(text: str) -> GlmmFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        GlmmFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            inconsistent fields.
         """
     @property
     def group_names(self, /) -> list[str]:
@@ -17205,6 +17225,32 @@ class GlmmFit:
     def term_names(self, /) -> list[str]:
         """
         Each random term's name, ``"(Intercept)"`` or a slope's covariate.
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a versioned JSON artifact: the specification, the fixed
+        effects and their covariance, the variance components, the
+        optimizer's parameters, the dispersion, every factor's predicted
+        random effects with their variances, and the fit statistics;
+        numbers bit for bit (#978). ``from_json`` reads it back and predicts
+        as the fit did; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Design, Glmm, GlmmFit
+        >>> y = [float((i * 7) % 5 + i % 4) for i in range(40)]
+        >>> site = [f"s{i % 4}" for i in range(40)]
+        >>> d = Design([[1.0] * 40], ["(Intercept)"])
+        >>> fit = Glmm().fit(d, {"site": site}, y)
+        >>> GlmmFit.from_json(fit.to_json()).predict(d, {"site": site}) == fit.predict(d, {"site": site})
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
 
 @final

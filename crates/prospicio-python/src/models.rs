@@ -4900,6 +4900,60 @@ pub(crate) struct PyGlmmFit {
 
 #[pymethods]
 impl PyGlmmFit {
+    /// The fit as a versioned JSON artifact: the specification, the fixed
+    /// effects and their covariance, the variance components, the
+    /// optimizer's parameters, the dispersion, every factor's predicted
+    /// random effects with their variances, and the fit statistics;
+    /// numbers bit for bit (#978). ``from_json`` reads it back and predicts
+    /// as the fit did; ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Design, Glmm, GlmmFit
+    /// >>> y = [float((i * 7) % 5 + i % 4) for i in range(40)]
+    /// >>> site = [f"s{i % 4}" for i in range(40)]
+    /// >>> d = Design([[1.0] * 40], ["(Intercept)"])
+    /// >>> fit = Glmm().fit(d, {"site": site}, y)
+    /// >>> GlmmFit.from_json(fit.to_json()).predict(d, {"site": site}) == fit.predict(d, {"site": site})
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// GlmmFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::glmm::GlmmFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// The fixed effects' names.
     #[getter]
     fn names(&self) -> Vec<String> {
