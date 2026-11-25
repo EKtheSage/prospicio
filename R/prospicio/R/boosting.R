@@ -89,7 +89,9 @@ booster_dispersion_fit <- function(spec, x, y, w, off, base, seed) {
     m <- booster_train(spec, x[!test, , drop = FALSE], y[!test], w[!test], off[!test] + base, seed)
     mu[test] <- booster_means(spec, m, x[test, , drop = FALSE], off[test] + base)
   }
-  z <- w * (y - mu)^2 / booster_variance(spec$family, mu, spec$power)
+  fa <- family_args(NULL, spec$power)
+  z <- rust_result(pearson_terms_rust(spec$family, fa$theta, fa$power, as.double(y),
+                                      as.double(mu), as.double(w)))
   z <- pmax(z, 1e-12 * mean(z))
   # The dispersion model does not take the mean model's monotone or
   # interaction constraints (#833): those say how the mean moves, and the
@@ -100,10 +102,6 @@ booster_dispersion_fit <- function(spec, x, y, w, off, base, seed) {
   dspec$constraints <- list()
   zbase <- log(mean(z))
   list(model = booster_train(dspec, x, z, rep(1, n), rep(zbase, n), seed), base = zbase)
-}
-
-booster_variance <- function(family, mu, power) {
-  switch(family, poisson = mu, gamma = mu^2, tweedie = mu^power, gaussian = rep(1, length(mu)))
 }
 
 booster_constraint_keys <- c("monotone_constraints", "monotone_constraint", "mc",
@@ -308,14 +306,10 @@ booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm"
       stop("a quantile booster takes no offset: put exposure in as a feature, ",
            "or model the response per unit of exposure")
     }
-    o <- order(y)
-    cw <- cumsum(w[o])
-    y[o][min(which(cw >= alpha * cw[length(cw)]))]
-  } else if (booster_objectives[[family]][[3]] == "log") {
-    if (sum(w * y) <= 0) stop("the weighted response total must be positive for a log link")
-    log(sum(w * y) / sum(w * exp(off)))
+    rust_result(weighted_quantile_rust(as.double(y), as.double(w), as.double(alpha)))
   } else {
-    sum(w * (y - off)) / sum(w)
+    rust_result(booster_base_score_rust(booster_objectives[[family]][[3]], as.double(y),
+                                        as.double(w), as.double(off)))
   }
   cols <- booster_column_terms(des$x, des$terms, data)
   spec <- list(family = family, engine = engine, power = power, n_rounds = n_rounds,
@@ -333,7 +327,9 @@ booster_fit <- function(formula, data, family = "poisson", engine = c("lightgbm"
   dispersion <- 1
   if (!family %in% c("poisson", "quantile")) {
     mu <- booster_means(spec, model, x, off + base)
-    dispersion <- sum(w * (y - mu)^2 / booster_variance(family, mu, power)) / n
+    fa <- family_args(NULL, power)
+    dispersion <- rust_result(pearson_dispersion_rust(family, fa$theta, fa$power, as.double(y),
+                                                      as.double(mu), as.double(w)))
   }
   dfit <- if (isTRUE(dispersion_model)) booster_dispersion_fit(spec, x, y, w, off, base, seed) else list()
   booster_model(spec = spec, model = model, boots = boots, base = base, dispersion = dispersion,
@@ -372,9 +368,8 @@ check_monotone <- function(object, data, feature, grid = NULL, direction = NULL,
     d[[feature]] <- v
     mean(predict(object, d))
   }, double(1))
-  scale <- max(abs(means))
-  if (scale == 0) scale <- 1
-  bad <- which(direction * diff(means) < -tol * scale) + 1L
+  bad <- rust_result(monotone_violations_rust(as.double(means), as.integer(direction),
+                                              as.double(tol)))
   list(grid = grid, mean = means, direction = direction, violations = bad,
        monotone = !length(bad))
 }

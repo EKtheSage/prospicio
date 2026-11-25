@@ -662,7 +662,8 @@ fn r_install_with_wrappers(root: &Path) -> Result {
         ),
     )?;
     let wrappers = root.join("R/prospicio/R/extendr-wrappers.R");
-    let text = extendr_wrappers(&read(&raw)?)?;
+    let fallible = fallible_natives(&root.join("crates/prospicio-r/src"))?;
+    let text = extendr_wrappers(&read(&raw)?, &fallible)?;
     let before = fs::read_to_string(&wrappers).unwrap_or_default();
     if text != before {
         write(&wrappers, &text)?;
@@ -671,6 +672,126 @@ fn r_install_with_wrappers(root: &Path) -> Result {
         install()?;
     }
     Ok(())
+}
+
+/// The `.Call` names (`wrap__f` for a free function, `wrap__Type__method`
+/// for a method) of the `#[extendr]` functions and methods under `dir`
+/// whose Rust signature returns a `Result` (#957). The scan reads
+/// rustfmt's layout: `#[extendr]` at column 0 above a `fn` or an `impl`,
+/// whose methods sit at column 4 and which ends at a `}` at column 0.
+fn fallible_natives(dir: &Path) -> Result<std::collections::BTreeSet<String>> {
+    let mut files = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in fs::read_dir(&d).map_err(|e| format!("reading {}: {e}", d.display()))? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension() == Some(OsStr::new("rs")) {
+                files.push(path);
+            }
+        }
+    }
+    let mut out = std::collections::BTreeSet::new();
+    for file in files {
+        out.extend(fallible_in(&read(&file)?));
+    }
+    if out.is_empty() {
+        return Err(format!(
+            "no fallible #[extendr] function under {}",
+            dir.display()
+        ));
+    }
+    Ok(out)
+}
+
+/// [`fallible_natives`] for one file's source.
+fn fallible_in(src: &str) -> Vec<String> {
+    // The return type of a signature, `fn` to the `{` that opens its body,
+    // names a `Result` when its last path segment before `<` is `Result`.
+    fn returns_result(signature: &str) -> bool {
+        let Some((_, ret)) = signature.rsplit_once("->") else {
+            return false;
+        };
+        let head = ret.trim().split('<').next().unwrap_or_default().trim();
+        head.rsplit("::").next() == Some("Result")
+    }
+    fn fn_name(line: &str) -> Option<&str> {
+        let rest = line.trim_start();
+        let rest = rest
+            .strip_prefix("pub(crate) ")
+            .or_else(|| rest.strip_prefix("pub "))
+            .unwrap_or(rest);
+        let rest = rest.strip_prefix("fn ")?;
+        let end = rest.find(|c: char| !(c.is_alphanumeric() || c == '_'))?;
+        Some(&rest[..end])
+    }
+    let lines: Vec<&str> = src.lines().collect();
+    let signature = |i: usize| -> String {
+        let mut sig = String::new();
+        for line in &lines[i..] {
+            sig.push_str(line.trim());
+            sig.push(' ');
+            if line.trim_end().ends_with('{') || line.trim_end().ends_with(';') {
+                break;
+            }
+        }
+        sig
+    };
+    let mut out = Vec::new();
+    let mut pending = false;
+    let mut class: Option<String> = None;
+    for (i, line) in lines.iter().enumerate() {
+        if let Some(c) = &class {
+            if *line == "}" {
+                class = None;
+            } else if line.starts_with("    ")
+                && !line.starts_with("     ")
+                && let Some(name) = fn_name(line)
+                && returns_result(&signature(i))
+            {
+                out.push(format!("wrap__{c}__{name}"));
+            }
+            continue;
+        }
+        if *line == "#[extendr]" {
+            pending = true;
+        } else if pending && line.starts_with("impl ") {
+            let name = line["impl ".len()..]
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .next()
+                .unwrap_or_default();
+            class = Some(name.to_string());
+            pending = false;
+        } else if pending && !line.starts_with(' ') && fn_name(line).is_some() {
+            if returns_result(&signature(i)) {
+                out.push(format!("wrap__{}", fn_name(line).unwrap_or_default()));
+            }
+            pending = false;
+        } else if pending && !(line.starts_with("#[") || line.starts_with("///")) {
+            pending = false;
+        }
+    }
+    out
+}
+
+/// A wrapper line `name <- function(...) .Call(wrap__id, ...)` with its
+/// `.Call` passed through `rust_native_result()` when `wrap__id` is in
+/// `fallible`, so that a Rust error is raised in R even where the calling
+/// code forgets `rust_result()` (#957). Any other line is returned as it is.
+fn raise_errors(line: &str, fallible: &std::collections::BTreeSet<String>) -> String {
+    let Some(at) = line.find(") .Call(wrap__") else {
+        return line.to_string();
+    };
+    let call = &line[at + 2..];
+    let id = call[".Call(".len()..]
+        .split([',', ')'])
+        .next()
+        .unwrap_or_default();
+    if !fallible.contains(id) {
+        return line.to_string();
+    }
+    format!("{}) rust_native_result({call})", &line[..at])
 }
 
 /// One class's chunks in extendr's wrappers: its environment line, its
@@ -682,8 +803,9 @@ type ClassChunks = (String, Vec<(String, String)>, Vec<String>);
 /// name and the impl blocks (each class's environment, its methods sorted by
 /// name, and its `$` and `[[` methods) sorted by class, so the file is the
 /// same on every platform (on Windows extendr lists the functions in
-/// another order).
-fn extendr_wrappers(raw: &str) -> Result<String> {
+/// another order). The wrappers of the functions and methods in `fallible`
+/// raise their Rust errors ([`raise_errors`], #957).
+fn extendr_wrappers(raw: &str, fallible: &std::collections::BTreeSet<String>) -> Result<String> {
     // Chunks are separated by blank lines; doc lines (`#'`) other than
     // `@export` are dropped, and so are extendr's own comments and its
     // `@useDynLib` block, which the header below replaces.
@@ -703,7 +825,7 @@ fn extendr_wrappers(raw: &str) -> Result<String> {
         if line.starts_with('#') && !line.starts_with("#'") {
             continue;
         }
-        current.push(line.to_string());
+        current.push(raise_errors(line, fallible));
     }
     if !current.is_empty() {
         chunks.push(current);
@@ -744,7 +866,9 @@ fn extendr_wrappers(raw: &str) -> Result<String> {
     let mut out = String::from(concat!(
         "# Low-level bindings to crates/prospicio-r, generated by `cargo xtask r`\n",
         "# (or `cargo xtask generated`) from extendr's `wrap__make_prospicio_wrappers`,\n",
-        "# with the doc lines removed and the functions and classes sorted by name.\n",
+        "# with the doc lines removed and the functions and classes sorted by name;\n",
+        "# a function whose Rust signature returns a Result raises its error through\n",
+        "# rust_native_result() (#957).\n",
         "# Do not edit by hand. Internal: use the functions in distributions.R,\n",
         "# aggregate.R, reinsurance.R, reserving.R and risk.R.\n",
         "\n",
@@ -1662,7 +1786,119 @@ mod tests {
 
 #[cfg(test)]
 mod wrapper_tests {
-    use super::extendr_wrappers;
+    use super::{extendr_wrappers, fallible_in};
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn fallible_natives_are_read_from_the_signatures() {
+        let src = "\
+#[extendr]
+fn plain(x: f64) -> f64 {
+    x
+}
+
+/// Doc.
+#[extendr]
+fn checked(x: f64) -> Result<f64> {
+    Ok(x)
+}
+
+#[extendr]
+pub fn long(
+    x: f64,
+    y: f64,
+) -> prospicio_core::Result<Vec<f64>> {
+    todo!()
+}
+
+fn helper() -> Result<f64> {
+    todo!()
+}
+
+#[extendr]
+impl Thing {
+    fn new(x: f64) -> Result<Self> {
+        todo!()
+    }
+
+    fn get(&self) -> f64 {
+        let f = |x: f64| -> Result<f64> { Ok(x) };
+        0.0
+    }
+
+    pub fn put(
+        &mut self,
+        x: f64,
+    ) -> std::result::Result<(), String> {
+        todo!()
+    }
+}
+
+impl Other {
+    fn hidden(&self) -> Result<f64> {
+        todo!()
+    }
+}
+";
+        assert_eq!(
+            fallible_in(src),
+            [
+                "wrap__checked",
+                "wrap__long",
+                "wrap__Thing__new",
+                "wrap__Thing__put"
+            ]
+        );
+    }
+
+    #[test]
+    fn fallible_wrappers_raise_their_errors() {
+        let raw = "\
+ok_rust <- function(x) .Call(wrap__ok_rust, x)
+
+bad_rust <- function(x) .Call(wrap__bad_rust, x)
+
+Zed <- new.env(parent = emptyenv())
+
+Zed$a <- function(y) .Call(wrap__Zed__a, self, y)
+
+#' @export
+`$.Zed` <- function (self, name) { func <- Zed[[name]]; environment(func) <- environment(); func }
+";
+        let fallible: BTreeSet<String> = ["wrap__bad_rust", "wrap__Zed__a"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let out = extendr_wrappers(raw, &fallible).unwrap();
+        assert!(
+            out.contains("ok_rust <- function(x) .Call(wrap__ok_rust, x)\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("bad_rust <- function(x) rust_native_result(.Call(wrap__bad_rust, x))\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("Zed$a <- function(y) rust_native_result(.Call(wrap__Zed__a, self, y))\n"),
+            "{out}"
+        );
+        // The committed file read again gives the same file.
+        assert_eq!(extendr_wrappers(&out, &fallible).unwrap(), out);
+    }
+
+    /// The committed file wraps every fallible native function as the
+    /// generator would, so a new one is caught without installing R.
+    #[test]
+    fn committed_wrappers_raise_rust_errors() {
+        let root = super::root();
+        let fallible = super::fallible_natives(&root.join("crates/prospicio-r/src")).unwrap();
+        let text = std::fs::read_to_string(root.join("R/prospicio/R/extendr-wrappers.R")).unwrap();
+        assert_eq!(
+            extendr_wrappers(&text, &fallible).unwrap(),
+            text,
+            "R/prospicio/R/extendr-wrappers.R is stale: run `cargo xtask generated`"
+        );
+    }
 
     #[test]
     fn wrappers_drop_docs_and_sort_functions_and_classes() {
@@ -1699,7 +1935,7 @@ Abc$new <- function() .Call(wrap__Abc__new)
 #' @export
 `[[.Abc` <- `$.Abc`
 ";
-        let out = extendr_wrappers(raw).unwrap();
+        let out = extendr_wrappers(raw, &BTreeSet::new()).unwrap();
         let body = out.split("NULL\n").nth(1).unwrap();
         let firsts: Vec<&str> = body
             .split("\n\n")
@@ -1729,6 +1965,6 @@ Abc$new <- function() .Call(wrap__Abc__new)
         // The same input in another order gives the same file.
         let shuffled = raw.replace("alpha_rust <- function() .Call(wrap__alpha_rust)\n\n", "")
             + "\nalpha_rust <- function() .Call(wrap__alpha_rust)\n";
-        assert_eq!(extendr_wrappers(&shuffled).unwrap(), out);
+        assert_eq!(extendr_wrappers(&shuffled, &BTreeSet::new()).unwrap(), out);
     }
 }

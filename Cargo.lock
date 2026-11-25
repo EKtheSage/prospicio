@@ -4209,6 +4209,7 @@ dependencies = [
  "prospicio-models",
  "prospicio-prob",
  "rayon",
+ "serde_json",
 ]
 
 [[package]]

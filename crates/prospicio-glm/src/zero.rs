@@ -36,6 +36,8 @@ use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance}
 
 use crate::Glm;
 
+mod json;
+
 /// The count distribution of a two-part model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CountDistribution {
