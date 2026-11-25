@@ -9,8 +9,7 @@
 //! not kept between calls (decision 4): each function refits from the
 //! cells, so a change to the data recalculates everything that uses it.
 
-use prospicio_glm::{Dispersion, Glm, GlmFit};
-use prospicio_math::special::norm_quantile;
+use prospicio_glm::{Dispersion, Glm, GlmFit, wald};
 use prospicio_models::{
     Coding, Column, Design, Family, FamilyKind, Fitted, Frame, Link, LinkKind, Model, Terms,
 };
@@ -524,7 +523,7 @@ pub fn relativities(args: &[Grid]) -> Result<Grid> {
     if !(level > 0.0 && level < 1.0) {
         return Err(format!("level must be between 0 and 1, got {level}"));
     }
-    let z = norm_quantile(0.5 + level / 2.0);
+    let confidence = level;
     let fit = &m.fit;
     let se = fit.std_errors();
     let mut rows = vec![
@@ -560,6 +559,7 @@ pub fn relativities(args: &[Grid]) -> Result<Grid> {
             based.push(t.clone());
         }
         let b = fit.coefficients()[j];
+        let (lower, upper) = wald::interval(b, se[j], confidence).map_err(|e| e.to_string())?;
         rows.push(vec![
             term,
             match level {
@@ -568,8 +568,8 @@ pub fn relativities(args: &[Grid]) -> Result<Grid> {
                 l => l,
             },
             Value::number(b.exp()),
-            Value::number((b - z * se[j]).exp()),
-            Value::number((b + z * se[j]).exp()),
+            Value::number(lower.exp()),
+            Value::number(upper.exp()),
         ]);
     }
     Ok(Grid::from_rows(rows))

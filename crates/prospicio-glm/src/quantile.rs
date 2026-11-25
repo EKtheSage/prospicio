@@ -651,24 +651,54 @@ impl QuantileFits {
     /// (Chernozhukov, Fernández-Val and Galichon, 2010, on the fitted grid);
     /// the vector then follows the `τ` sorted.
     pub fn predict(&self, design: &Design, rearrange: bool) -> Result<Vec<Vec<f64>>> {
-        let mut order: Vec<usize> = (0..self.fits.len()).collect();
-        if rearrange {
-            order.sort_by(|&a, &b| self.fits[a].tau.total_cmp(&self.fits[b].tau));
-        }
-        let columns = order
+        let columns = self
+            .fits
             .iter()
-            .map(|&k| self.fits[k].predict(design))
+            .map(|f| f.predict(design))
             .collect::<Result<Vec<_>>>()?;
-        Ok((0..design.n_rows())
-            .map(|i| {
-                let mut row: Vec<f64> = columns.iter().map(|c| c[i]).collect();
-                if rearrange {
-                    row.sort_by(f64::total_cmp);
-                }
-                row
-            })
-            .collect())
+        Ok(rows_by_tau(&self.taus(), &columns, rearrange))
     }
+}
+
+/// Per row, the predictions of several fits at levels `taus`, where
+/// `columns[k][i]` is fit `k`'s prediction for row `i`: one vector per row
+/// in the order of `taus`. With `rearrange` the fits are put in increasing
+/// `τ` and each row's values sorted, so the quantiles do not cross
+/// (Chernozhukov, Fernández-Val and Galichon, 2010, on the fitted grid);
+/// each vector then follows the `τ` sorted. Quantile and expectile fits
+/// alike ([`QuantileFits::predict`], the Excel add-in, #976).
+///
+/// ```
+/// use prospicio_glm::quantile::rows_by_tau;
+///
+/// let columns = [vec![3.0, 1.0], vec![2.0, 4.0]]; // tau 0.9, then 0.1
+/// assert_eq!(rows_by_tau(&[0.9, 0.1], &columns, false), [[3.0, 2.0], [1.0, 4.0]]);
+/// assert_eq!(rows_by_tau(&[0.9, 0.1], &columns, true), [[2.0, 3.0], [1.0, 4.0]]);
+/// ```
+///
+/// # Panics
+///
+/// If `columns` and `taus` differ in length or the columns in theirs.
+pub fn rows_by_tau(taus: &[f64], columns: &[Vec<f64>], rearrange: bool) -> Vec<Vec<f64>> {
+    assert_eq!(taus.len(), columns.len(), "one column per tau");
+    let n = columns.first().map_or(0, Vec::len);
+    assert!(
+        columns.iter().all(|c| c.len() == n),
+        "columns of one length"
+    );
+    let mut order: Vec<usize> = (0..taus.len()).collect();
+    if rearrange {
+        order.sort_by(|&a, &b| taus[a].total_cmp(&taus[b]));
+    }
+    (0..n)
+        .map(|i| {
+            let mut row: Vec<f64> = order.iter().map(|&k| columns[k][i]).collect();
+            if rearrange {
+                row.sort_by(f64::total_cmp);
+            }
+            row
+        })
+        .collect()
 }
 
 /// Linear expectile regression (asymmetric least squares) at one `τ`,

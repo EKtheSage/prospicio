@@ -20,6 +20,31 @@ pub struct CompoundMoments {
 }
 
 impl CompoundMoments {
+    /// Standard deviations above the mean that [`covering_points`](Self::covering_points)
+    /// covers.
+    pub const COVERED_SDS: f64 = 12.0;
+
+    /// The number of FFT points at bucket size `step` that covers the
+    /// aggregate's mean plus [`COVERED_SDS`](Self::COVERED_SDS) standard
+    /// deviations plus `reach` (the severity's or the layer's top): a power
+    /// of two, at least 1,024. The Excel add-in sizes its grids so when no
+    /// grid is given (#976).
+    ///
+    /// ```
+    /// use prospicio_aggregate::CompoundMoments;
+    ///
+    /// let m = CompoundMoments { mean: 1000.0, variance: 10_000.0, third_cumulant: 0.0 };
+    /// // 1,000 + 12 * 100 + 500 = 2,700 at a step of 1: 2,701 points, then 4,096.
+    /// assert_eq!(m.covering_points(500.0, 1.0), 4096);
+    /// assert_eq!(m.covering_points(0.0, 100.0), 1024);
+    /// ```
+    pub fn covering_points(&self, reach: f64, step: f64) -> usize {
+        let extent = self.mean + Self::COVERED_SDS * self.variance.sqrt() + reach;
+        ((extent / step).ceil() as usize + 1)
+            .next_power_of_two()
+            .max(1 << 10)
+    }
+
     /// The coefficient of variation `σ / μ`.
     pub fn cv(&self) -> f64 {
         self.variance.sqrt() / self.mean

@@ -22,6 +22,7 @@ pub mod net;
 pub mod quantile;
 mod robust;
 pub mod tweedie;
+pub mod wald;
 pub mod zero;
 
 pub use robust::Robust;

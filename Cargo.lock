@@ -4251,7 +4251,6 @@ dependencies = [
  "prospicio-bayes",
  "prospicio-core",
  "prospicio-glm",
- "prospicio-math",
  "prospicio-models",
  "prospicio-pricing",
  "prospicio-prob",
