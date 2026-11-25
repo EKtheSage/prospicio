@@ -13,6 +13,8 @@ use rayon::prelude::*;
 
 use prospicio_core::{Error, Result};
 
+mod json;
+
 /// A named column of data.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Column {

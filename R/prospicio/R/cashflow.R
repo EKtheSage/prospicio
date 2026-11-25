@@ -310,7 +310,6 @@ cashflow_run <- function(terms, u, commission = 0, months_requirement = NULL,
   }
   index <- if (is.null(pattern_index)) double() else as.double(pattern_index) - 1
   r <- rust_result(terms$ptr$run(u, commission, req, paid, n_patterns, index))
-  r$flows <- matrix(r$flows, nrow = length(u), ncol = r$months, byrow = TRUE)
   r$months <- seq_len(r$months) - 1
   r
 }
@@ -458,17 +457,12 @@ cashflow_forward <- function(valuation, u, commission = 0,
   r <- rust_result(valuation$terms$ptr$forward(s$month, s$amounts, s$flows, s$has_flows,
                                                s$reference, u, commission,
                                                match.arg(conditioning)))
-  n <- length(r$kept)
   m <- r$months
   v <- as.integer(s$month)
   r$kept <- r$kept + 1
-  r$flows <- matrix(r$flows, nrow = n, ncol = m, byrow = TRUE)
   r$months <- v + seq_len(m) - 1
-  r$forward_rows <- matrix(r$forward_rows, nrow = n, ncol = m, byrow = TRUE)
   r$forward_offsets <- seq_len(m) - 1
   if (!is.null(r$since_inception_rows)) {
-    r$since_inception_rows <- matrix(r$since_inception_rows, nrow = n, ncol = v + m,
-                                     byrow = TRUE)
     r$since_inception_offsets <- seq_len(v + m) - 1
   }
   r
@@ -568,7 +562,6 @@ deal_ave <- function(actual, terms, u, paid_patterns = NULL, pattern_index = NUL
                                       levels))
   out <- data.frame(month = as.integer(r$month), actual = r$actual, expected = r$expected,
                     ratio = r$ratio, percentile = r$percentile)
-  q <- matrix(r$quantiles, nrow = nrow(out), ncol = length(levels), byrow = TRUE)
-  for (k in seq_along(levels)) out[[sprintf("q%g", 100 * levels[k])]] <- q[, k]
+  for (k in seq_along(levels)) out[[sprintf("q%g", 100 * levels[k])]] <- r$quantiles[, k]
   out
 }

@@ -722,9 +722,9 @@ bayes_glm_model <- S7::new_class(
       as.data.frame(self@ptr$summary())
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- self@ptr$names()
-      matrix(self@ptr$coefficient_draws(), ncol = length(nm), byrow = TRUE,
-             dimnames = list(NULL, nm))
+      m <- self@ptr$coefficient_draws()
+      colnames(m) <- self@ptr$names()
+      m
     }),
     dispersion_draws = S7::new_property(S7::class_double, getter = function(self) {
       self@ptr$dispersion_draws()
@@ -820,9 +820,8 @@ bayes_loo_pit <- function(model, seed = 0) {
 #' @rdname bayes_ppc
 #' @export
 bayes_replicate <- function(model, seed = 0) {
-  r <- rust_result(model@ptr$replicate(as.double(seed)))
-  # One dispersion per draw, so one row per draw.
-  matrix(r, nrow = length(model@ptr$dispersion_draws()), byrow = TRUE)
+  # One row per draw, one column per training row.
+  rust_result(model@ptr$replicate(as.double(seed)))
 }
 
 #' @rdname bayes_ppc
@@ -844,8 +843,9 @@ loo_pit <- function(observed, replicated, log_lik, r_eff = NULL, seed = 0) {
 
 checks_frame <- function(r) {
   out <- data.frame(name = r$name, observed = r$observed, p_value = r$p_value)
-  attr(out, "replicated") <- matrix(r$replicated, ncol = length(r$name), byrow = TRUE,
-                                    dimnames = list(NULL, r$name))
+  replicated <- r$replicated
+  colnames(replicated) <- r$name
+  attr(out, "replicated") <- replicated
   out
 }
 
@@ -1945,8 +1945,7 @@ shap_values <- function(model, data, background, features = NULL, output = NULL,
     values <- unlist(lapply(masks, function(mask) {
       if (!any(mask)) rep(baseline, n) else if (all(mask == 1)) outputs else value(mask)
     }))
-    phi[] <- matrix(shap_exact_rust(as.double(values), as.double(n), as.double(m)), n, m,
-                    byrow = TRUE)
+    phi[] <- rust_result(shap_exact_rust(as.double(values), as.double(n), as.double(m)))
     method <- "exact"
   } else {
     if (n_permutations < 1) stop("n_permutations must be at least 1")
@@ -2735,14 +2734,14 @@ bayes_glmm_model <- S7::new_class(
       as.data.frame(self@ptr$summary())
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- self@ptr$parameter_names()
-      matrix(self@ptr$parameter_draws(), ncol = length(nm), byrow = TRUE,
-             dimnames = list(NULL, nm))
+      m <- self@ptr$parameter_draws()
+      colnames(m) <- self@ptr$parameter_names()
+      m
     }),
     effect_draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- self@ptr$effect_names()
-      matrix(self@ptr$effect_draws(), ncol = length(nm), byrow = TRUE,
-             dimnames = list(NULL, nm))
+      m <- self@ptr$effect_draws()
+      colnames(m) <- self@ptr$effect_names()
+      m
     }),
     random_effects = S7::new_property(S7::class_list, getter = function(self) {
       lapply(self@ptr$random_effects(), as.data.frame)

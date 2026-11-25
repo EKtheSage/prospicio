@@ -17,8 +17,14 @@
 //! | `bayes` | `prospicio-bayes` | NUTS sampling, MCMC diagnostics (feature `bayes`) |
 //! | `nn` | `prospicio-nn` | Neural networks on Burn (feature `nn`) |
 //!
-//! The feature `arrow` reads and writes `PredictiveDistribution` as Arrow
-//! IPC files; `full` turns on every feature.
+//! Two features read and write files, which the default build leaves out
+//! so that it stays within the WASM scope:
+//!
+//! - `io` reads loss triangles from CSV and Excel files (`reserving::io`
+//!   and `reserving::FileLayout`, on the pure-Rust `csv` and `calamine`);
+//! - `arrow` reads and writes `PredictiveDistribution` as Arrow IPC files.
+//!
+//! `full` turns on every feature.
 
 pub use prospicio_aggregate as aggregate;
 #[cfg(feature = "bayes")]

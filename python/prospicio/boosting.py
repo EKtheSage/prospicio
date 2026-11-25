@@ -55,7 +55,16 @@ LightGBM and XGBoost are optional: install the one you use
 
 import re
 
-from .prospicio_native import bootstrap_rows, k_fold, simulate_from_means
+from .prospicio_native import (
+    base_score,
+    bootstrap_rows,
+    k_fold,
+    monotone_violations,
+    pearson_dispersion,
+    pearson_terms,
+    simulate_from_means,
+    weighted_quantile,
+)
 
 __all__ = ["Booster", "BoosterFit", "predict_quantiles"]
 
@@ -68,16 +77,6 @@ _OBJECTIVES = {
     "quantile": ("quantile", "reg:quantileerror", "identity"),
 }
 _ENGINES = ("lightgbm", "xgboost")
-
-
-def _variance(family, mu, power):
-    if family == "poisson":
-        return mu
-    if family == "gamma":
-        return mu * mu
-    if family == "tweedie":
-        return mu**power
-    return 1.0
 
 
 class Booster:
@@ -250,9 +249,9 @@ class Booster:
             if np.any(offset != 0.0):
                 raise ValueError("a quantile booster takes no offset: put exposure in as a "
                                  "feature, or model the response per unit of exposure")
-            base = _weighted_quantile(y, w, self.alpha)
+            base = weighted_quantile(y.tolist(), w.tolist(), self.alpha)
         else:
-            base = _base_score(self.family, y, w, offset)
+            base = base_score(_OBJECTIVES[self.family][2], y.tolist(), w.tolist(), offset.tolist())
         model = self._train(x, y, w, offset + base, self.seed, constraints)
         boots = []
         n = len(y)
@@ -264,9 +263,9 @@ class Booster:
                                      constraints))
         fit = BoosterFit(self, design.names, model, boots, 1.0, base)
         if self.family not in ("poisson", "quantile"):
-            mu = np.asarray(fit.predict(design))
-            v = np.array([_variance(self.family, m, self.power) for m in mu])
-            fit.dispersion = float(np.sum(w * (y - mu) ** 2 / v) / n)
+            mu = list(fit.predict(design))
+            fit.dispersion = pearson_dispersion(self.family, y.tolist(), mu, w.tolist(),
+                                                power=self.power)
         if self.dispersion_model:
             fit.dispersion_fit = self._fit_dispersion(x, y, w, offset, base, constraints)
         return fit
@@ -289,8 +288,8 @@ class Booster:
                                 constraints)
             eta = _raw_margin(self.engine, model, x[test], offset[test] + base)
             mu[test] = np.exp(eta) if link == "log" else eta
-        v = np.array([_variance(self.family, m, self.power) for m in mu])
-        z = w * (y - mu) ** 2 / v
+        z = np.array(pearson_terms(self.family, y.tolist(), mu.tolist(), w.tolist(),
+                                   power=self.power))
         z = np.maximum(z, 1e-12 * z.mean())
         spec = Booster("gamma", engine=self.engine, n_rounds=self.n_rounds,
                        learning_rate=self.learning_rate, params=self.params, seed=self.seed)
@@ -397,8 +396,7 @@ class BoosterFit:
             c = [col if k != j else [float(v)] * design.n_rows for k, col in enumerate(cols)]
             d = Design(c, names, offset=list(design.offset), weights=list(design.weights))
             means.append(float(np.mean(self.predict(d))))
-        scale = max(abs(m) for m in means) or 1.0
-        bad = [i for i in range(1, len(means)) if direction * (means[i] - means[i - 1]) < -tol * scale]
+        bad = monotone_violations(means, direction, tol)
         return {"grid": list(grid), "mean": means, "direction": direction, "violations": bad,
                 "monotone": not bad}
 
@@ -527,26 +525,6 @@ def _raw_margin(engine, model, x, start):
     import xgboost as xgb
 
     return model.predict(xgb.DMatrix(x, base_margin=start), output_margin=True)
-
-
-def _weighted_quantile(y, w, alpha):
-    import numpy as np
-
-    order = np.argsort(y)
-    cw = np.cumsum(w[order])
-    k = int(np.searchsorted(cw, alpha * cw[-1]))
-    return float(y[order][min(k, len(y) - 1)])
-
-
-def _base_score(family, y, w, offset):
-    import numpy as np
-
-    if _OBJECTIVES[family][2] == "log":
-        total = float(np.sum(w * y))
-        if total <= 0:
-            raise ValueError("the weighted response total must be positive for a log link")
-        return float(np.log(total / np.sum(w * np.exp(offset))))
-    return float(np.sum(w * (y - offset)) / np.sum(w))
 
 
 def _matrix(design):

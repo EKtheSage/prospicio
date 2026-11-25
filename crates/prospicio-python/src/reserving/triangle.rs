@@ -842,6 +842,53 @@ impl PyTriangle {
         self.inner.max_age(age).map(wrap).map_err(err)
     }
 
+    /// The triangle as a JSON document: keys, index, measures, origins,
+    /// ages, grains, valuation and every stored value, numbers bit for bit
+    /// (#978). ``from_json`` reads it back; ``pickle`` uses the same
+    /// document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.reserving import Triangle
+    /// >>> tri = Triangle.from_long(origin=[2020, 2020, 2021], development=[12, 24, 12],
+    /// ...                          values={"paid": [100.0, 150.0, 110.0]})
+    /// >>> Triangle.from_json(tri.to_json()) == tri
+    /// True
+    /// >>> pickle.loads(pickle.dumps(tri)) == tri
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A triangle from a document written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the text is not such a document, or is from a newer version.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Triangle::from_json(text).map(wrap).map_err(err)
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
         other
             .extract::<PyRef<'_, PyTriangle>>()

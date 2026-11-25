@@ -12,7 +12,7 @@ use prospicio_aggregate::pnl::{
 
 use crate::discrete::DiscreteDist;
 use crate::reinsurance::ReinsuranceTower;
-use crate::to_r;
+use crate::{row_major, to_r};
 
 /// A P&L ledger.
 #[extendr]
@@ -618,7 +618,7 @@ fn pnl_stack_rust(
     }
     Ok(list!(
         label = rows.iter().map(|(l, _)| l.clone()).collect::<Vec<_>>(),
-        values = values
+        values = row_major(&values, 4 + LADDER.len())
     ))
 }
 
