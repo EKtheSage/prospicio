@@ -43,6 +43,7 @@ mod pricing;
 mod ratemaking;
 mod reinsurance;
 mod reserving;
+mod reserving_apc;
 mod reserving_counts;
 mod reserving_discount;
 mod reserving_expense;
@@ -104,6 +105,7 @@ extendr_module! {
     use retro;
     use reinsurance;
     use reserving;
+    use reserving_apc;
     use reserving_counts;
     use reserving_discount;
     use reserving_expense;

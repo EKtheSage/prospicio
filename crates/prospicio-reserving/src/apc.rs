@@ -445,7 +445,7 @@ impl ApcGlm {
         let n_params = 3 + n_dd * [age, accident, calendar].iter().filter(|b| **b).count();
         if n_params >= k * (k + 1) / 2 {
             return apc_err(format!(
-                "{n_params} parameters for {} observed cells leave no residual degrees of freedom;                  this model needs a larger triangle (4 origins for the full model)",
+                "{n_params} parameters for {} observed cells leave no residual degrees of freedom; this model needs a larger triangle (4 origins for the full model)",
                 k * (k + 1) / 2
             ));
         }

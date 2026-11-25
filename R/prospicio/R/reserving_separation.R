@@ -1,4 +1,4 @@
-#' @include reserving.R reserving_inflation.R
+#' @include odp_glm.R reserving.R reserving_inflation.R
 NULL
 
 #' Taylor's separation method
@@ -25,6 +25,19 @@ NULL
 #' `future_rate`, `future_index` and `trend_periods`. On a triangle
 #' already restated by an economic index ([restate()]) the indices measure
 #' superimposed inflation.
+#'
+#' `separation_glm()` is the arithmetic method as a Poisson GLM, `s ~
+#' C(development) + C(calendar)` on the increments with the future indices
+#' in its future rows: an [odp_glm_fit] whose reserves equal
+#' `separation()`'s and whose `prediction_error` is the delta method's. A
+#' `future_rate` or `future_index` is a fixed growth from the last fitted
+#' index, so the error is that of the last index, the growth taken as
+#' given; a `trend_periods` future is linear in the fitted calendar effects,
+#' so its uncertainty is included. The dispersion is Pearson's. It needs a
+#' triangle of one segment, and it fails with a normaliser (the variance of
+#' `n_i s_ij` is not an over-dispersed Poisson's: divide the triangle by the
+#' normaliser and fit it without one). The geometric methods have no GLM
+#' form.
 #'
 #' @param triangle A [triangle()].
 #' @param column The column to fit; `NULL` for the triangle's only one.
@@ -59,7 +72,8 @@ NULL
 #'   (the geometric methods' residual variance on the log scale, `NaN` with
 #'   no degrees of freedom left; `NULL` for the arithmetic method) and
 #'   `total_reserve`.
-#' @seealso [indexation()], [calendar_index()], [future_cells()]
+#'   `separation_glm()` returns an [odp_glm_fit].
+#' @seealso [indexation()], [calendar_index()], [future_cells()], [apc_glm()]
 #' @export
 #' @examples
 #' # Taylor (1977), Example 1: claims per claim incurred, cumulative.
@@ -72,6 +86,8 @@ NULL
 #' fit <- separation(triangle(long, "year", "age", "s"), future_rate = 0.10)
 #' round(fit@proportions, 4)
 #' round(fit@indices, 1)
+#' glm <- separation_glm(triangle(long, "year", "age", "s"), future_rate = 0.10)
+#' glm@prediction_error
 separation_fit <- S7::new_class(
   "separation_fit",
   package = "prospicio",
@@ -116,42 +132,16 @@ separation <- function(triangle, column = NULL, kind = "arithmetic", normaliser 
         !kind %in% c("arithmetic", "geometric", "geometric_lognormal")) {
     stop("kind must be \"arithmetic\", \"geometric\" or \"geometric_lognormal\"", call. = FALSE)
   }
-  given <- c(rate = !is.null(future_rate), index = !is.null(future_index),
-             trend = !is.null(trend_periods))
-  if (sum(given) == 0L) {
-    stop("give the future indices: one of future_rate, future_index or trend_periods", call. = FALSE)
-  }
-  if (sum(given) > 1L) {
-    stop("give only one of future_rate, future_index and trend_periods", call. = FALSE)
-  }
   if (!is.null(normaliser)) normaliser <- as.double(normaliser)
-  future <- names(given)[given]
-  rate <- if (future == "rate") single_number(future_rate, "future_rate") else 0
-  first <- ""
-  index_values <- double(0)
-  index_rate <- NULL
-  if (future == "index") {
-    future_index <- check_calendar_index(future_index)
-    first <- future_index@first
-    index_values <- future_index@values
-    index_rate <- future_index@future_rate
-  }
-  trend <- 0L
-  if (future == "trend") {
-    trend <- single_number(trend_periods, "trend_periods")
-    if (trend != round(trend) || trend < 2) {
-      stop(sprintf("trend_periods must be a whole number of at least 2, got %s", format(trend)), call. = FALSE)
-    }
-    trend <- as.integer(trend)
-  }
+  f <- separation_future(future_rate, future_index, trend_periods)
   keys <- if (is.null(segment)) character() else names(segment)
   values <- if (is.null(segment)) character() else as.character(unlist(segment, use.names = FALSE))
   if (!is.null(segment) && is.null(keys)) {
     stop("segment must be named by key, as c(lob = \"auto\")", call. = FALSE)
   }
   out <- reserving_result(separation_fit_rust(
-    triangle@ptr, column, keys, values, kind, normaliser, future, rate, first, index_values,
-    index_rate, trend
+    triangle@ptr, column, keys, values, kind, normaliser, f$future, f$rate, f$first,
+    f$index_values, f$index_rate, f$trend
   ))
   n <- length(out$origins)
   fitted <- matrix(out$fitted, n, length(out$ages), byrow = TRUE,
@@ -180,4 +170,52 @@ separation <- function(triangle, column = NULL, kind = "arithmetic", normaliser 
     reserves = out$reserves,
     log_variance = out$log_variance
   )
+}
+
+#' @rdname separation_fit
+#' @export
+separation_glm <- function(triangle, column = NULL, normaliser = NULL, future_rate = NULL,
+                           future_index = NULL, trend_periods = NULL) {
+  column <- fit_column(triangle, column)
+  if (!is.null(normaliser)) normaliser <- as.double(normaliser)
+  f <- separation_future(future_rate, future_index, trend_periods)
+  ptr <- reserving_result(separation_glm_rust(
+    triangle@ptr, column, normaliser, f$future, f$rate, f$first, f$index_values, f$index_rate,
+    f$trend
+  ))
+  odp_glm_fit(ptr = ptr)
+}
+
+# The future indices of separation() and separation_glm(): exactly one of a
+# rate, a calendar_index and a trend, as the Rust entry points take them.
+separation_future <- function(future_rate, future_index, trend_periods) {
+  given <- c(rate = !is.null(future_rate), index = !is.null(future_index),
+             trend = !is.null(trend_periods))
+  if (sum(given) == 0L) {
+    stop("give the future indices: one of future_rate, future_index or trend_periods", call. = FALSE)
+  }
+  if (sum(given) > 1L) {
+    stop("give only one of future_rate, future_index and trend_periods", call. = FALSE)
+  }
+  future <- names(given)[given]
+  rate <- if (future == "rate") single_number(future_rate, "future_rate") else 0
+  first <- ""
+  index_values <- double(0)
+  index_rate <- NULL
+  if (future == "index") {
+    future_index <- check_calendar_index(future_index)
+    first <- future_index@first
+    index_values <- future_index@values
+    index_rate <- future_index@future_rate
+  }
+  trend <- 0L
+  if (future == "trend") {
+    trend <- single_number(trend_periods, "trend_periods")
+    if (trend != round(trend) || trend < 2) {
+      stop(sprintf("trend_periods must be a whole number of at least 2, got %s", format(trend)), call. = FALSE)
+    }
+    trend <- as.integer(trend)
+  }
+  list(future = future, rate = rate, first = first, index_values = index_values,
+       index_rate = index_rate, trend = trend)
 }

@@ -254,15 +254,11 @@
 "vine_fit::log_likelihood" = "internal: a pair fit reports it as PairFit.log_likelihood"
 
 [python.prospicio_reserving]
-"ApcEffects" = "bound in PR 7 of reserving-inflation.md (#979)"
-"ApcGlm" = "bound in PR 7 of reserving-inflation.md (#979)"
-"ApcGlmFit" = "bound in PR 7 of reserving-inflation.md (#979)"
 "CalendarDiagonal" = "unbound on 2026-10-28 (seed); review"
 "CalendarView" = "unbound on 2026-10-28 (seed); review"
 "CellForecast" = "unbound on 2026-10-28 (seed); review"
 "DevelopmentPair" = "unbound on 2026-10-28 (seed); review"
 "Diagonal" = "unbound on 2026-10-28 (seed); review"
-"Extrapolation" = "bound in PR 7 of reserving-inflation.md (#979)"
 "LatestDiagonal" = "unbound on 2026-10-28 (seed); review"
 "LongTable" = "unbound on 2026-10-28 (seed); review"
 "MackBootstrapFit" = "unbound on 2026-10-28 (seed); review"
@@ -567,14 +563,10 @@
 "vine_fit::log_likelihood" = "internal: a pair fit reports it as its log_likelihood"
 
 [r.prospicio_reserving]
-"ApcEffects" = "bound in PR 7 of reserving-inflation.md (#979)"
-"ApcGlm" = "bound in PR 7 of reserving-inflation.md (#979)"
-"ApcGlmFit" = "bound in PR 7 of reserving-inflation.md (#979)"
 "CalendarView" = "unbound on 2026-10-28 (seed); review"
 "CellForecast" = "unbound on 2026-10-28 (seed); review"
 "DevelopmentPair" = "unbound on 2026-10-28 (seed); review"
 "Diagonal" = "unbound on 2026-10-28 (seed); review"
-"Extrapolation" = "bound in PR 7 of reserving-inflation.md (#979)"
 "LatestDiagonal" = "unbound on 2026-10-28 (seed); review"
 "LongTable" = "unbound on 2026-10-28 (seed); review"
 "MackBootstrapFit" = "unbound on 2026-10-28 (seed); review"
