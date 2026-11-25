@@ -11249,6 +11249,11 @@ class Design:
     (2, ['(Intercept)', 'x'])
     """
     def __new__(cls, /, columns: Sequence[Sequence[float]], names: Sequence[str], offset: Sequence[float] |None = None, weights: Sequence[float] |None = None) -> Design: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[list[list[float]], list[str], list[float], list[float]]]:
+        """
+        Pickles as the constructor's arguments: the columns, names, offset
+        and weights, every value as stored (#978).
+        """
     def column(self, /, j: int) -> list[float]:
         """
         Column ``j``.
@@ -13797,6 +13802,12 @@ class EventSet:
     the generator keyed by ``seed``, so results do not depend on the number of
     threads.
     """
+    def __eq__(self, other: object, /) -> bool:
+        """
+        Whether ``other`` is an event set with the same years, losses and
+        everything they carry.
+        """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def aggregate_part(self, /, sim: int) -> list[float] |None:
         """
@@ -13981,6 +13992,24 @@ class EventSet:
         >>> w = e.filter("peril", ["wind"])
         >>> w.n_sims, w.events(0), w.events(1)
         (2, [15.0], [])
+        """
+    @staticmethod
+    def from_json(text: str) -> EventSet:
+        """
+        An event set from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        EventSet
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @staticmethod
     def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0, labels: dict |None = None) -> EventSet:
@@ -14332,6 +14361,27 @@ class EventSet:
         Returns
         -------
         list of float or None
+        """
+    def to_json(self, /) -> str:
+        """
+        The years as a JSON document: losses, and their sums insured,
+        times, labels and aggregate parts when present, with the seed and
+        provenance, numbers bit for bit (#978). ``from_json`` reads it back;
+        ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[5.0, 2.0], [], [9.0]], seed=3)
+        >>> EventSet.from_json(e.to_json()) == e
+        True
+        >>> pickle.loads(pickle.dumps(e)) == e
+        True
         """
     def totals(self, /) -> PredictiveDistribution:
         """
@@ -36696,6 +36746,7 @@ class Triangle:
     [[100.0, 150.0], [110.0, nan]]
     """
     def __eq__(self, other: object, /) -> bool: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def _repr_html_(self, /) -> str: ...
     @property
@@ -36760,6 +36811,24 @@ class Triangle:
         >>> tri = Triangle.from_frame(df, "year", "age", "paid", keys="lob")
         >>> tri.keys, tri.index, tri.shape
         (['lob'], ['Auto', 'Home'], (2, 1, 2, 2))
+        """
+    @staticmethod
+    def from_json(text: str) -> Triangle:
+        """
+        A triangle from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @staticmethod
     def from_long(origin: Any, development: Any, values: Any, keys: Any |None = None, origin_grain: str = "Y", development_grain: str = "Y", cumulative: bool = True, development_is_valuation: bool = False) -> Triangle:
@@ -37205,6 +37274,28 @@ class Triangle:
         Returns
         -------
         Triangle
+        """
+    def to_json(self, /) -> str:
+        """
+        The triangle as a JSON document: keys, index, measures, origins,
+        ages, grains, valuation and every stored value, numbers bit for bit
+        (#978). ``from_json`` reads it back; ``pickle`` uses the same
+        document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import Triangle
+        >>> tri = Triangle.from_long(origin=[2020, 2020, 2021], development=[12, 24, 12],
+        ...                          values={"paid": [100.0, 150.0, 110.0]})
+        >>> Triangle.from_json(tri.to_json()) == tri
+        True
+        >>> pickle.loads(pickle.dumps(tri)) == tri
+        True
         """
     def to_long(self, /) -> dict:
         """

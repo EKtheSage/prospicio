@@ -475,6 +475,28 @@ impl PyDesign {
         })
     }
 
+    /// Pickles as the constructor's arguments: the columns, names, offset
+    /// and weights, every value as stored (#978).
+    #[allow(clippy::type_complexity)]
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+    ) -> PyResult<(
+        Bound<'py, PyAny>,
+        (Vec<Vec<f64>>, Vec<String>, Vec<f64>, Vec<f64>),
+    )> {
+        let d = &slf.get().inner;
+        let columns = (0..d.n_cols()).map(|j| d.column(j).to_vec()).collect();
+        Ok((
+            slf.get_type().into_any(),
+            (
+                columns,
+                d.names().to_vec(),
+                d.offset().to_vec(),
+                d.weights().to_vec(),
+            ),
+        ))
+    }
+
     /// Column names.
     #[getter]
     fn names(&self) -> Vec<String> {
