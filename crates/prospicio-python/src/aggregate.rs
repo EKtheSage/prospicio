@@ -1,12 +1,14 @@
 //! `prospicio.aggregate`: wrappers over `prospicio_aggregate` (compound
 //! distributions and simulated events).
 
+use numpy::PyArray1;
 use prospicio_aggregate::{CompoundMethod, CompoundReport, EventLossTable, EventSet};
 use prospicio_prob::{Counting, Grid, Severity, SeverityDist};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+use crate::arrays::{Indices, Vector, view1};
 use crate::distributions::{
     PyGrid, PyNegativeBinomial, PyPoisson, PyPredictiveDistribution, extract_severity,
 };
@@ -786,6 +788,9 @@ pub(crate) fn audit_portfolio_grid(
     Ok(PyGridAudit { inner })
 }
 
+/// `EventSet.to_numpy`'s losses and offsets.
+type LossesOffsets<'py> = (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<usize>>);
+
 /// Simulated years of individual losses, for applying per-loss terms such
 /// as reinsurance layers.
 ///
@@ -890,11 +895,16 @@ impl PyEventSet {
     #[staticmethod]
     #[pyo3(signature = (years, sums_insured = None, seed = 0, times = None))]
     fn from_years(
-        years: Vec<Vec<f64>>,
-        sums_insured: Option<Vec<Vec<f64>>>,
+        years: Vec<Vector<'_>>,
+        sums_insured: Option<Vec<Vector<'_>>>,
         seed: u64,
-        times: Option<Vec<Vec<f64>>>,
+        times: Option<Vec<Vector<'_>>>,
     ) -> PyResult<Self> {
+        let years: Vec<Vec<f64>> = years.into_iter().map(Vector::into_vec).collect();
+        let sums_insured: Option<Vec<Vec<f64>>> =
+            sums_insured.map(|v| v.into_iter().map(Vector::into_vec).collect());
+        let times: Option<Vec<Vec<f64>>> =
+            times.map(|v| v.into_iter().map(Vector::into_vec).collect());
         let shape: Vec<usize> = years.iter().map(Vec::len).collect();
         let mut inner = EventSet::from_years(years, seed).map_err(to_py)?;
         if let Some(si) = sums_insured {
@@ -953,12 +963,14 @@ impl PyEventSet {
     #[staticmethod]
     #[pyo3(signature = (years, losses, n_years, seed = 0, labels = None))]
     fn from_long(
-        years: Vec<usize>,
-        losses: Vec<f64>,
+        years: Indices<'_>,
+        losses: Vector<'_>,
         n_years: usize,
         seed: u64,
         labels: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
+        let years = years.into_usize("years")?;
+        let losses = losses.into_vec();
         let inner = match labels {
             None => EventSet::from_long(&years, &losses, n_years, seed),
             Some(labels) => EventSet::from_long_labeled(
@@ -984,13 +996,13 @@ impl PyEventSet {
     ///
     /// Parameters
     /// ----------
-    /// years : list of int
+    /// years : list of int or numpy.ndarray
     ///     Each row's year, from 1.
-    /// losses : list of float
+    /// losses : list of float or numpy.ndarray
     ///     Finite and non-negative.
-    /// slots : list of int, optional
+    /// slots : list of int or numpy.ndarray, optional
     ///     Each row's event slot, which orders a year's rows.
-    /// times : list of float, optional
+    /// times : list of float or numpy.ndarray, optional
     ///     Each row's time of loss, the fraction of its year elapsed, in
     ///     ``[0, 1]``. Rows are then ordered by time within a year, the
     ///     slot (or the given order) breaking ties, and the events carry
@@ -1041,10 +1053,10 @@ impl PyEventSet {
     ))]
     #[allow(clippy::too_many_arguments)]
     fn from_ylt(
-        years: Vec<usize>,
-        losses: Vec<f64>,
-        slots: Option<Vec<u64>>,
-        times: Option<Vec<f64>>,
+        years: Indices<'_>,
+        losses: Vector<'_>,
+        slots: Option<Indices<'_>>,
+        times: Option<Vector<'_>>,
         labels: Option<&Bound<'_, PyDict>>,
         n_years: Option<usize>,
         n_sims: Option<usize>,
@@ -1056,6 +1068,8 @@ impl PyEventSet {
         losses_negative: bool,
     ) -> PyResult<Self> {
         use prospicio_aggregate::ylt::{Expansion, YearLossTable};
+        let years = years.into_usize("years")?;
+        let losses = losses.into_vec();
         let expansion = match expand {
             "tile" => Expansion::Tile,
             "resample" => Expansion::Resample { seed },
@@ -1073,10 +1087,10 @@ impl PyEventSet {
         .map_err(to_py)?;
         let has_slots = slots.is_some();
         if let Some(slots) = slots {
-            ylt = ylt.with_slots(slots).map_err(to_py)?;
+            ylt = ylt.with_slots(slots.into_u64("slots")?).map_err(to_py)?;
         }
         if let Some(times) = times {
-            ylt = ylt.with_times(times).map_err(to_py)?;
+            ylt = ylt.with_times(times.into_vec()).map_err(to_py)?;
         }
         let labels = labels
             .map(labels_from_dict)
@@ -1800,6 +1814,40 @@ impl PyEventSet {
     /// list of int
     fn counts(&self) -> Vec<usize> {
         self.inner.counts()
+    }
+
+    /// Every year's losses as read-only NumPy arrays, without copying
+    /// (#978): ``losses``, all the losses year after year, and ``offsets``,
+    /// where each year starts, so year ``i``'s losses are
+    /// ``losses[offsets[i]:offsets[i + 1]]``. Both are views of the event
+    /// set's own buffers and keep it alive.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of numpy.ndarray
+    ///     ``(losses, offsets)``: float64 of length ``offsets[-1]``, and
+    ///     uint64 of length ``n_sims + 1``, from 0.
+    ///
+    /// Examples
+    /// --------
+    /// >>> import numpy as np
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> e = EventSet.from_years([[1.0, 2.0], [], [3.5]])
+    /// >>> losses, offsets = e.to_numpy()
+    /// >>> losses, offsets
+    /// (array([1. , 2. , 3.5]), array([0, 2, 2, 3], dtype=uint64))
+    /// >>> np.add.reduceat(losses, offsets[:-1].astype(np.intp))[np.diff(offsets) > 0]
+    /// array([3. , 3.5])
+    fn to_numpy<'py>(slf: Bound<'py, Self>) -> PyResult<LossesOffsets<'py>> {
+        let inner = &slf.get().inner;
+        let owner = slf.clone().into_any();
+        // SAFETY: the class is frozen, and its buffers never change or move.
+        unsafe {
+            Ok((
+                view1(owner.clone(), inner.losses())?,
+                view1(owner, inner.offsets())?,
+            ))
+        }
     }
 
     /// Each year's total loss.
