@@ -28056,6 +28056,181 @@ class PairFit:
         """
 
 @final
+class Panel:
+    """
+    The reinsurers on a tower and their signed lines, applied to a tower's
+    simulated years to draw which reinsurers default
+    (``docs/design/reinsurer-default.md``).
+    
+    A line is a share of a layer's ceded loss (after the layer's
+    ``share``), and the lines of a layer the panel names must sum to 1 (to
+    1e-9), checked when the panel is applied; a layer the panel does not
+    name carries no credit risk.
+    
+    Reinsurer ``r``'s exposure in a year is ``E = sum over l of s_rl X_l``,
+    with ``X_l`` layer ``l``'s ceded loss and ``s_rl`` its line; if it
+    defaults, the cedant loses ``(1 - R_r) (E - C_r)^+``, with ``R_r`` its
+    recovery rate and ``C_r`` its collateral. Defaults follow Vasicek's
+    one-factor model: given the year's factor ``z``, reinsurer ``r``
+    defaults with probability ``Phi((Phi^-1(p_r) - sqrt(rho_r) z) / sqrt(1 -
+    rho_r))``, and ``z = -Phi^-1(U)``, where ``U`` is the year's rank by its
+    driver (the gross loss, or :meth:`with_driver`), ties broken at random,
+    so the worst years have the highest probability of default. Each year
+    draws from its own random stream, so the result has the same bits on
+    any number of threads.
+    
+    Parameters
+    ----------
+    reinsurers : list of Reinsurer
+        At least one, with unique names.
+    
+    Raises
+    ------
+    ValueError
+        For no reinsurers or two with the same name.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
+    >>> years = Tower([Layer("10x10", 10.0, 10.0)]).apply_annual([5.0, 15.0, 30.0])
+    >>> # Re A certainly defaults and pays back 40% of what it owes.
+    >>> panel = (Panel([Reinsurer("Re A", 1.0, 0.4), Reinsurer("Re B", 0.0, 0.4)])
+    ...          .with_line("Re A", "10x10", 0.5)
+    ...          .with_line("Re B", "10x10", 0.5))
+    >>> after = panel.apply(years, seed=7)
+    >>> list(after.marginal(["credit_loss", "10x10"]).draws)
+    [0.0, 1.5, 3.0]
+    >>> list(after.marginal(["net_after_default", "retained"]).draws)
+    [5.0, 11.5, 23.0]
+    """
+    def __new__(cls, /, reinsurers: Sequence[Reinsurer]) -> Panel: ...
+    def __repr__(self, /) -> str: ...
+    def apply(self, /, result: PredictiveDistribution, seed: int = 0) -> PredictiveDistribution:
+        """
+        A tower's one-year result after reinsurer default.
+        
+        The result has the input's components, copied bit for bit, then
+        ``("credit_loss", l)`` for every layer ``l`` of the input, in the
+        input's order (zero on a layer the panel does not name), then
+        ``("recovered", l)``, the layer's ceded loss less its credit loss,
+        and ``("net_after_default", "retained")``, the net loss plus the
+        year's credit loss. A reinsurer's credit loss is split over its
+        layers in proportion to its exposure on each. On a labelled result
+        the exposures sum each layer's ceded loss over the label
+        combinations, and the new components get ``""`` in every label
+        dimension.
+        
+        Parameters
+        ----------
+        result : PredictiveDistribution
+            A tower's one-year result (``Tower.apply``, ``apply_aggregate``
+            or ``apply_annual``).
+        seed : int, default 0
+            The default draws' seed; their streams are apart from the
+            events' even with the events' seed.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            For a result that is no tower's one-year result or one a panel
+            was already applied to, a line on a layer the result does not
+            have, a named layer whose lines do not sum to 1, or a driver of
+            the wrong length.
+        """
+    def by_reinsurer(self, /, result: PredictiveDistribution, seed: int = 0) -> PredictiveDistribution:
+        """
+        Each reinsurer's credit loss, exposure and default in each year,
+        from the same draws as :meth:`apply` with the same ``seed``.
+        
+        Parameters
+        ----------
+        result : PredictiveDistribution
+            A tower's one-year result.
+        seed : int, default 0
+        
+        Returns
+        -------
+        PredictiveDistribution
+            Dimensions ``["kind", "reinsurer"]``: ``("credit_loss", r)`` for
+            every reinsurer ``r`` in panel order, then ``("exposure", r)``,
+            its exposure after collateral ``(E - C)^+``, then ``("default",
+            r)``, 1 in a year it defaults and 0 otherwise.
+        
+        Raises
+        ------
+        ValueError
+            As :meth:`apply` does.
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
+        >>> years = Tower([Layer("10x10", 10.0, 10.0)]).apply_annual([5.0, 15.0, 30.0])
+        >>> panel = Panel([Reinsurer("Re A", 1.0, 0.4, collateral=2.0)]).with_line("Re A", "10x10", 1.0)
+        >>> by = panel.by_reinsurer(years)
+        >>> list(by.marginal(["exposure", "Re A"]).draws)
+        [0.0, 3.0, 8.0]
+        >>> [round(x, 12) for x in by.marginal(["credit_loss", "Re A"]).draws]
+        [0.0, 1.8, 4.8]
+        """
+    @property
+    def reinsurers(self, /) -> list[Reinsurer]:
+        """
+        The panel's reinsurers, in panel order (the order they draw in).
+        """
+    def with_driver(self, /, by_year: Sequence[float]) -> Panel:
+        """
+        The panel ranking the years by ``by_year`` instead of the gross
+        loss (an industry loss, say).
+        
+        Parameters
+        ----------
+        by_year : list of float
+            One finite value per simulated year, in the order of the tower's
+            result; its length is checked when the panel is applied.
+        
+        Returns
+        -------
+        Panel
+        
+        Raises
+        ------
+        ValueError
+            For no values or a value that is not finite.
+        """
+    def with_line(self, /, reinsurer: str, layer: str, line: float) -> Panel:
+        """
+        The panel with reinsurer ``reinsurer`` writing ``line`` of layer
+        ``layer``'s ceded loss.
+        
+        Whether ``layer`` is in the tower, and whether its lines sum to 1,
+        is checked when the panel is applied, since a panel is built before
+        it meets a tower.
+        
+        Parameters
+        ----------
+        reinsurer : str
+            A reinsurer on the panel.
+        layer : str
+            A layer's name.
+        line : float
+            In ``(0, 1]``.
+        
+        Returns
+        -------
+        Panel
+        
+        Raises
+        ------
+        ValueError
+            For a reinsurer not on the panel, a line out of range or a line
+            given twice.
+        """
+
+@final
 class Pareto:
     """
     Single-parameter Pareto: ``P(X > x) = (t / x) ** alpha`` for ``x >= t``,
@@ -31881,6 +32056,72 @@ class ReinstatementPrice:
     def upfront(self, /) -> float:
         """
         The upfront (deposit) premium ``P``.
+        """
+
+@final
+class Reinsurer:
+    """
+    A reinsurer on a :class:`Panel`: its one-year probability of default,
+    the recovery rate on what it owes when it defaults, the collateral held
+    against it and its loading on the systematic factor
+    (``docs/design/reinsurer-default.md``).
+    
+    Parameters
+    ----------
+    name : str
+        Unique on a panel.
+    probability : float
+        One-year probability of default, in ``[0, 1]``.
+    recovery : float
+        Share of the uncollateralised exposure recovered on default, in
+        ``[0, 1]``.
+    collateral : float, default 0.0
+        Collateral held against this reinsurer (a trust fund or letter of
+        credit), netted once across all its layers: finite and non-negative.
+    correlation : float, default 0.0
+        The loading ``rho`` on the systematic factor, in ``[0, 1)``: 0 is
+        independent default, and a larger ``rho`` moves the defaults into
+        the years with the largest driver without changing how often the
+        reinsurer defaults.
+    
+    Raises
+    ------
+    ValueError
+        If a field is out of range.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import Reinsurer
+    >>> r = Reinsurer("Re A", 0.002, 0.4, collateral=1e6, correlation=0.3)
+    >>> r.probability, r.collateral
+    (0.002, 1000000.0)
+    """
+    def __new__(cls, /, name: str, probability: float, recovery: float, collateral: float = 0.0, correlation: float = 0.0) -> Reinsurer: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def collateral(self, /) -> float:
+        """
+        Collateral held against this reinsurer, across all its layers.
+        """
+    @property
+    def correlation(self, /) -> float:
+        """
+        Loading on the systematic factor; 0 is independent default.
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The reinsurer's name.
+        """
+    @property
+    def probability(self, /) -> float:
+        """
+        One-year probability of default.
+        """
+    @property
+    def recovery(self, /) -> float:
+        """
+        Share of the uncollateralised exposure recovered on default.
         """
 
 @final

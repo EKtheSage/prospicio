@@ -3655,6 +3655,26 @@ PaidIncurredFit$ultimate <- function() .Call(wrap__PaidIncurredFit__ultimate, se
 #' @export
 `[[.PaidIncurredFit` <- `$.PaidIncurredFit`
 
+PanelReinsurer <- new.env(parent = emptyenv())
+
+PanelReinsurer$collateral <- function() .Call(wrap__PanelReinsurer__collateral, self)
+
+PanelReinsurer$correlation <- function() .Call(wrap__PanelReinsurer__correlation, self)
+
+PanelReinsurer$name <- function() .Call(wrap__PanelReinsurer__name, self)
+
+PanelReinsurer$new <- function(name, probability, recovery, collateral, correlation) .Call(wrap__PanelReinsurer__new, name, probability, recovery, collateral, correlation)
+
+PanelReinsurer$probability <- function() .Call(wrap__PanelReinsurer__probability, self)
+
+PanelReinsurer$recovery <- function() .Call(wrap__PanelReinsurer__recovery, self)
+
+#' @export
+`$.PanelReinsurer` <- function (self, name) { func <- PanelReinsurer[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.PanelReinsurer` <- `$.PanelReinsurer`
+
 Pareto <- new.env(parent = emptyenv())
 
 Pareto$alpha <- function() .Call(wrap__Pareto__alpha, self)
@@ -3964,6 +3984,26 @@ ReinsuranceTower$with_interlocking <- function(on) .Call(wrap__ReinsuranceTower_
 
 #' @export
 `[[.ReinsuranceTower` <- `$.ReinsuranceTower`
+
+ReinsurerPanel <- new.env(parent = emptyenv())
+
+ReinsurerPanel$apply <- function(result, seed) .Call(wrap__ReinsurerPanel__apply, self, result, seed)
+
+ReinsurerPanel$by_reinsurer <- function(result, seed) .Call(wrap__ReinsurerPanel__by_reinsurer, self, result, seed)
+
+ReinsurerPanel$driver <- function(by_year) .Call(wrap__ReinsurerPanel__driver, self, by_year)
+
+ReinsurerPanel$line <- function(reinsurer, layer, line) .Call(wrap__ReinsurerPanel__line, self, reinsurer, layer, line)
+
+ReinsurerPanel$new <- function(reinsurers) .Call(wrap__ReinsurerPanel__new, reinsurers)
+
+ReinsurerPanel$reinsurer_names <- function() .Call(wrap__ReinsurerPanel__reinsurer_names, self)
+
+#' @export
+`$.ReinsurerPanel` <- function (self, name) { func <- ReinsurerPanel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ReinsurerPanel` <- `$.ReinsurerPanel`
 
 ReservingTail <- new.env(parent = emptyenv())
 

@@ -202,6 +202,14 @@ reference:
       - tower_price
       - occurrence_layer_statistics
       - occurrence_cession_statistics
+  - title: Reinsurer default
+    contents:
+      - apply_panel
+      - panel_by_reinsurer
+      - panel_driver
+      - panel_line
+      - reinsurer
+      - reinsurer_panel
   - title: Solvency II counterparty default
     contents:
       - solvency2_probability_by_ratio
