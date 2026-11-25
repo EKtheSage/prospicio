@@ -201,9 +201,10 @@ impl InsuranceCharge {
     pub fn charge(&self, r: f64) -> f64;
     pub fn savings(&self, r: f64) -> f64;
     pub fn table(&self, entry_ratios: &[f64]) -> Vec<ChargeRow>;               // r, phi, psi
-    // PR 3:
-    pub fn table_l<S: Severity + ...>(limited: S, unlimited_mean: f64) -> Result<Self>;
-    pub fn limited_table_m<S: Severity + ...>(limited: S) -> Result<Self>;
+    // Built in PR 3. The limited Table M is the table of the limited
+    // aggregate, from the two constructors above; Table L is made from it:
+    pub fn table_l(self, unlimited_expected: f64) -> Result<Self>;
+    pub fn loss_elimination(&self) -> f64;                                     // k; 0 unless a Table L
 }
 pub struct RetroPlan { /* expected loss, expense, lcf, tax multiplier, minimum, maximum */ }
 impl RetroPlan {
@@ -273,7 +274,14 @@ Proposed for the user's acceptance; each has a recommendation.
 - (h) **Both limit conventions, named for what they are**: `table_l`
   (entry ratio on the unlimited mean, `k` in the charge) and
   `limited_table_m` (limited throughout). *Recommended.* They answer
-  different filings, and mixing them is the classic error.
+  different filings, and mixing them is the classic error. As built (PR
+  3): the limited Table M needs no function of its own, being the table
+  of the limited aggregate (`from_severity` or `from_sample` on it), and
+  `table_l(unlimited_expected)` is a method that turns that table into a
+  Table L, so the limited aggregate is always the starting point and the
+  module doc sets the two side by side. The curves are one curve on two
+  scales: `phi*(r) = (1 - k) phi_LM(r E / E*) + k`, which the validation
+  test checks.
 - (i) **`RetroPlan::balance` solves for the basic premium given the
   minimum and maximum**, the common case. Solving for the maximum given
   the basic, or for the loss conversion factor, are small variations on
@@ -321,7 +329,8 @@ Stacked, each on the one before:
 2. `retro::InsuranceCharge` from a `Severity` and from a sample, with
    `charge`, `savings` and `table`; the closed-form tests; allow-list
    entries (reason: bound in PR 4b). Done.
-3. `table_l` and `limited_table_m`; the identities.
+3. `table_l` and `loss_elimination`; the identities, and an FFT aggregate
+   with a per-occurrence limit against the definition. Done.
 4. `RetroPlan::balance` and `premium`; the balance test.
 4b. Python and R bindings for `retro` (`[retro-bindings]`), their tests in
    new files, the allow-list entries removed.
