@@ -110,7 +110,8 @@ trended <- separation(genins, trend_periods = 3)
 slope <- (log(trended@indices[[10]]) - log(trended@indices[[8]])) / 2
 near(trended@future_indices$index,
      trended@indices[[10]] * exp(slope * seq_along(trended@future_indices$index)), 1e-9)
-expect_error_like(separation(genins, trend_periods = 1), "trend")
+expect_error_like(separation(genins, trend_periods = 1), "at least 2")
+expect_error_like(separation(genins, trend_periods = 2.5), "at least 2")
 expect_error_like(separation(genins, future_rate = -1), "rate")
 
 # The settings are checked.

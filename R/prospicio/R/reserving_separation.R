@@ -139,8 +139,8 @@ separation <- function(triangle, column = NULL, kind = "arithmetic", normaliser 
   trend <- 0L
   if (future == "trend") {
     trend <- single_number(trend_periods, "trend_periods")
-    if (trend != round(trend) || trend < 0) {
-      stop("trend_periods must be a positive whole number", call. = FALSE)
+    if (trend != round(trend) || trend < 2) {
+      stop(sprintf("trend_periods must be a whole number of at least 2, got %s", format(trend)), call. = FALSE)
     }
     trend <- as.integer(trend)
   }

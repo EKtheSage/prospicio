@@ -54,9 +54,14 @@ fn separation_fit_rust(
         "rate" => FutureInflation::Rate(rate),
         "index" => FutureInflation::Index(index(first, index_values, index_rate)?),
         "trend" => FutureInflation::Trend {
-            periods: usize::try_from(trend_periods).map_err(|_| {
-                Error::Other("trend_periods must be a positive whole number".into())
-            })?,
+            periods: usize::try_from(trend_periods)
+                .ok()
+                .filter(|&p| p >= 2)
+                .ok_or_else(|| {
+                    Error::Other(format!(
+                        "trend_periods must be a whole number of at least 2, got {trend_periods}"
+                    ))
+                })?,
         },
         other => {
             return Err(Error::Other(format!(
