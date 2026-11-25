@@ -350,7 +350,14 @@ Stacked, each on the one before:
    premium over a sample, an exponential's closed integral, a loss limit
    against Table L). Done.
 4b. Python and R bindings for `retro` (`[retro-bindings]`), their tests in
-   new files, the allow-list entries removed.
+   new files, the allow-list entries removed. Done: `InsuranceCharge`
+   (`from_grid`, `from_sample`, `table_l`) and `RetroPlan` in
+   `prospicio.pricing`; `insurance_charge()` and `retro_balance()` in R,
+   which are functions of the aggregate (a `grid_distribution` or a vector
+   of totals), not objects. R's `retro_premium()` already existed, as the
+   reinsurance module's `LossSensitivePremium`: `RetroPlan::premium` is
+   that premium with the tax multiplier folded into the basic premium and
+   the loss conversion factor, and a test holds the two together.
 5. `earned::Date`, `Policy` and `earned_exposure` with the daily method;
    bindings; the Werner and Modlin chapter 4 exhibit.
 6. Endorsements, cancellations and the twenty-fourths method; bindings.

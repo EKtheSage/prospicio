@@ -379,6 +379,11 @@ reference:
       - pricing.premium_based_expenses
       - pricing.credibility_weighted
       - pricing.trended_present_rates
+  - title: Retrospective rating
+    desc: The insurance charge and savings of an aggregate loss distribution or a sample (Table M), under a per-occurrence limit (Table L), and the basic premium that balances a retrospective plan.
+    contents:
+      - pricing.InsuranceCharge
+      - pricing.RetroPlan
   - title: Reserving
     desc: Loss triangles, the chain ladder with tail factors, Mack's model with its one-year view and its assumption tests, the Munich chain ladder, the expected-loss methods, the ODP bootstrap and Clark's growth curves.
     contents:
