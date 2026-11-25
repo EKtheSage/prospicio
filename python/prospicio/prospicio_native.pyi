@@ -30908,6 +30908,7 @@ class PredictiveDistribution:
     0.0
     """
     def __new__(cls, /, dims: Sequence[str], components: Sequence[Sequence[int |str]], draws: Sequence[Sequence[float]]) -> PredictiveDistribution: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def aggregate(self, /, keep: Sequence[str]) -> PredictiveDistribution:
         """
@@ -31068,6 +31069,24 @@ class PredictiveDistribution:
         ...     mvn, 20_000, 1, keys=[("auto",), ("property",)], dims=["line"])
         >>> abs(pd.mean() - 150.0) < 1.0
         True
+        """
+    @staticmethod
+    def from_json(text: str) -> PredictiveDistribution:
+        """
+        A distribution from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     def group_spearman(self, /, dim: str) -> tuple[list[Any], list[list[float]]]:
         """
@@ -31362,6 +31381,27 @@ class PredictiveDistribution:
         ...     [[10.0, 3.0, 7.0], [4.0, 0.0, 4.0]])
         >>> pd.select("kind", ["ceded"]).mean()
         1.5
+        """
+    def to_json(self, /) -> str:
+        """
+        The distribution as a JSON document: dimensions, component keys,
+        provenance and draws, numbers bit for bit (#978). ``from_json``
+        reads it back; ``pickle`` uses the same document.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(["line"], [("A",), ("B",)], [[1.0, 2.0], [3.0, 4.5]])
+        >>> back = PredictiveDistribution.from_json(pd.to_json())
+        >>> back.draw_matrix() == pd.draw_matrix() and back.components() == pd.components()
+        True
+        >>> pickle.loads(pickle.dumps(pd)).draw_matrix() == pd.draw_matrix()
+        True
         """
     def total(self, /) -> Sampled:
         """
