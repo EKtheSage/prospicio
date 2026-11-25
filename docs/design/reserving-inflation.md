@@ -33,6 +33,13 @@ recorded as decisions 11 to 16.
   segment=None)` in Python, `separation()` in R, whose fit has every field
   of `SeparationFit` and its future as `FutureCells`), in new module
   files, at the statsmodels reference and Taylor's Example 1.
+* **PR 6 is built** (branch `claude/apc-glm`, 2026-11-24): `ApcGlm`
+  (`ApcEffects`, `Extrapolation`, `fit`), `ApcGlmFit` and
+  `FutureCells::from_apc_glm` in `apc.rs`, the canonical `3k - 3`
+  parameter design fitted through `OdpGlm::fit_design`, and
+  `Separation::glm`, the arithmetic method as a Poisson GLM with a
+  delta-method `prediction_error()` (decision 16), in Rust; decisions 17
+  to 19 below; the bindings are PR 7.
 
 Lane: Reserving (`crates/prospicio-reserving/`; the
 bindings in new module files of `prospicio-python` and `prospicio-r`) ·
@@ -180,16 +187,18 @@ identification:
 
 * `I2`: future second differences are zero (the last linear calendar
   trend continues);
-* `I1`: the next second difference makes the next first difference equal
-  to the mean of the fitted first differences, then zero;
-* `I0` (`apc`'s default): the calendar effect regressed on an intercept
-  and a demeaned trend, extrapolated two steps, the second differences
-  backed out, then zero.
+* `I1`: with `n = k - 2` fitted second differences `DD` and `D =
+  cumsum(DD)`, the next second difference is `mean(D) - D[n]` (the mean
+  over all `n` cumulated values), then zero;
+* `I0` (`apc`'s default): `y = cumsum(cumsum(DD))`, all `n` points
+  regressed on an intercept and a demeaned trend, extrapolated two steps,
+  the first two future second differences backed out as the second
+  differences of `y[n-1], y[n], f1, f2`, then zero.
 
-The fit builds the canonical design by hand (it is full rank, so
-`prospicio-glm` fits it unchanged) and the future design from the chosen
-rule, and reuses `OdpGlm`'s private `finish` path: reserves, prediction
-error by the delta method and `PredictiveDistribution` draws then cover
+The fit builds the canonical design by hand (it is full rank) with the
+extrapolation's weights on the period columns of the future rows (the
+rules are linear in the fitted second differences), and fits it through
+the public `OdpGlm::fit_design`: reserves, prediction error by the delta method and `PredictiveDistribution` draws then cover
 the extrapolated calendar effect as a deterministic function of the
 fitted parameters. Sub-models (`AP`, the separation model as a GLM; `AC`,
 the chain ladder; `PC`) are the same design with columns dropped.
@@ -401,7 +410,48 @@ takes the fit instead.
     `pkg_resources`, so the generator pins `setuptools` below 81.
 16. **Standard errors for separation** (the user, 2026-11-24, open
     decision 6): none in PR 3 (Taylor gives none); the Poisson GLM's
-    delta-method prediction error with PR 6's machinery.
+    delta-method prediction error with PR 6's machinery. Built as
+    `Separation::glm`, which returns the `OdpGlmFit` of `s ~
+    C(development) + C(calendar)` with the future indices in its future
+    rows (decision 18).
+17. **`I1` and `I0` as R `apc` computes them** (PR 6). The rules were
+    pinned to the source of `apc.forecast.apc`, not to the prose: `I1`
+    takes `mean(cumsum(DD)) - cumsum(DD)[n]` with the mean over all `n =
+    k - 2` fitted second differences, `I0` regresses all `n` points of
+    `cumsum(cumsum(DD))` on an intercept and a demeaned trend. These are
+    the only forms that give R's documented `I0` total of 19,061,428 on
+    Taylor-Ashe (variants with the first difference or two leading zeros
+    give 18.2m and 16.5m). They equal the identification-free forms
+    (`I2`: continue the last first difference of the period effect; `I1`:
+    continue with the mean of its first differences from the second on;
+    `I0`: every future effect on the least-squares line through the
+    effects of the periods from the third on), which the unit tests use
+    on a second identification. All three are linear in the fitted second
+    differences, so they enter the future design rows as fixed weights.
+    `I0` needs at least 4 origins, every rule at least 3.
+18. **Separation's prediction error: arithmetic, no normaliser** (PR 6).
+    `Separation::glm` is `NotSupported` for the geometric method (least
+    squares on the logs) and with a normaliser (the variance of `n_i s_ij`
+    is `n_i^2 phi mu`, not an ODP's on the amounts; divide the triangle by
+    the normaliser and fit without one). A `Rate` or `Index` future is a
+    fixed growth from the last fitted index (an offset on the last
+    calendar column), so the error covers `lambda_k`'s and takes the
+    growth as given; a `Trend` is linear in the fitted calendar effects
+    and is carried by the design, so its uncertainty is included.
+19. **The APC reference's provenance** (PR 6). Python `apc` 1.0.2 fits the
+    canonical model (its design is the one built here) and its
+    deviances, fitted values and second differences are the checked
+    numbers, to 1e-6. It does not run as published: it needs
+    `setuptools<81`, pandas 1.5.3 (pandas 2 rejects its positional
+    `.loc` slices), and one skipped empty iteration of its second
+    difference loop in `_get_design_components`; its `forecast()` fails
+    on this triangle and has no `I1` or `I0`. Every reserve row of the
+    reference is therefore the generator's own application of R `apc`'s
+    rules (decision 17) to `apc`'s fitted coefficients, with the `I0`
+    total checked against R's documented number. The `I1` rule is confirmed
+    by R's source (cran/apc, `R/apc_forecast.R` line 673: `mean(cumsum(xi.per.dd)) -
+    cumsum(xi.per.dd)[length(xi.per.dd)]`; lines 586-596 document I1 and
+    I0), with the mean over the `n` cumulated second differences.
 
 ## Validation targets
 

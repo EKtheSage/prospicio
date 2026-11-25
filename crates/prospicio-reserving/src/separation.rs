@@ -33,8 +33,12 @@
 //! grain, as many ages as origins, every origin observed from the first age
 //! to the latest diagonal with no hole (decision 7).
 
+use prospicio_models::Design;
+
 use crate::error::{Error, Result};
+use crate::frame::TriangleFrame;
 use crate::inflation::{CalendarIndex, FutureCell, FutureCells};
+use crate::odp_glm::{OdpGlm, OdpGlmFit};
 use crate::segments::{SegmentFits, fit_each};
 use crate::triangle::{Segment, Triangle};
 use prospicio_core::{Lag, Period};
@@ -205,6 +209,107 @@ impl Separation {
         column: &str,
     ) -> Result<SegmentFits<SeparationFit>> {
         fit_each(triangle, column, |s| self.fit_segment(s))
+    }
+
+    /// The Poisson GLM that the arithmetic method is (decision 8), as an
+    /// [`OdpGlmFit`] with the future indices in its future rows
+    /// (decision 16): `s ~ C(development) + C(calendar)` on the increments,
+    /// whose [`prediction_error`](OdpGlmFit::prediction_error) is the delta
+    /// method's and whose
+    /// [`predict_distribution`](OdpGlmFit::predict_distribution) gives
+    /// draws of the future cells. Its future means and reserves equal
+    /// [`SeparationFit::future`] and [`SeparationFit::reserves`].
+    ///
+    /// A [`Rate`](FutureInflation::Rate) or [`Index`](FutureInflation::Index)
+    /// future is a fixed growth from the last fitted index `lambda_k`, so it
+    /// enters as an offset on the last calendar column (the error is that of
+    /// `lambda_k`'s, with the growth taken as given); a
+    /// [`Trend`](FutureInflation::Trend) is linear in the fitted calendar
+    /// effects and enters through the design, so its uncertainty is
+    /// included. The dispersion is Pearson's.
+    ///
+    /// Fails with [`Error::NotSupported`] for the geometric method (a least
+    /// squares fit on the logs, whose prediction error is not built) and
+    /// with a normaliser (the variance of the amounts `n_i s_ij` is not an
+    /// ODP's: divide the triangle by the normaliser before fitting), and as
+    /// [`fit`](Self::fit) otherwise; the GLM's convergence can fail where
+    /// the recursion does not, on increments that are not positive.
+    pub fn glm(&self, triangle: &Triangle, column: &str) -> Result<OdpGlmFit> {
+        if !matches!(self.kind, SeparationKind::Arithmetic) {
+            return Err(Error::NotSupported {
+                setting: "kind",
+                method: "separation prediction error",
+                reason: "only the arithmetic method is a Poisson GLM; the geometric method's prediction error is not built",
+            });
+        }
+        if self.normaliser.is_some() {
+            return Err(Error::NotSupported {
+                setting: "normaliser",
+                method: "separation prediction error",
+                reason: "the variance of n_i s_ij is not an over-dispersed Poisson's; divide the triangle by the normaliser and fit it without one",
+            });
+        }
+        let fit = self.fit(triangle, column)?;
+        let n = fit.origins.len();
+        let cells = TriangleFrame::new(triangle, column, None)?;
+        let rows = cells.n_rows();
+        let at = |r: usize| (cells.origin_of(r), cells.development_of(r));
+
+        // ln lambda_{k+t} - ln lambda_k as a function of the fitted
+        // calendar effects: a fixed offset, or weights on them.
+        let mut offset = vec![0.0; rows];
+        let mut trend_weights: Option<Vec<f64>> = None;
+        match &self.future {
+            FutureInflation::Trend { periods: m } => {
+                let m = *m;
+                let x_bar = (m as f64 - 1.0) / 2.0;
+                let sxx: f64 = (0..m).map(|x| (x as f64 - x_bar).powi(2)).sum();
+                let mut w = vec![0.0; n];
+                for x in 0..m {
+                    w[n - m + x] = (x as f64 - x_bar) / sxx;
+                }
+                trend_weights = Some(w);
+            }
+            _ => {
+                let last = fit.indices[n - 1];
+                for (r, o) in offset.iter_mut().enumerate() {
+                    let (i, j) = at(r);
+                    if i + j >= n {
+                        *o = (fit.future_indices[i + j - n].1 / last).ln();
+                    }
+                }
+            }
+        }
+
+        let mut names = vec!["(Intercept)".to_string()];
+        let mut columns = vec![vec![1.0; rows]];
+        for d in 1..n {
+            names.push(format!("development[{d}]"));
+            columns.push((0..rows).map(|r| f64::from(at(r).1 == d)).collect());
+        }
+        for h in 1..n {
+            names.push(format!("calendar[{h}]"));
+            columns.push(
+                (0..rows)
+                    .map(|r| {
+                        let (i, j) = at(r);
+                        let c = i + j;
+                        if c < n {
+                            f64::from(c == h)
+                        } else {
+                            // The last observed calendar effect, and the
+                            // trend's growth from it.
+                            let t = (c - n + 1) as f64;
+                            f64::from(h == n - 1) + trend_weights.as_ref().map_or(0.0, |w| t * w[h])
+                        }
+                    })
+                    .collect(),
+            );
+        }
+        let design = Design::new(names, columns)
+            .and_then(|d| d.with_offset(offset))
+            .map_err(Error::from)?;
+        OdpGlm::default().fit_design(triangle, column, &design)
     }
 
     fn fit_segment(&self, seg: &Segment) -> Result<SeparationFit> {
@@ -660,6 +765,79 @@ mod tests {
             };
             assert!(bad.fit(&tri, "values").is_err());
         }
+    }
+
+    #[test]
+    fn the_glm_form_has_the_same_reserves_and_a_prediction_error() {
+        let tri = genins();
+        let doubling = CalendarIndex::new(Period::year(2001), vec![1.0; 10])
+            .unwrap()
+            .with_future_rate(0.3)
+            .unwrap();
+        for future in [
+            FutureInflation::Rate(0.05),
+            FutureInflation::Index(doubling),
+            FutureInflation::Trend { periods: 4 },
+            FutureInflation::Trend { periods: 10 },
+        ] {
+            let sep = Separation {
+                future,
+                ..arithmetic_at(0.0)
+            };
+            let fit = sep.fit(&tri, "values").unwrap();
+            let glm = sep.glm(&tri, "values").unwrap();
+            for (got, want) in glm.reserves.iter().zip(&fit.reserves) {
+                assert!(
+                    (got - want).abs() <= 1e-7 * want.abs().max(1.0),
+                    "{got} {want}"
+                );
+            }
+            let error = glm.prediction_error().unwrap();
+            assert!(error.total.rmsep() > 0.0);
+            assert!((error.total.total - fit.total_reserve()).abs() < 1e-6 * fit.total_reserve());
+            assert_eq!(glm.predict_distribution(50, 1).unwrap().n_components(), 45);
+        }
+        // The trend's growth depends on the fitted effects, so it adds
+        // parameter variance to the fixed rate's.
+        let rmsep = |future| {
+            Separation {
+                future,
+                ..arithmetic_at(0.0)
+            }
+            .glm(&tri, "values")
+            .unwrap()
+            .prediction_error()
+            .unwrap()
+            .total
+            .parameter_variance
+        };
+        assert!(rmsep(FutureInflation::Trend { periods: 3 }) != rmsep(FutureInflation::Rate(0.0)));
+        // A trend over one period has no slope; `fit` refuses it first.
+        let one = Separation {
+            future: FutureInflation::Trend { periods: 1 },
+            ..arithmetic_at(0.0)
+        };
+        assert!(matches!(
+            one.glm(&tri, "values"),
+            Err(Error::InvalidSetting { .. })
+        ));
+        // What it does not build.
+        let geometric = Separation {
+            kind: SeparationKind::Geometric(Retransformation::GeometricMean),
+            ..arithmetic_at(0.0)
+        };
+        assert!(matches!(
+            geometric.glm(&tri, "values"),
+            Err(Error::NotSupported { .. })
+        ));
+        let normalised = Separation {
+            normaliser: Some(vec![1.0; 10]),
+            ..arithmetic_at(0.0)
+        };
+        assert!(matches!(
+            normalised.glm(&tri, "values"),
+            Err(Error::NotSupported { .. })
+        ));
     }
 
     #[test]
