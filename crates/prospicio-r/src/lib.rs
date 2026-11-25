@@ -13,6 +13,7 @@ use extendr_api::{Error, Result};
 mod aggregate;
 mod bonus_malus;
 mod book;
+mod boosting;
 mod cashflow;
 mod casualty;
 mod chf;
@@ -85,6 +86,7 @@ extendr_module! {
     use aggregate;
     use bonus_malus;
     use book;
+    use boosting;
     use cashflow;
     use casualty;
     use chf;
