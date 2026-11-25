@@ -55,6 +55,8 @@ def test_certain_default_gives_the_rust_values():
     assert draws(after, "net_after_default", "retained") == [5.0, 11.5, 23.0]
     # The input's components come first, unchanged.
     assert after.components()[: len(years.components())] == years.components()
+    for key in years.components():
+        assert draws(after, *key) == draws(years, *key), key
     by = certain_panel().by_reinsurer(years, seed=7)
     assert draws(by, "default", "Re A") == [1.0, 1.0, 1.0]
     assert draws(by, "default", "Re B") == [0.0, 0.0, 0.0]
@@ -102,9 +104,11 @@ def test_the_draws_are_fixed_by_the_seed():
     assert draws(panel.by_reinsurer(years), "default", "R1") == draws(
         panel.by_reinsurer(years, seed=0), "default", "R1"
     )
-    # A driver ranks the years instead of the gross loss.
-    driven = panel.with_driver([float(-i) for i in range(50)]).apply(years, seed=3)
-    assert len(draws(driven, "credit_loss", "A")) == 50
+    # A driver ranks the years instead of the gross loss: the same seed
+    # gives other defaults.
+    driven = panel.with_driver([float(-i) for i in range(50)])
+    assert len(draws(driven.apply(years, seed=3), "credit_loss", "A")) == 50
+    assert draws(driven.by_reinsurer(years, seed=3), "default", "R1") != one
 
 
 def test_the_errors():
@@ -126,6 +130,8 @@ def test_the_errors():
         panel.with_line("R1", "A", 1.5)
     with pytest.raises(ValueError, match="already has a line"):
         panel.with_line("R1", "A", 0.5).with_line("R1", "A", 0.5)
+    with pytest.raises(ValueError, match="layer name"):
+        panel.with_line("R1", "", 0.5)
     with pytest.raises(ValueError):
         panel.with_driver([1.0, float("nan")])
     # Checked when the panel meets the tower.
@@ -138,6 +144,12 @@ def test_the_errors():
         full.with_driver([1.0, 2.0, 3.0]).apply(years)
     with pytest.raises(ValueError):
         full.apply(full.apply(years))
+    # The seed is an unsigned 64-bit integer.
+    for seed in (-1, 2**64):
+        with pytest.raises(OverflowError):
+            full.apply(years, seed=seed)
+        with pytest.raises(OverflowError):
+            full.by_reinsurer(years, seed=seed)
 
 
 # The reference's cases on stratified years: the gross loss at the

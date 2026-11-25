@@ -2,7 +2,9 @@
 //! `docs/design/reinsurer-default.md`): a [`Panel`] of [`Reinsurer`]s and
 //! their signed lines on the tower's layers, applied to a tower's one-year
 //! result ([`Tower::apply`], [`Tower::apply_aggregate`],
-//! [`Tower::apply_annual`]).
+//! [`Tower::apply_annual`]) with [`Panel::apply`], or to a term's paths
+//! ([`Tower::apply_term`]) with [`Panel::apply_term`], where a default is
+//! final for the rest of the path and the collateral is used up.
 //!
 //! The model and the order of the random draws are documented on [`Panel`].
 
@@ -180,9 +182,13 @@ struct Line {
 /// reinsurer `r` defaults when its uniform is below `p_r(z)`. The ranks
 /// are computed once before the years, and each year depends only on its
 /// index and its rank, so the result has the same bits on any number of
-/// threads. The result keeps the tower result's provenance (so `join` sees
+/// threads. Over a term ([`Panel::apply_term`]) the stream is the path's,
+/// `DEFAULT_STREAM + j` for path `j`, and its years draw in order, each as
+/// a one-year result's year does, a reinsurer already in default drawing
+/// too. The result keeps the tower result's provenance (so `join` sees
 /// that it shares the events' streams) and adds the parameters
-/// `default_seed` and `default_streams`.
+/// `default_seed`, `default_streams` and `default_driver` (and
+/// `default_term_years` over a term).
 ///
 /// # Example
 ///
@@ -272,7 +278,9 @@ impl Panel {
 
     /// Ranks the years by `by_year` instead of the gross loss (an industry
     /// loss, say), one finite value per simulated year in the order of the
-    /// tower's result; its length is checked when the panel is applied.
+    /// tower's result; over a term ([`Panel::apply_term`]), one value per
+    /// path-year, path-major (year `t` of path `j` at `j * n_years + t`,
+    /// `t` from 0). Its length is checked when the panel is applied.
     pub fn driver(mut self, by_year: Vec<f64>) -> Result<Self> {
         if by_year.is_empty() {
             return Err(Error::Data("a driver needs one value per year".into()));
@@ -309,61 +317,88 @@ impl Panel {
     /// Fails on a result that is no tower's (dims other than `["kind",
     /// "layer", ...]`, no ceded, net or, without a driver, gross
     /// components), one a panel was already applied to, a term's paths
-    /// (dimension `"year"` with integer years), a line on a layer the
-    /// result does not have, a named layer whose lines do not sum to 1, or
-    /// a driver of the wrong length.
+    /// (dimension `"year"` with integer years; use
+    /// [`apply_term`](Self::apply_term)), a line on a layer the result does
+    /// not have, a named layer whose lines do not sum to 1, or a driver of
+    /// the wrong length.
     pub fn apply(
         &self,
         tower: &PredictiveDistribution,
         seed: u64,
     ) -> Result<PredictiveDistribution> {
-        let overlay = Overlay::new(self, tower, seed)?;
-        let n_labels = tower.dims().len() - 2;
-        let blank = vec![KeyValue::from(""); n_labels];
-        let key = |kind: &str, layer: &KeyValue| -> ComponentKey {
-            [KeyValue::from(kind), layer.clone()]
-                .into_iter()
-                .chain(blank.iter().cloned())
-                .collect()
-        };
-        let mut components = tower.components().to_vec();
-        for kind in [CREDIT_LOSS, RECOVERED] {
-            components.extend(overlay.layers.iter().map(|l| key(kind, l)));
-        }
-        components.push(key(NET_AFTER_DEFAULT, &KeyValue::from("retained")));
-        let n_layers = overlay.layers.len();
-        let draws = fill_rows(
-            tower.n_sims(),
-            components.len(),
-            |w: &mut YearDraws, row, i| {
-                overlay.year(i, w);
-                let input = tower.row(i).expect("a row of the input");
-                row.extend_from_slice(input);
-                // Each reinsurer's credit loss over its layers, in
-                // proportion to its exposure on each.
-                w.by_layer.clear();
-                w.by_layer.resize(n_layers, 0.0);
-                for (r, lines) in overlay.lines.iter().enumerate() {
-                    let (e, credit) = (w.exposure[r], w.credit[r]);
-                    if credit == 0.0 || e <= 0.0 {
-                        continue;
-                    }
-                    for &(l, s) in lines {
-                        w.by_layer[l] += credit * (s * w.x[l] / e);
-                    }
-                }
-                row.extend_from_slice(&w.by_layer);
-                row.extend(w.x.iter().zip(&w.by_layer).map(|(x, c)| x - c));
-                let net: f64 = overlay.net.iter().map(|&j| input[j]).sum();
-                row.push(net + w.credit.iter().sum::<f64>());
-            },
-        );
-        PredictiveDistribution::from_draws(
-            tower.dims().to_vec(),
-            components,
-            draws,
-            overlay.provenance(),
-        )
+        Overlay::new(self, tower, seed, None)?.after_default()
+    }
+
+    /// A term's paths ([`Tower::apply_term`],
+    /// [`Tower::apply_aggregate_term`], [`Tower::apply_timeline`]) of
+    /// `n_years` years after reinsurer default, with `seed` for the default
+    /// draws.
+    ///
+    /// Each row is a path, and a default is final: a reinsurer that
+    /// defaults in year `t` of a path is in default in every later year of
+    /// it, and each of those years' exposure is lost at `1 - R` too. The
+    /// collateral is held once per reinsurer and path and is used up: in
+    /// each year in default the collateral still held is set against that
+    /// year's exposure, and what it covered is gone for the later years.
+    /// Each path-year's factor comes from its driver ranked among all
+    /// `n_paths * n_years` path-years (the gross loss, or a driver given
+    /// path-major: year `t` of path `j` at `j * n_years + t`). Path `j`
+    /// draws from stream `DEFAULT_STREAM + j`, its years in order, each
+    /// year `v` for the rank then one uniform per reinsurer in panel order,
+    /// a reinsurer already in default drawing too; so one year's term gives
+    /// the same draws as [`apply`](Self::apply) on that year.
+    ///
+    /// The result has the input's components, copied bit for bit, then for
+    /// each year in turn the components [`apply`](Self::apply) adds, with
+    /// the year (`1..=n_years`) as the last key, as the term's own
+    /// components have it. With a constant probability `p` and
+    /// independent default (`rho = 0`), a reinsurer is in default by year
+    /// `t` with probability `1 - (1 - p)^t`. With `rho > 0` this holds only
+    /// when the years' drivers are independent and identically
+    /// distributed: the ranks are taken over all path-years together, so a
+    /// driver that trends or changes in spread from year to year moves
+    /// defaults between years.
+    ///
+    /// Fails as [`apply`](Self::apply) does, and on a result whose dims
+    /// are not `["kind", "layer", "year"]` or whose years are not exactly
+    /// `1..=n_years` (a one-year result among them), and on a driver
+    /// without `n_paths * n_years` values.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{EventSet, Layer, Panel, Reinsurer, Tower};
+    /// use prospicio_prob::KeyValue;
+    ///
+    /// let tower = Tower::new(vec![Layer::xol("10x10", 10.0, 10.0).unwrap()]).unwrap();
+    /// // One path of two years, ceding 5 and then 10.
+    /// let term = tower
+    ///     .apply_term(&[
+    ///         EventSet::from_years(vec![vec![15.0]], 0).unwrap(),
+    ///         EventSet::from_years(vec![vec![25.0]], 0).unwrap(),
+    ///     ])
+    ///     .unwrap();
+    /// // Re A certainly defaults, recovers nothing and has collateral of 8:
+    /// // year 1 uses 5 of it, year 2 the 3 left.
+    /// let panel = Panel::new(vec![
+    ///     Reinsurer::new("Re A", 1.0, 0.0).unwrap().collateral(8.0).unwrap(),
+    /// ])
+    /// .unwrap()
+    /// .line("Re A", "10x10", 1.0)
+    /// .unwrap();
+    /// let after = panel.apply_term(&term, 2, 7).unwrap();
+    /// let credit = |year: i64| {
+    ///     let key = vec![KeyValue::from("credit_loss"), KeyValue::from("10x10"), KeyValue::Int(year)];
+    ///     prospicio_prob::Empirical::draws(&after.marginal(&key).unwrap()).to_vec()
+    /// };
+    /// assert_eq!(credit(1), [0.0]);
+    /// assert_eq!(credit(2), [7.0]);
+    /// ```
+    pub fn apply_term(
+        &self,
+        tower: &PredictiveDistribution,
+        n_years: usize,
+        seed: u64,
+    ) -> Result<PredictiveDistribution> {
+        Overlay::new(self, tower, seed, Some(n_years))?.after_default()
     }
 
     /// Each reinsurer's credit loss, exposure and default in each year,
@@ -377,36 +412,23 @@ impl Panel {
         tower: &PredictiveDistribution,
         seed: u64,
     ) -> Result<PredictiveDistribution> {
-        let overlay = Overlay::new(self, tower, seed)?;
-        let mut components = Vec::new();
-        for kind in [CREDIT_LOSS, "exposure", "default"] {
-            components.extend(
-                self.reinsurers
-                    .iter()
-                    .map(|r| vec![KeyValue::from(kind), KeyValue::from(r.name.as_str())]),
-            );
-        }
-        let draws = fill_rows(
-            tower.n_sims(),
-            components.len(),
-            |w: &mut YearDraws, row, i| {
-                overlay.year(i, w);
-                row.extend_from_slice(&w.credit);
-                row.extend(
-                    w.exposure
-                        .iter()
-                        .zip(&self.reinsurers)
-                        .map(|(e, r)| (e - r.collateral).max(0.0)),
-                );
-                row.extend(w.default.iter().map(|&d| if d { 1.0 } else { 0.0 }));
-            },
-        );
-        PredictiveDistribution::from_draws(
-            vec!["kind".into(), "reinsurer".into()],
-            components,
-            draws,
-            overlay.provenance(),
-        )
+        Overlay::new(self, tower, seed, None)?.by_reinsurer()
+    }
+
+    /// [`by_reinsurer`](Self::by_reinsurer) over a term's paths, from the
+    /// same draws as [`apply_term`](Self::apply_term) with the same `seed`:
+    /// dims `["kind", "reinsurer", "year"]`, `by_reinsurer`'s components
+    /// for each year in turn with the year as the last key. `("exposure",
+    /// r, t)` is the exposure after the collateral still held at the start
+    /// of year `t`, and `("default", r, t)` is 1 in every year from the one
+    /// it defaults in. Fails as `apply_term` does.
+    pub fn by_reinsurer_term(
+        &self,
+        tower: &PredictiveDistribution,
+        n_years: usize,
+        seed: u64,
+    ) -> Result<PredictiveDistribution> {
+        Overlay::new(self, tower, seed, Some(n_years))?.by_reinsurer()
     }
 
     /// The provenance parameter describing reinsurer `r` and its lines.
@@ -423,44 +445,64 @@ impl Panel {
     }
 }
 
-/// One year's draws and amounts, reused from year to year.
+/// One path's draws and amounts (a one-year result's year is a path of one
+/// year), reused from path to path; every field is reset or refilled at
+/// the start of each path.
 #[derive(Debug, Default)]
-struct YearDraws {
-    /// Each layer's ceded loss, summed over the label combinations.
+struct PathDraws {
+    /// Each year's ceded loss by layer, summed over the label combinations,
+    /// at `t * n_layers + l`.
     x: Vec<f64>,
-    /// Each reinsurer's exposure `E`, before collateral.
+    /// Each year's exposure `E` by reinsurer, before collateral, at
+    /// `t * n_reinsurers + r`.
     exposure: Vec<f64>,
-    /// Whether each reinsurer defaults.
+    /// Each year's exposure after the collateral still held, by reinsurer.
+    uncovered: Vec<f64>,
+    /// Whether each reinsurer is in default in each year: from its first
+    /// default on, for the rest of the path.
     default: Vec<bool>,
-    /// Each reinsurer's credit loss, 0 when it does not default.
+    /// Each reinsurer's credit loss in each year, 0 when not in default.
     credit: Vec<f64>,
-    /// Each layer's credit loss.
+    /// Whether each reinsurer has defaulted so far on the path.
+    in_default: Vec<bool>,
+    /// The collateral each reinsurer still has on the path.
+    left: Vec<f64>,
+    /// One year's credit loss by layer.
     by_layer: Vec<f64>,
 }
 
-/// What a panel reads from a tower's one-year result, checked, and the
-/// years' ranks.
+/// What a panel reads from a tower's one-year result or term's paths,
+/// checked, and the path-years' ranks.
 struct Overlay<'a> {
     panel: &'a Panel,
     tower: &'a PredictiveDistribution,
     seed: u64,
+    /// `Some(T)` for a term's paths of `T` years, `None` for a one-year
+    /// result (a path of one year).
+    term: Option<usize>,
     /// The input's layers, in the order of their first ceded component.
     layers: Vec<KeyValue>,
-    /// Each layer's ceded components (one per label combination).
-    ceded: Vec<Vec<usize>>,
-    /// The net components.
-    net: Vec<usize>,
+    /// Each year's ceded components by layer (one per label combination),
+    /// `ceded[t][l]`.
+    ceded: Vec<Vec<Vec<usize>>>,
+    /// Each year's net components.
+    net: Vec<Vec<usize>>,
     /// Each reinsurer's lines, as `(layer index, line)`.
     lines: Vec<Vec<(usize, f64)>>,
     /// `Phi^{-1}` of each reinsurer's probability of default.
     quantiles: Vec<f64>,
-    /// Each year's `(b, t)`: the years strictly below its driver, and the
-    /// years tied with it, itself included.
+    /// Each path-year's `(b, t)`, path-major: the path-years strictly
+    /// below its driver, and those tied with it, itself included.
     ranks: Vec<(usize, usize)>,
 }
 
 impl<'a> Overlay<'a> {
-    fn new(panel: &'a Panel, tower: &'a PredictiveDistribution, seed: u64) -> Result<Self> {
+    fn new(
+        panel: &'a Panel,
+        tower: &'a PredictiveDistribution,
+        seed: u64,
+        term: Option<usize>,
+    ) -> Result<Self> {
         let dims = tower.dims();
         if dims.len() < 2 || dims[0] != "kind" || dims[1] != "layer" {
             return Err(Error::Data(format!(
@@ -468,32 +510,100 @@ impl<'a> Overlay<'a> {
                  not {dims:?}"
             )));
         }
-        if let Some(t) = dims.iter().position(|d| d == "year")
-            && tower
+        let year_dim = dims.iter().position(|d| d == "year");
+        let has_int_years = year_dim.is_some_and(|t| {
+            tower
                 .components()
                 .iter()
                 .any(|k| matches!(k[t], KeyValue::Int(_)))
+        });
+        let n_years = match term {
+            None if has_int_years => {
+                return Err(Error::Data(
+                    "this looks like a term's paths (apply_term): Panel::apply takes a one-year \
+                     result; use Panel::apply_term for a term"
+                        .into(),
+                ));
+            }
+            None => 1,
+            Some(0) => return Err(Error::Data("a term needs at least one year".into())),
+            Some(_) if !has_int_years => {
+                return Err(Error::Data(
+                    "Panel::apply_term takes a term's paths (Tower::apply_term), with dims \
+                     [\"kind\", \"layer\", \"year\"] and integer years; use Panel::apply for a \
+                     one-year result"
+                        .into(),
+                ));
+            }
+            Some(_) if dims.len() != 3 || dims[2] != "year" => {
+                return Err(Error::Data(format!(
+                    "a term's paths have dims [\"kind\", \"layer\", \"year\"], not {dims:?}"
+                )));
+            }
+            Some(n) => n,
+        };
+        // Each year needs at least one component, so a term longer than the
+        // result's component count cannot match it; refusing it here also
+        // keeps a huge `n_years` from reaching the allocations below.
+        if term.is_some() && n_years > tower.n_components() {
+            return Err(Error::Data(format!(
+                "a term of {n_years} years needs components in every year, but the result \
+                 has only {} components",
+                tower.n_components()
+            )));
+        }
+        // The year index of each component: 0 for a one-year result.
+        let mut seen = vec![false; n_years];
+        let mut year_of = Vec::with_capacity(tower.n_components());
+        for key in tower.components() {
+            if term.is_none() {
+                year_of.push(0);
+                continue;
+            }
+            match key[2] {
+                KeyValue::Int(y) if y >= 1 && (y as u64) <= n_years as u64 => {
+                    seen[y as usize - 1] = true;
+                    year_of.push(y as usize - 1);
+                }
+                KeyValue::Int(y) => {
+                    return Err(Error::Data(format!(
+                        "the term has a component in year {y}, outside 1..={n_years}"
+                    )));
+                }
+                ref y => {
+                    return Err(Error::Data(format!(
+                        "the term has a component whose year {y} is not an integer"
+                    )));
+                }
+            }
+        }
+        if term.is_some()
+            && let Some(t) = seen.iter().position(|s| !s)
         {
-            return Err(Error::Data(
-                "this looks like a term's paths (apply_term): Panel::apply takes a one-year \
-                 result; default over a term is not built yet (#980)"
-                    .into(),
-            ));
+            return Err(Error::Data(format!(
+                "the term has no components in year {} of the {n_years} asked for",
+                t + 1
+            )));
         }
         let mut layers: Vec<KeyValue> = Vec::new();
-        let mut ceded: Vec<Vec<usize>> = Vec::new();
-        let (mut gross, mut net) = (Vec::new(), Vec::new());
+        let mut ceded_at: Vec<(usize, usize, usize)> = Vec::new();
+        let mut gross = vec![Vec::new(); n_years];
+        let mut net = vec![Vec::new(); n_years];
         for (j, key) in tower.components().iter().enumerate() {
+            let t = year_of[j];
             match text(&key[0]) {
-                Some("ceded") => match layers.iter().position(|l| *l == key[1]) {
-                    Some(l) => ceded[l].push(j),
-                    None => {
-                        layers.push(key[1].clone());
-                        ceded.push(vec![j]);
-                    }
-                },
-                Some("gross") => gross.push(j),
-                Some("net") => net.push(j),
+                Some("ceded") => {
+                    let l = match layers.iter().position(|l| *l == key[1]) {
+                        Some(l) => l,
+                        None => {
+                            layers.push(key[1].clone());
+                            layers.len() - 1
+                        }
+                    };
+                    ceded_at.push((t, l, j));
+                }
+                Some("gross") => gross[t].push(j),
+                Some("net") => net[t].push(j),
                 Some(kind @ (CREDIT_LOSS | RECOVERED | NET_AFTER_DEFAULT)) => {
                     return Err(Error::Data(format!(
                         "the result already has {kind:?} components: a panel applies once, \
@@ -503,17 +613,21 @@ impl<'a> Overlay<'a> {
                 _ => {}
             }
         }
-        if ceded.is_empty() || net.is_empty() {
+        if ceded_at.is_empty() || net.iter().any(Vec::is_empty) {
             return Err(Error::Data(
                 "a panel needs the tower's ceded and net components".into(),
             ));
         }
-        if panel.driver.is_none() && gross.is_empty() {
+        if panel.driver.is_none() && gross.iter().any(Vec::is_empty) {
             return Err(Error::Data(
                 "a panel ranks the years by the gross loss: the result has no gross \
                  component (give a driver with Panel::driver)"
                     .into(),
             ));
+        }
+        let mut ceded = vec![vec![Vec::new(); layers.len()]; n_years];
+        for (t, l, j) in ceded_at {
+            ceded[t][l].push(j);
         }
         // Each reinsurer's lines by layer index, and each named layer's
         // total.
@@ -537,22 +651,27 @@ impl<'a> Overlay<'a> {
                 )));
             }
         }
-        let n = tower.n_sims();
+        let n = tower.n_sims() * n_years;
         let ranks = match &panel.driver {
             Some(d) if d.len() != n => {
-                return Err(Error::Data(format!(
-                    "the driver has {} values for {n} simulated years",
-                    d.len()
-                )));
+                return Err(Error::Data(if term.is_some() {
+                    format!(
+                        "the driver has {} values for {} paths of {n_years} years: give one per \
+                         path-year, path-major",
+                        d.len(),
+                        tower.n_sims()
+                    )
+                } else {
+                    format!("the driver has {} values for {n} simulated years", d.len())
+                }));
             }
             Some(d) => ranks(d),
             None => {
-                let by_year: Vec<f64> = (0..n)
-                    .map(|i| {
-                        let row = tower.row(i).expect("a row of the input");
-                        gross.iter().map(|&j| row[j]).sum()
-                    })
-                    .collect();
+                let mut by_year = Vec::with_capacity(n);
+                for j in 0..tower.n_sims() {
+                    let row = tower.row(j).expect("a row of the input");
+                    by_year.extend(gross.iter().map(|g| g.iter().map(|&c| row[c]).sum::<f64>()));
+                }
                 ranks(&by_year)
             }
         };
@@ -560,6 +679,7 @@ impl<'a> Overlay<'a> {
             panel,
             tower,
             seed,
+            term,
             layers,
             ceded,
             net,
@@ -573,41 +693,167 @@ impl<'a> Overlay<'a> {
         })
     }
 
-    /// Year `i`'s ceded losses by layer, the reinsurers' exposures and
-    /// whether each defaults, into `w`.
-    fn year(&self, i: usize, w: &mut YearDraws) {
-        let row = self.tower.row(i).expect("a row of the input");
+    /// The number of years in a path: 1 for a one-year result.
+    fn n_years(&self) -> usize {
+        self.term.unwrap_or(1)
+    }
+
+    /// A new component's key: `kind` and `name`, then `""` in every label
+    /// dimension of a one-year result, or year `t` (from 0) of a term.
+    fn key(&self, kind: &str, name: &KeyValue, t: usize) -> ComponentKey {
+        let mut key = vec![KeyValue::from(kind), name.clone()];
+        match self.term {
+            Some(_) => key.push(KeyValue::Int(t as i64 + 1)),
+            None => key.extend((2..self.tower.dims().len()).map(|_| KeyValue::from(""))),
+        }
+        key
+    }
+
+    /// Path `j`'s ceded losses by layer, the reinsurers' exposures and
+    /// whether each is in default, year by year, into `w`.
+    fn path(&self, j: usize, w: &mut PathDraws) {
+        let row = self.tower.row(j).expect("a row of the input");
+        let reinsurers = &self.panel.reinsurers;
+        let (n_years, n_layers) = (self.n_years(), self.layers.len());
         w.x.clear();
-        w.x.extend(
-            self.ceded
-                .iter()
-                .map(|cols| cols.iter().map(|&j| row[j]).sum::<f64>()),
-        );
-        let mut rng = StreamRng::new(self.seed, DEFAULT_STREAM + i as u64);
-        let (b, t) = self.ranks[i];
-        let v = rng.next_open01();
-        // `next_open01` can return exactly 1.0 (`k + 0.5` rounds up for
-        // `k >= 2^52`), and `(b + v t) / n` can round to 1: keep `U` below 1
-        // so the factor stays finite.
-        let u = ((b as f64 + v * t as f64) / self.ranks.len() as f64).min(BELOW_ONE);
-        let z = -norm_quantile(u);
+        for ceded in &self.ceded {
+            w.x.extend(
+                ceded
+                    .iter()
+                    .map(|cols| cols.iter().map(|&c| row[c]).sum::<f64>()),
+            );
+        }
+        w.in_default.clear();
+        w.in_default.resize(reinsurers.len(), false);
+        w.left.clear();
+        w.left.extend(reinsurers.iter().map(|r| r.collateral));
         w.exposure.clear();
+        w.uncovered.clear();
         w.default.clear();
         w.credit.clear();
-        for (r, re) in self.panel.reinsurers.iter().enumerate() {
-            let draw = rng.next_open01();
-            // A probability of 1 defaults even on a draw of exactly 1.0.
-            let pz = re.given(self.quantiles[r], z);
-            let defaults = pz >= 1.0 || draw < pz;
-            let e: f64 = self.lines[r].iter().map(|&(l, s)| s * w.x[l]).sum();
-            w.exposure.push(e);
-            w.default.push(defaults);
-            w.credit.push(if defaults {
-                (1.0 - re.recovery) * (e - re.collateral).max(0.0)
-            } else {
-                0.0
-            });
+        let mut rng = StreamRng::new(self.seed, DEFAULT_STREAM + j as u64);
+        for t in 0..n_years {
+            let x = &w.x[t * n_layers..(t + 1) * n_layers];
+            let (b, tied) = self.ranks[j * n_years + t];
+            let v = rng.next_open01();
+            // `next_open01` can return exactly 1.0 (`k + 0.5` rounds up for
+            // `k >= 2^52`), and `(b + v t) / n` can round to 1: keep `U`
+            // below 1 so the factor stays finite.
+            let u = ((b as f64 + v * tied as f64) / self.ranks.len() as f64).min(BELOW_ONE);
+            let z = -norm_quantile(u);
+            for (r, re) in reinsurers.iter().enumerate() {
+                // Every reinsurer draws, in default or not, so the draws
+                // do not depend on the path's history.
+                let draw = rng.next_open01();
+                // A probability of 1 defaults even on a draw of exactly 1.0.
+                let pz = re.given(self.quantiles[r], z);
+                let defaults = w.in_default[r] || pz >= 1.0 || draw < pz;
+                let e: f64 = self.lines[r].iter().map(|&(l, s)| s * x[l]).sum();
+                let held = w.left[r];
+                let uncovered = (e - held).max(0.0);
+                w.exposure.push(e);
+                w.uncovered.push(uncovered);
+                w.default.push(defaults);
+                if defaults {
+                    w.in_default[r] = true;
+                    // The collateral that covered this year's exposure is
+                    // gone for the later years.
+                    w.left[r] = (held - e.max(0.0)).max(0.0);
+                    w.credit.push((1.0 - re.recovery) * uncovered);
+                } else {
+                    w.credit.push(0.0);
+                }
+            }
         }
+    }
+
+    /// The input with each year's credit loss and recovered by layer and
+    /// net after default added ([`Panel::apply`], [`Panel::apply_term`]).
+    fn after_default(&self) -> Result<PredictiveDistribution> {
+        let tower = self.tower;
+        let (n_years, n_layers) = (self.n_years(), self.layers.len());
+        let n_reinsurers = self.panel.reinsurers.len();
+        let mut components = tower.components().to_vec();
+        for t in 0..n_years {
+            for kind in [CREDIT_LOSS, RECOVERED] {
+                components.extend(self.layers.iter().map(|l| self.key(kind, l, t)));
+            }
+            components.push(self.key(NET_AFTER_DEFAULT, &KeyValue::from("retained"), t));
+        }
+        let draws = fill_rows(
+            tower.n_sims(),
+            components.len(),
+            |w: &mut PathDraws, row, j| {
+                self.path(j, w);
+                let input = tower.row(j).expect("a row of the input");
+                row.extend_from_slice(input);
+                for t in 0..n_years {
+                    let x = &w.x[t * n_layers..(t + 1) * n_layers];
+                    let exposure = &w.exposure[t * n_reinsurers..(t + 1) * n_reinsurers];
+                    let credit = &w.credit[t * n_reinsurers..(t + 1) * n_reinsurers];
+                    // Each reinsurer's credit loss over its layers, in
+                    // proportion to its exposure on each.
+                    w.by_layer.clear();
+                    w.by_layer.resize(n_layers, 0.0);
+                    for (r, lines) in self.lines.iter().enumerate() {
+                        let (e, c) = (exposure[r], credit[r]);
+                        if c == 0.0 || e <= 0.0 {
+                            continue;
+                        }
+                        for &(l, s) in lines {
+                            w.by_layer[l] += c * (s * x[l] / e);
+                        }
+                    }
+                    row.extend_from_slice(&w.by_layer);
+                    row.extend(x.iter().zip(&w.by_layer).map(|(x, c)| x - c));
+                    let net: f64 = self.net[t].iter().map(|&c| input[c]).sum();
+                    row.push(net + credit.iter().sum::<f64>());
+                }
+            },
+        );
+        PredictiveDistribution::from_draws(
+            tower.dims().to_vec(),
+            components,
+            draws,
+            self.provenance(),
+        )
+    }
+
+    /// Each reinsurer's credit loss, exposure after collateral and default
+    /// by year ([`Panel::by_reinsurer`], [`Panel::by_reinsurer_term`]).
+    fn by_reinsurer(&self) -> Result<PredictiveDistribution> {
+        let reinsurers = &self.panel.reinsurers;
+        let (n_years, n_reinsurers) = (self.n_years(), reinsurers.len());
+        let mut components = Vec::new();
+        for t in 0..n_years {
+            for kind in [CREDIT_LOSS, "exposure", "default"] {
+                components.extend(reinsurers.iter().map(|r| {
+                    let mut key = vec![KeyValue::from(kind), KeyValue::from(r.name.as_str())];
+                    if self.term.is_some() {
+                        key.push(KeyValue::Int(t as i64 + 1));
+                    }
+                    key
+                }));
+            }
+        }
+        let draws = fill_rows(
+            self.tower.n_sims(),
+            components.len(),
+            |w: &mut PathDraws, row, j| {
+                self.path(j, w);
+                for t in 0..n_years {
+                    let year = t * n_reinsurers..(t + 1) * n_reinsurers;
+                    row.extend_from_slice(&w.credit[year.clone()]);
+                    row.extend_from_slice(&w.uncovered[year.clone()]);
+                    row.extend(w.default[year].iter().map(|&d| if d { 1.0 } else { 0.0 }));
+                }
+            },
+        );
+        let mut dims = vec!["kind".into(), "reinsurer".into()];
+        if self.term.is_some() {
+            dims.push("year".into());
+        }
+        PredictiveDistribution::from_draws(dims, components, draws, self.provenance())
     }
 
     /// The tower result's provenance with the panel's seed, stream block,
@@ -618,15 +864,25 @@ impl<'a> Overlay<'a> {
             .provenance()
             .clone()
             .param("default_seed", self.seed)
-            .param("default_streams", "3 << 62 plus the year")
+            .param(
+                "default_streams",
+                if self.term.is_some() {
+                    "3 << 62 plus the path"
+                } else {
+                    "3 << 62 plus the year"
+                },
+            )
             .param(
                 "default_driver",
-                if self.panel.driver.is_some() {
-                    "given by year"
-                } else {
-                    "gross loss"
+                match (&self.panel.driver, self.term) {
+                    (Some(_), None) => "given by year",
+                    (Some(_), Some(_)) => "given by path-year, path-major",
+                    (None, _) => "gross loss",
                 },
             );
+        if let Some(n) = self.term {
+            p = p.param("default_term_years", n.to_string());
+        }
         for (r, re) in self.panel.reinsurers.iter().enumerate() {
             p = p.param(format!("reinsurer:{}", re.name), self.panel.terms(r));
         }
@@ -1090,5 +1346,274 @@ mod tests {
             ])
             .unwrap();
         assert!(ok.apply(&term, 1).is_err());
+    }
+
+    /// A term of `n_years` years over `n` paths, one event a year, each
+    /// year's losses shifted so the years differ.
+    fn term(n: usize, n_years: usize) -> PredictiveDistribution {
+        let years: Vec<EventSet> = (0..n_years)
+            .map(|t| {
+                let l = losses(n + 7 * t);
+                EventSet::from_years(l[7 * t..].iter().map(|&x| vec![x]).collect(), t as u64)
+                    .unwrap()
+            })
+            .collect();
+        tower().apply_term(&years).unwrap()
+    }
+
+    fn term_column(pd: &PredictiveDistribution, kind: &str, name: &str, year: i64) -> Vec<f64> {
+        let key = vec![
+            KeyValue::from(kind),
+            KeyValue::from(name),
+            KeyValue::Int(year),
+        ];
+        Empirical::draws(&pd.marginal(&key).unwrap()).to_vec()
+    }
+
+    fn bits(pd: &PredictiveDistribution) -> Vec<u64> {
+        pd.draw_matrix().iter().map(|x| x.to_bits()).collect()
+    }
+
+    #[test]
+    fn a_term_of_one_year_draws_as_apply_does() {
+        let l = losses(400);
+        let events = EventSet::from_years(l.iter().map(|&x| vec![x]).collect(), 3).unwrap();
+        let one = tower().apply(&events).unwrap();
+        let term = tower().apply_term(std::slice::from_ref(&events)).unwrap();
+        let panel = panel(0.3, 0.4, 2.0, 0.5);
+        assert_eq!(
+            bits(&panel.apply(&one, 8).unwrap()),
+            bits(&panel.apply_term(&term, 1, 8).unwrap())
+        );
+        assert_eq!(
+            bits(&panel.by_reinsurer(&one, 8).unwrap()),
+            bits(&panel.by_reinsurer_term(&term, 1, 8).unwrap())
+        );
+    }
+
+    #[test]
+    fn certain_default_uses_the_collateral_up_year_by_year() {
+        let (n, n_years) = (300, 4);
+        let term = term(n, n_years);
+        let (recovery, collateral) = (0.35, 12.0);
+        let panel = panel(1.0, recovery, collateral, 0.2);
+        let by = panel.by_reinsurer_term(&term, n_years, 3).unwrap();
+        let after = panel.apply_term(&term, n_years, 3).unwrap();
+        let mut left = vec![collateral; n];
+        for t in 1..=n_years as i64 {
+            let (a, b) = (
+                term_column(&term, "ceded", "a", t),
+                term_column(&term, "ceded", "b", t),
+            );
+            let credit = term_column(&by, "credit_loss", "X", t);
+            let exposure = term_column(&by, "exposure", "X", t);
+            let by_layer: Vec<f64> = term_column(&after, "credit_loss", "a", t)
+                .iter()
+                .zip(term_column(&after, "credit_loss", "b", t))
+                .map(|(x, y)| x + y)
+                .collect();
+            for j in 0..n {
+                let e = 0.6 * a[j] + 1.0 * b[j];
+                let uncovered = (e - left[j]).max(0.0);
+                assert_eq!(exposure[j], uncovered, "path {j} year {t}");
+                assert_eq!(credit[j], (1.0 - recovery) * uncovered, "path {j} year {t}");
+                assert!((by_layer[j] - credit[j]).abs() <= 1e-12 * (1.0 + credit[j]));
+                left[j] = (left[j] - e).max(0.0);
+            }
+            assert!(
+                term_column(&by, "default", "X", t)
+                    .iter()
+                    .all(|&d| d == 1.0)
+            );
+            assert!(
+                term_column(&by, "default", "Y", t)
+                    .iter()
+                    .all(|&d| d == 0.0)
+            );
+        }
+        // Some paths used their collateral up part way, and some never did.
+        let used_up = left.iter().filter(|&&c| c == 0.0).count();
+        assert!(used_up > 0 && used_up < n, "{used_up}");
+    }
+
+    #[test]
+    fn no_probability_full_recovery_or_full_collateral_lose_nothing_over_a_term() {
+        let (n, n_years) = (200, 3);
+        let term = term(n, n_years);
+        // X's exposure is at most 26 a year, 78 over the term.
+        for panel in [
+            panel(0.0, 0.3, 0.0, 0.4),
+            panel(1.0, 1.0, 0.0, 0.0),
+            panel(1.0, 0.0, 78.0, 0.0),
+        ] {
+            let after = panel.apply_term(&term, n_years, 5).unwrap();
+            for t in 1..=n_years as i64 {
+                for l in ["a", "b"] {
+                    assert!(
+                        term_column(&after, "credit_loss", l, t)
+                            .iter()
+                            .all(|&c| c == 0.0)
+                    );
+                    assert_eq!(
+                        term_column(&after, "recovered", l, t),
+                        term_column(&term, "ceded", l, t)
+                    );
+                }
+                assert_eq!(
+                    term_column(&after, "net_after_default", "retained", t),
+                    term_column(&term, "net", "retained", t)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_default_is_final_for_the_rest_of_the_path() {
+        let (n, n_years) = (2_000, 5);
+        let term = term(n, n_years);
+        let panel = panel(0.2, 0.4, 3.0, 0.5);
+        let by = panel.by_reinsurer_term(&term, n_years, 21).unwrap();
+        let after = panel.apply_term(&term, n_years, 21).unwrap();
+        let defaults: Vec<Vec<f64>> = (1..=n_years as i64)
+            .map(|t| term_column(&by, "default", "X", t))
+            .collect();
+        let mut later = 0;
+        for pair in defaults.windows(2) {
+            for (j, (before, after)) in pair[0].iter().zip(&pair[1]).enumerate() {
+                assert!(after >= before, "path {j}");
+                later += usize::from(after > before);
+            }
+        }
+        assert!(later > 0);
+        // recovered = ceded - credit loss by layer and year, and the net
+        // after default adds the year's credit loss.
+        for t in 1..=n_years as i64 {
+            let credit_x = term_column(&by, "credit_loss", "X", t);
+            let net = term_column(&term, "net", "retained", t);
+            let after_net = term_column(&after, "net_after_default", "retained", t);
+            for l in ["a", "b"] {
+                let ceded = term_column(&term, "ceded", l, t);
+                let credit = term_column(&after, "credit_loss", l, t);
+                let recovered = term_column(&after, "recovered", l, t);
+                for j in 0..n {
+                    assert_eq!(recovered[j], ceded[j] - credit[j]);
+                }
+            }
+            for j in 0..n {
+                // Y never defaults, so the year's credit loss is X's.
+                assert_eq!(after_net[j], net[j] + (credit_x[j] + 0.0));
+            }
+        }
+        // The input's components are copied bit for bit.
+        let m = term.n_components();
+        assert_eq!(&after.components()[..m], term.components());
+        assert_eq!(after.n_components(), m + n_years * (2 * 2 + 1));
+        for j in 0..n {
+            let (a, b) = (after.row(j).unwrap(), term.row(j).unwrap());
+            assert!(
+                a[..m]
+                    .iter()
+                    .zip(b)
+                    .all(|(x, y)| x.to_bits() == y.to_bits())
+            );
+        }
+        let p = after.provenance();
+        assert!(
+            p.parameters
+                .contains(&("default_term_years".into(), "5".into()))
+        );
+    }
+
+    #[test]
+    fn a_path_draws_its_years_in_order_from_its_own_stream() {
+        let (n, n_years) = (300, 3);
+        let term = term(n, n_years);
+        let ps = [0.2, 0.05, 0.5];
+        let panel = Panel::new(
+            ps.iter()
+                .enumerate()
+                .map(|(k, &p)| Reinsurer::new(&format!("R{k}"), p, 0.4).unwrap())
+                .collect(),
+        )
+        .unwrap()
+        .line("R0", "a", 0.5)
+        .unwrap()
+        .line("R2", "a", 0.5)
+        .unwrap();
+        let seed = 42;
+        let by = panel.by_reinsurer_term(&term, n_years, seed).unwrap();
+        for j in 0..n {
+            let mut rng = StreamRng::new(seed, (3 << 62) + j as u64);
+            let mut in_default = [false; 3];
+            for t in 0..n_years {
+                let _v = rng.next_open01();
+                for (k, &p) in ps.iter().enumerate() {
+                    in_default[k] |= rng.next_open01() < p;
+                    let at = t * 3 * ps.len() + 2 * ps.len() + k;
+                    let want = f64::from(u8::from(in_default[k]));
+                    assert_eq!(by.row(j).unwrap()[at], want, "path {j} year {t}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_term_driver_is_path_major() {
+        let (n, n_years) = (4_000, 2);
+        let term = term(n, n_years);
+        // The driver is high in year 2 of every path and low in year 1.
+        let driver: Vec<f64> = (0..n * n_years).map(|k| (k % n_years) as f64).collect();
+        let panel = Panel::new(vec![
+            Reinsurer::new("X", 0.1, 0.4)
+                .unwrap()
+                .correlation(0.8)
+                .unwrap(),
+        ])
+        .unwrap()
+        .line("X", "a", 1.0)
+        .unwrap()
+        .driver(driver)
+        .unwrap();
+        let by = panel.by_reinsurer_term(&term, n_years, 2).unwrap();
+        let first: f64 = term_column(&by, "default", "X", 1).iter().sum();
+        let second: f64 = term_column(&by, "default", "X", 2).iter().sum();
+        assert!(second - first > 3.0 * first, "{first} {second}");
+        let short = panel.clone().driver(vec![1.0; n]).unwrap();
+        assert!(short.apply_term(&term, n_years, 2).is_err());
+    }
+
+    #[test]
+    fn apply_term_refuses_what_is_no_term() {
+        let ok = Panel::new(vec![Reinsurer::new("X", 0.1, 0.4).unwrap()])
+            .unwrap()
+            .line("X", "a", 1.0)
+            .unwrap();
+        let years = tower().apply_annual(&losses(30)).unwrap();
+        let term = term(30, 2);
+        assert!(ok.apply_term(&years, 1, 1).is_err());
+        assert!(ok.by_reinsurer_term(&years, 1, 1).is_err());
+        assert!(ok.apply(&term, 1).is_err());
+        assert!(ok.by_reinsurer(&term, 1).is_err());
+        // The years must be exactly 1..=n_years.
+        assert!(ok.apply_term(&term, 0, 1).is_err());
+        assert!(ok.apply_term(&term, 1, 1).is_err());
+        assert!(ok.apply_term(&term, 3, 1).is_err());
+        assert!(ok.apply_term(&term, 2, 1).is_ok());
+        // A term far longer than the result is refused before anything is
+        // allocated for its years, not aborted.
+        for huge in [1 << 40, usize::MAX] {
+            let err = ok.apply_term(&term, huge, 1).unwrap_err().to_string();
+            assert!(err.contains("needs components in every year"), "{err}");
+            assert!(ok.by_reinsurer_term(&term, huge, 1).is_err());
+        }
+        // Year 2 of the term alone has years outside 1..=1.
+        let year2 = term.select("year", &[KeyValue::Int(2)]).unwrap();
+        assert!(ok.apply_term(&year2, 1, 1).is_err());
+        // Applied twice.
+        let once = ok.apply_term(&term, 2, 1).unwrap();
+        assert!(ok.apply_term(&once, 2, 1).is_err());
+        // Without net components.
+        let ceded_only = term.select("kind", &["ceded".into()]).unwrap();
+        assert!(ok.apply_term(&ceded_only, 2, 1).is_err());
     }
 }

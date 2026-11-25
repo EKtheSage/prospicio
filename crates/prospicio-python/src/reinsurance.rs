@@ -3266,7 +3266,9 @@ pub(crate) fn solvency2_probability_by_ratio(scr_ratio: f64) -> PyResult<f64> {
 ///     under collateral arrangements; any value in ``[0, 1]`` is accepted.
 /// factor : float, default 1.0
 ///     The factor of Art 197(7) on the collateral: F (1.0 or 0.5) with the
-///     50 % share, F' (1.0 or 0.18) with the 90 % share; in ``[0, 1]``.
+///     50 % share; with the 90 % share F' (1.0 or 0.18) until 2027-01-29
+///     and F''' (1.0 or 0.9) from 2027-01-30 (Delegated Regulation (EU)
+///     2026/269); in ``[0, 1]``.
 ///
 /// Returns
 /// -------
@@ -3283,8 +3285,8 @@ pub(crate) fn solvency2_probability_by_ratio(scr_ratio: f64) -> PyResult<f64> {
 /// >>> from prospicio.reinsurance import solvency2_reinsurance_lgd
 /// >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0)
 /// 30.0
-/// >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0, lgd_share=0.9, factor=0.5)
-/// 93.0
+/// >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0, lgd_share=0.9, factor=0.18)
+/// 102.6
 #[pyfunction]
 #[pyo3(signature = (recoverables, risk_mitigation, collateral, lgd_share = 0.5, factor = 1.0))]
 pub(crate) fn solvency2_reinsurance_lgd(
@@ -3311,7 +3313,8 @@ pub(crate) fn solvency2_reinsurance_lgd(
 /// over every ordered pair of groups, the diagonal included, ``PD_j (1 -
 /// PD_j) PD_k (1 - PD_k) / (1.25 (PD_j + PD_k) - PD_j PD_k)`` times the
 /// groups' total losses given default (a term whose two probabilities are
-/// both 0 is 0, EIOPA Q&A 2530), and ``v_intra`` sums ``1.5 PD_j (1 - PD_j)
+/// both 0 is 0, EIOPA Q&A 2530 and Art 201(2)(a) as amended by 2026/269),
+/// and ``v_intra`` sums ``1.5 PD_j (1 - PD_j)
 /// / (2.5 - PD_j)`` times each group's squared losses given default. The
 /// charge is ``3 sigma`` if ``sigma`` is at most 7 % of the total loss given
 /// default, ``5 sigma`` if at most 20 %, and the total otherwise.
@@ -3320,7 +3323,10 @@ pub(crate) fn solvency2_reinsurance_lgd(
 /// ----------
 /// exposures : list of (float, float)
 ///     Each exposure's probability of default, in ``[0, 1]``, and loss given
-///     default, non-negative. An empty list gives a charge of 0.
+///     default, non-negative. An empty list gives a charge of 0. Each entry
+///     is one single name exposure (Art 199(1)); Art 201(3) squares each
+///     one's loss given default, so one reinsurer split over several entries
+///     with the same probability understates ``v_intra``.
 ///
 /// Returns
 /// -------
@@ -3522,8 +3528,8 @@ impl PyPanel {
     /// Raises
     /// ------
     /// ValueError
-    ///     For a reinsurer not on the panel, a line out of range or a line
-    ///     given twice.
+    ///     For a reinsurer not on the panel, an empty layer name, a line out
+    ///     of range or a line given twice.
     fn with_line(&self, reinsurer: &str, layer: &str, line: f64) -> PyResult<Self> {
         let inner = self
             .inner
@@ -3540,7 +3546,8 @@ impl PyPanel {
     /// ----------
     /// by_year : list of float
     ///     One finite value per simulated year, in the order of the tower's
-    ///     result; its length is checked when the panel is applied.
+    ///     result (over a term, one per path-year, path-major); its length is
+    ///     checked when the panel is applied.
     ///
     /// Returns
     /// -------
@@ -3598,6 +3605,8 @@ impl PyPanel {
     ///     was already applied to, a line on a layer the result does not
     ///     have, a named layer whose lines do not sum to 1, or a driver of
     ///     the wrong length.
+    /// OverflowError
+    ///     For a negative seed or a seed of ``2**64`` or more.
     #[pyo3(signature = (result, seed = 0))]
     fn apply(
         &self,
@@ -3631,6 +3640,8 @@ impl PyPanel {
     /// ------
     /// ValueError
     ///     As :meth:`apply` does.
+    /// OverflowError
+    ///     For a negative seed or a seed of ``2**64`` or more.
     ///
     /// Examples
     /// --------
@@ -3651,6 +3662,136 @@ impl PyPanel {
     ) -> PyResult<PyPredictiveDistribution> {
         let (panel, pd) = (&self.inner, &result.inner);
         let inner = py.detach(|| panel.by_reinsurer(pd, seed)).map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
+    /// A term's paths after reinsurer default.
+    ///
+    /// Each row is a path of ``n_years`` years, and a default is final: a
+    /// reinsurer that defaults in year ``t`` of a path is in default in
+    /// every later year of it. The collateral is held once per reinsurer
+    /// and path and is used up: in each year in default the collateral
+    /// still held is set against that year's exposure, and what it covered
+    /// is gone for the later years. Each path-year's factor comes from its
+    /// driver ranked among all path-years (the gross loss, or a driver given
+    /// path-major: year ``t`` of path ``j`` at ``j * n_years + t``, from 0).
+    /// Path ``j`` draws from its own stream, its years in order, so a term
+    /// of one year draws as :meth:`apply` does on that year. With a
+    /// constant probability ``p`` and independent default (correlation 0),
+    /// a reinsurer is in default by year ``t`` with probability
+    /// ``1 - (1 - p)**t``. With a correlation above 0 this holds only when
+    /// the years' drivers are independent and identically distributed: the
+    /// ranks are taken over all path-years together, so a driver that
+    /// trends from year to year moves defaults between years.
+    ///
+    /// The result has the input's components, copied bit for bit, then for
+    /// each year in turn the components :meth:`apply` adds, with the year
+    /// (from 1) as the last key.
+    ///
+    /// Parameters
+    /// ----------
+    /// result : PredictiveDistribution
+    ///     A term's paths (``Tower.apply_term``, ``apply_aggregate_term`` or
+    ///     ``apply_timeline``).
+    /// n_years : int
+    ///     The term's years; the result's years must be exactly ``1`` to
+    ///     ``n_years``.
+    /// seed : int, default 0
+    ///     The default draws' seed.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As :meth:`apply` does, and for a result that is no term's paths
+    ///     of ``n_years`` years, or a driver without one value per
+    ///     path-year.
+    /// OverflowError
+    ///     For a negative ``n_years`` or seed, or a seed of ``2**64`` or
+    ///     more.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
+    /// >>> # One path of two years, ceding 5 and then 10.
+    /// >>> years = [EventSet.from_years([[15.0]]), EventSet.from_years([[25.0]])]
+    /// >>> term = Tower([Layer("10x10", 10.0, 10.0)]).apply_term(years)
+    /// >>> # Re A certainly defaults, recovers nothing and has collateral of 8:
+    /// >>> # year 1 uses 5 of it, year 2 the 3 left.
+    /// >>> panel = Panel([Reinsurer("Re A", 1.0, 0.0, collateral=8.0)]).with_line("Re A", "10x10", 1.0)
+    /// >>> after = panel.apply_term(term, 2)
+    /// >>> [list(after.marginal(["credit_loss", "10x10", t]).draws) for t in (1, 2)]
+    /// [[0.0], [7.0]]
+    #[pyo3(signature = (result, n_years, seed = 0))]
+    fn apply_term(
+        &self,
+        py: Python<'_>,
+        result: PyRef<'_, PyPredictiveDistribution>,
+        n_years: usize,
+        seed: u64,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (panel, pd) = (&self.inner, &result.inner);
+        let inner = py
+            .detach(|| panel.apply_term(pd, n_years, seed))
+            .map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
+    /// Each reinsurer's credit loss, exposure and default in each year of
+    /// a term's paths, from the same draws as :meth:`apply_term` with the
+    /// same ``seed``.
+    ///
+    /// Parameters
+    /// ----------
+    /// result : PredictiveDistribution
+    ///     A term's paths.
+    /// n_years : int
+    /// seed : int, default 0
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///     Dimensions ``["kind", "reinsurer", "year"]``: the components of
+    ///     :meth:`by_reinsurer` for each year in turn, with the year (from
+    ///     1) as the last key. ``("exposure", r, t)`` is the exposure after
+    ///     the collateral still held at the start of year ``t``, and
+    ///     ``("default", r, t)`` is 1 in every year from the one the
+    ///     reinsurer defaults in.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As :meth:`apply_term` does.
+    /// OverflowError
+    ///     For a negative ``n_years`` or seed, or a seed of ``2**64`` or
+    ///     more.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
+    /// >>> years = [EventSet.from_years([[15.0]]), EventSet.from_years([[25.0]])]
+    /// >>> term = Tower([Layer("10x10", 10.0, 10.0)]).apply_term(years)
+    /// >>> panel = Panel([Reinsurer("Re A", 1.0, 0.0, collateral=8.0)]).with_line("Re A", "10x10", 1.0)
+    /// >>> by = panel.by_reinsurer_term(term, 2)
+    /// >>> [list(by.marginal(["exposure", "Re A", t]).draws) for t in (1, 2)]
+    /// [[0.0], [7.0]]
+    #[pyo3(signature = (result, n_years, seed = 0))]
+    fn by_reinsurer_term(
+        &self,
+        py: Python<'_>,
+        result: PyRef<'_, PyPredictiveDistribution>,
+        n_years: usize,
+        seed: u64,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (panel, pd) = (&self.inner, &result.inner);
+        let inner = py
+            .detach(|| panel.by_reinsurer_term(pd, n_years, seed))
+            .map_err(to_py)?;
         Ok(PyPredictiveDistribution { inner })
     }
 
