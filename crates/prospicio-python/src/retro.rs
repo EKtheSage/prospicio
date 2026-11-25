@@ -243,7 +243,7 @@ impl PyInsuranceCharge {
 /// ...                  minimum=80.0, maximum=220.0)
 /// >>> balanced = plan.balance(InsuranceCharge.from_sample(losses))
 /// >>> terms = plan.loss_sensitive_premium(balanced["basic"])
-/// >>> mean = sum(terms.premium(x) for x in losses) / 10
+/// >>> mean = sum(terms.premium(losses)) / 10
 /// >>> round(mean, 9) == round(plan.guaranteed_cost(), 9)
 /// True
 #[pyclass(name = "RetroPlan", module = "prospicio.pricing", frozen)]
@@ -299,7 +299,8 @@ impl PyRetroPlan {
     /// Returns
     /// -------
     /// prospicio.reinsurance.LossSensitivePremium
-    ///     Its ``premium(losses)`` is the retrospective premium.
+    ///     Its ``premium(losses)`` is the retrospective premium of each of
+    ///     a list of losses.
     ///
     /// Raises
     /// ------
@@ -311,8 +312,8 @@ impl PyRetroPlan {
     /// >>> from prospicio.pricing import RetroPlan
     /// >>> plan = RetroPlan(100.0, 30.0, 1.1, 1.03, minimum=80.0, maximum=220.0)
     /// >>> terms = plan.loss_sensitive_premium(25.0)
-    /// >>> terms.premium(0.0), terms.premium(400.0)
-    /// (80.0, 220.0)
+    /// >>> terms.premium([0.0, 400.0])
+    /// [80.0, 220.0]
     fn loss_sensitive_premium(&self, basic: f64) -> PyResult<PyLossSensitivePremium> {
         Ok(PyLossSensitivePremium {
             inner: self.inner.loss_sensitive_premium(basic).map_err(to_py)?,
