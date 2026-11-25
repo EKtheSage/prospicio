@@ -148,7 +148,7 @@ fn apc_matches_python_apc() {
             }
             "future" => {
                 let (o, a) = (origin(case.param("arg", "origin"))?, case.param("arg", "age"));
-                let cells = prospicio_reserving::FutureCells::from_apc_glm(fit);
+                let cells = prospicio_reserving::FutureCells::from_apc_glm(fit).ok()?;
                 cells
                     .cells
                     .iter()

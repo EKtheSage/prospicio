@@ -101,7 +101,8 @@ pub enum Extrapolation {
     /// Future second differences of the period effect are 0.
     I2,
     /// The first future second difference makes the next first difference
-    /// the mean of the fitted ones, then 0.
+    /// the mean of the fitted ones, the first difference left out of the
+    /// mean (R `apc`'s convention), then 0.
     I1,
     /// A line through the double cumulated second differences, extrapolated
     /// two steps, then 0 (R `apc`'s default). Needs at least 4 origins.
@@ -255,7 +256,9 @@ impl ApcGlmFit {
 
 impl FutureCells {
     /// An APC GLM fit's future means.
-    pub fn from_apc_glm(fit: &ApcGlmFit) -> Self {
+    ///
+    /// Fails as [`FutureCells::from_odp_glm`] does.
+    pub fn from_apc_glm(fit: &ApcGlmFit) -> Result<Self> {
         Self::from_odp_glm(&fit.fit)
     }
 }
@@ -740,7 +743,7 @@ mod tests {
         assert_eq!(fit.names()[0], "level");
         assert_eq!(fit.reserves[0], 0.0);
         // The future cells and the prediction error and draws that cover them.
-        let cells = FutureCells::from_apc_glm(&fit);
+        let cells = FutureCells::from_apc_glm(&fit).unwrap();
         assert_eq!(cells.cells.len(), 45);
         for (got, want) in cells.reserves().iter().zip(&fit.reserves) {
             assert!(close(*got, *want, 1e-12));
