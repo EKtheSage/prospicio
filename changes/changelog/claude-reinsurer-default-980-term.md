@@ -8,4 +8,4 @@
   `Panel.apply_term(result, n_years, seed=0)` and
   `Panel.by_reinsurer_term(result, n_years, seed=0)`, R
   `apply_panel_term()` and `panel_by_reinsurer_term()`; R's
-  `reinsurer_panel` gains a `reinsurers` property (#980).
+  `reinsurer_panel` gains a `reinsurers` property (#980, #1085).
