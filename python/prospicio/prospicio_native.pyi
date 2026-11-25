@@ -39497,6 +39497,28 @@ def buhlmann_straub(ratios: Sequence[Sequence[float]], weights: Sequence[Sequenc
     4.0
     """
 
+def calendar_windows(first_year: int, last_year: int, by: str = "year") -> list[str]:
+    """
+    The dates between calendar windows: years, quarters or months from 1
+    January of ``first_year`` through 31 December of ``last_year``.
+    
+    Parameters
+    ----------
+    first_year, last_year : int
+    by : {"year", "quarter", "month"}, default "year"
+    
+    Returns
+    -------
+    list of str
+        ISO dates, one more than there are windows.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import calendar_windows
+    >>> calendar_windows(2024, 2024, by="quarter")
+    ['2024-01-01', '2024-04-01', '2024-07-01', '2024-10-01', '2025-01-01']
+    """
+
 def calendar_year_effect(triangle: Triangle, column: str, ci: float = ...) -> CalendarYearTest:
     """
     Mack's calendar-year effect test (Mack 1994, appendix H; R
@@ -40477,6 +40499,69 @@ def dyadic_lattice_step(atoms: Sequence[float], depth: int = 16) -> tuple[float,
     >>> from prospicio.aggregate import dyadic_lattice_step
     >>> dyadic_lattice_step([3.0, 6.0, 9.0]), dyadic_lattice_step([0.1, 0.2])
     ((3.0, 0.0), None)
+    """
+
+def earned_exposure(effective: Sequence[Any], expiration: Sequence[Any], amount: Sequence[float], windows: Sequence[Any], kind: str = "calendar", method: str = "daily", valuation: Any |None = None, label: Sequence[str] |None = None, changes: Sequence[tuple[int, Any, float]] |None = None, cancellation: Sequence[Any |None] |None = None) -> dict:
+    """
+    Written, earned, unearned and in-force amounts of a table of policies,
+    by window and label.
+    
+    Each policy earns its amount (an exposure count, or a premium) evenly
+    over its term, from its effective date up to, and not including, its
+    expiration date. With ``kind="calendar"`` a window holds what was
+    written and earned in it, and the unearned and in-force amounts at its
+    end. With ``kind="policy"`` a window holds the policies written in it,
+    with all they earn; give ``valuation`` to see them as of a date.
+    
+    "At a window's end" and "as of a valuation date" mean the close of the
+    day before: a policy that expires on that date is still in force, and
+    one effective on it is not yet written.
+    
+    Parameters
+    ----------
+    effective, expiration : list of datetime.date or str
+        One entry a policy; strings are ``YYYY-MM-DD``. The expiration is
+        the first day the policy is not in force.
+    amount : list of float
+        The full-term amount of each policy.
+    windows : list of datetime.date or str
+        The dates the windows lie between, increasing; see
+        ``calendar_windows``.
+    kind : {"calendar", "policy"}, default "calendar"
+    method : {"daily", "half_month", "twenty_fourths"}, default "daily"
+        Exact days; the half-month grid of the ratemaking exhibits; or the
+        "15th of the month" rule, every policy date at mid-month.
+    valuation : datetime.date or str, optional
+        See the table as of this date.
+    label : list of str, optional
+        A label a policy; the table has a set of rows for each.
+    changes : list of (int, date, float), optional
+        Mid-term changes: the position of the policy (from 0), the date,
+        and the full-term amount from that date.
+    cancellation : list of (date or None), optional
+        A cancellation date a policy, the first day not in force.
+    
+    Returns
+    -------
+    dict
+        Columns ``label``, ``from``, ``to`` (ISO dates), ``written``,
+        ``earned``, ``unearned`` and ``in_force``, one row a label and
+        window.
+    
+    Raises
+    ------
+    ValueError
+        For columns of different lengths, a date that does not exist, an
+        unknown ``kind`` or ``method``, or a policy, change or
+        cancellation that is not valid.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import calendar_windows, earned_exposure
+    >>> t = earned_exposure(["2010-10-01"], ["2011-10-01"], [1.0],
+    ...                     calendar_windows(2010, 2011), method="half_month")
+    >>> t["written"], t["earned"]
+    ([1.0, 0.0], [0.25, 0.75])
     """
 
 def elpd_loo(log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None) -> Elpd:
@@ -41532,6 +41617,34 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     >>> joined = iman_conover(pd, [[1.0, 0.7], [0.7, 1.0]], seed=3)
     >>> sorted(joined.marginal((1,)).draws) == sorted(pd.marginal((1,)).draws)
     True
+    """
+
+def in_force(effective: Sequence[Any], expiration: Sequence[Any], amount: Sequence[float], date: Any, changes: Sequence[tuple[int, Any, float]] |None = None, cancellation: Sequence[Any |None] |None = None) -> float:
+    """
+    The amount in force on a date: the sum of the full-term amounts, as
+    they stand that day, of the policies effective on or before it and not
+    yet expired or cancelled. A snapshot, with no regard to how long each
+    policy runs.
+    
+    Parameters
+    ----------
+    effective, expiration : list of datetime.date or str
+    amount : list of float
+    date : datetime.date or str
+    changes : list of (int, date, float), optional
+    cancellation : list of (date or None), optional
+        As in ``earned_exposure``.
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import in_force
+    >>> in_force(["2011-07-01"], ["2012-07-01"], [400.0], "2012-01-01",
+    ...          changes=[(0, "2012-01-01", 800.0)])
+    800.0
     """
 
 def invert_chf(law: Any, *, log2: int = 16, step: float |None = None, x_min: float |None = None, bucket_sizing_p: float = ..., tilt: Any |None = None) -> ChfDistribution:
