@@ -18,7 +18,8 @@ PremiumAdjustment, Cashflows) and the deal valued after binding
 (DealRun, DealBook, BookCashflows), and bonus-malus scales as Markov
 chains (BonusMalus), and retrospective rating: the insurance charge and
 savings of an aggregate (InsuranceCharge: Table M, Table L) and the basic
-premium that balances a plan (RetroPlan)."""
+premium that balances a plan (RetroPlan), and earned exposure from policy
+dates (earned_exposure, calendar_windows, in_force)."""
 
 from .prospicio_native import (
     AsIf,
@@ -72,16 +73,19 @@ from .prospicio_native import (
     alpha_between_frequencies,
     alpha_between_frequency_and_layer,
     alpha_between_layers,
+    calendar_windows,
     calibrate_classical,
     classical_premium,
     condition_on_paid,
     credibility_weighted,
     deal_ave,
     distortion_envelope,
+    earned_exposure,
     fit_pml_curve,
     fit_references,
     censored_las,
     ilf,
+    in_force,
     irr,
     layer_cv,
     leverage,
@@ -168,6 +172,9 @@ __all__ = [
     "AsIf",
     "BonusMalus",
     "InsuranceCharge",
+    "calendar_windows",
+    "earned_exposure",
+    "in_force",
     "RetroPlan",
     "PaymentPattern",
     "PayoutPrice",

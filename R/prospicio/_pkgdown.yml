@@ -298,6 +298,10 @@ reference:
       - cumulative_loss_ratio
       - indicated_change
       - premium_based_expenses
+  - title: Earned exposure
+    contents:
+      - calendar_windows
+      - earned_exposure
   - title: Retrospective rating
     contents:
       - insurance_charge

@@ -20,6 +20,7 @@ mod counts;
 mod credibility;
 mod discrete;
 mod distributions;
+mod earned;
 mod excess;
 mod models;
 mod multivariate;
@@ -89,6 +90,7 @@ extendr_module! {
     use credibility;
     use discrete;
     use distributions;
+    use earned;
     use excess;
     use models;
     use multivariate;
