@@ -72,6 +72,38 @@ pub enum ProcessDistribution {
     None,
 }
 
+impl ProcessDistribution {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name of each first (#990). A front end
+    /// normalizes its own input (R's `match.arg` abbreviations, Excel's
+    /// blank cell, trimming and case) before it looks the name up here.
+    pub const NAMES: &'static [(&'static str, Self)] =
+        &[("gamma", Self::Gamma), ("none", Self::None)];
+
+    /// The process named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_reserving::ProcessDistribution;
+    ///
+    /// assert_eq!(ProcessDistribution::from_name("gamma"), Some(ProcessDistribution::Gamma));
+    /// assert_eq!(ProcessDistribution::from_name("poisson"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, p)| p)
+    }
+
+    /// The canonical name, `"gamma"` or `"none"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Gamma => "gamma",
+            Self::None => "none",
+        }
+    }
+}
+
 /// ODP bootstrap of the chain ladder.
 ///
 /// ```

@@ -3,10 +3,13 @@
 \name{elpd}
 \alias{elpd}
 \alias{elpd_loo}
+\alias{elpd_lppd}
 \alias{elpd_waic}
 \title{Expected log pointwise predictive density}
 \usage{
 elpd_loo(log_lik, r_eff = NULL)
+
+elpd_lppd(log_lik)
 
 elpd_waic(log_lik)
 }
@@ -21,14 +24,15 @@ observation.}
 A list: \code{estimates} (named \code{elpd}, \code{se}, \code{p} and \code{ic}, the
 information criterion \verb{-2 elpd}) and \code{pointwise}; for \code{elpd_loo()} also
 \code{pareto_k} per observation and \code{k_threshold}, above which an
-observation's estimate is unreliable.
+observation's estimate is unreliable. \code{elpd_lppd()} returns a number.
 }
 \description{
 \code{elpd_loo()} estimates leave-one-out cross-validation from one Bayesian
 fit by Pareto-smoothed importance sampling (PSIS-LOO); \code{elpd_waic()}
-computes WAIC. Both take the pointwise log-likelihood
-\verb{log p(y_i | theta_s)} of each posterior draw (rows) and observation
-(columns), and match the loo package.
+computes WAIC; \code{elpd_lppd()} is the in-sample log pointwise predictive
+density \verb{sum_i log mean_s p(y_i | theta_s)} that both correct. All take
+the pointwise log-likelihood \verb{log p(y_i | theta_s)} of each posterior
+draw (rows) and observation (columns), and match the loo package.
 }
 \examples{
 set.seed(1)
@@ -37,4 +41,5 @@ mu <- rnorm(400, mean(y), 1 / sqrt(20))
 ll <- sapply(y, function(yi) dnorm(yi, mu, 1, log = TRUE))
 elpd_loo(ll)$estimates
 elpd_waic(ll)$estimates
+elpd_lppd(ll)
 }
