@@ -11,7 +11,7 @@ use prospicio_prob::{Counting, Severity, SeverityDist};
 use crate::distributions::{
     Grid, NegativeBinomial, Poisson, PredictiveDistribution, severity_from_robj,
 };
-use crate::{to_r, whole};
+use crate::{row_major, to_r, whole};
 
 /// A claim count accepted by the aggregation functions.
 pub(crate) enum AnyCount {
@@ -1543,7 +1543,7 @@ fn joint_list(
         None => ().into(),
     };
     Ok(list!(
-        probs = joint.probs().to_vec(),
+        probs = row_major(joint.probs(), cols),
         rows = rows as f64,
         cols = cols as f64,
         steps = vec![ha, hb],
@@ -1993,7 +1993,7 @@ impl Timeline {
     }
 }
 
-/// `Exposure::uniform`'s shares, row-major, with its `months`.
+/// `Exposure::uniform`'s shares, a year a row, with its `months`.
 #[extendr]
 fn exposure_uniform_rust(n_years: f64, policy_months: f64) -> Result<List> {
     let e = prospicio_aggregate::timeline::Exposure::uniform(
@@ -2001,8 +2001,9 @@ fn exposure_uniform_rust(n_years: f64, policy_months: f64) -> Result<List> {
         whole(policy_months, "policy_months")? as usize,
     )
     .map_err(to_r)?;
+    let shares = e.shares();
     Ok(list!(
-        shares = e.shares().iter().flatten().copied().collect::<Vec<f64>>(),
+        shares = RMatrix::new_matrix(shares.len(), e.months(), |r, c| shares[r][c]),
         months = e.months() as f64
     ))
 }

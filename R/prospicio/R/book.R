@@ -320,7 +320,7 @@ book_cashflows <- function(book, rate = 0, lower = -0.95, upper = 1, points = 40
                root_above = x$root_above, root_below = x$root_below)
   }
   list(months = seq_len(r$months) - 1,
-       flows = matrix(r$flows, ncol = r$months, byrow = TRUE),
+       flows = r$flows,
        mean_by_deal = matrix(r$mean_by_deal, nrow = r$months, dimnames = list(NULL, r$deals)),
        irr = irr_frame(r$irr), npv = r$npv, moic = r$moic,
        irr_by_deal = stats::setNames(lapply(r$irr_by_deal, irr_frame), r$deals))
