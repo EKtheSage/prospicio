@@ -5119,6 +5119,76 @@ class Burr:
         """
 
 @final
+class CalendarIndex:
+    """
+    An index by calendar period: one value per period of one grain, from a
+    first period on, optionally extended past its last period at a constant
+    annual rate (CPI, wages, a claims-inflation index).
+    
+    Parameters
+    ----------
+    first : str or int
+        The first period: ``"2020"`` (or the integer 2020), ``"2020H2"``,
+        ``"2020Q3"`` or ``"2020-07"``. Its grain is the index's grain.
+    values : list of float
+        The index in ``first``, then one value per period: finite and
+        positive.
+    future_rate : float, optional
+        The annual rate past the last period, compounded by months from the
+        last period's start: finite and above -1. Without it, a period
+        past the last is an error.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import CalendarIndex
+    >>> cpi = CalendarIndex("2020", [100.0, 104.0, 110.0], future_rate=0.05)
+    >>> cpi.value("2021-06")
+    104.0
+    >>> round(cpi.value("2024-01"), 4)
+    121.275
+    >>> cpi.periods
+    ['2020', '2021', '2022']
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[str, list[float], float |None]: ...
+    def __new__(cls, /, first: Any, values: Sequence[float], future_rate: float |None = None) -> CalendarIndex: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def future_rate(self, /) -> float |None:
+        """
+        The annual rate past the last period, or ``None``.
+        """
+    @property
+    def periods(self, /) -> list[str]:
+        """
+        The given periods, one per value.
+        """
+    def value(self, /, month: Any) -> float:
+        """
+        The index of the period that contains a month.
+        
+        Parameters
+        ----------
+        month : str or date
+            ``"YYYY-MM"`` or a date.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            For a month before the first period, or after the last one
+            when no future rate is set.
+        """
+    @property
+    def values(self, /) -> list[float]:
+        """
+        The given values.
+        """
+
+@final
 class CalendarYearTest:
     """
     Mack's test for calendar-year effects (Mack 1994, appendix H; R
@@ -15227,6 +15297,110 @@ class FrequencySeverityFit:
         """
 
 @final
+class FutureCells:
+    """
+    Projected future increments of one segment, one per origin and age, for
+    re-inflation.
+    
+    Parameters
+    ----------
+    origins : list of str or int
+        The origin periods, such as ``["2020", "2021"]``.
+    origin : list of str or int
+        Each cell's origin, one of ``origins``.
+    age : list of int
+        Each cell's development age in months: 0 or more.
+    valuation : list of str or date
+        The month each cell's development period ends in (``"YYYY-MM"`` or
+        a date): its index period is the cell's payment period.
+    value : list of float
+        Each cell's increment, at the base price level.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import FutureCells
+    >>> cells = FutureCells(["2020"], ["2020", "2020"], [24, 36],
+    ...                     ["2021-12", "2022-12"], [50.0, 25.0])
+    >>> cells.reserves()
+    [75.0]
+    >>> cells.cells["age"]
+    [24, 36]
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[list[str], list[str], list[int], list[str], list[float]]: ...
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, origins: Sequence[Any], origin: Sequence[Any], age: Sequence[int], valuation: Sequence[Any], value: Sequence[float]) -> FutureCells: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def cells(self, /) -> dict:
+        """
+        The cells as a dict of columns: ``origin``, ``age``, ``valuation``
+        (``"YYYY-MM"``) and ``value``.
+        """
+    @staticmethod
+    def from_chain_ladder(fit: ChainLadderFit, segment: dict |None = None) -> FutureCells:
+        """
+        A chain ladder's future increments: at each age of the grid after an
+        origin's latest one, the projected cumulative value less the one
+        before, then the rest of the ultimate (the tail) as one increment
+        one development period after the oldest age. The cells sum to the
+        fit's reserves.
+        
+        Parameters
+        ----------
+        fit : ChainLadderFit
+        segment : dict of str to object, optional
+            The key values choosing one segment of a fit over several, as
+            ``fit.segment``; without it the fit must have one segment.
+        
+        Returns
+        -------
+        FutureCells
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments and ``segment`` does not choose
+            exactly one.
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import ChainLadder, FutureCells, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 110.0]}
+        ... )
+        >>> cells = FutureCells.from_chain_ladder(ChainLadder().fit(tri, "paid"))
+        >>> cells.cells["origin"], cells.cells["age"]
+        (['2021'], [24])
+        """
+    @staticmethod
+    def from_odp_glm(fit: OdpGlmFit) -> FutureCells:
+        """
+        An ODP GLM's future increments and their means.
+        
+        Parameters
+        ----------
+        fit : OdpGlmFit
+        
+        Returns
+        -------
+        FutureCells
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        The origin periods the cells refer to.
+        """
+    def reserves(self, /) -> list[float]:
+        """
+        The sum of the cells by origin.
+        
+        Returns
+        -------
+        list of float
+        """
+
+@final
 class Gam:
     """
     A generalized additive model: a ``Glm`` plus P-spline smooths of
@@ -18472,6 +18646,121 @@ class IndexClause:
     def kind(self, /) -> str:
         """
         ``"full"`` or ``"severe"``.
+        """
+
+@final
+class Indexation:
+    """
+    Restating a triangle at one price level by a ``CalendarIndex``, and
+    re-inflating a projection.
+    
+    ``restate`` divides each increment of a column by ``I(p) / I(base)``,
+    ``p`` the index period that contains the cell's valuation month, in the
+    triangle's basis; ``inflate`` is its inverse. A restated triangle is
+    developed by any method; its projected future increments, as
+    ``FutureCells``, are taken back to the money of their payment periods by
+    ``reinflate``.
+    
+    Parameters
+    ----------
+    index : CalendarIndex
+    base : str or date
+        The base price level: the index period that contains this month
+        (``"YYYY-MM"`` or a date).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import CalendarIndex, Indexation, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [100.0, 155.0, 110.0]},
+    ... )
+    >>> index = CalendarIndex("2020", [1.0, 1.1], future_rate=0.1)
+    >>> at_2020 = Indexation(index, "2020-01")
+    >>> restated = at_2020.restate(tri, "paid")
+    >>> restated.values[0][0]
+    [[100.0, 150.0], [100.0, nan]]
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[CalendarIndex, str]: ...
+    def __new__(cls, /, index: CalendarIndex, base: Any) -> Indexation: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def base(self, /) -> str:
+        """
+        The base month, ``"YYYY-MM"``.
+        """
+    def factor(self, /, month: Any) -> float:
+        """
+        ``I(p) / I(base)``, ``p`` the index period that contains ``month``:
+        the factor that takes an amount at the base level to the money of
+        ``p``.
+        
+        Parameters
+        ----------
+        month : str or date
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def index(self, /) -> CalendarIndex:
+        """
+        The index.
+        """
+    def inflate(self, /, triangle: Triangle, column: str) -> Triangle:
+        """
+        The inverse of ``restate``: the increments of ``column``, at the
+        base level, taken to the money of their payment periods.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        Triangle
+        """
+    def reinflate(self, /, cells: FutureCells) -> Reinflated:
+        """
+        Future increments at the base level re-inflated to the money of
+        their payment periods, summed by origin.
+        
+        Parameters
+        ----------
+        cells : FutureCells
+        
+        Returns
+        -------
+        Reinflated
+        
+        Raises
+        ------
+        ValueError
+            If the index does not cover a cell's payment period (set a
+            ``future_rate``).
+        """
+    def restate(self, /, triangle: Triangle, column: str) -> Triangle:
+        """
+        A copy of the triangle with the increments of ``column`` restated at
+        the base level, in every segment. Other columns are unchanged.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        Triangle
+        
+        Raises
+        ------
+        ValueError
+            For an unknown column or a payment period the index does not
+            cover.
         """
 
 @final
@@ -27767,6 +28056,292 @@ class PairFit:
         """
 
 @final
+class Panel:
+    """
+    The reinsurers on a tower and their signed lines, applied to a tower's
+    simulated years to draw which reinsurers default
+    (``docs/design/reinsurer-default.md``).
+    
+    A line is a share of a layer's ceded loss (after the layer's
+    ``share``), and the lines of a layer the panel names must sum to 1 (to
+    1e-9), checked when the panel is applied; a layer the panel does not
+    name carries no credit risk.
+    
+    Reinsurer ``r``'s exposure in a year is ``E = sum over l of s_rl X_l``,
+    with ``X_l`` layer ``l``'s ceded loss and ``s_rl`` its line; if it
+    defaults, the cedant loses ``(1 - R_r) (E - C_r)^+``, with ``R_r`` its
+    recovery rate and ``C_r`` its collateral. Defaults follow Vasicek's
+    one-factor model: given the year's factor ``z``, reinsurer ``r``
+    defaults with probability ``Phi((Phi^-1(p_r) - sqrt(rho_r) z) / sqrt(1 -
+    rho_r))``, and ``z = -Phi^-1(U)``, where ``U`` is the year's rank by its
+    driver (the gross loss, or :meth:`with_driver`), ties broken at random,
+    so the worst years have the highest probability of default. Each year
+    draws from its own random stream, so the result has the same bits on
+    any number of threads.
+    
+    Parameters
+    ----------
+    reinsurers : list of Reinsurer
+        At least one, with unique names.
+    
+    Raises
+    ------
+    ValueError
+        For no reinsurers or two with the same name.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
+    >>> years = Tower([Layer("10x10", 10.0, 10.0)]).apply_annual([5.0, 15.0, 30.0])
+    >>> # Re A certainly defaults and pays back 40% of what it owes.
+    >>> panel = (Panel([Reinsurer("Re A", 1.0, 0.4), Reinsurer("Re B", 0.0, 0.4)])
+    ...          .with_line("Re A", "10x10", 0.5)
+    ...          .with_line("Re B", "10x10", 0.5))
+    >>> after = panel.apply(years, seed=7)
+    >>> list(after.marginal(["credit_loss", "10x10"]).draws)
+    [0.0, 1.5, 3.0]
+    >>> list(after.marginal(["net_after_default", "retained"]).draws)
+    [5.0, 11.5, 23.0]
+    """
+    def __new__(cls, /, reinsurers: Sequence[Reinsurer]) -> Panel: ...
+    def __repr__(self, /) -> str: ...
+    def apply(self, /, result: PredictiveDistribution, seed: int = 0) -> PredictiveDistribution:
+        """
+        A tower's one-year result after reinsurer default.
+        
+        The result has the input's components, copied bit for bit, then
+        ``("credit_loss", l)`` for every layer ``l`` of the input, in the
+        input's order (zero on a layer the panel does not name), then
+        ``("recovered", l)``, the layer's ceded loss less its credit loss,
+        and ``("net_after_default", "retained")``, the net loss plus the
+        year's credit loss. A reinsurer's credit loss is split over its
+        layers in proportion to its exposure on each. On a labelled result
+        the exposures sum each layer's ceded loss over the label
+        combinations, and the new components get ``""`` in every label
+        dimension.
+        
+        Parameters
+        ----------
+        result : PredictiveDistribution
+            A tower's one-year result (``Tower.apply``, ``apply_aggregate``
+            or ``apply_annual``).
+        seed : int, default 0
+            The default draws' seed; their streams are apart from the
+            events' even with the events' seed.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            For a result that is no tower's one-year result or one a panel
+            was already applied to, a line on a layer the result does not
+            have, a named layer whose lines do not sum to 1, or a driver of
+            the wrong length.
+        OverflowError
+            For a negative seed or a seed of ``2**64`` or more.
+        """
+    def apply_term(self, /, result: PredictiveDistribution, n_years: int, seed: int = 0) -> PredictiveDistribution:
+        """
+        A term's paths after reinsurer default.
+        
+        Each row is a path of ``n_years`` years, and a default is final: a
+        reinsurer that defaults in year ``t`` of a path is in default in
+        every later year of it. The collateral is held once per reinsurer
+        and path and is used up: in each year in default the collateral
+        still held is set against that year's exposure, and what it covered
+        is gone for the later years. Each path-year's factor comes from its
+        driver ranked among all path-years (the gross loss, or a driver given
+        path-major: year ``t`` of path ``j`` at ``j * n_years + t``, from 0).
+        Path ``j`` draws from its own stream, its years in order, so a term
+        of one year draws as :meth:`apply` does on that year. With a
+        constant probability ``p`` and independent default (correlation 0),
+        a reinsurer is in default by year ``t`` with probability
+        ``1 - (1 - p)**t``. With a correlation above 0 this holds only when
+        the years' drivers are independent and identically distributed: the
+        ranks are taken over all path-years together, so a driver that
+        trends from year to year moves defaults between years.
+        
+        The result has the input's components, copied bit for bit, then for
+        each year in turn the components :meth:`apply` adds, with the year
+        (from 1) as the last key.
+        
+        Parameters
+        ----------
+        result : PredictiveDistribution
+            A term's paths (``Tower.apply_term``, ``apply_aggregate_term`` or
+            ``apply_timeline``).
+        n_years : int
+            The term's years; the result's years must be exactly ``1`` to
+            ``n_years``.
+        seed : int, default 0
+            The default draws' seed.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            As :meth:`apply` does, and for a result that is no term's paths
+            of ``n_years`` years, or a driver without one value per
+            path-year.
+        OverflowError
+            For a negative ``n_years`` or seed, or a seed of ``2**64`` or
+            more.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
+        >>> # One path of two years, ceding 5 and then 10.
+        >>> years = [EventSet.from_years([[15.0]]), EventSet.from_years([[25.0]])]
+        >>> term = Tower([Layer("10x10", 10.0, 10.0)]).apply_term(years)
+        >>> # Re A certainly defaults, recovers nothing and has collateral of 8:
+        >>> # year 1 uses 5 of it, year 2 the 3 left.
+        >>> panel = Panel([Reinsurer("Re A", 1.0, 0.0, collateral=8.0)]).with_line("Re A", "10x10", 1.0)
+        >>> after = panel.apply_term(term, 2)
+        >>> [list(after.marginal(["credit_loss", "10x10", t]).draws) for t in (1, 2)]
+        [[0.0], [7.0]]
+        """
+    def by_reinsurer(self, /, result: PredictiveDistribution, seed: int = 0) -> PredictiveDistribution:
+        """
+        Each reinsurer's credit loss, exposure and default in each year,
+        from the same draws as :meth:`apply` with the same ``seed``.
+        
+        Parameters
+        ----------
+        result : PredictiveDistribution
+            A tower's one-year result.
+        seed : int, default 0
+        
+        Returns
+        -------
+        PredictiveDistribution
+            Dimensions ``["kind", "reinsurer"]``: ``("credit_loss", r)`` for
+            every reinsurer ``r`` in panel order, then ``("exposure", r)``,
+            its exposure after collateral ``(E - C)^+``, then ``("default",
+            r)``, 1 in a year it defaults and 0 otherwise.
+        
+        Raises
+        ------
+        ValueError
+            As :meth:`apply` does.
+        OverflowError
+            For a negative seed or a seed of ``2**64`` or more.
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
+        >>> years = Tower([Layer("10x10", 10.0, 10.0)]).apply_annual([5.0, 15.0, 30.0])
+        >>> panel = Panel([Reinsurer("Re A", 1.0, 0.4, collateral=2.0)]).with_line("Re A", "10x10", 1.0)
+        >>> by = panel.by_reinsurer(years)
+        >>> list(by.marginal(["exposure", "Re A"]).draws)
+        [0.0, 3.0, 8.0]
+        >>> [round(x, 12) for x in by.marginal(["credit_loss", "Re A"]).draws]
+        [0.0, 1.8, 4.8]
+        """
+    def by_reinsurer_term(self, /, result: PredictiveDistribution, n_years: int, seed: int = 0) -> PredictiveDistribution:
+        """
+        Each reinsurer's credit loss, exposure and default in each year of
+        a term's paths, from the same draws as :meth:`apply_term` with the
+        same ``seed``.
+        
+        Parameters
+        ----------
+        result : PredictiveDistribution
+            A term's paths.
+        n_years : int
+        seed : int, default 0
+        
+        Returns
+        -------
+        PredictiveDistribution
+            Dimensions ``["kind", "reinsurer", "year"]``: the components of
+            :meth:`by_reinsurer` for each year in turn, with the year (from
+            1) as the last key. ``("exposure", r, t)`` is the exposure after
+            the collateral still held at the start of year ``t``, and
+            ``("default", r, t)`` is 1 in every year from the one the
+            reinsurer defaults in.
+        
+        Raises
+        ------
+        ValueError
+            As :meth:`apply_term` does.
+        OverflowError
+            For a negative ``n_years`` or seed, or a seed of ``2**64`` or
+            more.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Panel, Reinsurer, Tower
+        >>> years = [EventSet.from_years([[15.0]]), EventSet.from_years([[25.0]])]
+        >>> term = Tower([Layer("10x10", 10.0, 10.0)]).apply_term(years)
+        >>> panel = Panel([Reinsurer("Re A", 1.0, 0.0, collateral=8.0)]).with_line("Re A", "10x10", 1.0)
+        >>> by = panel.by_reinsurer_term(term, 2)
+        >>> [list(by.marginal(["exposure", "Re A", t]).draws) for t in (1, 2)]
+        [[0.0], [7.0]]
+        """
+    @property
+    def reinsurers(self, /) -> list[Reinsurer]:
+        """
+        The panel's reinsurers, in panel order (the order they draw in).
+        """
+    def with_driver(self, /, by_year: Sequence[float]) -> Panel:
+        """
+        The panel ranking the years by ``by_year`` instead of the gross
+        loss (an industry loss, say).
+        
+        Parameters
+        ----------
+        by_year : list of float
+            One finite value per simulated year, in the order of the tower's
+            result (over a term, one per path-year, path-major); its length is
+            checked when the panel is applied.
+        
+        Returns
+        -------
+        Panel
+        
+        Raises
+        ------
+        ValueError
+            For no values or a value that is not finite.
+        """
+    def with_line(self, /, reinsurer: str, layer: str, line: float) -> Panel:
+        """
+        The panel with reinsurer ``reinsurer`` writing ``line`` of layer
+        ``layer``'s ceded loss.
+        
+        Whether ``layer`` is in the tower, and whether its lines sum to 1,
+        is checked when the panel is applied, since a panel is built before
+        it meets a tower.
+        
+        Parameters
+        ----------
+        reinsurer : str
+            A reinsurer on the panel.
+        layer : str
+            A layer's name.
+        line : float
+            In ``(0, 1]``.
+        
+        Returns
+        -------
+        Panel
+        
+        Raises
+        ------
+        ValueError
+            For a reinsurer not on the panel, an empty layer name, a line out
+            of range or a line given twice.
+        """
+
+@final
 class Pareto:
     """
     Single-parameter Pareto: ``P(X > x) = (t / x) ** alpha`` for ``x >= t``,
@@ -31497,6 +32072,51 @@ class RatioDevelopmentFit:
         """
 
 @final
+class Reinflated:
+    """
+    A projection re-inflated by ``Indexation.reinflate``.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import CalendarIndex, FutureCells, Indexation
+    >>> index = CalendarIndex("2020", [1.0, 1.1], future_rate=0.1)
+    >>> at_2020 = Indexation(index, "2020-01")
+    >>> cells = FutureCells(["2020"], ["2020"], [24], ["2021-12"], [100.0])
+    >>> out = at_2020.reinflate(cells)
+    >>> round(out.total_reserve, 6), out.total_base_reserve
+    (110.0, 100.0)
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[FutureCells, list[float], list[float]]: ...
+    def __new__(cls, /, cells: FutureCells, reserves: Sequence[float], base_reserves: Sequence[float]) -> Reinflated: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def base_reserves(self, /) -> list[float]:
+        """
+        The reserve of each origin at the base level, before re-inflation.
+        """
+    @property
+    def cells(self, /) -> FutureCells:
+        """
+        The re-inflated cells.
+        """
+    @property
+    def reserves(self, /) -> list[float]:
+        """
+        The re-inflated reserve of each origin.
+        """
+    @property
+    def total_base_reserve(self, /) -> float:
+        """
+        The total reserve at the base level.
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        The re-inflated total reserve.
+        """
+
+@final
 class ReinstatementPrice:
     """
     The upfront premium of a cover whose reinstatement premium counts in
@@ -31547,6 +32167,72 @@ class ReinstatementPrice:
     def upfront(self, /) -> float:
         """
         The upfront (deposit) premium ``P``.
+        """
+
+@final
+class Reinsurer:
+    """
+    A reinsurer on a :class:`Panel`: its one-year probability of default,
+    the recovery rate on what it owes when it defaults, the collateral held
+    against it and its loading on the systematic factor
+    (``docs/design/reinsurer-default.md``).
+    
+    Parameters
+    ----------
+    name : str
+        Unique on a panel.
+    probability : float
+        One-year probability of default, in ``[0, 1]``.
+    recovery : float
+        Share of the uncollateralised exposure recovered on default, in
+        ``[0, 1]``.
+    collateral : float, default 0.0
+        Collateral held against this reinsurer (a trust fund or letter of
+        credit), netted once across all its layers: finite and non-negative.
+    correlation : float, default 0.0
+        The loading ``rho`` on the systematic factor, in ``[0, 1)``: 0 is
+        independent default, and a larger ``rho`` moves the defaults into
+        the years with the largest driver without changing how often the
+        reinsurer defaults.
+    
+    Raises
+    ------
+    ValueError
+        If a field is out of range.
+    
+    Examples
+    --------
+    >>> from prospicio.reinsurance import Reinsurer
+    >>> r = Reinsurer("Re A", 0.002, 0.4, collateral=1e6, correlation=0.3)
+    >>> r.probability, r.collateral
+    (0.002, 1000000.0)
+    """
+    def __new__(cls, /, name: str, probability: float, recovery: float, collateral: float = 0.0, correlation: float = 0.0) -> Reinsurer: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def collateral(self, /) -> float:
+        """
+        Collateral held against this reinsurer, across all its layers.
+        """
+    @property
+    def correlation(self, /) -> float:
+        """
+        Loading on the systematic factor; 0 is independent default.
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The reinsurer's name.
+        """
+    @property
+    def probability(self, /) -> float:
+        """
+        One-year probability of default.
+        """
+    @property
+    def recovery(self, /) -> float:
+        """
+        Share of the uncollateralised exposure recovered on default.
         """
 
 @final
@@ -32173,6 +32859,226 @@ class SelectedUltimates:
     def weights(self, /) -> dict:
         """
         Every method's weight per origin, by name.
+        """
+
+@final
+class Separation:
+    """
+    Taylor's (1977) separation method: increments over a normaliser are
+    ``r_j * lambda_(i+j)``, development proportions ``r_j`` (summing to 1)
+    times an index ``lambda_h`` per calendar period.
+    
+    ``"arithmetic"`` solves Taylor's equations on the column and diagonal
+    sums (the marginal equations of a Poisson GLM on development and
+    calendar factors). ``"geometric"`` is least squares on the logarithms,
+    taken back to amounts by the geometric means; ``"geometric_lognormal"``
+    by the lognormal means (a factor ``exp(sigma^2 / 2)`` on every index,
+    which needs at least 3 origins). The geometric methods need every
+    increment positive. The triangle must be full: as many ages as origins,
+    the origin grain equal to the development grain, no hole.
+    
+    The indices after the triangle's last calendar period are not fitted:
+    give exactly one of ``future_rate``, ``future_index`` and
+    ``trend_periods``. On a triangle already restated by an economic index
+    (``Indexation.restate``) the indices measure superimposed inflation.
+    
+    Parameters
+    ----------
+    kind : {"arithmetic", "geometric", "geometric_lognormal"}, default "arithmetic"
+    normaliser : list of float, optional
+        ``n_i``, one per origin: finite and positive (claim counts, premium,
+        exposure). Without it every origin has 1.
+    future_rate : float, optional
+        A constant annual rate from the last fitted index, compounded by
+        months: above -1.
+    future_index : CalendarIndex, optional
+        The relative changes of an index from the triangle's last calendar
+        period, read at the last sub-period of each period.
+    trend_periods : int, optional
+        The exponential trend of the last ``trend_periods`` fitted indices,
+        continued from the last: at least 2, at most the number of calendar
+        periods.
+    
+    Raises
+    ------
+    ValueError
+        For an unknown ``kind``, or when not exactly one of the three future
+        settings is given.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import Separation, Triangle
+    >>> # Taylor (1977), Example 1: claims per claim incurred, cumulative.
+    >>> rows = [[50.4, 78.6, 87.6, 92.4], [58.0, 87.2, 96.9], [59.5, 92.7], [66.2]]
+    >>> tri = Triangle.from_long(
+    ...     [2001 + i for i, row in enumerate(rows) for _ in row],
+    ...     [12 * (j + 1) for row in rows for j in range(len(row))],
+    ...     {"s": [v for row in rows for v in row]},
+    ... )
+    >>> fit = Separation(future_rate=0.10).fit(tri, "s")
+    >>> [round(r, 4) for r in fit.proportions]
+    [0.5835, 0.2878, 0.0866, 0.0421]
+    >>> round(fit.indices[0], 1)
+    86.4
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[str, list[float] |None, float |None, CalendarIndex |None, int |None]: ...
+    def __new__(cls, /, kind: str = "arithmetic", normaliser: Sequence[float] |None = None, future_rate: float |None = None, future_index: CalendarIndex |None = None, trend_periods: int |None = None) -> Separation: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, triangle: Triangle, column: str, segment: dict |None = None) -> SeparationFit:
+        """
+        Fits ``column`` of the triangle.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        segment : dict of str to object, optional
+            The key values choosing one segment of a triangle with several
+            (compared as ``str()`` of each value); a triangle with one needs
+            none.
+        
+        Returns
+        -------
+        SeparationFit
+        
+        Raises
+        ------
+        ValueError
+            For an unknown column, a triangle that is not full, a hole,
+            fewer than 2 origins, a normaliser of the wrong length or with a
+            value not finite and positive, a non-positive sum in the
+            recursion, a non-positive increment in a geometric method, fewer
+            than 3 origins for ``"geometric_lognormal"``, or a future that
+            cannot be formed (a rate at or below -1, an index that misses a
+            period, a trend over fewer than 2 or more than all periods).
+            Also when ``segment`` does not choose exactly one segment.
+        """
+    @property
+    def future_index(self, /) -> CalendarIndex |None:
+        """
+        The index the future follows, or ``None``.
+        """
+    @property
+    def future_rate(self, /) -> float |None:
+        """
+        The annual rate past the last period, or ``None``.
+        """
+    @property
+    def kind(self, /) -> str:
+        """
+        ``"arithmetic"``, ``"geometric"`` or ``"geometric_lognormal"``.
+        """
+    @property
+    def normaliser(self, /) -> list[float] |None:
+        """
+        The normaliser ``n_i``, or ``None`` for 1 in every origin.
+        """
+    @property
+    def trend_periods(self, /) -> int |None:
+        """
+        How many fitted indices the future trend uses, or ``None``.
+        """
+
+@final
+class SeparationFit:
+    """
+    A separation fit of one triangle segment.
+    
+    Attributes
+    ----------
+    origins : list of str
+        The origin periods; ``normaliser``, ``fitted`` and ``reserves``
+        follow them.
+    ages : list of int
+        The development ages in months; ``proportions`` and the columns of
+        ``fitted`` follow them.
+    normaliser : list of float
+        ``n_i`` (1 when none was given).
+    proportions : list of float
+        ``r_j``, summing to 1.
+    calendar : list of str
+        The triangle's calendar periods, at the origins' grain.
+    indices : list of float
+        ``lambda_h``, one per calendar period.
+    future_indices : dict
+        The calendar periods after the triangle's last, up to the last
+        future cell's, as ``{"period": [...], "index": [...]}``.
+    fitted : list of list of float
+        ``n_i r_j lambda_(i+j)`` on the observed cells, ``None`` on the
+        future ones; one row per origin.
+    future : FutureCells
+        ``n_i r_j lambda_(i+j)`` on the future cells (at the money of their
+        payment periods; there is no tail past the oldest age).
+    reserves : list of float
+        The sum of each origin's future cells: the first origin's is 0.
+    log_variance : float or None
+        The geometric methods' residual variance on the log scale (``nan``
+        with no degrees of freedom left, as on 2 origins); ``None`` for the
+        arithmetic method.
+    total_reserve : float
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        The development ages in months; ``proportions`` and the columns of ``fitted`` follow them.
+        """
+    @property
+    def calendar(self, /) -> list[str]:
+        """
+        The triangle's calendar periods, at the origins' grain.
+        """
+    @property
+    def fitted(self, /) -> list[list[float |None]]:
+        """
+        ``n_i r_j lambda_(i+j)`` on the observed cells, ``None`` on the future ones.
+        """
+    @property
+    def future(self, /) -> FutureCells:
+        """
+        The future cells, ``n_i r_j lambda_(i+j)``, as ``FutureCells``.
+        """
+    @property
+    def future_indices(self, /) -> dict:
+        """
+        The periods after the triangle's last, as ``{"period": [...], "index": [...]}``.
+        """
+    @property
+    def indices(self, /) -> list[float]:
+        """
+        The index ``lambda_h`` of each calendar period.
+        """
+    @property
+    def log_variance(self, /) -> float |None:
+        """
+        The geometric methods' residual variance on the log scale, or ``None``.
+        """
+    @property
+    def normaliser(self, /) -> list[float]:
+        """
+        The normaliser ``n_i``, one per origin (1 when none was given).
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        The origin periods; ``normaliser``, ``fitted`` and ``reserves`` follow them.
+        """
+    @property
+    def proportions(self, /) -> list[float]:
+        """
+        The development proportions ``r_j``, one per age, summing to 1.
+        """
+    @property
+    def reserves(self, /) -> list[float]:
+        """
+        The sum of each origin's future cells; the first origin's is 0.
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        The total reserve.
         """
 
 @final
@@ -42549,7 +43455,9 @@ def solvency2_reinsurance_lgd(recoverables: float, risk_mitigation: float, colla
         under collateral arrangements; any value in ``[0, 1]`` is accepted.
     factor : float, default 1.0
         The factor of Art 197(7) on the collateral: F (1.0 or 0.5) with the
-        50 % share, F' (1.0 or 0.18) with the 90 % share; in ``[0, 1]``.
+        50 % share; with the 90 % share F' (1.0 or 0.18) until 2027-01-29
+        and F''' (1.0 or 0.9) from 2027-01-30 (Delegated Regulation (EU)
+        2026/269); in ``[0, 1]``.
     
     Returns
     -------
@@ -42566,8 +43474,8 @@ def solvency2_reinsurance_lgd(recoverables: float, risk_mitigation: float, colla
     >>> from prospicio.reinsurance import solvency2_reinsurance_lgd
     >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0)
     30.0
-    >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0, lgd_share=0.9, factor=0.5)
-    93.0
+    >>> solvency2_reinsurance_lgd(100.0, 40.0, 30.0, lgd_share=0.9, factor=0.18)
+    102.6
     """
 
 def solvency2_type1(exposures: Sequence[tuple[float, float]]) -> Solvency2Type1:
@@ -42579,7 +43487,8 @@ def solvency2_type1(exposures: Sequence[tuple[float, float]]) -> Solvency2Type1:
     over every ordered pair of groups, the diagonal included, ``PD_j (1 -
     PD_j) PD_k (1 - PD_k) / (1.25 (PD_j + PD_k) - PD_j PD_k)`` times the
     groups' total losses given default (a term whose two probabilities are
-    both 0 is 0, EIOPA Q&A 2530), and ``v_intra`` sums ``1.5 PD_j (1 - PD_j)
+    both 0 is 0, EIOPA Q&A 2530 and Art 201(2)(a) as amended by 2026/269),
+    and ``v_intra`` sums ``1.5 PD_j (1 - PD_j)
     / (2.5 - PD_j)`` times each group's squared losses given default. The
     charge is ``3 sigma`` if ``sigma`` is at most 7 % of the total loss given
     default, ``5 sigma`` if at most 20 %, and the total otherwise.
@@ -42588,7 +43497,10 @@ def solvency2_type1(exposures: Sequence[tuple[float, float]]) -> Solvency2Type1:
     ----------
     exposures : list of (float, float)
         Each exposure's probability of default, in ``[0, 1]``, and loss given
-        default, non-negative. An empty list gives a charge of 0.
+        default, non-negative. An empty list gives a charge of 0. Each entry
+        is one single name exposure (Art 199(1)); Art 201(3) squares each
+        one's loss given default, so one reinsurer split over several entries
+        with the same probability understates ``v_intra``.
     
     Returns
     -------

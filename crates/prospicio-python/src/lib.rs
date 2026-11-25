@@ -43,6 +43,8 @@ mod reserving;
 mod reserving_counts;
 mod reserving_discount;
 mod reserving_expense;
+mod reserving_inflation;
+mod reserving_separation;
 mod risk;
 
 fn to_py(e: prospicio_core::Error) -> PyErr {
@@ -199,10 +201,10 @@ mod prospicio_native {
     #[pymodule_export]
     use super::reinsurance::{
         PyAggregateLayerStatistics, PyAnnualGrids, PyCessionStatistics, PyLayer, PyLayerStatistics,
-        PyLossSensitivePremium, PySolvency2Type1, PyTower, PyTowerGrids, PyTowerPrice, PyViewPrice,
-        aggregate_layer_statistics, occurrence_cession_statistics, occurrence_layer_statistics,
-        per_risk_inuring, solvency2_probability_by_ratio, solvency2_probability_by_step,
-        solvency2_reinsurance_lgd, solvency2_type1,
+        PyLossSensitivePremium, PyPanel, PyReinsurer, PySolvency2Type1, PyTower, PyTowerGrids,
+        PyTowerPrice, PyViewPrice, aggregate_layer_statistics, occurrence_cession_statistics,
+        occurrence_layer_statistics, per_risk_inuring, solvency2_probability_by_ratio,
+        solvency2_probability_by_step, solvency2_reinsurance_lgd, solvency2_type1,
     };
     #[pymodule_export]
     use super::reserving::NotSupportedError;
@@ -241,6 +243,10 @@ mod prospicio_native {
         PyRatioDevelopment, PyRatioDevelopmentFit, PyUlaeEstimate, ulae_classical,
         ulae_conger_nolibos, ulae_kittel,
     };
+    #[pymodule_export]
+    use super::reserving_inflation::{PyCalendarIndex, PyFutureCells, PyIndexation, PyReinflated};
+    #[pymodule_export]
+    use super::reserving_separation::{PySeparation, PySeparationFit};
     #[pymodule_export]
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,

@@ -32,7 +32,7 @@ when from experience, and which pricing method fits which scenario.
 | Phase 0: Foundation | Workspace, core traits, design notes, RNG streams, Python and R skeletons, parity harness | Done |
 | v0.1: Reserving core | Distributions, `Triangle`, Chain Ladder, Mack, ODP bootstrap with a joint `PredictiveDistribution` | Done; parity on RAA, GenIns and ABC |
 | v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R); latest diagonals, a development applied to another book, in Rust, Python and R (decisions 15 to 19) |
-| v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating) |
+| v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating), reinsurer default and the Solvency II counterparty default charge (#980) |
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C-, D- and R-vine copulas, pair copulas and vines fitted to data (#261, #262, #568) |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
@@ -175,7 +175,11 @@ what it is aiming for by v1.0.
     ruin by Wiener–Hopf; self-exciting (Hawkes) event times for clustered
     catastrophe years, simulated, fitted and as event sets (#567); an
     event loss table as the severity of a compound Poisson on a grid, for
-    the FFT and towers on the grid (#781).
+    the FFT and towers on the grid (#781); reinsurer default on a
+    tower's result, one year or a multi-year term, with a one-factor
+    wrong-way model ranked on the gross loss and collateral per
+    reinsurer, and the Solvency II counterparty default module for type
+    1 exposures (#980, `docs/design/reinsurer-default.md`).
 - **Next:** open. (Done: deficit and credit carry-forward in profit
   commissions and sliding scales over multi-year terms,
   `Tower::apply_term`, `docs/design/aggregate.md`; the P&L ledger, the

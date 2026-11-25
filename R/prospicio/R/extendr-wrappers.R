@@ -69,6 +69,10 @@ bootstrap_se_rust <- function(columns, k, fixed, percentiles, tvar_levels, sd_mu
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
 
+calendar_index_periods_rust <- function(first, values, rate) .Call(wrap__calendar_index_periods_rust, first, values, rate)
+
+calendar_index_value_rust <- function(first, values, rate, months) .Call(wrap__calendar_index_value_rust, first, values, rate, months)
+
 cann_fit_design <- function(x, names, y, offset, weights, family_name, link_name, power, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience) .Call(wrap__cann_fit_design, x, names, y, offset, weights, family_name, link_name, power, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience)
 
 case_adequacy_rust <- function(triangle, incurred, paid, open_counts, trend, max_age) .Call(wrap__case_adequacy_rust, triangle, incurred, paid, open_counts, trend, max_age)
@@ -199,6 +203,12 @@ frequency_severity_rust <- function(triangle, amounts, counts, ultimate, severit
 
 frontier_rust <- function(losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level) .Call(wrap__frontier_rust, losses, retentions, limits, kind, assets, rate, pricing, loading, risk, level)
 
+future_cells_chain_ladder_rust <- function(fit, keys, values) .Call(wrap__future_cells_chain_ladder_rust, fit, keys, values)
+
+future_cells_check_rust <- function(origins, origin, age, valuation, value) .Call(wrap__future_cells_check_rust, origins, origin, age, valuation, value)
+
+future_cells_odp_glm_rust <- function(fit) .Call(wrap__future_cells_odp_glm_rust, fit)
+
 gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, bs, periods, smoothing, lambdas, tensors, tensor_basis) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, bs, periods, smoothing, lambdas, tensors, tensor_basis)
 
 gini_rust <- function(y, pred, exposure) .Call(wrap__gini_rust, y, pred, exposure)
@@ -248,6 +258,12 @@ hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, 
 hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
 
 iman_conover_reorder <- function(pd, correlation, seed, dof, scores, shuffle_rows) .Call(wrap__iman_conover_reorder, pd, correlation, seed, dof, scores, shuffle_rows)
+
+indexation_apply_rust <- function(triangle, column, first, values, rate, base, inflate) .Call(wrap__indexation_apply_rust, triangle, column, first, values, rate, base, inflate)
+
+indexation_check_rust <- function(first, values, rate, base) .Call(wrap__indexation_check_rust, first, values, rate, base)
+
+indexation_factor_rust <- function(first, values, rate, base, months) .Call(wrap__indexation_factor_rust, first, values, rate, base, months)
 
 indication_rust <- function(variable, profit, fixed_ratio, loss_ratio, pure_premium, fixed_per_exposure) .Call(wrap__indication_rust, variable, profit, fixed_ratio, loss_ratio, pure_premium, fixed_per_exposure)
 
@@ -471,6 +487,8 @@ recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap
 
 recommend_portfolio_grid_rust <- function(frequencies, severities, log2, p, p_star) .Call(wrap__recommend_portfolio_grid_rust, frequencies, severities, log2, p, p_star)
 
+reinflate_rust <- function(first, values, rate, base, origins, origin, age, valuation, value) .Call(wrap__reinflate_rust, first, values, rate, base, origins, origin, age, valuation, value)
+
 reliability_rust <- function(y, pred, weights, bins) .Call(wrap__reliability_rust, y, pred, weights, bins)
 
 reorder_groups_by_copula_rust <- function(pd, dim, copula, seed) .Call(wrap__reorder_groups_by_copula_rust, pd, dim, copula, seed)
@@ -488,6 +506,8 @@ round_bucket_rust <- function(bs) .Call(wrap__round_bucket_rust, bs)
 round_premium_rust <- function(premium) .Call(wrap__round_premium_rust, premium)
 
 schedule_trend_rust <- function(years, trend_years, trend_rates, inception, basis, kind, cutoff, before) .Call(wrap__schedule_trend_rust, years, trend_years, trend_rates, inception, basis, kind, cutoff, before)
+
+separation_fit_rust <- function(triangle, column, keys, values, kind, normaliser, future, rate, first, index_values, index_rate, trend_periods) .Call(wrap__separation_fit_rust, triangle, column, keys, values, kind, normaliser, future, rate, first, index_values, index_rate, trend_periods)
 
 settlement_rate_rust <- function(triangle, paid, closed_counts, ultimate, disposal_rates, interpolation) .Call(wrap__settlement_rate_rust, triangle, paid, closed_counts, ultimate, disposal_rates, interpolation)
 
@@ -3637,6 +3657,26 @@ PaidIncurredFit$ultimate <- function() .Call(wrap__PaidIncurredFit__ultimate, se
 #' @export
 `[[.PaidIncurredFit` <- `$.PaidIncurredFit`
 
+PanelReinsurer <- new.env(parent = emptyenv())
+
+PanelReinsurer$collateral <- function() .Call(wrap__PanelReinsurer__collateral, self)
+
+PanelReinsurer$correlation <- function() .Call(wrap__PanelReinsurer__correlation, self)
+
+PanelReinsurer$name <- function() .Call(wrap__PanelReinsurer__name, self)
+
+PanelReinsurer$new <- function(name, probability, recovery, collateral, correlation) .Call(wrap__PanelReinsurer__new, name, probability, recovery, collateral, correlation)
+
+PanelReinsurer$probability <- function() .Call(wrap__PanelReinsurer__probability, self)
+
+PanelReinsurer$recovery <- function() .Call(wrap__PanelReinsurer__recovery, self)
+
+#' @export
+`$.PanelReinsurer` <- function (self, name) { func <- PanelReinsurer[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.PanelReinsurer` <- `$.PanelReinsurer`
+
 Pareto <- new.env(parent = emptyenv())
 
 Pareto$alpha <- function() .Call(wrap__Pareto__alpha, self)
@@ -3946,6 +3986,32 @@ ReinsuranceTower$with_interlocking <- function(on) .Call(wrap__ReinsuranceTower_
 
 #' @export
 `[[.ReinsuranceTower` <- `$.ReinsuranceTower`
+
+ReinsurerPanel <- new.env(parent = emptyenv())
+
+ReinsurerPanel$apply <- function(result, seed) .Call(wrap__ReinsurerPanel__apply, self, result, seed)
+
+ReinsurerPanel$apply_term <- function(result, n_years, seed) .Call(wrap__ReinsurerPanel__apply_term, self, result, n_years, seed)
+
+ReinsurerPanel$by_reinsurer <- function(result, seed) .Call(wrap__ReinsurerPanel__by_reinsurer, self, result, seed)
+
+ReinsurerPanel$by_reinsurer_term <- function(result, n_years, seed) .Call(wrap__ReinsurerPanel__by_reinsurer_term, self, result, n_years, seed)
+
+ReinsurerPanel$driver <- function(by_year) .Call(wrap__ReinsurerPanel__driver, self, by_year)
+
+ReinsurerPanel$line <- function(reinsurer, layer, line) .Call(wrap__ReinsurerPanel__line, self, reinsurer, layer, line)
+
+ReinsurerPanel$new <- function(reinsurers) .Call(wrap__ReinsurerPanel__new, reinsurers)
+
+ReinsurerPanel$reinsurer_names <- function() .Call(wrap__ReinsurerPanel__reinsurer_names, self)
+
+ReinsurerPanel$reinsurers <- function() .Call(wrap__ReinsurerPanel__reinsurers, self)
+
+#' @export
+`$.ReinsurerPanel` <- function (self, name) { func <- ReinsurerPanel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.ReinsurerPanel` <- `$.ReinsurerPanel`
 
 ReservingTail <- new.env(parent = emptyenv())
 

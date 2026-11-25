@@ -7,7 +7,10 @@
 solvency2_type1(pd, lgd)
 }
 \arguments{
-\item{pd}{Each exposure's probability of default, in \verb{[0, 1]}.}
+\item{pd}{Each exposure's probability of default, in \verb{[0, 1]}. Each
+element is one single name exposure (Art 199(1)); Art 201(3) squares
+each one's loss given default, so one reinsurer split over several
+elements with the same probability understates \code{v_intra}.}
 
 \item{lgd}{Each exposure's loss given default, non-negative, as
 \code{\link[=solvency2_reinsurance_lgd]{solvency2_reinsurance_lgd()}} gives it for a reinsurer.}
@@ -20,7 +23,8 @@ The standard formula's counterparty default charge on type 1 exposures
 (Delegated Regulation (EU) 2015/35, Arts 200 and 201). The exposures are
 grouped by probability of default; \code{v_inter} sums over every ordered pair
 of groups, the diagonal included, \verb{PD_j (1 - PD_j) PD_k (1 - PD_k) / (1.25 (PD_j + PD_k) - PD_j PD_k)} times the groups' total losses given
-default (a term whose two probabilities are both 0 is 0, EIOPA Q&A 2530),
+default (a term whose two probabilities are both 0 is 0, EIOPA Q&A 2530
+and Art 201(2)(a) as amended by 2026/269),
 and \code{v_intra} sums \verb{1.5 PD_j (1 - PD_j) / (2.5 - PD_j)} times each group's
 squared losses given default. The charge \code{scr} is \verb{3 sigma} if
 \code{sigma = sqrt(v_inter + v_intra)} is at most 7 \% of the total loss given

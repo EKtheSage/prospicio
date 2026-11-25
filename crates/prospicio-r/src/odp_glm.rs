@@ -20,7 +20,7 @@ use crate::reserving::to_r;
 /// A fitted ODP GLM.
 #[extendr]
 pub(crate) struct OdpGlmFit {
-    inner: OdpGlmFitInner,
+    pub(crate) inner: OdpGlmFitInner,
 }
 
 #[extendr]
