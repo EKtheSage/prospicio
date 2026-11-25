@@ -3731,6 +3731,59 @@ pub(crate) struct PyBayesGlmFit {
 
 #[pymethods]
 impl PyBayesGlmFit {
+    /// The fit as a versioned JSON artifact: the specification with its
+    /// priors and sampler settings, the names, and every kept draw of the
+    /// coefficients and the dispersion, numbers bit for bit (#978), so a
+    /// loaded fit summarizes and predicts as this one. ``from_json`` reads
+    /// it back; ``pickle`` uses the same document.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import BayesGlm, BayesGlmFit, Design
+    /// >>> x = [(i % 4) - 1.5 for i in range(20)]
+    /// >>> y = [[1.0, 2.0, 3.0, 5.0][i % 4] for i in range(20)]
+    /// >>> d = Design([[1.0] * 20, x], ["(Intercept)", "x"])
+    /// >>> fit = BayesGlm("poisson", chains=1, tune=50, draws=20).fit(d, y)
+    /// >>> BayesGlmFit.from_json(fit.to_json()).posterior_mean == fit.posterior_mean
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).predict(d) == fit.predict(d)
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// BayesGlmFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     inconsistent fields.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_bayes::glm::BayesGlmFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// Coefficient names.
     #[getter]
     fn names(&self) -> Vec<String> {
