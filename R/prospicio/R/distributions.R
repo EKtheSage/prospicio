@@ -46,8 +46,8 @@ rust_native_result <- function(x) {
   wrapper <- sys.parent(1)
   caller <- sys.parent(2)
   for (k in seq_len(max(wrapper - caller - 1L, 0L)) + caller) {
-    head <- sys.call(k)[[1]]
-    if (is.name(head) && as.character(head) %in% c("rust_result", "reserving_result")) {
+    f <- sys.function(k)
+    if (identical(f, rust_result) || identical(f, reserving_result)) {
       return(x)
     }
   }

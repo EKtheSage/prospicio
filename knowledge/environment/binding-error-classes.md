@@ -53,7 +53,7 @@ sources:
   not say which functions are fallible. `rust_native_result()` leaves the
   error to the caller when the wrapper runs inside a `rust_result()` or
   `reserving_result()` call (some frame between the wrapper and its caller
-  is one), because those calls choose the error's `call`, which the R tests
+  is a call of one of them, matched by the function rather than by name, so `prospicio:::rust_result(...)` counts), because those calls choose the error's `call`, which the R tests
   check with `conditionCall()`; otherwise it raises in the name of the
   wrapper's caller, `sys.call(sys.parent())` from the wrapper. `sys.call(-1)`
   would name `rust_result()` itself when the wrapper is a promise that
