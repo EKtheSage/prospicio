@@ -722,9 +722,9 @@ bayes_glm_model <- S7::new_class(
       as.data.frame(self@ptr$summary())
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- self@ptr$names()
-      matrix(self@ptr$coefficient_draws(), ncol = length(nm), byrow = TRUE,
-             dimnames = list(NULL, nm))
+      m <- self@ptr$coefficient_draws()
+      colnames(m) <- self@ptr$names()
+      m
     }),
     dispersion_draws = S7::new_property(S7::class_double, getter = function(self) {
       self@ptr$dispersion_draws()
@@ -820,9 +820,8 @@ bayes_loo_pit <- function(model, seed = 0) {
 #' @rdname bayes_ppc
 #' @export
 bayes_replicate <- function(model, seed = 0) {
-  r <- rust_result(model@ptr$replicate(as.double(seed)))
-  # One dispersion per draw, so one row per draw.
-  matrix(r, nrow = length(model@ptr$dispersion_draws()), byrow = TRUE)
+  # One row per draw, one column per training row.
+  rust_result(model@ptr$replicate(as.double(seed)))
 }
 
 #' @rdname bayes_ppc
@@ -844,8 +843,9 @@ loo_pit <- function(observed, replicated, log_lik, r_eff = NULL, seed = 0) {
 
 checks_frame <- function(r) {
   out <- data.frame(name = r$name, observed = r$observed, p_value = r$p_value)
-  attr(out, "replicated") <- matrix(r$replicated, ncol = length(r$name), byrow = TRUE,
-                                    dimnames = list(NULL, r$name))
+  replicated <- r$replicated
+  colnames(replicated) <- r$name
+  attr(out, "replicated") <- replicated
   out
 }
 
@@ -1253,9 +1253,8 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
   function(model, test) {
     y <- test[[response]]
     w <- if (is.null(weight_column)) rep(1, nrow(test)) else test[[weight_column]]
-    fa <- family_args(theta, power)
-    rust_result(family_mean_deviance_rust(family, fa$theta, fa$power, as.double(y),
-                                          as.double(stats::predict(model, test)), as.double(w)))
+    family_deviance(family, y, stats::predict(model, test), weights = w, theta = theta,
+                    power = power) / sum(w)
   }
 }
 
@@ -1893,7 +1892,7 @@ ale <- function(model, data, feature, bins = 40, levels = NULL) {
     if (length(unique(x)) < 2) stop(feature, " takes one value: it has no local effect")
     # The grid, the intervals, accumulation and centring are the Rust
     # core's (#837); only the predictions are made here.
-    z <- rust_result(ale_grid_rust(as.double(x), as.double(bins)))
+    z <- ale_grid_rust(as.double(x), as.double(bins))
     a <- ale_intervals_rust(as.double(x), z)
     e <- ale_numeric_rust(a, pred(z[a]), pred(z[a + 1]), as.double(length(z) - 1))
     return(data.frame(value = z, effect = e$effects, count = c(NA, e$counts)))
@@ -1946,8 +1945,7 @@ shap_values <- function(model, data, background, features = NULL, output = NULL,
     values <- unlist(lapply(masks, function(mask) {
       if (!any(mask)) rep(baseline, n) else if (all(mask == 1)) outputs else value(mask)
     }))
-    phi[] <- matrix(rust_result(shap_exact_rust(as.double(values), as.double(n), as.double(m))),
-                    n, m, byrow = TRUE)
+    phi[] <- rust_result(shap_exact_rust(as.double(values), as.double(n), as.double(m)))
     method <- "exact"
   } else {
     if (n_permutations < 1) stop("n_permutations must be at least 1")
@@ -2730,20 +2728,20 @@ bayes_glmm_model <- S7::new_class(
     groups = S7::class_list,
     coefficients = S7::new_property(S7::class_double, getter = function(self) {
       nm <- self@ptr$names()
-      stats::setNames(self@ptr$parameter_means()[seq_along(nm)], nm)
+      stats::setNames(colMeans(self@draws)[seq_along(nm)], nm)
     }),
     summary = S7::new_property(S7::class_any, getter = function(self) {
       as.data.frame(self@ptr$summary())
     }),
     draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- self@ptr$parameter_names()
-      matrix(self@ptr$parameter_draws(), ncol = length(nm), byrow = TRUE,
-             dimnames = list(NULL, nm))
+      m <- self@ptr$parameter_draws()
+      colnames(m) <- self@ptr$parameter_names()
+      m
     }),
     effect_draws = S7::new_property(S7::class_any, getter = function(self) {
-      nm <- self@ptr$effect_names()
-      matrix(self@ptr$effect_draws(), ncol = length(nm), byrow = TRUE,
-             dimnames = list(NULL, nm))
+      m <- self@ptr$effect_draws()
+      colnames(m) <- self@ptr$effect_names()
+      m
     }),
     random_effects = S7::new_property(S7::class_list, getter = function(self) {
       lapply(self@ptr$random_effects(), as.data.frame)

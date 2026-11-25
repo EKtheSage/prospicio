@@ -592,7 +592,7 @@ impl TabularNetModel {
             levels = t.levels.clone(),
             columns = t.column_names(),
             dim = t.dim as f64,
-            values = t.values
+            values = crate::row_major(&t.values, t.dim)
         ))
     }
 

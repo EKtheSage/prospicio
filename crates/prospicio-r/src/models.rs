@@ -15,7 +15,7 @@ use prospicio_models::resample;
 use prospicio_models::{Design, Family, FamilyKind, Fitted, Link, LinkKind, Model, metrics};
 
 use crate::distributions::PredictiveDistribution;
-use crate::{to_r, whole};
+use crate::{row_major, to_r, whole};
 
 /// A family from its name; `theta` and `power` are NA when not used.
 pub(crate) fn family(name: &str, theta: f64, power: f64) -> Result<Family> {
@@ -712,9 +712,10 @@ impl BayesGlmmModel {
         self.inner.parameters().names().to_vec()
     }
 
-    /// Row-major `n_draws × parameters`.
-    fn parameter_draws(&self) -> Vec<f64> {
-        self.inner.parameters().values().to_vec()
+    /// The parameter draws, `n_draws × parameters`.
+    fn parameter_draws(&self) -> RMatrix<f64> {
+        let p = self.inner.parameters();
+        row_major(p.values(), p.names().len())
     }
 
     /// Each parameter's posterior mean, without copying the draws to R.
@@ -726,9 +727,10 @@ impl BayesGlmmModel {
         self.inner.effects().names().to_vec()
     }
 
-    /// Row-major `n_draws × effects`.
-    fn effect_draws(&self) -> Vec<f64> {
-        self.inner.effects().values().to_vec()
+    /// The random-effect draws, `n_draws × effects`.
+    fn effect_draws(&self) -> RMatrix<f64> {
+        let e = self.inner.effects();
+        row_major(e.values(), e.names().len())
     }
 
     fn divergences(&self) -> f64 {
@@ -2048,12 +2050,14 @@ fn ale_order_rust(distance: &[f64], k: f64) -> Vec<f64> {
         .collect()
 }
 
-/// Exact SHAP values, `n × m` row-major, from the game's value at each of
+/// Exact SHAP values, an `n × m` matrix, from the game's value at each of
 /// the `2^m` coalitions (#837).
 /// @noRd
 #[extendr]
-fn shap_exact_rust(values: &[f64], n: f64, m: f64) -> Result<Vec<f64>> {
-    prospicio_models::explain::shap_exact(values, n as usize, m as usize).map_err(to_r)
+fn shap_exact_rust(values: &[f64], n: f64, m: f64) -> Result<RMatrix<f64>> {
+    let phi =
+        prospicio_models::explain::shap_exact(values, n as usize, m as usize).map_err(to_r)?;
+    Ok(row_major(&phi, m as usize))
 }
 
 #[extendr]
@@ -2438,9 +2442,9 @@ impl BayesGlmModel {
         self.inner.posterior_mean()
     }
 
-    /// Row-major `n_draws × p`.
-    fn coefficient_draws(&self) -> Vec<f64> {
-        self.inner.coefficient_draws().to_vec()
+    /// The coefficient draws, `n_draws × p`.
+    fn coefficient_draws(&self) -> RMatrix<f64> {
+        row_major(self.inner.coefficient_draws(), self.inner.names().len())
     }
 
     fn dispersion_draws(&self) -> Vec<f64> {
@@ -2479,10 +2483,14 @@ impl BayesGlmModel {
         self.inner.log_likelihood(d, y).map_err(to_r)
     }
 
-    /// Replicated training datasets, row-major `n_draws × n`.
-    fn replicate(&self, seed: f64) -> Result<Vec<f64>> {
+    /// Replicated training datasets, `n_draws × n`.
+    fn replicate(&self, seed: f64) -> Result<RMatrix<f64>> {
         let (d, _) = &self.training;
-        self.inner.replicate(d, whole(seed, "seed")?).map_err(to_r)
+        let r = self
+            .inner
+            .replicate(d, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(row_major(&r, d.n_rows()))
     }
 
     /// Posterior predictive checks on the training data.
@@ -2674,14 +2682,12 @@ fn ppc_statistics(names: &[String]) -> Result<Vec<Statistic>> {
         .collect()
 }
 
-/// `list(name, observed, p_value, replicated)`, `replicated` row-major
+/// `list(name, observed, p_value, replicated)`, `replicated` a
 /// draws × statistics.
 fn checks_list(checks: Vec<StatisticCheck>) -> List {
     let s = checks.first().map_or(0, |c| c.replicated.len());
-    let mut replicated = Vec::with_capacity(s * checks.len());
-    for d in 0..s {
-        replicated.extend(checks.iter().map(|c| c.replicated[d]));
-    }
+    // Column `k` is statistic `k`'s replicates, already in R's order.
+    let replicated = RMatrix::new_matrix(s, checks.len(), |d, k| checks[k].replicated[d]);
     list!(
         name = checks.iter().map(|c| c.name.clone()).collect::<Vec<_>>(),
         observed = checks.iter().map(|c| c.observed).collect::<Vec<_>>(),
