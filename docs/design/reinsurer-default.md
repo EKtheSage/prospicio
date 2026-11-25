@@ -1,7 +1,7 @@
 # Design note: reinsurer default on a tower
 
-Status: **Accepted** (#980; decisions (a) to (l) accepted by the user on
-2026-11-24 as recommended; PRs 2 to 5 built) · v0.3 ·
+Status: **Done** (#980; decisions (a) to (l) accepted by the user on
+2026-11-24 as recommended; PRs 2 to 6 built, #980 done) · v0.4 ·
 Depends on: `aggregate.md` (`Tower`, `EventSet`, the tower's simulated years
 in parallel, #970), `predictive-distribution.md`, `rng.md` · Lane: Aggregate
 
@@ -171,6 +171,9 @@ impl Panel {
     /// A term's paths (`apply_term`, `apply_aggregate_term`) after default.
     pub fn apply_term(&self, tower: &PredictiveDistribution, n_years: usize, seed: u64)
         -> Result<PredictiveDistribution>;
+    /// `by_reinsurer` over a term's paths, from `apply_term`'s draws.
+    pub fn by_reinsurer_term(&self, tower: &PredictiveDistribution, n_years: usize,
+        seed: u64) -> Result<PredictiveDistribution>;
     /// Credit loss, exposure and default by reinsurer, from the same draws.
     pub fn by_reinsurer(&self, tower: &PredictiveDistribution, seed: u64)
         -> Result<PredictiveDistribution>;
@@ -279,6 +282,42 @@ each), `panel_driver(panel, by_year)`, `apply_panel(panel, result, seed =
 file's means and default frequencies on stratified years (the gross loss
 at the lognormal's quantiles `(i + 1/2) / n`, 100,000 of them), so the
 only sampling error is the default draws', at five standard errors.
+
+As built in PR 6 (`Panel::apply_term` and `Panel::by_reinsurer_term`
+in `panel.rs`), where the note left a choice open: one core serves both
+entry points, a one-year result being a path of one year, so `apply_term`
+on a term of one year gives `apply`'s bits on that year (a unit test
+checks it). `by_reinsurer_term` was added beside `apply_term` (dims
+`["kind", "reinsurer", "year"]`, `by_reinsurer`'s components for each
+year in turn): whether a reinsurer is in default cannot be read from the
+credit loss in a year with no exposure, and the closed form below needs
+it. Its `exposure` is the exposure after the collateral still held at the
+start of the year, and its `default` is 1 in every year from the one the
+reinsurer defaults in. Collateral is used only in years in default: in
+such a year the collateral still held covers up to that year's exposure,
+and what it covered is gone; before a default the collateral is untouched.
+The new components come year by year after the input's, as the term's
+own do (year 1's `credit_loss` by layer, `recovered` by layer and
+`net_after_default`, then year 2's). `apply_term` refuses a result whose
+dims are not exactly `["kind", "layer", "year"]`, whose years are not
+exactly `1..=n_years`, a one-year result, and a driver without
+`n_paths * n_years` values; `apply` refuses a term and names
+`apply_term`. The provenance gains `default_term_years`, and
+`default_streams` reads "3 << 62 plus the path". With a constant
+probability `p` and years whose drivers are independent (independent
+default, or the factor ranked on independent years), a reinsurer is in
+default by year `t` with probability `1 - (1 - p)^t`; a driver correlated
+across a path's years would change that, since the factors of one path
+would then move together. Python binds `Panel.apply_term(result, n_years,
+seed=0)` and `by_reinsurer_term`, R `apply_panel_term(panel, result,
+n_years, seed = 0)` and `panel_by_reinsurer_term()` (after
+`apply_tower_term()`), and R's `reinsurer_panel` gains a `reinsurers`
+property returning the `reinsurer` objects, as Python's
+`Panel.reinsurers`. The tests are the unit tests in `panel.rs`,
+`aggregate_reinsurer_default_threads.rs` (terms on 1, 2, 3 and 8
+threads) and `validation/tests/aggregate_reinsurer_default_term.rs`
+(closed forms within four standard errors, with a power check against a
+default that is not final), and new files in Python and R.
 
 ## Decisions
 

@@ -15,8 +15,8 @@ sources:
     resource: https://legislation.gov.uk/eur/2015/35/article/197/2020-01-31
     title: Article 197 as substituted by Delegated Regulation (EU) 2019/981, the factors F, F', F'' and F'''
   - id: art199
-    resource: https://www.legislation.gov.uk/eur/2015/35/article/199/adopted
-    title: Article 199, probability of default
+    resource: https://www.legislation.gov.uk/eur/2015/35/article/199/2020-01-31
+    title: Article 199, probability of default, as at 2020-01-31 (the EU text then in force, after 2019/981)
   - id: art200
     resource: https://www.eiopa.europa.eu/rulebook/solvency-ii-single-rulebook/article-5853_en
     title: Article 200, SCR on type 1 exposures
@@ -39,7 +39,8 @@ sources:
 The standard formula's capital charge for the default of counterparties
 whose exposures are not diversified and are likely rated, such as
 reinsurers (type 1 exposures). Read from the EIOPA single rulebook and
-legislation.gov.uk on 2026-11-24. `prospicio_aggregate::solvency2`
+legislation.gov.uk on 2026-11-24, and every constant rechecked against
+them the same day for #980 PR 6 (see "The check" below). `prospicio_aggregate::solvency2`
 implements Arts 192(2), 199, 200 and 201 (#980), and
 `validation/tests/aggregate_reinsurer_default_solvency2.rs` checks it, with
 its Python and R bindings, against `reinsurer_default_solvency2.csv`, which
@@ -52,7 +53,8 @@ probabilities), to 1e-12 relative.
 
 # The numbers
 
-- **Loss given default of a reinsurance arrangement (Art 192(2))**:
+- **Loss given default of a reinsurance arrangement (Art 192(2), first
+  subparagraph)**:
   `LGD = max(50% (Recoverables + 50% RM_re) - F Collateral, 0)`, where
   Recoverables is the best estimate of the amounts recoverable and the
   corresponding debtors, `RM_re` the risk-mitigating effect on underwriting
@@ -61,7 +63,8 @@ probabilities), to 1e-12 relative.
   197: market value less a market-risk adjustment, 90% of it if only the
   third-party custody condition fails, nil if Art 214 is not met). For a
   counterparty with 60% or more of its assets under collateral
-  arrangements the 50% is 90% and F is F' (2016/467).
+  arrangements the 50% is 90% and F is F' (Art 192(2), second
+  subparagraph, inserted by 2016/467).
 - **The factors (Art 197(7) as substituted by 2019/981)**: all 100% when
   the undertaking's share of the insolvency estate above the collateral
   does not take account of receiving the collateral; otherwise F, F', F''
@@ -77,17 +80,22 @@ probabilities), to 1e-12 relative.
   Before an undertaking's first solvency ratio is disclosed (Art 199(5)),
   the credit quality step applies if an ECAI assessment exists, and
   otherwise a 100% ratio (0.5%).
-- **SCR (Art 200)**: with `sigma = sqrt(V)` and the sum of the LGDs of all
-  type 1 exposures, `3 sigma` if `sigma` is at most 7% of that sum, `5 sigma`
-  if at most 20%, else the sum.
-- **Variance (Art 201)**: `V = V_inter + V_intra`, with exposures grouped
+- **SCR (Art 200)**: with `sigma = sqrt(V)` (Art 200(4)) and the sum of
+  the LGDs of all type 1 exposures, `3 sigma` if `sigma` is "lower than or
+  equal to" 7% of that sum (Art 200(1)), `5 sigma` if above 7% and at most
+  20% (Art 200(2)), else the sum (Art 200(3)). A unit test in
+  `solvency2.rs` puts sigma exactly on 7% and on 20% in floating point and
+  checks that the lower multiple applies there.
+- **Variance (Art 201(1) to (3))**: `V = V_inter + V_intra`, with exposures grouped
   by probability of default `PD_j` and `TLGD_j` the sum of the LGDs in
   group `j`: `V_inter = sum over all ordered pairs (j, k), j = k included,
   of PD_j(1 - PD_j) PD_k(1 - PD_k) /
   (1.25 (PD_j + PD_k) - PD_j PD_k) TLGD_j TLGD_k` and `V_intra = sum over
   j of 1.5 PD_j (1 - PD_j) / (2.5 - PD_j) times the sum of the squared
-  LGDs in group j`. EIOPA Q&A 2530 takes a term whose two probabilities
-  are both 0 as 0.
+  LGDs in group j` (Art 201(3); the rulebook's text writes the inner sum
+  as "sum PD j (LGD^2 i)", `PD_j` being the sum's subscript, over the
+  exposures whose probability is `PD_j`, not a factor). EIOPA Q&A 2530
+  takes a term whose two probabilities are both 0 as 0.
 
 # Recovery rates
 
@@ -95,3 +103,28 @@ A Lloyd's and Institute of Actuaries working party (Reinsurance Bad Debt
 Provisions for General Insurance Companies, 2000, with a 2005 note) found
 ultimate recoveries from failed reinsurers' estates mostly between 20% and
 60%; the standard formula's 50% loss given default sits in that range.
+
+# The check
+
+On 2026-11-24 (#980 PR 6) every constant in
+`crates/prospicio-aggregate/src/solvency2.rs` and
+`validation/scripts/aggregate_reinsurer_default.py` was compared with the
+text, and all match:
+
+| Constant | Code | Text | Source read |
+|---|---|---|---|
+| PD by step 0 to 6 | 0.00002, 0.0001, 0.0005, 0.0024, 0.012, 0.042, 0.042 | 0.002%, 0.01%, 0.05%, 0.24%, 1.20%, 4.2%, 4.2% (Art 199(2)) | legislation.gov.uk, 2020-01-31 |
+| PD by ratio | 196% 0.01%, 175% 0.05%, 150% 0.1%, 125% 0.2%, 122% 0.24%, 100% 0.5%, 95% 1.2%, 75% 4.2%, linear between | the same table, linear interpolation, 4.2% below 75%, 0.01% above 196% (Art 199(3)) | legislation.gov.uk, 2020-01-31 |
+| LGD share and `RM_re` weight | 0.5 or 0.9; 0.5 | `max[50% (Recoverables + 50% RM_re) - F Collateral; 0]` and `max[90% (...) - F' Collateral; 0]` when 60% or more of the assets are collateralised (Art 192(2)) | EIOPA rulebook |
+| F, F' | caller's argument, documented as 100% or 50%, 100% or 18% | 100% when the estate share ignores the collateral, else F, F', F'', F''' = 50%, 18%, 16%, 90% (Art 197(7)) | legislation.gov.uk, 2020-01-31 |
+| SCR thresholds | `<= 0.07` gives 3 sigma, `<= 0.2` gives 5 sigma, else the total | 3 sigma at "lower than or equal to 7 %", 5 sigma above 7% and "lower or equal to 20 %", else the total (Art 200(1) to (3)) | EIOPA rulebook |
+| `V_inter` | 1.25 in `1.25 (PD_j + PD_k) - PD_j PD_k`, every ordered pair | the same, "all possible combinations (j,k)" (Art 201(2)) | EIOPA rulebook |
+| `V_intra` | 1.5 and 2.5 in `1.5 PD_j (1 - PD_j) / (2.5 - PD_j)` times the sum of `LGD_i^2` | the same (Art 201(3)) | EIOPA rulebook |
+
+What was not checked: EUR-Lex's consolidated text (its pages for
+CELEX 02015R0035 say the document is too large to display, and the dated
+URLs tried returned 404), so the Art 199 tables rest on legislation.gov.uk's
+text as at 2020-01-31, which is the EU text then in force after 2019/981,
+and amendments to these articles after 2020 (if any) were not checked. The
+Art 199 tables were read through a summarising fetch tool, not copied by
+hand from the page.

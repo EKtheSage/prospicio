@@ -3971,7 +3971,11 @@ ReinsurerPanel <- new.env(parent = emptyenv())
 
 ReinsurerPanel$apply <- function(result, seed) .Call(wrap__ReinsurerPanel__apply, self, result, seed)
 
+ReinsurerPanel$apply_term <- function(result, n_years, seed) .Call(wrap__ReinsurerPanel__apply_term, self, result, n_years, seed)
+
 ReinsurerPanel$by_reinsurer <- function(result, seed) .Call(wrap__ReinsurerPanel__by_reinsurer, self, result, seed)
+
+ReinsurerPanel$by_reinsurer_term <- function(result, n_years, seed) .Call(wrap__ReinsurerPanel__by_reinsurer_term, self, result, n_years, seed)
 
 ReinsurerPanel$driver <- function(by_year) .Call(wrap__ReinsurerPanel__driver, self, by_year)
 
@@ -3980,6 +3984,8 @@ ReinsurerPanel$line <- function(reinsurer, layer, line) .Call(wrap__ReinsurerPan
 ReinsurerPanel$new <- function(reinsurers) .Call(wrap__ReinsurerPanel__new, reinsurers)
 
 ReinsurerPanel$reinsurer_names <- function() .Call(wrap__ReinsurerPanel__reinsurer_names, self)
+
+ReinsurerPanel$reinsurers <- function() .Call(wrap__ReinsurerPanel__reinsurers, self)
 
 #' @export
 `$.ReinsurerPanel` <- function (self, name) { func <- ReinsurerPanel[[name]]; environment(func) <- environment(); func }

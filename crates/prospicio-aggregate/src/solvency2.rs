@@ -408,6 +408,31 @@ mod tests {
     }
 
     #[test]
+    fn sigma_exactly_on_7_or_20_percent_takes_the_lower_multiple() {
+        // One exposure (p, 10) sets sigma; an exposure with probability 0
+        // adds to the total without moving sigma. The second loss was
+        // searched so that sigma is exactly 7 % (20 %) of the total in
+        // floating point; the test checks that before reading the branch.
+        for (p, extra, share, multiple) in [
+            (0.012, 5.555037244361369, 0.07, 3.0),
+            (0.1, 5.000000000000002, 0.2, 5.0),
+        ] {
+            let t = type1(&[(p, 10.0), (0.0, extra)]).unwrap();
+            assert_eq!(t.sigma, share * t.total_lgd, "sigma is on {share} exactly");
+            assert_eq!(t.scr, multiple * t.sigma, "{share}");
+            // A total a little smaller puts sigma above the threshold.
+            let above = type1(&[(p, 10.0), (0.0, extra - 1e-9)]).unwrap();
+            assert!(above.sigma > share * above.total_lgd);
+            let next = if multiple == 3.0 {
+                5.0 * above.sigma
+            } else {
+                above.total_lgd
+            };
+            assert_eq!(above.scr, next, "{share}");
+        }
+    }
+
+    #[test]
     fn groups_are_by_equal_probability() {
         // Splitting an exposure in two at the same probability keeps
         // V_inter (bilinear in the group's total) and lowers V_intra.

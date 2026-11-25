@@ -19,7 +19,15 @@ years <- apply_tower(reinsurance_tower(list(xol_layer("10x10", 10, 10))), c(5, 1
 certain <- panel_line(reinsurer_panel(list(reinsurer("Re A", 1, 0.4), reinsurer("Re B", 0, 0.4))),
                       c("Re A", "Re B"), "10x10", 0.5)
 stopifnot(identical(certain@reinsurer_names, c("Re A", "Re B")))
+# The reinsurers read back as reinsurer objects, as Python's Panel.reinsurers.
+back <- certain@reinsurers
+stopifnot(length(back) == 2, S7::S7_inherits(back[[2]], reinsurer),
+          back[[2]]@name == "Re B", back[[1]]@probability == 1, back[[1]]@recovery == 0.4)
 after <- apply_panel(certain, years, seed = 7)
+# The input's components come first, their draws unchanged.
+m <- ncol(draw_matrix(years))
+stopifnot(identical(unname(draw_matrix(after)[, seq_len(m), drop = FALSE]),
+                    unname(draw_matrix(years))))
 stopifnot(identical(col(after, "credit_loss", "10x10"), c(0, 1.5, 3)))
 stopifnot(identical(col(after, "recovered", "10x10"), c(0, 3.5, 7)))
 stopifnot(identical(col(after, "net_after_default", "retained"), c(5, 11.5, 23)))
@@ -56,16 +64,25 @@ stopifnot(identical(col(panel_by_reinsurer(one_panel, years), "default", "R1"),
                     col(panel_by_reinsurer(one_panel, years, seed = 0), "default", "R1")))
 driven <- apply_panel(panel_driver(one_panel, -seq_len(50)), years, seed = 3)
 stopifnot(length(col(driven, "credit_loss", "A")) == 50)
+# The same seed with a driver gives other defaults.
+driven_by <- panel_by_reinsurer(panel_driver(one_panel, -seq_len(50)), years, seed = 3)
+stopifnot(!identical(col(driven_by, "default", "R1"), d3))
 
 # The errors.
 years <- apply_tower(reinsurance_tower(list(xol_layer("A", 20, 15))), c(10, 40))
 expect_error_like(reinsurer("R1", 1.5, 0.4), "probability")
+expect_error_like(reinsurer("R1", 0.1, 0.4, correlation = 1), "correlation")
+expect_error_like(reinsurer("R1", 0.1, 0.4, collateral = -1), "collateral")
 expect_error_like(reinsurer_panel(list()), "at least one reinsurer")
 expect_error_like(reinsurer_panel(list(reinsurer("R1", 0.1, 0.4), reinsurer("R1", 0.2, 0.4))), "unique")
 two <- reinsurer_panel(list(reinsurer("R1", 0.1, 0.4), reinsurer("R2", 0.1, 0.4)))
 expect_error_like(panel_line(two, "R9", "A", 0.5), "no reinsurer")
 expect_error_like(panel_line(two, c("R1", "R2"), "A", c(0.5, 0.5, 0.5)), "equal lengths")
 expect_error_like(panel_line(two, c("R1", "R1"), "A", 0.5), "already has a line")
+expect_error_like(panel_line(two, "R1", "A", 1.5), "line")
+expect_error_like(panel_line(two, character(), character(), numeric()), "at least one value")
+expect_error_like(panel_line("two", "R1", "A", 1), "panel must be a reinsurer_panel")
+expect_error_like(panel_driver("two", 1:3), "panel must be a reinsurer_panel")
 expect_error_like(apply_panel(panel_line(two, "R1", "A", 0.5), years), "sum")
 expect_error_like(apply_panel(panel_line(two, "R1", "Z", 1), years), "Z")
 expect_error_like(apply_panel(panel_line(two, "R1", "A", 1), years, seed = -1), "seed")
