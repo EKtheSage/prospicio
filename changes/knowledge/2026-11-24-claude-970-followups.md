@@ -1,1 +1,0 @@
-* **Update**: [The tower's simulated paths in parallel](/findings/tower-years-in-parallel.md), from #970 (branch claude/970-followups): the thread test compares thread counts with each other only; the match with the code before #970 was a one-off run on Windows, not a pinned checksum.
