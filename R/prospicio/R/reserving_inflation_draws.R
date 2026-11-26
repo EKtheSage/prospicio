@@ -93,9 +93,11 @@ S7::method(print, index_paths) <- function(x, ...) {
 #'   the same in every simulation.
 #'
 #' Which draws can be passed: [predict_distribution()] of an [odp_glm_fit]
-#' gives future increments with the dimensions `origin` and `development`.
-#' The bootstraps' reserve draws are by origin only, without cells, and are
-#' refused for their missing age. A [compartmental_fit]'s `paid` draws
+#' gives future increments with the dimensions `origin` and `development`,
+#' and so does the `cells` property of an [odp_bootstrap()] or
+#' [mack_bootstrap()] fit made with `cells = TRUE` (with the triangle's keys
+#' in front). The bootstraps' `reserves` are by origin only and are refused
+#' for their missing age. A [compartmental_fit]'s `paid` draws
 #' (dimensions `origin` and `age`) are cumulative paid, so they pass the
 #' checks but would be re-inflated wrongly: difference them by origin first
 #' (the first future cell less the origin's latest paid).

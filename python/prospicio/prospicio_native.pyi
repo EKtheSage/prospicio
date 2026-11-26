@@ -19619,11 +19619,12 @@ class Indexation:
         paths' first period on takes that simulation's level, and one past
         the paths' last period is an error.
         
-        ``OdpGlmFit.predict_distribution`` and
-        ``ApcGlmFit.predict_distribution`` give such draws. The bootstraps'
-        reserve draws are by origin only and are refused. The compartmental
-        model's ``paid`` draws are cumulative: difference them by origin
-        first.
+        ``OdpGlmFit.predict_distribution``,
+        ``ApcGlmFit.predict_distribution`` and the ``cells`` of an
+        ``OdpBootstrap`` or ``MackBootstrap`` fit made with
+        ``fit(cells=True)`` give such draws; the bootstraps' ``reserves``
+        are by origin only and are refused. The compartmental model's
+        ``paid`` draws are cumulative: difference them by origin first.
         
         Parameters
         ----------
@@ -24098,7 +24099,7 @@ class MackBootstrap:
         """
         Lowest link ratios left out at each age.
         """
-    def fit(self, /, triangle: Triangle, column: str) -> MackBootstrapFit:
+    def fit(self, /, triangle: Triangle, column: str, *, cells: bool = False) -> MackBootstrapFit:
         """
         The lifetime view: bootstraps one measure column in every segment of
         a cumulative triangle, each with its own Mack model and residuals,
@@ -24124,6 +24125,14 @@ class MackBootstrap:
             grain, every origin observed from the first age to its latest
             with no negative value.
         column : str
+        cells : bool, default False
+            Whether to keep each simulation's future incremental values in
+            the fit's ``cells``, for ``Indexation.reinflate_draws``. The
+            reserves and patterns are the same, bit for bit, with and
+            without them, since keeping them draws no other random number.
+            They take ``n_sims`` times the number of future cells in memory
+            (about 4 MB on RAA at 10,000 simulations, 66 MB on a 40 by 40
+            quarterly triangle), so they are kept only when asked for.
         
         Returns
         -------
@@ -24137,7 +24146,9 @@ class MackBootstrap:
             their origins, ages or observed cells, if ``spearman`` does not
             fit the segments, if ``tail_std_err`` is given with an estimated
             tail, or if the tail cannot be refitted on some simulation's
-            pseudo factors (the message counts them and gives one).
+            pseudo factors (the message counts them and gives one); with
+            ``cells=True``, if no segment has a future cell (a fully
+            developed triangle with no ``tail``).
         
         Examples
         --------
@@ -24292,6 +24303,31 @@ class MackBootstrapFit:
     """
     def __repr__(self, /) -> str: ...
     @property
+    def cells(self, /) -> PredictiveDistribution |None:
+        """
+        Each simulation's future incremental values, or ``None`` unless the
+        fit was made with ``fit(cells=True)``: each simulated cumulative
+        value less the one before it, starting from the observed latest
+        value, so that they are payments. The dimensions are the triangle's
+        keys, ``"origin"`` and ``"development"`` (the age in months at the
+        end of the cell's development period); one component per future
+        cell, each origin's cells after its latest age in age order,
+        segment by segment as ``reserves``; one row per simulation, in the
+        reserves' order (under ``dependence="rank_correlation"`` each
+        segment's cells move with its reserves). With a ``tail`` each origin
+        has one more cell, the ultimate less the value at the oldest age, at
+        the oldest age plus one development period, kept in every
+        simulation even when it is 0. A fully developed origin with no tail
+        has no cell. Each origin's cells sum to its reserve in every
+        simulation to round-off, so ``cells.aggregate(keys + ["origin"])``
+        gives the reserves. ``Indexation.reinflate_draws`` takes them as
+        they are.
+        
+        Returns
+        -------
+        PredictiveDistribution or None
+        """
+    @property
     def chain_ladder(self, /) -> ChainLadderFit:
         """
         The chain ladder of Mack's model (its averaging), with the
@@ -24427,7 +24463,9 @@ class MackBootstrapFit:
         """
         The bootstrap of one segment, chosen by key values as
         ``ChainLadderFit.segment``, with its part of the joint reserves
-        (same dimensions).
+        (same dimensions) and of ``cells``. Its ``cells`` are ``None`` when
+        the fit kept none, and also when it kept them but this segment has
+        no future cell (fully developed, with no tail).
         
         Returns
         -------
@@ -27646,7 +27684,7 @@ class OdpBootstrap:
         """
         How many of the lowest link ratios at each age are left out.
         """
-    def fit(self, /, triangle: Triangle, column: str) -> OdpBootstrapFit:
+    def fit(self, /, triangle: Triangle, column: str, *, cells: bool = False) -> OdpBootstrapFit:
         """
         Bootstraps one measure column in every segment of a cumulative
         triangle, each with its own residuals and scale, into one joint
@@ -27659,6 +27697,14 @@ class OdpBootstrap:
         triangle : Triangle
             Cumulative, with any number of segments.
         column : str
+        cells : bool, default False
+            Whether to keep each simulation's future incremental values in
+            the fit's ``cells``, for ``Indexation.reinflate_draws``. The
+            reserves and patterns are the same, bit for bit, with and
+            without them, since keeping them draws no other random number.
+            They take ``n_sims`` times the number of future cells in memory
+            (about 4 MB on RAA at 10,000 simulations, 66 MB on a 40 by 40
+            quarterly triangle), so they are kept only when asked for.
         
         Returns
         -------
@@ -27673,7 +27719,8 @@ class OdpBootstrap:
             in their origins, ages or observed cells, or ``spearman`` does
             not fit the segments; with an estimated ``tail``, if it cannot be
             refitted on some simulation's pseudo factors (the message counts
-            them and gives one).
+            them and gives one); with ``cells=True``, if no segment has a
+            future cell (a fully developed triangle with no ``tail``).
         """
     @property
     def ldf(self, /) -> dict |None:
@@ -27861,6 +27908,28 @@ class OdpBootstrapFit:
     """
     def __repr__(self, /) -> str: ...
     @property
+    def cells(self, /) -> PredictiveDistribution |None:
+        """
+        Each simulation's future incremental values, as simulated with their
+        process error, or ``None`` unless the fit was made with
+        ``fit(cells=True)``. The dimensions are the triangle's keys,
+        ``"origin"`` and ``"development"`` (the age in months at the end of
+        the cell's development period); one component per future cell,
+        each origin's cells after its latest age in age order, segment by
+        segment as ``reserves``; one row per simulation, in the reserves'
+        order (under ``dependence="rank_correlation"`` each segment's cells
+        move with its reserves). With a ``tail`` each origin has one more
+        cell, at the oldest age plus one development period, kept in every
+        simulation even when it is 0. A fully developed origin with no tail
+        has no cell. Each origin's cells sum to its reserve in every
+        simulation, so ``cells.aggregate(keys + ["origin"])`` gives the
+        reserves. ``Indexation.reinflate_draws`` takes them as they are.
+        
+        Returns
+        -------
+        PredictiveDistribution or None
+        """
+    @property
     def chain_ladder(self, /) -> ChainLadderFit:
         """
         The deterministic volume-weighted chain ladder the bootstrap is
@@ -27995,7 +28064,9 @@ class OdpBootstrapFit:
         """
         The bootstrap of one segment, chosen by key values as
         ``ChainLadderFit.segment``, with its part of the joint reserves
-        (same dimensions).
+        (same dimensions) and of ``cells``. Its ``cells`` are ``None`` when
+        the fit kept none, and also when it kept them but this segment has
+        no future cell (fully developed, with no tail).
         
         Returns
         -------

@@ -837,7 +837,8 @@ impl Triangle {
     /// `tail` is a `ReservingTail`, developed past the oldest age in every
     /// simulation; `tail_std_err` is `NULL` to keep a constant tail fixed.
     /// `excl` is the link ratio exclusions as `development_args()` in R
-    /// encodes them.
+    /// encodes them. With `cells` the fit keeps each simulation's future
+    /// incremental values (`OdpBootstrap::fit_segments_with_cells`).
     #[allow(clippy::too_many_arguments)]
     fn odp_bootstrap(
         &self,
@@ -851,6 +852,7 @@ impl Triangle {
         spearman: Nullable<Vec<f64>>,
         ldf: Robj,
         excl: Robj,
+        cells: bool,
     ) -> Result<OdpBootstrapFit> {
         let dependence = segment_dependence(dependence, spearman)?;
         let (n_periods, drop_high, drop_low) = exclusions(&excl)?;
@@ -863,7 +865,12 @@ impl Triangle {
             drop_low,
             ..bootstrap(n_sims, seed, process, dependence)?
         };
-        let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;
+        let inner = if cells {
+            boot.fit_segments_with_cells(&self.inner, column)
+        } else {
+            boot.fit_segments(&self.inner, column)
+        }
+        .map_err(to_r)?;
         Ok(OdpBootstrapFit { inner })
     }
 
@@ -1712,7 +1719,9 @@ impl Triangle {
     /// if `centre_residuals`, and the segments depending on each other as
     /// `dependence` and `spearman` say (as `odp_bootstrap`); then to
     /// ultimate with `tail` (a `ReservingTail`), whose `tail_sigma` and
-    /// `tail_std_err` are `NULL` to extrapolate them.
+    /// `tail_std_err` are `NULL` to extrapolate them. With `cells` the fit
+    /// keeps each simulation's future incremental values
+    /// (`MackBootstrap::fit_segments_with_cells`).
     #[allow(clippy::too_many_arguments)]
     fn mack_bootstrap(
         &self,
@@ -1730,6 +1739,7 @@ impl Triangle {
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
         ldf: Robj,
+        cells: bool,
     ) -> Result<MackBootstrapFit> {
         let boot = MackBootstrap {
             tail: tail_arg(&tail)?,
@@ -1747,7 +1757,12 @@ impl Triangle {
                 selected_pattern(&ldf, self.inner.origin_grain())?,
             )?
         };
-        let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;
+        let inner = if cells {
+            boot.fit_segments_with_cells(&self.inner, column)
+        } else {
+            boot.fit_segments(&self.inner, column)
+        }
+        .map_err(to_r)?;
         Ok(MackBootstrapFit { inner })
     }
 

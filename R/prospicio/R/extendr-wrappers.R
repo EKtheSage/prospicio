@@ -3071,6 +3071,8 @@ Lognormal$variance <- function() .Call(wrap__Lognormal__variance, self)
 
 MackBootstrapFit <- new.env(parent = emptyenv())
 
+MackBootstrapFit$cells <- function() .Call(wrap__MackBootstrapFit__cells, self)
+
 MackBootstrapFit$chain_ladder <- function() .Call(wrap__MackBootstrapFit__chain_ladder, self)
 
 MackBootstrapFit$development_table <- function() .Call(wrap__MackBootstrapFit__development_table, self)
@@ -3500,6 +3502,8 @@ NormalDist$variance <- function() .Call(wrap__NormalDist__variance, self)
 `[[.NormalDist` <- `$.NormalDist`
 
 OdpBootstrapFit <- new.env(parent = emptyenv())
+
+OdpBootstrapFit$cells <- function() .Call(wrap__OdpBootstrapFit__cells, self)
 
 OdpBootstrapFit$chain_ladder <- function() .Call(wrap__OdpBootstrapFit__chain_ladder, self)
 
@@ -4559,7 +4563,7 @@ Triangle$link_ratios <- function() .Call(wrap__Triangle__link_ratios, self)
 
 Triangle$mack <- function(column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf) rust_native_result(.Call(wrap__Triangle__mack, self, column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf))
 
-Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) rust_native_result(.Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf))
+Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf, cells) rust_native_result(.Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf, cells))
 
 Triangle$mack_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_sigma, tail_std_err, n_sims, seed, process, mack_average, mack_sigma_interpolation, mack_excl, centre_residuals, dependence, spearman, ldf, bootstrap_ldf) rust_native_result(.Call(wrap__Triangle__mack_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_sigma, tail_std_err, n_sims, seed, process, mack_average, mack_sigma_interpolation, mack_excl, centre_residuals, dependence, spearman, ldf, bootstrap_ldf))
 
@@ -4575,7 +4579,7 @@ Triangle$meyers_segments <- function(column, premium, model, logelr_mean, logelr
 
 Triangle$munich_chain_ladder <- function(paid, incurred, sigma_paid, sigma_incurred, tail_paid, tail_incurred) rust_native_result(.Call(wrap__Triangle__munich_chain_ladder, self, paid, incurred, sigma_paid, sigma_incurred, tail_paid, tail_incurred))
 
-Triangle$odp_bootstrap <- function(column, n_sims, seed, process, tail, tail_std_err, dependence, spearman, ldf, excl) rust_native_result(.Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process, tail, tail_std_err, dependence, spearman, ldf, excl))
+Triangle$odp_bootstrap <- function(column, n_sims, seed, process, tail, tail_std_err, dependence, spearman, ldf, excl, cells) rust_native_result(.Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process, tail, tail_std_err, dependence, spearman, ldf, excl, cells))
 
 Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf) rust_native_result(.Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf))
 

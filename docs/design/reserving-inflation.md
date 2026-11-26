@@ -62,8 +62,15 @@ recorded as decisions 11 to 16.
   `fit_with_cells` and `fit_segments_with_cells` on `OdpBootstrap` and
   `MackBootstrap` keep each simulated future increment in a new field
   `cells` of their fits, which `reinflate_draws` takes; the reserves and
-  patterns are bit-identical with and without them. The Python and R
-  bindings follow in a stacked PR.
+  patterns are bit-identical with and without them.
+* **The bootstraps' cells are built in Python and R** (branch
+  `claude/reinflate-bootstrap-cells-bindings`, 2026-11-25, stacked on the
+  Rust PR #1123; decision A): a keyword-only `cells=False` of
+  `OdpBootstrap.fit` and `MackBootstrap.fit` and a `cells` property of
+  their fits (`None` without it, or for a segment with no future cell), and
+  `cells = FALSE` of `odp_bootstrap()` and `mack_bootstrap()` with a
+  `cells` property of their fits (`NULL` likewise); `reinflate_draws`
+  takes them in both. This finishes `[reinflate-bootstrap-cells]`.
 
 Lane: Reserving (`crates/prospicio-reserving/`; the
 bindings in new module files of `prospicio-python` and `prospicio-r`) ·

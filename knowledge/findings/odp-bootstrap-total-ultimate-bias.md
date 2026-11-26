@@ -9,6 +9,9 @@ sources:
   - id: unit-test
     resource: ../crates/prospicio-reserving/src/draws.rs
     title: the_mean_ultimate_is_the_bootstraps_expected_ultimate_to_monte_carlo_error, which asserts only that the large run's mean total is within 2% of the chain ladder's
+  - id: cells
+    resource: ../validation/tests/reserving_bootstrap_cells.rs
+    title: the_mean_cells_are_the_chain_ladders_on_genins, whose ODP allowance of 3% rests on the gap below
   - id: order
     resource: reserving-draws-simulation-order.md
     title: A reserving fit's ultimates per simulation keep one order
@@ -29,3 +32,11 @@ sources:
   chain ladder. The unit test does that and bounds the larger run's gap
   to the chain ladder below 2%; the figures above were measured by hand
   and are not pinned by any test.
+* On GenIns (Taylor-Ashe, 10,000 simulations) the ODP bootstrap's mean
+  reserve by origin is 1% to 2.3% above the chain ladder's (origin 2010:
+  4,734,060 against 4,625,811), measured on one Windows run while
+  building the bootstraps' cells (#979). The simulated future cells sum
+  to those reserves, so each cell's mean carries the same gap; the cells'
+  shares of their origin's mean reserve match the chain ladder's within
+  4 standard errors. The Mack bootstrap's mean cells match the chain
+  ladder within 4 standard errors with no allowance.

@@ -37,6 +37,18 @@ impl MackBootstrapFit {
         }
     }
 
+    /// Each simulation's future incremental values, or `NULL` when the fit
+    /// did not keep them (`cells = FALSE`, or a segment picked with
+    /// `segment()` that has no future cell).
+    fn cells(&self) -> Nullable<PredictiveDistribution> {
+        match &self.inner.cells {
+            Some(inner) => Nullable::NotNull(PredictiveDistribution {
+                inner: inner.clone(),
+            }),
+            None => Nullable::Null,
+        }
+    }
+
     /// The joint ultimates: the reserves with each origin's latest value
     /// added in every simulation (`UltimateDraws::ultimates`).
     fn ultimates(&self) -> Result<PredictiveDistribution> {
