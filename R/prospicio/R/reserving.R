@@ -999,6 +999,14 @@ single_number <- function(x, arg) {
   as.double(x)
 }
 
+# A single TRUE or FALSE; anything else (1, "TRUE", NA, a vector) is an error.
+single_flag <- function(x, arg) {
+  if (!is.logical(x) || length(x) != 1 || is.na(x)) {
+    stop(sprintf("%s must be TRUE or FALSE", arg), call. = FALSE)
+  }
+  x
+}
+
 # NULL (not given) or a single number; a single NA is NULL.
 optional_number <- function(x, arg) {
   if (is.null(x) || (length(x) == 1 && is.na(x))) return(NULL)
@@ -2860,14 +2868,13 @@ odp_bootstrap_fit <- S7::new_class(
       reserving_result(self@ptr$scale(), call = NULL)
     }),
     reserves = predictive_distribution,
-    cells = S7::new_property(NULL | predictive_distribution, getter = function(self) {
-      bootstrap_cells(self@ptr)
-    })
+    cells = NULL | predictive_distribution
   ),
   constructor = function(ptr) {
     S7::new_object(S7::S7_object(), ptr = ptr,
                    chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()),
-                   reserves = predictive_distribution(ptr = ptr$reserves()))
+                   reserves = predictive_distribution(ptr = ptr$reserves()),
+                   cells = bootstrap_cells(ptr))
   }
 )
 
@@ -2904,7 +2911,7 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                                                 optional_number(tail_std_err, "tail_std_err"),
                                                 dependence, spearman_arg(spearman),
                                                 ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting), excl,
-                                                isTRUE(cells)))
+                                                single_flag(cells, "cells")))
   odp_bootstrap_fit(ptr = ptr)
 }
 
@@ -5222,14 +5229,13 @@ mack_bootstrap_fit <- S7::new_class(
       origin_matrix(self, reserving_result(self@ptr$residuals(), call = NULL))
     }),
     reserves = predictive_distribution,
-    cells = S7::new_property(NULL | predictive_distribution, getter = function(self) {
-      bootstrap_cells(self@ptr)
-    })
+    cells = NULL | predictive_distribution
   ),
   constructor = function(ptr) {
     S7::new_object(S7::S7_object(), ptr = ptr,
                    chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()),
-                   reserves = predictive_distribution(ptr = ptr$reserves()))
+                   reserves = predictive_distribution(ptr = ptr$reserves()),
+                   cells = bootstrap_cells(ptr))
   }
 )
 
@@ -5252,7 +5258,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
     model$average, model$sigma, model$excl, isTRUE(centre_residuals), tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
     dependence, spearman_arg(spearman), ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting),
-    isTRUE(cells)
+    single_flag(cells, "cells")
   ))
   mack_bootstrap_fit(ptr = ptr)
 }
