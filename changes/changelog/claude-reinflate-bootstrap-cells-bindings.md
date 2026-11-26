@@ -1,6 +1,6 @@
 ### Reserving
 
-- The bootstraps' reserve draws by future cell in Python and R (#979):
+- The bootstraps' reserve draws by future cell in Python and R (#979, #1124):
   `OdpBootstrap.fit(..., cells=True)` and `MackBootstrap.fit(..., cells=True)`
   keep them in the fit's `cells`, a `PredictiveDistribution` by the segment
   keys, `origin` and `development` (`None` otherwise); in R,
