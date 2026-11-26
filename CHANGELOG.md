@@ -31,6 +31,13 @@ under "Unreleased" until then.
   `prospicio_aggregate`, like `brokerage` and `margin`: a deduction with one
   of these labels, in Rust or in a tower's JSON, is now refused (#980, #1068).
 - Pricing: `Trace` is `#[non_exhaustive]`, so Rust code outside the crate can no longer build one with a struct literal, and a later field is not a break. `Trace` has a new public field, `first_month` (0 from inception, the valuation month from a valuation), and `ActualState::from_trace` refuses every trace from a valuation by it, including one whose trust and operating balances were both exactly 0 (#960, #1018, #1043, #1048).
+- Reserving (Rust): `OdpBootstrapFit`, `OdpBootstrapFits`, `MackBootstrapFit` and
+  `MackBootstrapFits` have a new public field, `cells`, so a struct literal
+  of one of them outside the crate no longer compiles; set `cells: None`
+  (#979, #1123).
+- Reserving (Rust): `prospicio_reserving::Error` has a new variant,
+  `Error::Inflation`, so an exhaustive `match` on it outside the crate needs
+  an arm for it or a wildcard (#979, #1061).
 
 ### Reserving
 
