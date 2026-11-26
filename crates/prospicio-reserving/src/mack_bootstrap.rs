@@ -107,6 +107,7 @@ use crate::bootstrap::{
     Exclusions, TailDraw, component_sums, hash_segment, in_segment, origin_keys, pick_segment,
     pool_at, push_moments, segment_sums, simulate_lifetime,
 };
+use crate::bootstrap_cells::{CellLayout, cells_provenance, segment_cells, segment_part};
 use crate::chain_ladder::ChainLadderFit;
 use crate::dependence::{Resample, SegmentDependence, SharedPool, synchronize};
 use crate::development::{Development, DevelopmentFit};
@@ -418,6 +419,16 @@ pub struct MackBootstrapFit {
     /// and tail factor), row `i` simulation `i` of `reserves`
     /// (`reserving-v02.md` decision 28).
     pub patterns: DevelopmentPatterns,
+    /// Each simulation's future incremental cells, row `i` simulation `i`
+    /// of `reserves`: each simulated cumulative value less the one before
+    /// it, from the observed latest value, and with a tail the ultimate
+    /// less the value at the oldest age, one development period past it,
+    /// kept even when it is 0. Only [`MackBootstrap::fit_with_cells`] sets
+    /// them, [`MackBootstrap::fit`] leaves `None`. Dimensions `origin` and
+    /// `development` (the age in months), one component per origin and
+    /// age after its latest. Each origin's cells sum to its reserve to
+    /// round-off (`reserving-inflation.md`, decisions A to I).
+    pub cells: Option<PredictiveDistribution>,
 }
 
 /// A bootstrap of Mack's model, the lifetime view, in every segment of a
@@ -466,6 +477,13 @@ pub struct MackBootstrapFits {
     /// Each segment's development pattern in every simulation, moving with
     /// the segment's reserves (`reserving-v02.md` decision 28).
     pub patterns: DevelopmentPatterns,
+    /// Each simulation's future incremental cells, moving with the
+    /// segment's reserves; only [`MackBootstrap::fit_segments_with_cells`]
+    /// sets them, [`MackBootstrap::fit_segments`] leaves `None`. Dimensions
+    /// the key names, `origin` and `development` (the age in months), its
+    /// components running over each segment's cells in turn, as
+    /// [`MackBootstrapFit::cells`].
+    pub cells: Option<PredictiveDistribution>,
 }
 
 impl MackBootstrapFits {
@@ -493,14 +511,23 @@ impl MackBootstrapFits {
     }
 
     /// The one segment chosen as in [`SegmentFits::position`], with its
-    /// part of the joint reserves (same dimensions).
+    /// part of the joint reserves (same dimensions). Its cells are the
+    /// segment's part of [`cells`](Self::cells). They are `None` when the
+    /// fit kept no cells, and also when it kept them but the segment has
+    /// none (fully developed, with no tail); tell the two apart by
+    /// `self.cells`.
     pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
         let (segments, reserves) = pick_segment(&self.segments, &self.reserves, keys)?;
         let patterns = self.patterns.only(&segments.labels[0]);
+        let cells = match &self.cells {
+            Some(cells) => segment_part(cells, &segments.labels[0])?,
+            None => None,
+        };
         Ok(Self {
             segments,
             reserves,
             patterns,
+            cells,
         })
     }
 }
@@ -708,30 +735,46 @@ impl MackBootstrapSegment {
     /// tail's lognormal draw is this segment's own. `shares` takes the
     /// simulation's development pattern from its pseudo factors and tail
     /// factor (`reserving-v02.md` decision 28), which draws no random
-    /// number.
+    /// number. `cells`, when given, takes each simulated cumulative value
+    /// less the one before it, origin by origin, ages increasing, the tail
+    /// step last (`bootstrap_cells::segment_cells`); the reserves are what
+    /// they are without it.
     fn run_off(
         &self,
         draw: &MackDraw,
         rng: &mut StreamRng,
         reserves: &mut [f64],
         shares: &mut [f64],
+        mut cells: Option<&mut [f64]>,
         picks: Option<&[usize]>,
     ) -> Result<()> {
         let cl = &self.mack.chain_ladder;
         let dev = &cl.development;
         let (factors, tail) = draw.factors_and_tail(dev, rng, picks)?;
         write_shares(&factors, tail.map(|(factor, _)| factor), shares);
+        let mut at = 0;
+        let mut keep = |previous: f64, next: f64| {
+            if let Some(cells) = cells.as_deref_mut() {
+                cells[at] = next - previous;
+            }
+            at += 1;
+        };
         for (o, reserve) in reserves.iter_mut().enumerate() {
             let latest = cl.latest[o];
             let mut c = latest;
             for d in cl.latest_position[o]..factors.len() {
+                let previous = c;
                 c = draw.next(dev, &factors, d, c, rng);
+                keep(previous, c);
             }
             if let Some(tail) = tail {
+                let previous = c;
                 c = draw.tail_step(dev, tail, c, rng);
+                keep(previous, c);
             }
             *reserve = c - latest;
         }
+        debug_assert!(cells.is_none_or(|c| c.len() == at));
         Ok(())
     }
 }
@@ -778,6 +821,32 @@ impl MackBootstrap {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<MackBootstrapFit> {
+        self.fit_lifetime(triangle, column, false)
+    }
+
+    /// [`fit`](Self::fit), keeping each simulation's future incremental
+    /// cells in [`MackBootstrapFit::cells`]: each simulated cumulative
+    /// value less the one before it, so that
+    /// [`Indexation::reinflate_draws`](crate::Indexation::reinflate_draws)
+    /// reads payments. Keeping them draws no other random number: the
+    /// reserves, the patterns and the reserves' provenance are
+    /// [`fit`](Self::fit)'s, bit for bit; the cells' provenance is the
+    /// reserves' with `cells = incremental`. The result holds `n_sims` times
+    /// the number of cells; while the fit runs they are held up to three
+    /// times over (in each simulation's row, copied out, then rebuilt as
+    /// the distribution). Fails with [`Error::Bootstrap`] when
+    /// there is no future cell (a fully developed triangle with no tail).
+    pub fn fit_with_cells(&self, triangle: &Triangle, column: &str) -> Result<MackBootstrapFit> {
+        self.fit_lifetime(triangle, column, true)
+    }
+
+    /// [`fit`](Self::fit), keeping the cells when `with_cells`.
+    fn fit_lifetime(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        with_cells: bool,
+    ) -> Result<MackBootstrapFit> {
         self.check()?;
         let segment = triangle.segment(column)?;
         let (fit, draw) = self.model(&segment)?;
@@ -795,6 +864,19 @@ impl MackBootstrap {
         let mut components: Vec<ComponentKey> =
             segment.origins.iter().map(|&p| vec![p.into()]).collect();
         components.extend(layout.keys(1));
+        let cells = if with_cells {
+            let cells = segment_cells(
+                &segment.origins,
+                &fit.mack.chain_ladder.latest_position,
+                &segment.ages,
+                draw.tail.is_some(),
+            );
+            let cells = CellLayout::new(components.len(), vec![(Label::default(), cells)])?;
+            components.extend(cells.keys(1));
+            Some(cells)
+        } else {
+            None
+        };
         let (offset, width) = (layout.offset(0), layout.width(0));
         let wide = simulate_lifetime(
             vec!["origin".into()],
@@ -803,17 +885,30 @@ impl MackBootstrap {
             self.seed,
             self.lifetime_provenance(column, hasher),
             |rng, row| {
-                let (reserves, shares) = row.split_at_mut(offset);
-                fit.run_off(&draw, rng, reserves, &mut shares[..width], None)
+                let (reserves, rest) = row.split_at_mut(offset);
+                let (shares, values) = rest.split_at_mut(width);
+                fit.run_off(
+                    &draw,
+                    rng,
+                    reserves,
+                    shares,
+                    with_cells.then_some(values),
+                    None,
+                )
             },
         )?;
+        let cells = cells.map(|c| c.take(&wide));
         let (reserves, patterns) = layout.split(wide)?;
+        let cells = cells
+            .map(|c| c.into_distribution(&[], cells_provenance(&reserves)))
+            .transpose()?;
         let MackBootstrapSegment { mack, residuals } = fit;
         Ok(MackBootstrapFit {
             mack,
             residuals,
             reserves,
             patterns,
+            cells,
         })
     }
 
@@ -823,6 +918,33 @@ impl MackBootstrap {
     /// as [`dependence`](Self::dependence) says; see
     /// [`MackBootstrapFits`]. A failure names its segment.
     pub fn fit_segments(&self, triangle: &Triangle, column: &str) -> Result<MackBootstrapFits> {
+        self.fit_segments_lifetime(triangle, column, false)
+    }
+
+    /// [`fit_segments`](Self::fit_segments), keeping each simulation's
+    /// future incremental cells in [`MackBootstrapFits::cells`], as
+    /// [`fit_with_cells`](Self::fit_with_cells) does for one segment. Under
+    /// a [`RankCorrelation`](crate::SegmentDependence::RankCorrelation) each
+    /// segment's cells move with its reserves; they take no part in the
+    /// ranking. The reserves and patterns are
+    /// [`fit_segments`](Self::fit_segments)'s, bit for bit. Fails with
+    /// [`Error::Bootstrap`] when no segment has a future cell.
+    pub fn fit_segments_with_cells(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+    ) -> Result<MackBootstrapFits> {
+        self.fit_segments_lifetime(triangle, column, true)
+    }
+
+    /// [`fit_segments`](Self::fit_segments), keeping the cells when
+    /// `with_cells`.
+    fn fit_segments_lifetime(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        with_cells: bool,
+    ) -> Result<MackBootstrapFits> {
         self.check()?;
         let mut prepared = fit_each(triangle, column, |s| {
             let (fit, draw) = self.model(s)?;
@@ -848,6 +970,7 @@ impl MackBootstrap {
         let mut components = Vec::new();
         let mut runs = Vec::with_capacity(prepared.len());
         let mut layouts = Vec::with_capacity(prepared.len());
+        let mut cell_segments = Vec::with_capacity(prepared.len());
         for (label, (fit, draw, segment)) in prepared.iter() {
             hasher.str(&label.to_string());
             hash_segment(&mut hasher, segment, &fit.mack.chain_ladder, &segment.ages);
@@ -857,11 +980,28 @@ impl MackBootstrap {
                 origin_grain(&segment.origins),
                 pattern_ages(&segment.ages, draw.tail.is_some()),
             ));
+            cell_segments.push((
+                label.clone(),
+                segment_cells(
+                    &segment.origins,
+                    &fit.mack.chain_ladder.latest_position,
+                    &segment.ages,
+                    draw.tail.is_some(),
+                ),
+            ));
             runs.push((fit, draw, segment, keyed.then(|| label.to_string())));
         }
         let layout = PatternLayout::new(components.len(), layouts);
         let n_reserves = components.len();
         components.extend(layout.keys(dims.len()));
+        let n_before_cells = components.len();
+        let cells = if with_cells {
+            let cells = CellLayout::new(n_before_cells, cell_segments)?;
+            components.extend(cells.keys(dims.len()));
+            Some(cells)
+        } else {
+            None
+        };
         let wide = simulate_lifetime(
             dims,
             components,
@@ -872,16 +1012,22 @@ impl MackBootstrap {
                 .param("dependence", format!("{:?}", self.dependence)),
             |rng, row| {
                 let picks = shared.map(|s| s.picks(rng));
-                let (reserves, shares) = row.split_at_mut(n_reserves);
+                let (reserves, rest) = row.split_at_mut(n_reserves);
+                let (shares, values) = rest.split_at_mut(n_before_cells - n_reserves);
                 let mut start = 0;
                 for (s, (fit, draw, segment, label)) in runs.iter().enumerate() {
                     let end = start + segment.n_origins;
                     let at = layout.offset(s) - n_reserves;
+                    let segment_values = cells.as_ref().map(|c| {
+                        let at = c.offset(s);
+                        &mut values[at..at + c.width(s)]
+                    });
                     fit.run_off(
                         draw,
                         rng,
                         &mut reserves[start..end],
                         &mut shares[at..at + layout.width(s)],
+                        segment_values,
                         picks.as_deref(),
                     )
                     .map_err(|e| in_segment(label, e))?;
@@ -890,15 +1036,25 @@ impl MackBootstrap {
                 Ok(())
             },
         )?;
+        let mut cells = cells.map(|c| c.take(&wide));
         let (reserves, mut patterns) = layout.split(wide)?;
         let segments = prepared.map(|(fit, _, _)| fit.clone());
         let reserves =
             self.dependence
-                .reorder_with(reserves, &segments, self.seed, &mut patterns)?;
+                .reorder_moving(reserves, &segments, self.seed, |s, source| {
+                    patterns.permute(s, source);
+                    if let Some(cells) = cells.as_mut() {
+                        cells.permute(s, source);
+                    }
+                })?;
+        let cells = cells
+            .map(|c| c.into_distribution(&segments.key_names, cells_provenance(&reserves)))
+            .transpose()?;
         Ok(MackBootstrapFits {
             segments,
             reserves,
             patterns,
+            cells,
         })
     }
 
@@ -1166,6 +1322,48 @@ mod tests {
     use crate::triangle::{DevelopmentColumn, Long};
     use crate::{Grain, Month, OdpBootstrap};
     use prospicio_prob::PredictiveDistribution;
+
+    #[test]
+    fn mack_bootstrap_cells_are_increments_that_sum_to_the_reserves() {
+        for tail in [Tail::default(), Tail::LogLinear] {
+            let boot = MackBootstrap {
+                n_sims: 200,
+                seed: 5,
+                tail,
+                ..Default::default()
+            };
+            let fit = boot.fit_with_cells(&raa(), "values").unwrap();
+            let plain = boot.fit(&raa(), "values").unwrap();
+            assert!(plain.cells.is_none());
+            assert_eq!(fit.reserves.draw_matrix(), plain.reserves.draw_matrix());
+            assert_eq!(fit.patterns, plain.patterns);
+            assert_eq!(fit.reserves.provenance(), plain.reserves.provenance());
+            let cells = fit.cells.unwrap();
+            let with_tail = !tail.is_none();
+            let per = |o: usize| o + usize::from(with_tail);
+            assert_eq!(cells.n_components(), (0..10).map(per).sum::<usize>());
+            assert!(
+                cells
+                    .provenance()
+                    .parameters
+                    .iter()
+                    .any(|(k, v)| k == "cells" && v == "incremental")
+            );
+            let n = cells.n_components();
+            for (row, reserves) in cells.draw_matrix().chunks_exact(n).zip(
+                fit.reserves
+                    .draw_matrix()
+                    .chunks_exact(fit.reserves.n_components()),
+            ) {
+                let mut at = 0;
+                for (o, &reserve) in reserves.iter().enumerate() {
+                    let sum: f64 = row[at..at + per(o)].iter().sum();
+                    assert!((sum - reserve).abs() <= 1e-9 * reserve.abs().max(1.0));
+                    at += per(o);
+                }
+            }
+        }
+    }
 
     /// The default bootstrap (centred residuals) with these settings.
     fn boot(n_sims: usize, seed: u64, process: MackProcess) -> MackBootstrap {
