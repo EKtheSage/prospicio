@@ -53,9 +53,11 @@ the same in every simulation.
 }
 
 Which draws can be passed: \code{\link[=predict_distribution]{predict_distribution()}} of an \link{odp_glm_fit}
-gives future increments with the dimensions \code{origin} and \code{development}.
-The bootstraps' reserve draws are by origin only, without cells, and are
-refused for their missing age. A \link{compartmental_fit}'s \code{paid} draws
+gives future increments with the dimensions \code{origin} and \code{development},
+and so does the \code{cells} property of an \code{\link[=odp_bootstrap]{odp_bootstrap()}} or
+\code{\link[=mack_bootstrap]{mack_bootstrap()}} fit made with \code{cells = TRUE} (with the triangle's keys
+in front). The bootstraps' \code{reserves} are by origin only and are refused
+for their missing age. A \link{compartmental_fit}'s \code{paid} draws
 (dimensions \code{origin} and \code{age}) are cumulative paid, so they pass the
 checks but would be re-inflated wrongly: difference them by origin first
 (the first future cell less the origin's latest paid).

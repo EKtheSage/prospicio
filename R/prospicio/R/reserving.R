@@ -2727,6 +2727,22 @@ S7::method(summary, development_correlation_test) <- function(object, ...) {
 #' a single-segment fit: with several segments use [segment()], or
 #' [totals_frame()] for the scales.
 #'
+#' `cells` is `NULL` unless the fit was made with `cells = TRUE`: then a
+#' [predictive_distribution] of each simulation's future incremental
+#' values, as simulated with their process error, with the triangle's
+#' keys, `origin` and `development` (the age in months at the end of the
+#' cell's development period) as dimensions; one component per future
+#' cell, each origin's cells after its latest age in age order, segment by
+#' segment as `reserves`, and one row per simulation in the reserves'
+#' order (under `dependence = "rank_correlation"` each segment's cells move
+#' with its reserves). With a `tail` each origin has one more cell, at the
+#' oldest age plus one development period, kept in every simulation even
+#' when it is 0; a fully developed origin with no tail has no cell. Each
+#' origin's cells sum to its reserve in every simulation, so
+#' `aggregate(boot@cells, c(keys, "origin"))` gives `reserves`.
+#' [reinflate_draws()] takes them as they are. [segment()] keeps its
+#' segment's part of them, `NULL` when that segment has no future cell.
+#'
 #' @param triangle A cumulative [triangle], with any number of segments,
 #'   every origin observed from the first age up to its latest.
 #' @param column Name of the column to fit; by default the only one.
@@ -2800,6 +2816,14 @@ S7::method(summary, development_correlation_test) <- function(object, ...) {
 #'   exclusions: on RAA with `n_periods = 3` it is about 70% of the plain
 #'   scale (694 against 984), and the standard deviations are
 #'   correspondingly narrow. See [odp_one_year()] for the one-year view.
+#' @param cells `TRUE` to keep each simulation's future incremental values
+#'   in the fit's `cells`, for [reinflate_draws()]. The reserves and
+#'   patterns are the same, bit for bit, with and without them, since
+#'   keeping them draws no other random number. They take `n_sims` times
+#'   the number of future cells in memory (about 4 MB on RAA at 10,000
+#'   simulations, 66 MB on a 40 by 40 quarterly triangle), so they are kept
+#'   only when asked for. An error when no segment has a future cell (a
+#'   fully developed triangle with no `tail`).
 #' @param ptr An `OdpBootstrapFit` pointer; used internally.
 #' @returns An `odp_bootstrap_fit` object.
 #' @seealso [chain_ladder()], [mack()]; [odp_one_year()] for the one-year
@@ -2835,7 +2859,10 @@ odp_bootstrap_fit <- S7::new_class(
     scale = S7::new_property(S7::class_double, getter = function(self) {
       reserving_result(self@ptr$scale(), call = NULL)
     }),
-    reserves = predictive_distribution
+    reserves = predictive_distribution,
+    cells = S7::new_property(NULL | predictive_distribution, getter = function(self) {
+      bootstrap_cells(self@ptr)
+    })
   ),
   constructor = function(ptr) {
     S7::new_object(S7::S7_object(), ptr = ptr,
@@ -2843,6 +2870,13 @@ odp_bootstrap_fit <- S7::new_class(
                    reserves = predictive_distribution(ptr = ptr$reserves()))
   }
 )
+
+# A bootstrap fit's cells: a predictive_distribution, or NULL when the fit
+# kept none.
+bootstrap_cells <- function(ptr) {
+  cells <- ptr$cells()
+  if (is.null(cells)) NULL else predictive_distribution(ptr = cells)
+}
 
 # A row-major origin x development vector as a matrix with dimnames; NaN
 # (unobserved) becomes NA.
@@ -2859,7 +2893,7 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                           process = c("gamma", "none"), tail = 1, tail_std_err = NULL,
                           dependence = c("independent", "synchronized", "rank_correlation"),
                           spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL,
-                          n_periods = NULL, drop_high = 0, drop_low = 0) {
+                          n_periods = NULL, drop_high = 0, drop_low = 0, cells = FALSE) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
@@ -2869,7 +2903,8 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                                                 tail_ptr(tail),
                                                 optional_number(tail_std_err, "tail_std_err"),
                                                 dependence, spearman_arg(spearman),
-                                                ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting), excl))
+                                                ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting), excl,
+                                                isTRUE(cells)))
   odp_bootstrap_fit(ptr = ptr)
 }
 
@@ -5085,6 +5120,19 @@ bayes_bf_normalised_one_year <- function(triangle, column, exposure, apriori = 1
 #' only) and `reserves`, a [predictive_distribution] of the reserve with the
 #' triangle's keys and `origin` as dimensions.
 #'
+#' `cells` is `NULL` unless the fit was made with `cells = TRUE`: then a
+#' [predictive_distribution] of each simulation's future incremental
+#' values, each simulated cumulative value less the one before it from the
+#' observed latest value (so that they are payments), laid out as
+#' [odp_bootstrap()]'s: the triangle's keys, `origin` and `development` as
+#' dimensions, one component per future cell, one row per simulation in
+#' the reserves' order. With a `tail` each origin has one more cell, the
+#' ultimate less the value at the oldest age, at the oldest age plus one
+#' development period. Each origin's cells sum to its reserve in every
+#' simulation to round-off. [reinflate_draws()] takes them as they are;
+#' [segment()] keeps its segment's part, `NULL` when that segment has no
+#' future cell.
+#'
 #' This is Python's `MackBootstrap(...).fit()`, which returns a
 #' `MackBootstrapFit`.
 #'
@@ -5137,6 +5185,10 @@ bayes_bf_normalised_one_year <- function(triangle, column, exposure, apriori = 1
 #'   are not ranked again in each simulation), so [mack()]'s standard error
 #'   under the same settings is the reference for the standard deviation.
 #'   `"geometric"` as the average is rejected.
+#' @param cells `TRUE` to keep each simulation's future incremental values
+#'   in the fit's `cells`, for [reinflate_draws()], as in
+#'   [odp_bootstrap()]: the reserves are the same, bit for bit, with and
+#'   without them, and it is an error when no segment has a future cell.
 #' @param ptr A `MackBootstrapFit` pointer; used internally.
 #' @returns A `mack_bootstrap_fit` object.
 #' @seealso [mack()] for the analytic standard errors, [mack_one_year()]
@@ -5169,7 +5221,10 @@ mack_bootstrap_fit <- S7::new_class(
     residuals = S7::new_property(S7::class_double, getter = function(self) {
       origin_matrix(self, reserving_result(self@ptr$residuals(), call = NULL))
     }),
-    reserves = predictive_distribution
+    reserves = predictive_distribution,
+    cells = S7::new_property(NULL | predictive_distribution, getter = function(self) {
+      bootstrap_cells(self@ptr)
+    })
   ),
   constructor = function(ptr) {
     S7::new_object(S7::S7_object(), ptr = ptr,
@@ -5187,7 +5242,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                            tail_std_err = NULL,
                            dependence = c("independent", "synchronized", "rank_correlation"),
                            spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, ldf_underwriting = NULL,
-                           n_periods = NULL, drop_high = 0, drop_low = 0) {
+                           n_periods = NULL, drop_high = 0, drop_low = 0, cells = FALSE) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
@@ -5196,7 +5251,8 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
     column, single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
     model$average, model$sigma, model$excl, isTRUE(centre_residuals), tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
-    dependence, spearman_arg(spearman), ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting)
+    dependence, spearman_arg(spearman), ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin, ldf_underwriting),
+    isTRUE(cells)
   ))
   mack_bootstrap_fit(ptr = ptr)
 }

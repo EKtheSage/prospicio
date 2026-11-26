@@ -693,11 +693,12 @@ impl PyIndexation {
     /// paths' first period on takes that simulation's level, and one past
     /// the paths' last period is an error.
     ///
-    /// ``OdpGlmFit.predict_distribution`` and
-    /// ``ApcGlmFit.predict_distribution`` give such draws. The bootstraps'
-    /// reserve draws are by origin only and are refused. The compartmental
-    /// model's ``paid`` draws are cumulative: difference them by origin
-    /// first.
+    /// ``OdpGlmFit.predict_distribution``,
+    /// ``ApcGlmFit.predict_distribution`` and the ``cells`` of an
+    /// ``OdpBootstrap`` or ``MackBootstrap`` fit made with
+    /// ``fit(cells=True)`` give such draws; the bootstraps' ``reserves``
+    /// are by origin only and are refused. The compartmental model's
+    /// ``paid`` draws are cumulative: difference them by origin first.
     ///
     /// Parameters
     /// ----------

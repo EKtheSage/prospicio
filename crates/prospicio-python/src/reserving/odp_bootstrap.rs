@@ -303,6 +303,14 @@ impl PyOdpBootstrap {
     /// triangle : Triangle
     ///     Cumulative, with any number of segments.
     /// column : str
+    /// cells : bool, default False
+    ///     Whether to keep each simulation's future incremental values in
+    ///     the fit's ``cells``, for ``Indexation.reinflate_draws``. The
+    ///     reserves and patterns are the same, bit for bit, with and
+    ///     without them, since keeping them draws no other random number.
+    ///     They take ``n_sims`` times the number of future cells in memory
+    ///     (about 4 MB on RAA at 10,000 simulations, 66 MB on a 40 by 40
+    ///     quarterly triangle), so they are kept only when asked for.
     ///
     /// Returns
     /// -------
@@ -317,16 +325,27 @@ impl PyOdpBootstrap {
     ///     in their origins, ages or observed cells, or ``spearman`` does
     ///     not fit the segments; with an estimated ``tail``, if it cannot be
     ///     refitted on some simulation's pseudo factors (the message counts
-    ///     them and gives one).
+    ///     them and gives one); with ``cells=True``, if no segment has a
+    ///     future cell (a fully developed triangle with no ``tail``).
+    #[pyo3(signature = (triangle, column, *, cells = false))]
     fn fit(
         &self,
         py: Python<'_>,
         triangle: PyRef<'_, PyTriangle>,
         column: &str,
+        cells: bool,
     ) -> PyResult<PyOdpBootstrapFit> {
         let tri = &triangle.inner;
         let boot = &self.resolved(tri.origin_grain())?;
-        let inner = py.detach(|| boot.fit_segments(tri, column)).map_err(err)?;
+        let inner = py
+            .detach(|| {
+                if cells {
+                    boot.fit_segments_with_cells(tri, column)
+                } else {
+                    boot.fit_segments(tri, column)
+                }
+            })
+            .map_err(err)?;
         Ok(PyOdpBootstrapFit { inner })
     }
 
@@ -658,6 +677,32 @@ impl PyOdpBootstrapFit {
         }
     }
 
+    /// Each simulation's future incremental values, as simulated with their
+    /// process error, or ``None`` unless the fit was made with
+    /// ``fit(cells=True)``. The dimensions are the triangle's keys,
+    /// ``"origin"`` and ``"development"`` (the age in months at the end of
+    /// the cell's development period); one component per future cell,
+    /// each origin's cells after its latest age in age order, segment by
+    /// segment as ``reserves``; one row per simulation, in the reserves'
+    /// order (under ``dependence="rank_correlation"`` each segment's cells
+    /// move with its reserves). With a ``tail`` each origin has one more
+    /// cell, at the oldest age plus one development period, kept in every
+    /// simulation even when it is 0. A fully developed origin with no tail
+    /// has no cell. Each origin's cells sum to its reserve in every
+    /// simulation, so ``cells.aggregate(keys + ["origin"])`` gives the
+    /// reserves. ``Indexation.reinflate_draws`` takes them as they are.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution or None
+    #[getter]
+    fn cells(&self) -> Option<PyPredictiveDistribution> {
+        self.inner
+            .cells
+            .clone()
+            .map(|inner| PyPredictiveDistribution { inner })
+    }
+
     /// Joint distribution of the ultimate by segment and origin: ``reserves`` with
     /// each origin's latest value added in every simulation, the same
     /// dimensions, components and rows, so ``join``, ``select`` and
@@ -744,7 +789,9 @@ impl PyOdpBootstrapFit {
 
     /// The bootstrap of one segment, chosen by key values as
     /// ``ChainLadderFit.segment``, with its part of the joint reserves
-    /// (same dimensions).
+    /// (same dimensions) and of ``cells``. Its ``cells`` are ``None`` when
+    /// the fit kept none, and also when it kept them but this segment has
+    /// no future cell (fully developed, with no tail).
     ///
     /// Returns
     /// -------

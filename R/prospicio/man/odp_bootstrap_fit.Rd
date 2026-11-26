@@ -24,7 +24,8 @@ odp_bootstrap(
   ldf_underwriting = NULL,
   n_periods = NULL,
   drop_high = 0,
-  drop_low = 0
+  drop_low = 0,
+  cells = FALSE
 )
 }
 \arguments{
@@ -113,6 +114,15 @@ ranked again. The scale is the sum of the kept squared residuals over
 exclusions: on RAA with \code{n_periods = 3} it is about 70\% of the plain
 scale (694 against 984), and the standard deviations are
 correspondingly narrow. See \code{\link[=odp_one_year]{odp_one_year()}} for the one-year view.}
+
+\item{cells}{\code{TRUE} to keep each simulation's future incremental values
+in the fit's \code{cells}, for \code{\link[=reinflate_draws]{reinflate_draws()}}. The reserves and
+patterns are the same, bit for bit, with and without them, since
+keeping them draws no other random number. They take \code{n_sims} times
+the number of future cells in memory (about 4 MB on RAA at 10,000
+simulations, 66 MB on a 40 by 40 quarterly triangle), so they are kept
+only when asked for. An error when no segment has a future cell (a
+fully developed triangle with no \code{tail}).}
 }
 \value{
 An \code{odp_bootstrap_fit} object.
@@ -149,6 +159,22 @@ dependence between segments. \code{mean()}, \code{quantile()}, \code{\link[=VaR]
 \code{\link[=draw_matrix]{draw_matrix()}} follow \code{origins}. \code{fitted}, \code{residuals} and \code{scale} need
 a single-segment fit: with several segments use \code{\link[=segment]{segment()}}, or
 \code{\link[=totals_frame]{totals_frame()}} for the scales.
+
+\code{cells} is \code{NULL} unless the fit was made with \code{cells = TRUE}: then a
+\link{predictive_distribution} of each simulation's future incremental
+values, as simulated with their process error, with the triangle's
+keys, \code{origin} and \code{development} (the age in months at the end of the
+cell's development period) as dimensions; one component per future
+cell, each origin's cells after its latest age in age order, segment by
+segment as \code{reserves}, and one row per simulation in the reserves'
+order (under \code{dependence = "rank_correlation"} each segment's cells move
+with its reserves). With a \code{tail} each origin has one more cell, at the
+oldest age plus one development period, kept in every simulation even
+when it is 0; a fully developed origin with no tail has no cell. Each
+origin's cells sum to its reserve in every simulation, so
+\code{aggregate(boot@cells, c(keys, "origin"))} gives \code{reserves}.
+\code{\link[=reinflate_draws]{reinflate_draws()}} takes them as they are. \code{\link[=segment]{segment()}} keeps its
+segment's part of them, \code{NULL} when that segment has no future cell.
 }
 \examples{
 long <- data.frame(year = rep(2018:2021, 4:1),

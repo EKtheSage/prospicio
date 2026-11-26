@@ -28,7 +28,8 @@ mack_bootstrap(
   ldf_underwriting = NULL,
   n_periods = NULL,
   drop_high = 0,
-  drop_low = 0
+  drop_low = 0,
+  cells = FALSE
 )
 }
 \arguments{
@@ -94,6 +95,11 @@ triangle keeps have residuals and enter the pseudo factors (the drops
 are not ranked again in each simulation), so \code{\link[=mack]{mack()}}'s standard error
 under the same settings is the reference for the standard deviation.
 \code{"geometric"} as the average is rejected.}
+
+\item{cells}{\code{TRUE} to keep each simulation's future incremental values
+in the fit's \code{cells}, for \code{\link[=reinflate_draws]{reinflate_draws()}}, as in
+\code{\link[=odp_bootstrap]{odp_bootstrap()}}: the reserves are the same, bit for bit, with and
+without them, and it is an error when no segment has a future cell.}
 }
 \value{
 A \code{mack_bootstrap_fit} object.
@@ -147,6 +153,19 @@ origin x development matrix, \verb{[o, k]} the residual of the link from age
 \code{k} to \code{k + 1}, \code{NA} where there is none; never centred; single segment
 only) and \code{reserves}, a \link{predictive_distribution} of the reserve with the
 triangle's keys and \code{origin} as dimensions.
+
+\code{cells} is \code{NULL} unless the fit was made with \code{cells = TRUE}: then a
+\link{predictive_distribution} of each simulation's future incremental
+values, each simulated cumulative value less the one before it from the
+observed latest value (so that they are payments), laid out as
+\code{\link[=odp_bootstrap]{odp_bootstrap()}}'s: the triangle's keys, \code{origin} and \code{development} as
+dimensions, one component per future cell, one row per simulation in
+the reserves' order. With a \code{tail} each origin has one more cell, the
+ultimate less the value at the oldest age, at the oldest age plus one
+development period. Each origin's cells sum to its reserve in every
+simulation to round-off. \code{\link[=reinflate_draws]{reinflate_draws()}} takes them as they are;
+\code{\link[=segment]{segment()}} keeps its segment's part, \code{NULL} when that segment has no
+future cell.
 
 This is Python's \verb{MackBootstrap(...).fit()}, which returns a
 \code{MackBootstrapFit}.
