@@ -269,6 +269,17 @@ two actuarial tracks.
 
 #973, #974, #761 and #981 to #983 have no milestone yet.
 
+Status on 2026-11-26: the release PR sets 0.3.0 (the user's decision of
+2026-11-26 to cut it with what is done). In it: the performance items #969,
+#970 and #972, the binding refactors #957, #963, #976 and #977, the
+inflation track #979 and reinsurer default #980, #1043, and most of #978
+(JSON artifacts and pickling for the fitted models and containers, `RMatrix`
+returns in R, NumPy arrays in and out of `PredictiveDistribution`, `Design`
+and `EventSet`, which makes NumPy a runtime dependency of the Python
+package). Merged beyond the scope: the FFT consolidation (#973) and the
+retrospective rating and earned exposure work (#981). Moved to the next
+release: the rest of #978 (pickling the reserving fits), #990 and #991.
+
 ## Each release
 
 1. On `main`, set `workspace.package.version`, the `prospicio-*`

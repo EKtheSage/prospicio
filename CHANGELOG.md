@@ -7,6 +7,365 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+## 0.3.0 (2026-11-26)
+
+### Breaking changes
+
+- Seeded results move in the last bits, since the row sums are now added
+  in blocks (eight running sums even on a small triangle): GLM, GAM and
+  every other `prospicio-glm` fit that runs IRLS (among them the Laplace `Glmm`, the
+  Tweedie profile, the double and zero-inflated GLMs: coefficients,
+  standard errors, smoothing parameters), the Bayesian GLM's and
+  `BayesGlmm`'s NUTS draws (`BayesGlmm` starts from the Laplace fit), and
+  the Reserving lane's ODP GLM (`odp_glm`) and diagonal backtest fits,
+  which call `Glm::fit`. Results no longer
+  depend on the order of a row-by-row loop, and stay the same on any
+  number of threads (#969, #1059).
+- GAMs with REML smoothing and a canonical link, or the gamma family, give
+  smoothing parameters that move in the last bits, since the information
+  and the saturated log-likelihood are summed in another order (#969, #1060).
+- `HierarchicalBf`'s seeded draws, reserves and one-year views change in
+  their last digits: the hand-written gradient agrees with the dual one to
+  rounding, not bit for bit, so the sampler's trajectories differ (#972, #1056).
+- `credit_loss`, `recovered` and `net_after_default` are reserved names in
+  `prospicio_aggregate`, like `brokerage` and `margin`: a deduction with one
+  of these labels, in Rust or in a tower's JSON, is now refused (#980, #1068).
+- Pricing: `Trace` is `#[non_exhaustive]`, so Rust code outside the crate can no longer build one with a struct literal, and a later field is not a break. `Trace` has a new public field, `first_month` (0 from inception, the valuation month from a valuation), and `ActualState::from_trace` refuses every trace from a valuation by it, including one whose trust and operating balances were both exactly 0 (#960, #1018, #1043, #1048).
+
+### Reserving
+
+- The age-period-cohort reserving GLM in Python and R (#979, PR 7, #1086):
+  `ApcGlm` (effects `"APC"`, `"AP"`, `"AC"` or `"PC"`; extrapolation `"I0"`,
+  `"I1"` or `"I2"`; the Poisson, gamma or Tweedie family) with `fit` and
+  `ApcGlmFit` (canonical level, slopes and second differences, fitted
+  cells, reserves, `future` as `FutureCells`, `odp_fit`,
+  `prediction_error()` and `predict_distribution()`) in
+  `prospicio.reserving`; `apc_glm()` and `apc_glm_fit` in R. The
+  arithmetic separation method as a Poisson GLM, with its prediction
+  error: `Separation.glm()` in Python, `separation_glm()` in R.
+- The age-period-cohort reserving GLM (#979, Rust): `ApcGlm` with `ApcEffects` (the full model, or accident-period, age-period and accident-age sub-models) fits the canonical `3k - 3` parameter model of Kuang, Nielsen and Nielsen on a full triangle and projects the future calendar effect by `Extrapolation::I2`, `I1` or `I0`; `ApcGlmFit` gives the canonical coefficients, reserves, `prediction_error()` and `predict_distribution()`, and `FutureCells::from_apc_glm` feeds re-inflation. `Separation::glm` gives the arithmetic separation method as a Poisson GLM with a delta-method prediction error. Python and R bindings follow (#1078).
+- R's `odp_bootstrap()` and `mack_bootstrap()` refuse a `cells` that is not
+  a single `TRUE` or `FALSE` (`1`, `"TRUE"`, `NA` used to keep no cells
+  without a word), and the fit's `cells` is built once with the fit, as
+  `reserves` is, rather than copied from Rust on every access (#979, #1125).
+- Separation and indexation fixes (#979, #1087): `SeparationFit::log_variance`
+  (`log_variance` in Python and R) is `None` (`NULL` in R) rather than NaN
+  when the geometric method has no degrees of freedom left, so a fit
+  compares equal to itself; the geometric method's error for a
+  non-positive increment says it is the increment over the normaliser; R
+  `future_cells()` refuses an age that is not a whole number of months
+  instead of truncating it, and `future_cells()` and `reinflated()` called
+  without their arguments say what they need.
+- Indexation in Python and R (#979, PR 2): `CalendarIndex`, `Indexation`
+  (`restate`, `inflate`, `reinflate`), `FutureCells` and `Reinflated` in
+  `prospicio.reserving`; `calendar_index()`, `indexation()`, `restate()`,
+  `inflate()`, `reinflate()` and `future_cells()` in R. Python builds
+  `FutureCells` from columns, a chain-ladder fit (`segment=` chooses one of
+  several) or an ODP GLM fit (#1071).
+- Indexation of a triangle by a calendar index (#979, Rust): `CalendarIndex`
+  (one value per period of its grain, extended at a constant annual rate),
+  `Indexation::restate` and `inflate` (each increment at the price level of a
+  base period, by the index of the period containing its valuation month, in
+  every segment and either basis) and `Indexation::reinflate`, which takes
+  `FutureCells` from a chain ladder or an `OdpGlm` fit back to the money of
+  their payment periods. New error variant `Error::Inflation` (#1061).
+- The ODP, Mack and one-year bootstraps and the Bayesian models draw each
+  process error and prior value without allocating a one-element vector
+  (`Distribution::sample_one`); their seeded numbers are unchanged (#972, #1056).
+- `HierarchicalBf` computes its log posterior's gradient by hand in one
+  pass instead of several passes of the chunked dual numbers, which makes
+  its fit and its one-year refits faster (#972, #1056).
+- `ProcessDistribution::NAMES`, `from_name` and `name`: the option names
+  `"gamma"` and `"none"` defined once in Rust, which the Python, R and
+  Excel front ends now share; their accepted names, defaults and error
+  messages are unchanged (#990, #1092).
+- The bootstraps' reserve draws by future cell in Python and R (#979, #1124):
+  `OdpBootstrap.fit(..., cells=True)` and `MackBootstrap.fit(..., cells=True)`
+  keep them in the fit's `cells`, a `PredictiveDistribution` by the segment
+  keys, `origin` and `development` (`None` otherwise); in R,
+  `odp_bootstrap(..., cells = TRUE)` and `mack_bootstrap(..., cells = TRUE)`
+  and the fit's `cells` (`NULL` otherwise). They sum to the reserves, which
+  are unchanged, and `Indexation.reinflate_draws` (`reinflate_draws()` in R)
+  re-inflates them.
+- The ODP and Mack bootstraps can keep their reserve draws by future cell
+  (#979, #1123): `fit_with_cells` and `fit_segments_with_cells` on `OdpBootstrap`
+  and `MackBootstrap` return the usual fit with `cells` set, the simulated
+  future increments by `origin` and `development` (after the segment keys),
+  which sum to the reserves and which `Indexation::reinflate_draws` can
+  re-inflate. The reserves are unchanged; `fit` and `fit_segments` leave
+  `cells` empty.
+- Stochastic re-inflation of reserve draws (#979, PR 8): `IndexPaths`, one
+  future index path per simulation, and `Indexation::reinflate_draws`,
+  which re-inflates a `PredictiveDistribution` of future cells (the draws
+  of `OdpGlmFit` and `ApcGlmFit`) cell by cell, each simulation under its
+  own path, or under the deterministic index without paths. In Python,
+  `IndexPaths` and `Indexation.reinflate_draws`; in R, `index_paths()` and
+  `reinflate_draws()` (#1094).
+- Taylor's (1977) arithmetic separation method (#979, Rust): `Separation`
+  with an optional normaliser per origin and future calendar indices from a
+  rate, a `CalendarIndex` or the exponential trend of the last fitted
+  indices (`FutureInflation`), giving `SeparationFit` with the development
+  proportions, the calendar indices, the fitted and future cells
+  (`FutureCells`, ready for `Indexation::reinflate`) and the reserves; also
+  `fit_segments`. On a triangle restated by an economic index the indices
+  measure superimposed inflation (#1067).
+- Taylor's separation method in Python and R (#979, PR 5): `Separation`
+  (arithmetic, geometric or geometric with lognormal means; the future
+  indices from a rate, a calendar index or a trend) with `fit` and
+  `SeparationFit` in `prospicio.reserving`; `separation()` in R (#1077).
+- The geometric separation method (#979, Rust):
+  `SeparationKind::Geometric(Retransformation)` fits `ln s_ij` by least
+  squares on development and calendar effects, with the proportions summing
+  to 1 as the arithmetic method's, and takes the fit back to amounts by the
+  geometric means (the default) or the lognormal means;
+  `SeparationFit::log_variance` reports the residual variance on the log
+  scale (#1069).
+
+### Pricing
+
+- Earned exposure in Python and R: `prospicio.pricing.earned_exposure`,
+  `calendar_windows` and `in_force`; R's `earned_exposure()`,
+  `in_force_amount()` and `calendar_windows()`. Policies are passed as
+  columns, with optional labels, mid-term changes and cancellations, and
+  the table comes back as a dict of columns or a data frame (#981, #1096).
+- `prospicio_pricing::earned`: written, earned, unearned and in-force
+  exposure or premium by calendar or policy period from the policies'
+  dates, earned by exact days, by label, and as of a valuation date
+  (`Date`, `Policy`, `Windows`, `earned_exposure`). Rust only for now
+  (#981, #1090).
+- `earned`: mid-term changes (`Policy::endorsed`, a new full-term amount
+  from a date) and cancellations (`Policy::cancelled`), each written when
+  it happens, and two more earning methods, `EarningMethod::HalfMonth` (the
+  ratemaking exhibits' grid) and `TwentyFourths` (the "15th of the month"
+  rule). `Policy::amount_at` and `in_force` give the full-term amount in
+  effect. Rust only for now (#981, #1091).
+- `retro::RetroPlan`: a retrospective rating plan's premium for a year's
+  losses, and `balance`, the basic premium (with the entry ratios of the
+  minimum and the maximum) at which the plan collects the guaranteed-cost
+  premium on average, from a Table M or, with a loss limit, a Table L.
+  Rust only for now (#981, #1081).
+- Retrospective rating in Python and R: `prospicio.pricing.InsuranceCharge`
+  (Table M from a grid or a sample, Table L by `table_l`) and `RetroPlan`
+  (`balance`, `premium`); R's `insurance_charge()` and `retro_balance()`,
+  with the existing `retro_premium()` for the premium (#981, #1083).
+- `prospicio_pricing::retro::InsuranceCharge`: the insurance charge and
+  savings of an aggregate loss distribution (a grid from `fft` or `panjer`,
+  or any fitted law) or of a sample of totals, at any entry ratio, and as a
+  Table M (`table`). Rust only for now (#981, #1079).
+- `retro::RetroPlan::loss_sensitive_premium(basic)` returns the plan's
+  premium terms as the existing `LossSensitivePremium`, the tax multiplier
+  folded in; it replaces `RetroPlan::premium`, added earlier in this
+  release (`RetroPlan.premium` in Python). `balance` now refuses a plan
+  that would balance only with a negative basic premium (#981, #1089).
+- `retro::InsuranceCharge::table_l`: the charge and savings under a
+  per-occurrence limit as a Table L (entry ratios on the unlimited
+  expected loss, the limit's cost in the charge), made from the table of
+  the limited aggregate, which is the limited Table M. Rust only for now
+  (#981, #1080).
+- `natural::Portfolio::from_independent` is 2.2 to 3.7 times faster: its
+  transforms are real ones on one plan, through `prospicio_math::fft`.
+  Results move by round-off (#973, #1051).
+- `prospicio_pricing::payout::discount`, the present value of 1 paid at a
+  time (#976, #1095).
+- `DealRun` and `DealBook` save to and load from versioned JSON documents
+  (`to_json`, `from_json`) in Rust and Python, and pickle in Python, with
+  their deductions, patterns and investor flows (#978, #1116).
+
+### Aggregate and reinsurance
+
+- `fft_bivariate`, `finite_horizon`, `finite_horizon_poisson`,
+  `wiener_hopf` and `renewal_count` use `prospicio_math::fft`: the
+  bivariate compound is 1.2 to 1.4 times faster and the finite-time ruin
+  probabilities 1.7 to 2.4 times, by real-input transforms. Results move by
+  round-off (#973, #1050).
+- `fft` and `audit_grid`'s FFT cells are 2.8 to 4.6 times faster: the
+  aliasing audit reads the short buffer off the long one instead of
+  transforming twice, and the severity takes a real-input transform, with
+  half the pgf evaluations. `aliasing_error` is measured as before; results
+  move by round-off (`1e-15`) (#973, #1049).
+- The reinsurance tower's simulated paths (`Tower::apply`, `apply_aggregate`, `apply_annual`, `ceded_events`, `apply_term`, `apply_aggregate_term` and `apply_timeline`) run their years in parallel and allocate nothing per year: 17 to 38 times faster on 16 threads and 3.6 to 7.5 times on one, on 200,000 years. The results are the same to the last bit, on any number of threads, so seeded runs give the same numbers (#1053, part of #970).
+- `CompoundMoments::covering_points`: the FFT points that cover the mean
+  plus 12 standard deviations and a reach, as the Excel add-in sizes its
+  grids (#976, #1095).
+- `EventSet.from_years`, `from_long` and `from_ylt` in Python take NumPy arrays for their years, losses, slots, times and sums insured, read in one copy each, and `EventSet.to_numpy()` returns the losses and each year's offsets as read-only arrays that view the event set's own buffers. In Rust, `EventSet::losses` and `EventSet::offsets` give the same flat buffers (#978, #1121).
+- Reinsurer default on a tower in Python and R. Python binds
+  `prospicio.reinsurance.Reinsurer(name, probability, recovery,
+  collateral=0.0, correlation=0.0)` and `Panel(reinsurers)`, with
+  `with_line`, `with_driver`, `apply(result, seed=0)` (the tower's
+  one-year result with `credit_loss` and `recovered` by layer and
+  `net_after_default`) and `by_reinsurer(result, seed=0)`. R binds
+  `reinsurer()`, `reinsurer_panel()`, `panel_line()`, `panel_driver()`,
+  `apply_panel()` and `panel_by_reinsurer()` (#980, #1084).
+- Reinsurer default on a tower's simulated years: `Panel` and `Reinsurer`
+  in `prospicio_aggregate`, each reinsurer with a probability of default,
+  a recovery rate, collateral and its signed lines on the layers.
+  `Panel::apply` adds each layer's credit loss and recovery after default
+  and the net loss after default to a tower's one-year result, and
+  `Panel::by_reinsurer` gives each reinsurer's credit loss, exposure and
+  default from the same draws. Defaults follow one Gaussian factor ranked
+  on the year's gross loss (or a driver given), so they gather in the worst
+  years without changing each reinsurer's probability of default; the
+  result has the same bits on any number of threads. Rust only for now
+  (#980, #1068).
+- The Solvency II standard formula's counterparty default module for type 1
+  exposures (Delegated Regulation (EU) 2015/35), as pure functions in
+  `prospicio_aggregate::solvency2`: the probability of default by credit
+  quality step (`probability_by_step`, Art 199(2)) and by solvency ratio
+  (`probability_by_ratio`, Art 199(3), interpolated and clamped), the loss
+  given default of a reinsurance arrangement (`reinsurance_lgd`, Art
+  192(2), with the 50 % or 90 % share and the collateral factor as
+  arguments), and `type1`, giving `V_inter`, `V_intra`, the standard
+  deviation and `SCR_def,1` (Arts 200 and 201). In Python as
+  `prospicio.reinsurance.solvency2_probability_by_step`,
+  `solvency2_probability_by_ratio`, `solvency2_reinsurance_lgd` and
+  `solvency2_type1` (returning `Solvency2Type1`), and in R as
+  `solvency2_probability_by_step()`, `solvency2_probability_by_ratio()`,
+  `solvency2_reinsurance_lgd()` and `solvency2_type1()` (#980, #1082).
+- Reinsurer default over a contract term: `Panel::apply_term` and
+  `Panel::by_reinsurer_term` take a term's paths (`Tower::apply_term`,
+  `apply_aggregate_term`, `apply_timeline`) and the number of years. A
+  default is final for the rest of the path, and the collateral is held
+  once per reinsurer and path and used up year by year. Python binds
+  `Panel.apply_term(result, n_years, seed=0)` and
+  `Panel.by_reinsurer_term(result, n_years, seed=0)`, R
+  `apply_panel_term()` and `panel_by_reinsurer_term()`; R's
+  `reinsurer_panel` gains a `reinsurers` property (#980, #1085).
+
+### Distributions and probability
+
+- `prospicio_math::fft::Plan` and `RealPlan`: the transforms of one length,
+  planned once, for a caller that transforms that length several times
+  (#973, #1050).
+- The characteristic-function engine (`chf`) takes its transforms through
+  `prospicio_math::fft`: a two-sided stable law's convolution is about
+  twice as fast, and its result moves by round-off; the inversion's masses
+  are unchanged. `chf::Complex64` is the same type as before, re-exported
+  from `prospicio_math::fft` (#973, #1072).
+- `prospicio_math::fft`: `forward`, `inverse`, `real_forward` and
+  `real_inverse`, with each thread's plans and scratch space kept between
+  calls (#973, #1049).
+- `Distribution::sample_one(&mut StreamRng) -> f64` draws one value without
+  allocating a one-element vector. `k` calls give the same numbers, bit for
+  bit, as `sample(rng, k)` from the same stream; `sample` now defaults to
+  `n` calls of `sample_one`, and `Gamma` and `InverseGamma` override
+  `sample_one`. Seeded draws are unchanged. A type outside the crate that
+  overrides `sample` with a different sampler should override `sample_one`
+  too (#972, #1055).
+- `prospicio_prob::statistics::sample_moments`: a sample's mean, SD, CV and
+  skewness on the population moments (#976, #1095).
+- Rust: `prospicio_math` gains `integrate::gauss_hermite`,
+  `linalg::semidefinite_solve` and `optimize::levenberg_marquardt`, moved
+  from the GLMM, the monthly reading and the reserving growth curves,
+  which now call them; results are unchanged (#977, #1100).
+- Rust: `risk::quantile_type1_sorted` and `risk::quantile_type7_sorted`
+  give R's `quantile(type = 1)` and `quantile(type = 7)` bit for bit,
+  R's four-ulp fuzz included; the explanation kernels (`ale_grid`,
+  `ale_numeric_distance`) use them instead of their own copies (#977, #1099).
+- `Stable` implements `Distribution` (#977): `cdf`, `survival` and
+  `quantile` by Nolan's integral representation, each tail computed
+  directly so that far tails keep their relative precision, checked against
+  SciPy's `levy_stable` and the Lévy, Cauchy and normal closed forms.
+  `prospicio_math::integrate::adaptive_gauss_legendre` is new (#1103).
+- The `prospicio` crate's documentation now describes its `io` feature
+  (triangles from CSV and Excel files) (#1103).
+- Every copula pickles in Python, and a loaded copula samples the same
+  numbers; in Rust, `GaussianCopula::from_factor` and
+  `StudentTCopula::from_factor` rebuild one from its Cholesky factor bit
+  for bit (#978, #1115).
+- The Python package now depends on NumPy. `PredictiveDistribution` takes its draws as a 2-D float64 NumPy array, read in one copy, as well as a list of rows, and `PredictiveDistribution.to_numpy()` returns the draws as a read-only array that views the distribution's own buffer without copying (#978, #1119).
+- `PredictiveDistribution` saves to and loads from a JSON document
+  without the `arrow` feature: `to_json` and `from_json` in Rust and
+  Python, keys, provenance and draws bit for bit; a Python
+  `PredictiveDistribution` now pickles (#978, #1101).
+
+### Models
+
+- The effective sample sizes of a Bayesian fit are computed 9 to 12 times
+  faster: each chain's autocovariance takes real transforms through
+  `prospicio_math::fft`, which keeps the plan between chains. Results move
+  by round-off (#973, #1052).
+- Faster GLM fits: `X'WX` and `X'Wz` are summed in fixed row blocks in
+  parallel, each block reducing contiguous column slices, and IRLS reuses
+  its buffers; the Bayesian GLM's log density and gradient run in row
+  blocks in parallel. A Poisson GLM on 678,013 rows and 60 columns
+  fits in about 1 s instead of 20 to 90 s, and the Bayesian GLM samples
+  about 5 times faster. New `Design::linear_predictor_into`
+  writes `X beta + offset` into a buffer. Benchmarks:
+  `cargo run --release -p prospicio-glm --example glm_bench` and
+  `cargo run --release -p prospicio-bayes --example bayes_glm_bench`
+  (#969, #1059).
+- Faster GAMs with REML smoothing: for a canonical link the score reuses
+  IRLS's information, and the gamma family's dispersion search no longer
+  sums over the rows at every step, so a gamma GAM on 50,000 rows fits in
+  about 3 s instead of about 60 s. `tweedie_profile` fits its grid of
+  powers in parallel (#969, #1060).
+- `prospicio_glm::wald` (`p_value`, `critical_value`, `interval`) and
+  `prospicio_glm::quantile::rows_by_tau`, the normal Wald inference and the
+  non-crossing rearrangement that the Excel add-in used to compute itself
+  (#976, #1095).
+- `prospicio.models.mean_deviance`, `weighted_quantile`, `base_score`,
+  `pearson_terms`, `pearson_dispersion` and `monotone_violations` in Python,
+  from the Rust core. Python's `Booster` and R's `booster_fit()` start from
+  the same base score, and compute the same dispersion and monotonicity
+  check, through these functions instead of their own copies (#977, #1104).
+- R's `bayes_glmm_model@coefficients` takes the posterior means in Rust
+  instead of copying every draw into R (#1104).
+- `elpd_lppd()` in R, the log pointwise predictive density that
+  `elpd_loo()` and `elpd_waic()` correct, as `lppd` in Python (#977).
+  `trend_factor()`, `credibility_weighted()`, `trended_present_rates()` and
+  `ledger_stack()` in R now compute in Rust, with the same results (#1102).
+- `BayesGlmFit` saves to and loads from a versioned JSON artifact
+  (`to_json`, `from_json`) in Rust and Python, with every posterior draw,
+  so a loaded fit summarizes and predicts as the original; it pickles in
+  Python (#978, #1111).
+- Posterior draws (`PosteriorDraws`, Python's `Draws`) and `BayesGlmmFit`
+  save to and load from versioned JSON artifacts (`to_json`, `from_json`)
+  in Rust and Python, and pickle in Python, `Draws` with its sampler
+  columns (#978, #1112).
+- `DoubleGlmFit` saves to and loads from a versioned JSON artifact
+  (`to_json`, `from_json`) in Rust and Python, and pickles in Python
+  (#978, #1108).
+- `GlmmFit` saves to and loads from a versioned JSON artifact (`to_json`,
+  `from_json`) in Rust and Python, random effects included, so a loaded
+  fit predicts with the same groups; it pickles in Python (#978, #1110).
+- `MarsFit` saves to and loads from a versioned JSON artifact (`to_json`,
+  `from_json`) in Rust and Python, with the GLM fitted on its terms when
+  there is one, and pickles in Python (#978, #1107).
+- `Design` takes its columns as a 2-D float64 NumPy array (rows are the columns) or as a list of 1-D arrays or lists, and its offset and weights as arrays, each read in one copy; `Design.to_numpy()` returns the design matrix as an `(n_rows, n_columns)` array, which the boosting wrappers now use instead of stacking the columns one list at a time (#978, #1120).
+- `QuantileFit` and `ExpectileFit` save to and load from versioned JSON
+  artifacts (`to_json`, `from_json`) in Rust and Python, and pickle in
+  Python (#978, #1106).
+- R's `save_model()` and `load_model()` also save the models from
+  `glmm_fit()`, `bayes_glm_fit()`, `bayes_glmm_fit()`, `dglm_fit()`,
+  `zeroinfl_fit()`, `hurdle_fit()` and `expectreg_fit()`, with every
+  setting `predict()` needs (the grouping factors, the dispersion and
+  zero-part formulas); the estimates round-trip exactly. Files saved by
+  earlier versions still load (#978, #1122).
+- `Terms` and `Coding` save to and load from versioned JSON artifacts
+  (`to_json`, `from_json`) in Rust and Python, and pickle in Python; a
+  loaded coding builds the same design matrix on new data (#978, #1113).
+- `TweedieFit` saves to and loads from a versioned JSON artifact
+  (`to_json`, `from_json`) in Rust and Python, and pickles in Python
+  (#978, #1114).
+- Zero-inflated and hurdle fits (`TwoPartFit`) save to and load from a
+  versioned JSON artifact (`to_json`, `from_json`) in Rust and Python, and
+  pickle in Python (#978, #1109).
+
+### Bindings
+
+- R: every native function whose Rust signature returns a `Result` now
+  raises its error in R from the generated wrapper, so no call site can
+  return an `extendr_error` object as a value; `ale()` with a bins count
+  the core rejects, and `shap()` when the exact enumeration fails, now
+  stop with the core's message (#957). An error from a reserving binding
+  keeps the condition class `prospicio_not_supported` whichever R
+  function raises it (#1098).
+- `Triangle`, `EventSet` and `Design` can be pickled in Python, so they
+  pass to `multiprocessing` and `joblib` workers. `Triangle` and
+  `EventSet` also gain `to_json()` and `from_json()`, an exact document of
+  the object, also in Rust (`Triangle::to_json`, `EventSet::to_json`), and
+  `EventSet` compares with `==` (#978, #1105).
+
 ## 0.2.1 (2026-11-23)
 
 ### Models

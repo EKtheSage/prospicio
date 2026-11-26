@@ -1,1 +1,0 @@
-* **Creation**: [The compartmental model's paid draws are cumulative, under incremental paid too](/findings/compartmental-paid-draws-cumulative.md), from #979 (branch claude/reinflate-draws): `CompartmentalFit::paid` is cumulative paid by future cell, so `Indexation::reinflate_draws` needs it differenced by origin first.

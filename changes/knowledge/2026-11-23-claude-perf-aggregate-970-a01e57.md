@@ -1,1 +1,0 @@
-* **Creation**: [The tower's simulated paths in parallel](/findings/tower-years-in-parallel.md), from #970 (branch claude/perf-aggregate-970-a01e57): 17 to 38 times faster on 16 threads and 3.6 to 7.5 times on one, with the same bits; where the single-thread time went, and that a bench built from another checkout into the same target directory overwrites this one's binary.

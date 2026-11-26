@@ -1,1 +1,0 @@
-* **Creation**: [NumPy in the Python bindings](/environment/numpy-in-bindings.md), from #978 (branch claude/project-thread-1n3mjz-978-numpy-pd): numpy 0.29 builds with pyo3 0.29 abi3, and a frozen class lends its buffer to NumPy as a read-only view.
