@@ -405,22 +405,19 @@ pub(crate) fn segment_dependence(
     dependence: &str,
     spearman: Nullable<Vec<f64>>,
 ) -> Result<SegmentDependence> {
-    match (dependence, spearman) {
-        ("independent", Nullable::Null) => Ok(SegmentDependence::Independent),
-        ("synchronized", Nullable::Null) => Ok(SegmentDependence::Synchronized),
-        ("rank_correlation", Nullable::NotNull(spearman)) => {
+    let named = SegmentDependence::from_name(dependence)
+        .ok_or_else(|| crate::unknown_name("dependence", dependence, SegmentDependence::NAMES))?;
+    match (named, spearman) {
+        (SegmentDependence::RankCorrelation { .. }, Nullable::NotNull(spearman)) => {
             Ok(SegmentDependence::RankCorrelation { spearman })
         }
-        ("rank_correlation", Nullable::Null) => Err(Error::Other(
+        (SegmentDependence::RankCorrelation { .. }, Nullable::Null) => Err(Error::Other(
             "dependence = \"rank_correlation\" needs a spearman matrix".into(),
         )),
-        ("independent" | "synchronized", Nullable::NotNull(_)) => Err(Error::Other(
+        (_, Nullable::NotNull(_)) => Err(Error::Other(
             "spearman is taken only with dependence = \"rank_correlation\"".into(),
         )),
-        _ => Err(Error::Other(format!(
-            "dependence must be \"independent\", \"synchronized\" or \"rank_correlation\", \
-             got \"{dependence}\""
-        ))),
+        (d, Nullable::Null) => Ok(d),
     }
 }
 
