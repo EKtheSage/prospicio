@@ -196,27 +196,12 @@ pub(crate) struct PyMackBootstrap {
 }
 
 fn mack_process(name: &str) -> PyResult<MackProcess> {
-    match name {
-        "gamma" => Ok(MackProcess::Gamma),
-        "lognormal" => Ok(MackProcess::Lognormal),
-        "residuals" => Ok(MackProcess::Residuals),
-        "normal" => Ok(MackProcess::Normal),
-        "none" => Ok(MackProcess::None),
-        _ => Err(PyValueError::new_err(format!(
-            "process must be \"gamma\", \"lognormal\", \"residuals\", \"normal\" or \"none\", \
-             got {name:?}"
-        ))),
-    }
+    MackProcess::from_name(name)
+        .ok_or_else(|| crate::unknown_name("process", name, MackProcess::NAMES))
 }
 
 fn mack_process_name(p: MackProcess) -> &'static str {
-    match p {
-        MackProcess::Gamma => "gamma",
-        MackProcess::Lognormal => "lognormal",
-        MackProcess::Residuals => "residuals",
-        MackProcess::Normal => "normal",
-        MackProcess::None => "none",
-    }
+    p.name()
 }
 
 #[pymethods]

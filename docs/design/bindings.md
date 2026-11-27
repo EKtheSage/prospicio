@@ -32,12 +32,13 @@ The default of an omitted option stays in each front end's signature
 cell), so the published signatures do not change.
 
 `Average`, `SigmaInterpolation` and `Interpolation` followed this pattern
-first; `ProcessDistribution` is the pilot that #990 named. The next
-families, each in a PR of its own, are the ones whose parsers are copied
-in two or three front ends, starting with those whose accepted names
-already differ: `MackProcess` (Excel lists its names in another order than Python and R), then
-`PairFamily`, `Archimedean`, `AnnualReading`, `Statistic`, `Smoothing`
-and `CorrelationKind`.
+first; `ProcessDistribution` is the pilot that #990 named, and
+`MackProcess` followed it (Excel's error had listed its names in another
+order than Python's and R's; all three now list them in `NAMES`' order:
+gamma, lognormal, residuals, normal, none). The next families, each in a
+PR of its own, are the ones whose parsers are copied in two or three
+front ends: `PairFamily`, `Archimedean`, `AnnualReading`, `Statistic`,
+`Smoothing` and `CorrelationKind`.
 
 ## Method documentation (#991)
 

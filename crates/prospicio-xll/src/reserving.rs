@@ -731,18 +731,12 @@ pub fn odp_sims(args: &[Grid]) -> Result<Grid> {
 }
 
 /// The `process` argument of Mack's bootstrap: "gamma" (default),
-/// "lognormal", "normal", "residuals" or "none" (parameter error only).
+/// "lognormal", "residuals", "normal" or "none" (parameter error only).
 fn mack_process(grid: &Grid) -> Result<MackProcess> {
     match text_option(grid, "process")?.as_deref() {
-        None | Some("gamma") => Ok(MackProcess::Gamma),
-        Some("lognormal") => Ok(MackProcess::Lognormal),
-        Some("normal") => Ok(MackProcess::Normal),
-        Some("residuals") => Ok(MackProcess::Residuals),
-        Some("none") => Ok(MackProcess::None),
-        Some(other) => Err(format!(
-            "process must be \"gamma\", \"lognormal\", \"normal\", \"residuals\" or \"none\", \
-             got {other:?}"
-        )),
+        None => Ok(MackProcess::default()),
+        Some(name) => MackProcess::from_name(name)
+            .ok_or_else(|| crate::unknown_name("process", name, MackProcess::NAMES)),
     }
 }
 

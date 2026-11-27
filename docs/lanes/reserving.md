@@ -9,3 +9,4 @@ Finished items are in [done/reserving.md](done/reserving.md), which agents read 
 ## Next
 
 - [option-names-mack] #990 next family: `MackProcess` names on the type (`NAMES`, `from_name`, `name`) used by the Python, R and Excel parsers, the error's list of names in one order (`docs/design/bindings.md`)
+- [option-names-pair-family] #990 next family after `MackProcess`: `PairFamily`, then `Archimedean`, `AnnualReading`, `Statistic`, `Smoothing` and `CorrelationKind`, each its names on the type used by the front ends' parsers (`docs/design/bindings.md`)
