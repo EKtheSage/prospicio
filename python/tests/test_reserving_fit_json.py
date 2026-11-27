@@ -45,3 +45,26 @@ def test_another_document_is_refused():
         ChainLadderFit.from_json('{"format": "risk_rs.triangle", "format_version": 1}')
     with pytest.raises(ValueError):
         ChainLadderFit.from_json("not json")
+
+
+def square():
+    return Triangle.from_long(
+        [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        {"paid": [100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0, 120.0, 175.0, 130.0]},
+    )
+
+
+def test_a_mack_fit_round_trips_and_pickles():
+    from prospicio.reserving import Mack, MackFit
+
+    fit = Mack().fit(square(), "paid")
+    text = fit.to_json()
+    back = MackFit.from_json(text)
+    assert back.to_json() == text
+    assert back.standard_error == fit.standard_error
+    assert back.total_standard_error == fit.total_standard_error
+    assert json.loads(text)["format"] == "risk_rs.mack_fits"
+    assert pickle.loads(pickle.dumps(fit)).to_json() == text
+    with pytest.raises(ValueError):
+        MackFit.from_json(ChainLadder().fit(square(), "paid").to_json())
