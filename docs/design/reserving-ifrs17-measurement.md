@@ -1,8 +1,8 @@
 # Design note: IFRS 17 measurement (GMM and PAA, the CSM, the loss component, OCI, reinsurance held)
 
-Status: **Proposed** (2026-11-27; issue #982, in the 0.4.0 milestone at the
-user's request of 2026-11-27). Nothing is built; the open decisions below
-wait for the user, each with a recommendation. Lane: Reserving
+Status: **Accepted** (2026-11-27; issue #982, in the 0.4.0 milestone at the
+user's request of 2026-11-27). The user decided open decisions 1 to 11 on
+2026-11-27 as recommended. Nothing is built yet. Lane: Reserving
 (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on:
 `reserving-ifrs17.md` (the `discount` module: `DiscountCurve`,
 `DiscountedReserves`, `RiskAdjustment`), `reinsurer-default.md` (Aggregate
