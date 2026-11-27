@@ -1,9 +1,9 @@
 # Design note: earned exposure, experience modification and retrospective rating
 
-Status: **In progress** (#981; the note merged on the user's go-ahead of
-2026-11-24 to start the work, with decisions (a) to (j) as recommended and
-still open to change before the PR each one governs; PR 2 built) ·
-v0.3 · Depends on: `ratemaking.md` (`Period`, `year_fraction`),
+Status: **Done** (#981; the note merged on the user's go-ahead of
+2026-11-24 to start the work, with decisions (a) to (j) as recommended;
+PRs 1 to 8 built, the later items under Next) ·
+v0.4 · Depends on: `ratemaking.md` (`Period`, `year_fraction`),
 `aggregate.md` (`Grid`, `fft`, per-occurrence limits on a grid),
 `predictive-distribution.md` · Lane: Aggregate
 
@@ -355,6 +355,15 @@ Proposed for the user's acceptance; each has a recommendation.
   public material does not spell out a multiple-claim rule beyond the
   limit itself, so this is the library's reading; a state's manual that
   splits differently can be met by passing each claim's limited amount.
+- (l) **The experience ratio plan is checked by hand, not against an
+  exhibit.** As built (PR 8): ISO's manual and tables are licensed and no
+  free text works a modification through, so the plan is built on the
+  formula (the option recommended to the user on 2026-11-27): the tests take the
+  worksheet's sums one by one, and check that the modification is linear
+  in `Z` and never falls as the MSL rises. Each occurrence's loss and ALAE
+  are held to the MSL together, and the expected unreported losses use
+  the year's detrend factor (1 by default). A licensed worksheet the user
+  supplies becomes a parity test in the same file.
 
 ## Validation
 
@@ -449,7 +458,15 @@ Stacked, each on the one before:
    gives 223,677 / 223,590 = 1.00, and the split and medical-only examples
    exactly. Decision (k) below records the per-accident rule.
 8. `emod::ExperienceRatioPlan`; bindings; a reference exhibit; the Done
-   bullet `#981`.
+   bullet `#981`. Done: `ExperienceRatioPlan` (the maximum single limit,
+   `EER`, `Z`), `LiabilityYear` (subject loss cost, unreported share,
+   detrend factor, occurrences of loss and ALAE) and
+   `ExperienceRatioPlan::modification`, returning a `RatioExhibit` with
+   every sum and a row per year; Python's `experience_ratio_modification`
+   (columns in, a dict out; an occurrence names its year from 0) and R's
+   `experience_ratio_modification()` (data frames in, a list out; from 1).
+   No public exhibit exists, so decision (l) below records how it is
+   checked (`validation/tests/pricing_emod_ratio.rs`).
 
 Every PR appends a Done bullet repeating its own Next id to
 `docs/lanes/done/aggregate.md`, adds a knowledge fragment (or says it

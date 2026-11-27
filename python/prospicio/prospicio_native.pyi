@@ -41773,6 +41773,61 @@ def eventual_ruin(severity: Grid, rho: float |None = None, *, loss_ratio: float 
     0.156
     """
 
+def experience_ratio_modification(subject_loss_cost: Sequence[float], unreported_share: Sequence[float], year: Sequence[int], loss: Sequence[float], alae: Sequence[float], maximum_single_limit: float, expected_ratio: float, credibility: float, detrend_factor: Sequence[float] |None = None) -> dict:
+    """
+    The experience modification of the general liability experience ratio
+    plan (ISO's Commercial General Liability Experience Rating Plan), with
+    every sum of its worksheet.
+    
+    ``AER = (reported + expected unreported) / subject loss cost`` and
+    ``mod = 1 + Z (AER - EER) / EER``. Each occurrence enters at its
+    basic-limits loss plus ALAE, held together to the maximum single limit;
+    a year's expected unreported losses are its subject loss cost times its
+    detrend factor, ``EER`` and its unreported share. The bureau's tables
+    (subject loss costs, ``EER``, MSL, credibility, unreported shares) are
+    inputs.
+    
+    Parameters
+    ----------
+    subject_loss_cost, unreported_share : list of float
+        Per year: the company subject basic-limits loss cost and the share
+        of its losses expected still unreported.
+    year, loss, alae : list
+        Per occurrence: the position of its year (from 0), its basic-limits
+        loss and its allocated loss adjustment expense.
+    maximum_single_limit : float
+        The MSL; ``float("inf")`` for none.
+    expected_ratio : float
+        ``EER``.
+    credibility : float
+        ``Z``, from 0 to 1.
+    detrend_factor : list of float, optional
+        Per year; 1 by default.
+    
+    Returns
+    -------
+    dict
+        ``modification`` (unrounded), ``credit_debit``, ``actual_ratio``,
+        ``expected_ratio``, ``credibility``, ``subject_loss_cost``,
+        ``reported``, ``expected_unreported``, and ``years`` (columns
+        ``subject_loss_cost``, ``reported`` and ``expected_unreported``).
+    
+    Raises
+    ------
+    ValueError
+        For columns of different lengths, a year position out of range, or
+        a plan or amount that is not valid.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import experience_ratio_modification
+    >>> x = experience_ratio_modification([100_000.0], [0.25], [0], [70_000.0], [5_000.0],
+    ...                                   maximum_single_limit=50_000.0,
+    ...                                   expected_ratio=0.8, credibility=0.3)
+    >>> round(x["actual_ratio"], 12), round(x["modification"], 6)
+    (0.7, 0.9625)
+    """
+
 def exponential_trend(x: Sequence[float], y: Sequence[float]) -> Any:
     """
     The exponential trend through points by least squares on the logarithm.

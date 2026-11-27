@@ -1,7 +1,10 @@
 //! Python bindings for `prospicio_pricing::emod`: the experience
-//! modification of the workers compensation split plan.
+//! modifications of the workers compensation split plan and the general
+//! liability experience ratio plan.
 
-use prospicio_pricing::emod::{Claim, ClassExposure, MEDICAL_ONLY_SHARE, SplitPlan};
+use prospicio_pricing::emod::{
+    Claim, ClassExposure, ExperienceRatioPlan, LiabilityYear, MEDICAL_ONLY_SHARE, SplitPlan,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -197,5 +200,130 @@ pub(crate) fn split_plan_modification<'py>(
         x.claims.iter().map(|r| r.excess).collect::<Vec<_>>(),
     )?;
     d.set_item("claims", rows)?;
+    Ok(d)
+}
+
+/// The experience modification of the general liability experience ratio
+/// plan (ISO's Commercial General Liability Experience Rating Plan), with
+/// every sum of its worksheet.
+///
+/// ``AER = (reported + expected unreported) / subject loss cost`` and
+/// ``mod = 1 + Z (AER - EER) / EER``. Each occurrence enters at its
+/// basic-limits loss plus ALAE, held together to the maximum single limit;
+/// a year's expected unreported losses are its subject loss cost times its
+/// detrend factor, ``EER`` and its unreported share. The bureau's tables
+/// (subject loss costs, ``EER``, MSL, credibility, unreported shares) are
+/// inputs.
+///
+/// Parameters
+/// ----------
+/// subject_loss_cost, unreported_share : list of float
+///     Per year: the company subject basic-limits loss cost and the share
+///     of its losses expected still unreported.
+/// year, loss, alae : list
+///     Per occurrence: the position of its year (from 0), its basic-limits
+///     loss and its allocated loss adjustment expense.
+/// maximum_single_limit : float
+///     The MSL; ``float("inf")`` for none.
+/// expected_ratio : float
+///     ``EER``.
+/// credibility : float
+///     ``Z``, from 0 to 1.
+/// detrend_factor : list of float, optional
+///     Per year; 1 by default.
+///
+/// Returns
+/// -------
+/// dict
+///     ``modification`` (unrounded), ``credit_debit``, ``actual_ratio``,
+///     ``expected_ratio``, ``credibility``, ``subject_loss_cost``,
+///     ``reported``, ``expected_unreported``, and ``years`` (columns
+///     ``subject_loss_cost``, ``reported`` and ``expected_unreported``).
+///
+/// Raises
+/// ------
+/// ValueError
+///     For columns of different lengths, a year position out of range, or
+///     a plan or amount that is not valid.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import experience_ratio_modification
+/// >>> x = experience_ratio_modification([100_000.0], [0.25], [0], [70_000.0], [5_000.0],
+/// ...                                   maximum_single_limit=50_000.0,
+/// ...                                   expected_ratio=0.8, credibility=0.3)
+/// >>> round(x["actual_ratio"], 12), round(x["modification"], 6)
+/// (0.7, 0.9625)
+#[pyfunction]
+#[pyo3(signature = (subject_loss_cost, unreported_share, year, loss, alae, maximum_single_limit, expected_ratio, credibility, detrend_factor = None))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn experience_ratio_modification<'py>(
+    py: Python<'py>,
+    subject_loss_cost: Vec<f64>,
+    unreported_share: Vec<f64>,
+    year: Vec<usize>,
+    loss: Vec<f64>,
+    alae: Vec<f64>,
+    maximum_single_limit: f64,
+    expected_ratio: f64,
+    credibility: f64,
+    detrend_factor: Option<Vec<f64>>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let n = subject_loss_cost.len();
+    same_length(
+        "unreported_share",
+        unreported_share.len(),
+        n,
+        "subject_loss_cost",
+    )?;
+    if let Some(d) = &detrend_factor {
+        same_length("detrend_factor", d.len(), n, "subject_loss_cost")?;
+    }
+    same_length("loss", loss.len(), year.len(), "year")?;
+    same_length("alae", alae.len(), year.len(), "year")?;
+    let plan = ExperienceRatioPlan::new(maximum_single_limit, expected_ratio, credibility)
+        .map_err(to_py)?;
+    let mut years = (0..n)
+        .map(|i| {
+            let y = LiabilityYear::new(subject_loss_cost[i], unreported_share[i])?;
+            match &detrend_factor {
+                Some(d) => y.with_detrend_factor(d[i]),
+                None => Ok(y),
+            }
+        })
+        .collect::<prospicio_core::Result<Vec<_>>>()
+        .map_err(to_py)?;
+    for (k, &i) in year.iter().enumerate() {
+        let y = years.get_mut(i).ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "year {i} of occurrence {k} is not a year: there are {n}, counted from 0"
+            ))
+        })?;
+        *y = y.clone().with_occurrence(loss[k], alae[k]).map_err(to_py)?;
+    }
+    let x = plan.modification(&years).map_err(to_py)?;
+    let d = PyDict::new(py);
+    d.set_item("modification", x.modification)?;
+    d.set_item("credit_debit", x.credit_debit)?;
+    d.set_item("actual_ratio", x.actual_ratio)?;
+    d.set_item("expected_ratio", x.expected_ratio)?;
+    d.set_item("credibility", x.credibility)?;
+    d.set_item("subject_loss_cost", x.subject_loss_cost)?;
+    d.set_item("reported", x.reported)?;
+    d.set_item("expected_unreported", x.expected_unreported)?;
+    let rows = PyDict::new(py);
+    rows.set_item("subject_loss_cost", subject_loss_cost)?;
+    rows.set_item(
+        "reported",
+        x.years.iter().map(|r| r.reported).collect::<Vec<_>>(),
+    )?;
+    rows.set_item(
+        "expected_unreported",
+        x.years
+            .iter()
+            .map(|r| r.expected_unreported)
+            .collect::<Vec<_>>(),
+    )?;
+    d.set_item("years", rows)?;
     Ok(d)
 }

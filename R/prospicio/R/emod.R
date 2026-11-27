@@ -73,3 +73,60 @@ split_plan_modification <- function(exposures, claims, weight, ballast, split_po
         "adjusted_actual", "adjusted_expected")],
     list(classes = classes, claims = rows))
 }
+
+#' Experience modification: the general liability experience ratio plan
+#'
+#' The modification of ISO's Commercial General Liability Experience
+#' Rating Plan, with every sum of its worksheet:
+#' `AER = (reported + expected unreported) / subject loss cost` and
+#' `mod = 1 + Z (AER - EER) / EER`.
+#'
+#' Each occurrence enters at its basic-limits loss plus ALAE, held together
+#' to the maximum single limit; a year's expected unreported losses are its
+#' subject loss cost times its detrend factor, `EER` and its unreported
+#' share. The bureau's tables (subject loss costs, `EER`, the MSL,
+#' credibility and unreported shares) are licensed, so they are inputs.
+#'
+#' @param years A data frame with one row per policy year: columns
+#'   `subject_loss_cost` (the company subject basic-limits loss cost),
+#'   `unreported_share` (the share of its losses expected still unreported)
+#'   and, optionally, `detrend_factor` (1 by default).
+#' @param occurrences A data frame with one row per occurrence: columns
+#'   `year` (the row of `years` it falls in, from 1), `loss` (basic limits)
+#'   and `alae`.
+#' @param maximum_single_limit The MSL; `Inf` for none.
+#' @param expected_ratio `EER`.
+#' @param credibility `Z`, from 0 to 1.
+#' @returns A list: `modification` (unrounded), `credit_debit`,
+#'   `actual_ratio`, `expected_ratio`, `credibility`, `subject_loss_cost`,
+#'   `reported` and `expected_unreported`, and `years` (`years` with
+#'   `reported` and `expected_unreported`).
+#' @export
+#' @examples
+#' years <- data.frame(subject_loss_cost = 1e5, unreported_share = 0.25)
+#' occurrences <- data.frame(year = 1, loss = 70000, alae = 5000)
+#' x <- experience_ratio_modification(years, occurrences, maximum_single_limit = 50000,
+#'                                    expected_ratio = 0.8, credibility = 0.3)
+#' x$modification
+experience_ratio_modification <- function(years, occurrences, maximum_single_limit,
+                                          expected_ratio, credibility) {
+  for (col in c("subject_loss_cost", "unreported_share")) {
+    if (is.null(years[[col]])) stop("years needs a column ", col)
+  }
+  for (col in c("year", "loss", "alae")) {
+    if (is.null(occurrences[[col]])) stop("occurrences needs a column ", col)
+  }
+  n <- length(years$subject_loss_cost)
+  detrend <- if (is.null(years$detrend_factor)) rep(1, n) else as.double(years$detrend_factor)
+  r <- rust_result(experience_ratio_modification_rust(
+    as.double(years$subject_loss_cost), as.double(years$unreported_share), detrend,
+    as.double(occurrences$year), as.double(occurrences$loss), as.double(occurrences$alae),
+    as.double(maximum_single_limit), as.double(expected_ratio), as.double(credibility)
+  ))
+  rows <- as.data.frame(years)
+  rows$reported <- r$year_reported
+  rows$expected_unreported <- r$year_expected_unreported
+  c(r[c("modification", "credit_debit", "actual_ratio", "expected_ratio", "credibility",
+        "subject_loss_cost", "reported", "expected_unreported")],
+    list(years = rows))
+}
