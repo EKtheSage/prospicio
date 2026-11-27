@@ -772,26 +772,14 @@ pub(crate) fn allocate(
 
 /// A quantile method from its numpy name: ``"inverted_cdf"``, ``"linear"`` or ``"kth_largest"``.
 pub(crate) fn quantile_method(name: &str) -> PyResult<QuantileMethod> {
-    match name {
-        "inverted_cdf" => Ok(QuantileMethod::InvertedCdf),
-        "linear" => Ok(QuantileMethod::Linear),
-        "kth_largest" => Ok(QuantileMethod::KthLargest),
-        _ => Err(PyValueError::new_err(format!(
-            "quantile method must be \"inverted_cdf\", \"linear\" or \"kth_largest\", not {name:?}"
-        ))),
-    }
+    QuantileMethod::from_name(name)
+        .ok_or_else(|| crate::unknown_name("quantile method", name, QuantileMethod::NAMES))
 }
 
 /// A TVaR method by name: ``"exact"``, ``"linear"`` or ``"whole_years"``.
 pub(crate) fn tvar_method(name: &str) -> PyResult<TvarMethod> {
-    match name {
-        "exact" => Ok(TvarMethod::Exact),
-        "linear" => Ok(TvarMethod::Linear),
-        "whole_years" => Ok(TvarMethod::WholeYears),
-        _ => Err(PyValueError::new_err(format!(
-            "TVaR method must be \"exact\", \"linear\" or \"whole_years\", not {name:?}"
-        ))),
-    }
+    TvarMethod::from_name(name)
+        .ok_or_else(|| crate::unknown_name("TVaR method", name, TvarMethod::NAMES))
 }
 
 /// A results table's statistics in one call, under stated conventions.

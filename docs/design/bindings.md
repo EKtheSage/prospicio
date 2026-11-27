@@ -40,6 +40,12 @@ PR of its own, are the ones whose parsers are copied in two or three
 front ends: `PairFamily`, `Archimedean`, `AnnualReading`, `Statistic`,
 `Smoothing` and `CorrelationKind`.
 
+#1035 moves the other vocabularies that #956 left parsed by hand, one PR
+each: the quantile and TVaR methods first (`QuantileMethod`,
+`TvarMethod`), then the copula families, segment dependence, cover basis,
+correlation kind, approximation kind, and Excel's tail kinds and severity
+families.
+
 ## Method documentation (#991)
 
 A method's definition, formulas, assumptions and references are written
