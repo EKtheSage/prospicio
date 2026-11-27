@@ -1862,13 +1862,8 @@ fn year_correlation_for_ratio_rust(n_years: f64, ratio: f64) -> Result<f64> {
 
 pub(crate) fn cover_basis(basis: &str) -> Result<prospicio_aggregate::timeline::CoverBasis> {
     use prospicio_aggregate::timeline::CoverBasis;
-    match basis {
-        "losses_occurring" | "lod" => Ok(CoverBasis::LossesOccurring),
-        "risks_attaching" | "rad" => Ok(CoverBasis::RisksAttaching),
-        _ => Err(Error::Other(format!(
-            "basis must be \"losses_occurring\" or \"risks_attaching\", not {basis:?}"
-        ))),
-    }
+    CoverBasis::from_name(basis)
+        .ok_or_else(|| crate::unknown_name("basis", basis, CoverBasis::NAMES))
 }
 
 /// An exposure from its shares, row-major over `n_years` rows.

@@ -3808,22 +3808,13 @@ pub(crate) fn year_correlation_for_ratio(n_years: usize, ratio: f64) -> PyResult
 /// ``"risks_attaching"`` (or ``"rad"``).
 pub(crate) fn cover_basis(name: &str) -> PyResult<prospicio_aggregate::timeline::CoverBasis> {
     use prospicio_aggregate::timeline::CoverBasis;
-    match name {
-        "losses_occurring" | "lod" => Ok(CoverBasis::LossesOccurring),
-        "risks_attaching" | "rad" => Ok(CoverBasis::RisksAttaching),
-        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "unknown cover basis {other:?}: expected \"losses_occurring\" or \"risks_attaching\""
-        ))),
-    }
+    CoverBasis::from_name(name)
+        .ok_or_else(|| crate::unknown_name("cover basis", name, CoverBasis::NAMES))
 }
 
 /// The name of a cover basis.
 pub(crate) fn cover_basis_name(basis: prospicio_aggregate::timeline::CoverBasis) -> &'static str {
-    use prospicio_aggregate::timeline::CoverBasis;
-    match basis {
-        CoverBasis::LossesOccurring => "losses_occurring",
-        CoverBasis::RisksAttaching => "risks_attaching",
-    }
+    basis.name()
 }
 
 /// Each underwriting year's share of a full book's exposure in each

@@ -219,5 +219,18 @@ for (s in c("r-chainladder", "chainladder", "r")) {
 expect_error_like(paid_incurred_chain(tri(), "paid", "incurred", convention = "nope"),
                   "should be one of")
 
+# Cover basis: "lod" and "rad" are the same as the full names (#1035).
+cover_ev <- events_from_years(list(100), times = list(13.5 / 24))
+cover_shares <- matrix(0, 2, 24)
+cover_shares[1, 14] <- 0.25
+cover_shares[2, 14] <- 0.75
+for (pair in list(c("risks_attaching", "rad"), c("losses_occurring", "lod"))) {
+  a <- timeline_years(timeline(cover_ev, 24), pair[1], cover_shares)
+  b <- timeline_years(timeline(cover_ev, 24), pair[2], cover_shares)
+  stopifnot(identical(sapply(a, function(y) mean(total(y))), sapply(b, function(y) mean(total(y)))))
+}
+expect_error_like(timeline_years(timeline(cover_ev, 24), "claims_made", cover_shares),
+                  'basis must be "losses_occurring", "lod", "risks_attaching" or "rad", got "claims_made"')
+
 cat("option name tests passed\n")
 
