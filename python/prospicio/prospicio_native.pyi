@@ -24418,6 +24418,7 @@ class MackBootstrapFit:
     components of ``reserves``. ``residuals`` needs a single-segment fit;
     for several segments use ``segment(...)``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def cells(self, /) -> PredictiveDistribution |None:
@@ -24502,6 +24503,24 @@ class MackBootstrapFit:
         Returns
         -------
         DiscountedReserves
+        """
+    @staticmethod
+    def from_json(text: str) -> MackBootstrapFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        MackBootstrapFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -24597,6 +24616,31 @@ class MackBootstrapFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly: the simulated reserves, the patterns and the cells (if
+        kept) included, every number bit for bit. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import MackBootstrap, MackBootstrapFit, Triangle
+        >>> tri = Triangle.from_long(
+        ...     origin=[2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        ...     development=[12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        ...     values={"paid": [100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0,
+        ...                      120.0, 175.0, 130.0]})
+        >>> fit = MackBootstrap(n_sims=100, seed=1).fit(tri, "paid")
+        >>> MackBootstrapFit.from_json(fit.to_json()).reserves.mean() == fit.reserves.mean()
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     def totals_frame(self, /) -> Any:
         """
@@ -28067,6 +28111,7 @@ class OdpBootstrapFit:
     indexed ``[origin][development]``, like one segment of
     ``Triangle.values``, with ``nan`` where the triangle is not observed.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def cells(self, /) -> PredictiveDistribution |None:
@@ -28151,6 +28196,24 @@ class OdpBootstrapFit:
     def fitted(self, /) -> list[list[float]]:
         """
         Fitted incremental values, ``[origin][development]``.
+        """
+    @staticmethod
+    def from_json(text: str) -> OdpBootstrapFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        OdpBootstrapFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -28242,6 +28305,31 @@ class OdpBootstrapFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly: the simulated reserves, the patterns and the cells (if
+        kept) included, every number bit for bit. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import OdpBootstrap, OdpBootstrapFit, Triangle
+        >>> tri = Triangle.from_long(
+        ...     origin=[2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        ...     development=[12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        ...     values={"paid": [100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0,
+        ...                      120.0, 175.0, 130.0]})
+        >>> fit = OdpBootstrap(n_sims=100, seed=1).fit(tri, "paid")
+        >>> OdpBootstrapFit.from_json(fit.to_json()).reserves.mean() == fit.reserves.mean()
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     def totals_frame(self, /) -> Any:
         """

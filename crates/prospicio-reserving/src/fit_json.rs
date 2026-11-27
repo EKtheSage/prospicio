@@ -2,7 +2,10 @@
 //! it is and for Python's `pickle` (#978): [`ChainLadderFit`] and the
 //! fits of every segment of a triangle ([`SegmentFits`]), [`MackFit`],
 //! [`ExpectedLossFit`] (the expected-loss, Bornhuetter-Ferguson and
-//! Benktander fits) and [`CapeCodFit`].
+//! Benktander fits), [`CapeCodFit`], and the ODP and Mack bootstraps'
+//! fits ([`OdpBootstrapFit`], [`OdpBootstrapFits`], [`MackBootstrapFit`],
+//! [`MackBootstrapFits`]), whose simulated reserves and cells are embedded
+//! as [`PredictiveDistribution::to_json`] writes them.
 //!
 //! Each document is an object with `"format"` and `"format_version"`, as
 //! the triangle's (`triangle/json.rs`) is. Numbers round-trip bit for bit;
@@ -21,12 +24,17 @@
 use prospicio_core::Period;
 use serde_json::{Value, json};
 
+use prospicio_prob::PredictiveDistribution;
+
 use crate::assumptions::LinkRatios;
+use crate::bootstrap::{OdpBootstrapFit, OdpBootstrapFits, OdpBootstrapSegment};
 use crate::chain_ladder::ChainLadderFit;
 use crate::development::DevelopmentFit;
 use crate::error::{Error, Result};
 use crate::expected_loss::{CapeCodFit, ExpectedLossFit};
 use crate::mack::MackFit;
+use crate::mack_bootstrap::{MackBootstrapFit, MackBootstrapFits, MackBootstrapSegment};
+use crate::pattern_draws::{DevelopmentPatterns, SegmentPatterns};
 use crate::segments::SegmentFits;
 use crate::tail::TailFit;
 use crate::triangle::Label;
@@ -39,18 +47,17 @@ const FORMAT_VERSION: u64 = 1;
 
 type Read<T> = std::result::Result<T, String>;
 
-/// `to_json` and `from_json` on a fit type and on the fits of every
-/// segment, from the fit's own writer (`$value`) and reader (`$from`).
-/// Each document is formats `$one` and `$many`; `$what` names the fit in
+/// `to_json` and `from_json` on a type, from its writer (`$value`) and
+/// reader (`$from`): a document of format `$format`, named `$what` in
 /// errors.
-macro_rules! json_fit {
-    ($(#[$doc:meta])* $fit:ty, $one:literal, $many:literal, $what:literal, $value:path, $from:path) => {
-        impl $fit {
+macro_rules! json_document {
+    ($(#[$doc:meta])* $ty:ty, $format:expr, $what:expr, $value:path, $from:path) => {
+        impl $ty {
             $(#[$doc])*
             pub fn to_json(&self) -> String {
                 let mut doc = $value(self);
                 let obj = doc.as_object_mut().expect("an object");
-                obj.insert("format".into(), json!($one));
+                obj.insert("format".into(), json!($format));
                 obj.insert("format_version".into(), json!(FORMAT_VERSION));
                 serde_json::to_string(&doc).expect("a JSON value serializes")
             }
@@ -59,11 +66,19 @@ macro_rules! json_fit {
             /// on malformed JSON, another format, a newer format version, or
             /// parts that do not fit together.
             pub fn from_json(text: &str) -> Result<Self> {
-                document(text, $one)
+                document(text, $format)
                     .and_then(|doc| $from(&doc))
                     .map_err(|msg| data_error($what, msg))
             }
         }
+    };
+}
+
+/// [`json_document!`] on a fit type (format `$one`) and on the fits of
+/// every segment (format `$many`, with the key names and labels).
+macro_rules! json_fit {
+    ($(#[$doc:meta])* $fit:ty, $one:literal, $many:literal, $what:literal, $value:path, $from:path) => {
+        json_document!($(#[$doc])* $fit, $one, $what, $value, $from);
 
         impl SegmentFits<$fit> {
             /// The fits of every segment as one JSON document, with the key
@@ -153,6 +168,57 @@ json_fit!(
     cape_cod_from_value
 );
 
+json_document!(
+    /// This fit as a JSON document: its chain ladder, fitted values,
+    /// residuals and scale, the simulated reserves, the patterns each
+    /// simulation drew and the cells if the fit kept them;
+    /// [`from_json`](Self::from_json) reads it back to the same fit, every
+    /// number bit for bit.
+    OdpBootstrapFit,
+    "risk_rs.odp_bootstrap_fit",
+    "ODP bootstrap fit",
+    odp_bootstrap_value,
+    odp_bootstrap_from_value
+);
+
+json_document!(
+    /// The fits of every segment as one JSON document: each segment's chain
+    /// ladder, fitted values, residuals and scale with the key names and
+    /// labels, the joint reserves, the patterns and the cells if kept;
+    /// [`from_json`](Self::from_json) reads it back, every number bit for
+    /// bit.
+    OdpBootstrapFits,
+    "risk_rs.odp_bootstrap_fits",
+    "ODP bootstrap fits",
+    odp_bootstrap_fits_value,
+    odp_bootstrap_fits_from_value
+);
+
+json_document!(
+    /// This fit as a JSON document: its Mack model, residuals, the
+    /// simulated reserves, the patterns each simulation drew and the cells
+    /// if the fit kept them; [`from_json`](Self::from_json) reads it back to
+    /// the same fit, every number bit for bit.
+    MackBootstrapFit,
+    "risk_rs.mack_bootstrap_fit",
+    "Mack bootstrap fit",
+    mack_bootstrap_value,
+    mack_bootstrap_from_value
+);
+
+json_document!(
+    /// The fits of every segment as one JSON document: each segment's Mack
+    /// model and residuals with the key names and labels, the joint
+    /// reserves, the patterns and the cells if kept;
+    /// [`from_json`](Self::from_json) reads it back, every number bit for
+    /// bit.
+    MackBootstrapFits,
+    "risk_rs.mack_bootstrap_fits",
+    "Mack bootstrap fits",
+    mack_bootstrap_fits_value,
+    mack_bootstrap_fits_from_value
+);
+
 /// The fits of every segment as a document of format `format`, each fit
 /// written by `fit`.
 pub(crate) fn segments_to_json<T>(
@@ -160,14 +226,21 @@ pub(crate) fn segments_to_json<T>(
     format: &str,
     fit: impl Fn(&T) -> Value,
 ) -> String {
-    let doc = json!({
-        "format": format,
-        "format_version": FORMAT_VERSION,
+    let mut doc = segments_value(fits, fit);
+    let obj = doc.as_object_mut().expect("an object");
+    obj.insert("format".into(), json!(format));
+    obj.insert("format_version".into(), json!(FORMAT_VERSION));
+    serde_json::to_string(&doc).expect("a JSON value serializes")
+}
+
+/// The key names, labels and each segment's fit written by `fit`, the
+/// fields [`segments_from_value`] reads.
+pub(crate) fn segments_value<T>(fits: &SegmentFits<T>, fit: impl Fn(&T) -> Value) -> Value {
+    json!({
         "keys": fits.key_names,
         "labels": fits.labels.iter().map(Label::parts).collect::<Vec<_>>(),
         "fits": fits.fits.iter().map(fit).collect::<Vec<_>>(),
-    });
-    serde_json::to_string(&doc).expect("a JSON value serializes")
+    })
 }
 
 fn data_error(what: &str, msg: String) -> Error {
@@ -335,6 +408,175 @@ fn cape_cod_from_value(v: &Value) -> Read<CapeCodFit> {
         return Err("\"trended_apriori\" does not have one entry per origin".into());
     }
     Ok(fit)
+}
+
+fn odp_segment_value(s: &OdpBootstrapSegment) -> Value {
+    json!({
+        "chain_ladder": chain_ladder_value(&s.chain_ladder),
+        "fitted": numbers(&s.fitted),
+        "residuals": numbers(&s.residuals),
+        "scale": number_to_json(s.scale),
+    })
+}
+
+fn odp_segment_from_value(v: &Value) -> Read<OdpBootstrapSegment> {
+    let s = OdpBootstrapSegment {
+        chain_ladder: chain_ladder_from_value(field(v, "chain_ladder")?)?,
+        fitted: floats(v, "fitted")?,
+        residuals: floats(v, "residuals")?,
+        scale: number_from_json(field(v, "scale")?)?,
+    };
+    if s.fitted.len() != s.residuals.len() {
+        return Err("\"fitted\" and \"residuals\" differ in length".into());
+    }
+    Ok(s)
+}
+
+fn odp_bootstrap_value(fit: &OdpBootstrapFit) -> Value {
+    json!({
+        "chain_ladder": chain_ladder_value(&fit.chain_ladder),
+        "fitted": numbers(&fit.fitted),
+        "residuals": numbers(&fit.residuals),
+        "scale": number_to_json(fit.scale),
+        "reserves": distribution_value(&fit.reserves),
+        "patterns": patterns_value(&fit.patterns),
+        "cells": fit.cells.as_ref().map(distribution_value),
+    })
+}
+
+fn odp_bootstrap_from_value(v: &Value) -> Read<OdpBootstrapFit> {
+    let s = odp_segment_from_value(v)?;
+    Ok(OdpBootstrapFit {
+        chain_ladder: s.chain_ladder,
+        fitted: s.fitted,
+        residuals: s.residuals,
+        scale: s.scale,
+        reserves: distribution_from_value(field(v, "reserves")?)?,
+        patterns: patterns_from_value(field(v, "patterns")?)?,
+        cells: optional_distribution(v, "cells")?,
+    })
+}
+
+fn odp_bootstrap_fits_value(fits: &OdpBootstrapFits) -> Value {
+    json!({
+        "segments": segments_value(&fits.segments, odp_segment_value),
+        "reserves": distribution_value(&fits.reserves),
+        "patterns": patterns_value(&fits.patterns),
+        "cells": fits.cells.as_ref().map(distribution_value),
+    })
+}
+
+fn odp_bootstrap_fits_from_value(v: &Value) -> Read<OdpBootstrapFits> {
+    Ok(OdpBootstrapFits {
+        segments: segments_from_value(field(v, "segments")?, odp_segment_from_value)?,
+        reserves: distribution_from_value(field(v, "reserves")?)?,
+        patterns: patterns_from_value(field(v, "patterns")?)?,
+        cells: optional_distribution(v, "cells")?,
+    })
+}
+
+fn mack_segment_value(s: &MackBootstrapSegment) -> Value {
+    json!({
+        "mack": mack_value(&s.mack),
+        "residuals": numbers(&s.residuals),
+    })
+}
+
+fn mack_segment_from_value(v: &Value) -> Read<MackBootstrapSegment> {
+    Ok(MackBootstrapSegment {
+        mack: mack_from_value(field(v, "mack")?)?,
+        residuals: floats(v, "residuals")?,
+    })
+}
+
+fn mack_bootstrap_value(fit: &MackBootstrapFit) -> Value {
+    json!({
+        "mack": mack_value(&fit.mack),
+        "residuals": numbers(&fit.residuals),
+        "reserves": distribution_value(&fit.reserves),
+        "patterns": patterns_value(&fit.patterns),
+        "cells": fit.cells.as_ref().map(distribution_value),
+    })
+}
+
+fn mack_bootstrap_from_value(v: &Value) -> Read<MackBootstrapFit> {
+    let s = mack_segment_from_value(v)?;
+    Ok(MackBootstrapFit {
+        mack: s.mack,
+        residuals: s.residuals,
+        reserves: distribution_from_value(field(v, "reserves")?)?,
+        patterns: patterns_from_value(field(v, "patterns")?)?,
+        cells: optional_distribution(v, "cells")?,
+    })
+}
+
+fn mack_bootstrap_fits_value(fits: &MackBootstrapFits) -> Value {
+    json!({
+        "segments": segments_value(&fits.segments, mack_segment_value),
+        "reserves": distribution_value(&fits.reserves),
+        "patterns": patterns_value(&fits.patterns),
+        "cells": fits.cells.as_ref().map(distribution_value),
+    })
+}
+
+fn mack_bootstrap_fits_from_value(v: &Value) -> Read<MackBootstrapFits> {
+    Ok(MackBootstrapFits {
+        segments: segments_from_value(field(v, "segments")?, mack_segment_from_value)?,
+        reserves: distribution_from_value(field(v, "reserves")?)?,
+        patterns: patterns_from_value(field(v, "patterns")?)?,
+        cells: optional_distribution(v, "cells")?,
+    })
+}
+
+/// A distribution as the document [`PredictiveDistribution::to_json`]
+/// writes, embedded.
+fn distribution_value(d: &PredictiveDistribution) -> Value {
+    serde_json::from_str(&d.to_json()).expect("a distribution writes JSON")
+}
+
+fn distribution_from_value(v: &Value) -> Read<PredictiveDistribution> {
+    PredictiveDistribution::from_json(&v.to_string()).map_err(|e| e.to_string())
+}
+
+fn optional_distribution(v: &Value, name: &str) -> Read<Option<PredictiveDistribution>> {
+    match field(v, name)? {
+        Value::Null => Ok(None),
+        d => distribution_from_value(d).map(Some),
+    }
+}
+
+fn patterns_value(p: &DevelopmentPatterns) -> Value {
+    json!({
+        "n_sims": p.n_sims,
+        "segments": p.segments.iter().map(|s| json!({
+            "label": s.label,
+            "origin_grain": grain_code(s.origin_grain),
+            "ages": s.ages,
+            "draws": numbers(&s.draws),
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn patterns_from_value(v: &Value) -> Read<DevelopmentPatterns> {
+    let n_sims = count(field(v, "n_sims")?, "\"n_sims\"")?;
+    let segments = array(v, "segments")?
+        .iter()
+        .map(|s| {
+            let segment = SegmentPatterns {
+                label: strings(field(s, "label")?, "\"label\"")?,
+                origin_grain: grain_from_json(field(s, "origin_grain")?)?,
+                ages: ages(s, "ages")?,
+                draws: floats(s, "draws")?,
+            };
+            if segment.draws.len() != n_sims * segment.ages.len() {
+                return Err(
+                    "a segment's patterns do not have one draw per simulation and age".into(),
+                );
+            }
+            Ok(segment)
+        })
+        .collect::<Read<Vec<_>>>()?;
+    Ok(DevelopmentPatterns { n_sims, segments })
 }
 
 fn links_value(l: &LinkRatios) -> Value {
@@ -732,5 +974,69 @@ mod tests {
         assert_eq!(bits(&read.trended_apriori), bits(&cc.trended_apriori));
         assert!(CapeCodFit::from_json(&one.to_json()).is_err());
         assert!(ExpectedLossFit::from_json(&cc.to_json()).is_err());
+    }
+
+    #[test]
+    fn bootstrap_fits_round_trip_with_their_simulations() {
+        let odp = crate::OdpBootstrap {
+            n_sims: 50,
+            seed: 3,
+            ..Default::default()
+        };
+        let one = odp.fit_with_cells(&one_segment(), "paid").unwrap();
+        let back = OdpBootstrapFit::from_json(&one.to_json()).unwrap();
+        assert_eq!(back.to_json(), one.to_json());
+        assert_eq!(back.reserves.draw_matrix(), one.reserves.draw_matrix());
+        assert_eq!(back.patterns, one.patterns);
+        assert!(back.cells.is_some());
+        let plain = odp.fit(&one_segment(), "paid").unwrap();
+        assert!(
+            OdpBootstrapFit::from_json(&plain.to_json())
+                .unwrap()
+                .cells
+                .is_none()
+        );
+        let all = odp.fit_segments(&square(), "paid").unwrap();
+        let read = OdpBootstrapFits::from_json(&all.to_json()).unwrap();
+        assert_eq!(read.to_json(), all.to_json());
+        assert_eq!(read.segments.labels, all.segments.labels);
+
+        let mack = crate::MackBootstrap {
+            n_sims: 50,
+            seed: 3,
+            ..Default::default()
+        };
+        let one = mack.fit_with_cells(&square_one(), "paid").unwrap();
+        let back = MackBootstrapFit::from_json(&one.to_json()).unwrap();
+        assert_eq!(back.to_json(), one.to_json());
+        assert_eq!(back.reserves.draw_matrix(), one.reserves.draw_matrix());
+        let all = mack.fit_segments(&square(), "paid").unwrap();
+        let read = MackBootstrapFits::from_json(&all.to_json()).unwrap();
+        assert_eq!(read.to_json(), all.to_json());
+        assert!(OdpBootstrapFits::from_json(&all.to_json()).is_err());
+        assert!(
+            MackBootstrapFits::from_json(&all.to_json().replace("\"n_sims\":50", "\"n_sims\":49"))
+                .is_err()
+        );
+    }
+
+    /// The first segment of `square()`.
+    fn square_one() -> Triangle {
+        let years = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023];
+        let ages = [12, 24, 36, 48, 12, 24, 36, 12, 24, 12];
+        let paid = [
+            100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0, 120.0, 175.0, 130.0,
+        ];
+        let origin = years.map(Month::january);
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
     }
 }

@@ -103,3 +103,16 @@ def test_a_cape_cod_fit_round_trips_and_pickles():
     assert pickle.loads(pickle.dumps(fit)).to_json() == text
     with pytest.raises(ValueError):
         ExpectedLossFit.from_json(text)
+
+
+@pytest.mark.parametrize("name", ["OdpBootstrap", "MackBootstrap"])
+def test_a_bootstrap_fit_round_trips_and_pickles(name):
+    import prospicio.reserving as r
+
+    model = getattr(r, name)(n_sims=100, seed=1)
+    fit = model.fit(square(), "paid")
+    text = fit.to_json()
+    back = getattr(r, name + "Fit").from_json(text)
+    assert back.to_json() == text
+    assert back.reserves.mean() == fit.reserves.mean()
+    assert pickle.loads(pickle.dumps(fit)).to_json() == text
