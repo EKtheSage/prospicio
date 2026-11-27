@@ -280,26 +280,14 @@ fn as_predictive(pd: &Robj) -> Result<&PredictiveDistribution> {
 
 /// A quantile method by name: "inverted_cdf", "linear" or "kth_largest".
 pub(crate) fn quantile_method(name: &str) -> Result<QuantileMethod> {
-    match name {
-        "inverted_cdf" => Ok(QuantileMethod::InvertedCdf),
-        "linear" => Ok(QuantileMethod::Linear),
-        "kth_largest" => Ok(QuantileMethod::KthLargest),
-        _ => Err(Error::Other(format!(
-            "quantile method must be \"inverted_cdf\", \"linear\" or \"kth_largest\", not {name:?}"
-        ))),
-    }
+    QuantileMethod::from_name(name)
+        .ok_or_else(|| crate::unknown_name("quantile method", name, QuantileMethod::NAMES))
 }
 
 /// A TVaR method by name: "exact", "linear" or "whole_years".
 pub(crate) fn tvar_method(name: &str) -> Result<TvarMethod> {
-    match name {
-        "exact" => Ok(TvarMethod::Exact),
-        "linear" => Ok(TvarMethod::Linear),
-        "whole_years" => Ok(TvarMethod::WholeYears),
-        _ => Err(Error::Other(format!(
-            "TVaR method must be \"exact\", \"linear\" or \"whole_years\", not {name:?}"
-        ))),
-    }
+    TvarMethod::from_name(name)
+        .ok_or_else(|| crate::unknown_name("TVaR method", name, TvarMethod::NAMES))
 }
 
 /// A statistics table of draws: `names` and `values`, levels in percent.

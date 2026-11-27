@@ -152,14 +152,17 @@ fn years(
 
 /// The `quantile` argument and the TVaR that goes with it.
 fn methods(g: &Grid) -> Result<(QuantileMethod, TvarMethod)> {
-    match text_option(g, "quantile")?.as_deref() {
-        None | Some("inverted_cdf") => Ok((QuantileMethod::InvertedCdf, TvarMethod::Exact)),
-        Some("linear") => Ok((QuantileMethod::Linear, TvarMethod::Linear)),
-        Some("kth_largest") => Ok((QuantileMethod::KthLargest, TvarMethod::WholeYears)),
-        Some(other) => Err(format!(
-            "quantile must be \"inverted_cdf\", \"linear\" or \"kth_largest\", got {other:?}"
-        )),
-    }
+    let quantile = match text_option(g, "quantile")?.as_deref() {
+        None => QuantileMethod::default(),
+        Some(name) => QuantileMethod::from_name(name)
+            .ok_or_else(|| crate::unknown_name("quantile", name, QuantileMethod::NAMES))?,
+    };
+    let tvar = match quantile {
+        QuantileMethod::InvertedCdf => TvarMethod::Exact,
+        QuantileMethod::Linear => TvarMethod::Linear,
+        QuantileMethod::KthLargest => TvarMethod::WholeYears,
+    };
+    Ok((quantile, tvar))
 }
 
 fn row(label: &str, x: f64) -> Vec<Value> {
