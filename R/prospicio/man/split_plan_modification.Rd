@@ -39,7 +39,7 @@ all the claims of one accident, that enters; \code{Inf} for none.}
 A list: \code{modification} (unrounded; the bureau shows two
 decimals), \code{expected}, \code{expected_primary}, \code{expected_excess},
 \code{actual_primary}, \code{actual_excess}, \code{weight}, \code{ballast}, \code{stabilizing}
-(\code{(1 - W) E_e + B}), \code{adjusted_actual} and \code{adjusted_expected}, and the
+(\verb{(1 - W) E_e + B}), \code{adjusted_actual} and \code{adjusted_expected}, and the
 rows: \code{classes} (\code{exposures} with \code{expected} and \code{expected_primary})
 and \code{claims} (\code{claims} with \code{limited}, \code{primary} and \code{excess}, what
 enters after the limits and the medical-only share).
@@ -47,7 +47,7 @@ enters after the limits and the medical-only share).
 \description{
 The modification of NCCI's Experience Rating Plan, with every sum of
 its worksheet:
-\code{mod = (A_p + W A_e + (1 - W) E_e + B) / (E + B)}, with expected losses
+\verb{mod = (A_p + W A_e + (1 - W) E_e + B) / (E + B)}, with expected losses
 \code{E} (payroll in hundreds times the expected loss rate, summed over the
 class rows) and their primary part \code{E_p} (times the D-ratio),
 \code{E_e = E - E_p}, actual primary and excess losses \code{A_p} and \code{A_e}, the
