@@ -68,3 +68,38 @@ def test_a_mack_fit_round_trips_and_pickles():
     assert pickle.loads(pickle.dumps(fit)).to_json() == text
     with pytest.raises(ValueError):
         MackFit.from_json(ChainLadder().fit(square(), "paid").to_json())
+
+
+def with_premium():
+    return Triangle.from_long(
+        [2020, 2020, 2020, 2021, 2021, 2022],
+        [12, 24, 36, 12, 24, 12],
+        {"paid": [100.0, 150.0, 160.0, 110.0, 170.0, 120.0],
+         "premium": [250.0] * 3 + [260.0] * 2 + [280.0]},
+    )
+
+
+@pytest.mark.parametrize("method", ["bf", "benktander", "expected_loss"])
+def test_an_expected_loss_fit_round_trips_and_pickles(method):
+    from prospicio.reserving import (
+        Benktander, BornhuetterFerguson, ExpectedLoss, ExpectedLossFit)
+
+    model = {"bf": BornhuetterFerguson(apriori=0.6),
+             "benktander": Benktander(apriori=0.6, n_iters=2),
+             "expected_loss": ExpectedLoss(apriori=0.6)}[method]
+    fit = model.fit(with_premium(), "paid", "premium")
+    text = fit.to_json()
+    assert ExpectedLossFit.from_json(text).ultimate == fit.ultimate
+    assert pickle.loads(pickle.dumps(fit)).to_json() == text
+
+
+def test_a_cape_cod_fit_round_trips_and_pickles():
+    from prospicio.reserving import CapeCod, CapeCodFit, ExpectedLossFit
+
+    fit = CapeCod(trend=0.05).fit(with_premium(), "paid", "premium")
+    text = fit.to_json()
+    back = CapeCodFit.from_json(text)
+    assert back.trended_apriori == fit.trended_apriori
+    assert pickle.loads(pickle.dumps(fit)).to_json() == text
+    with pytest.raises(ValueError):
+        ExpectedLossFit.from_json(text)

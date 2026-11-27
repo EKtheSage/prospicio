@@ -6031,6 +6031,7 @@ class CapeCodFit:
     >>> round(fit.trended_apriori[0] / fit.apriori[0], 10)
     1.1
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> list[float]:
@@ -6073,6 +6074,24 @@ class CapeCodFit:
         """
         Exposure per origin: the exposure column's latest observed cumulative
         value.
+        """
+    @staticmethod
+    def from_json(text: str) -> CapeCodFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        CapeCodFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -6123,6 +6142,29 @@ class CapeCodFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly, every number bit for bit. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import CapeCod, CapeCodFit, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2021], [12, 24, 12],
+        ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+        ... )
+        >>> fit = CapeCod(trend=0.1).fit(tri, "paid", "premium")
+        >>> CapeCodFit.from_json(fit.to_json()).ultimate == fit.ultimate
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     @property
     def total_reserve(self, /) -> float:
@@ -15263,6 +15305,7 @@ class ExpectedLossFit:
     >>> fit.exposure, fit.segment(lob="Home").ultimate
     ([250.0, 400.0, 500.0, 800.0], [20.0, 230.0])
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> list[float]:
@@ -15299,6 +15342,24 @@ class ExpectedLossFit:
         """
         Exposure per origin: the exposure column's latest observed cumulative
         value.
+        """
+    @staticmethod
+    def from_json(text: str) -> ExpectedLossFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        ExpectedLossFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -15349,6 +15410,29 @@ class ExpectedLossFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly, every number bit for bit. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import BornhuetterFerguson, ExpectedLossFit, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2021], [12, 24, 12],
+        ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+        ... )
+        >>> fit = BornhuetterFerguson(apriori=0.5).fit(tri, "paid", "premium")
+        >>> ExpectedLossFit.from_json(fit.to_json()).ultimate == fit.ultimate
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     @property
     def total_reserve(self, /) -> float:
