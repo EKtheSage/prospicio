@@ -37,7 +37,7 @@ A list: \code{modification} (unrounded), \code{credit_debit},
 \description{
 The modification of ISO's Commercial General Liability Experience
 Rating Plan, with every sum of its worksheet:
-\code{AER = (reported + expected unreported) / subject loss cost} and
+\verb{AER = (reported + expected unreported) / subject loss cost} and
 \code{mod = 1 + Z (AER - EER) / EER}.
 }
 \details{
