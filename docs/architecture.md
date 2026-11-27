@@ -170,6 +170,8 @@ prospicio/
 │   │                      dependence, risk measures, distortions, transforms
 │   ├── prospicio-reserving/     Triangle, deterministic + stochastic methods, CDR
 │   ├── prospicio-aggregate/     freq-sev, FFT/Panjer/MC, reinsurance contracts, towers
+│   ├── prospicio-esg/           economic scenarios: short-rate models, the Svensson curve
+│   │                      (see docs/design/esg-dfa.md)
 │   ├── prospicio-pricing/       layer and limit rating (ILF, deductibles, extrapolation),
 │   │                      reinsurance tower matching (see docs/design/pareto.md)
 │   ├── prospicio-models/        model interface and life cycle: specs, designs, families,
