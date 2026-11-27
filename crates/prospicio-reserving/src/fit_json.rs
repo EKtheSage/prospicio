@@ -1,7 +1,8 @@
 //! Fitted reserving models as JSON documents, for saving a fit exactly as
 //! it is and for Python's `pickle` (#978): [`ChainLadderFit`] and the
-//! fits of every segment of a triangle ([`SegmentFits`]), and
-//! [`MackFit`].
+//! fits of every segment of a triangle ([`SegmentFits`]), [`MackFit`],
+//! [`ExpectedLossFit`] (the expected-loss, Bornhuetter-Ferguson and
+//! Benktander fits) and [`CapeCodFit`].
 //!
 //! Each document is an object with `"format"` and `"format_version"`, as
 //! the triangle's (`triangle/json.rs`) is. Numbers round-trip bit for bit;
@@ -24,6 +25,7 @@ use crate::assumptions::LinkRatios;
 use crate::chain_ladder::ChainLadderFit;
 use crate::development::DevelopmentFit;
 use crate::error::{Error, Result};
+use crate::expected_loss::{CapeCodFit, ExpectedLossFit};
 use crate::mack::MackFit;
 use crate::segments::SegmentFits;
 use crate::tail::TailFit;
@@ -124,6 +126,31 @@ json_fit!(
     "Mack fit",
     mack_value,
     mack_from_value
+);
+
+json_fit!(
+    /// This fit (an expected-loss, Bornhuetter-Ferguson or Benktander fit)
+    /// as a JSON document, its chain ladder included;
+    /// [`from_json`](Self::from_json) reads it back to the same fit, every
+    /// number bit for bit.
+    ExpectedLossFit,
+    "risk_rs.expected_loss_fit",
+    "risk_rs.expected_loss_fits",
+    "expected-loss fit",
+    expected_loss_value,
+    expected_loss_from_value
+);
+
+json_fit!(
+    /// This fit as a JSON document, its expected-loss fit and the trended
+    /// apriori included; [`from_json`](Self::from_json) reads it back to the
+    /// same fit, every number bit for bit.
+    CapeCodFit,
+    "risk_rs.cape_cod_fit",
+    "risk_rs.cape_cod_fits",
+    "Cape Cod fit",
+    cape_cod_value,
+    cape_cod_from_value
 );
 
 /// The fits of every segment as a document of format `format`, each fit
@@ -265,6 +292,47 @@ fn mack_from_value(v: &Value) -> Read<MackFit> {
     ] != [n; 3]
     {
         return Err("the per-origin standard errors do not have one entry per origin".into());
+    }
+    Ok(fit)
+}
+
+fn expected_loss_value(fit: &ExpectedLossFit) -> Value {
+    json!({
+        "chain_ladder": chain_ladder_value(&fit.chain_ladder),
+        "exposure": numbers(&fit.exposure),
+        "apriori": numbers(&fit.apriori),
+        "ultimate": numbers(&fit.ultimate),
+    })
+}
+
+fn expected_loss_from_value(v: &Value) -> Read<ExpectedLossFit> {
+    let fit = ExpectedLossFit {
+        chain_ladder: chain_ladder_from_value(field(v, "chain_ladder")?)?,
+        exposure: floats(v, "exposure")?,
+        apriori: floats(v, "apriori")?,
+        ultimate: floats(v, "ultimate")?,
+    };
+    let n = fit.chain_ladder.origins.len();
+    if [fit.exposure.len(), fit.apriori.len(), fit.ultimate.len()] != [n; 3] {
+        return Err("the per-origin vectors do not have one entry per origin".into());
+    }
+    Ok(fit)
+}
+
+fn cape_cod_value(fit: &CapeCodFit) -> Value {
+    json!({
+        "expected_loss": expected_loss_value(&fit.expected_loss),
+        "trended_apriori": numbers(&fit.trended_apriori),
+    })
+}
+
+fn cape_cod_from_value(v: &Value) -> Read<CapeCodFit> {
+    let fit = CapeCodFit {
+        expected_loss: expected_loss_from_value(field(v, "expected_loss")?)?,
+        trended_apriori: floats(v, "trended_apriori")?,
+    };
+    if fit.trended_apriori.len() != fit.expected_loss.chain_ladder.origins.len() {
+        return Err("\"trended_apriori\" does not have one entry per origin".into());
     }
     Ok(fit)
 }
@@ -611,5 +679,58 @@ mod tests {
         assert!(
             MackFit::from_json(&one.to_json().replace("\"n_links\":3", "\"n_links\":2")).is_err()
         );
+    }
+
+    /// `square()` with an exposure column.
+    fn with_premium() -> Triangle {
+        let years = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023];
+        let ages = [12, 24, 36, 48, 12, 24, 36, 12, 24, 12];
+        let paid = [
+            100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0, 120.0, 175.0, 130.0,
+        ];
+        let premium = [
+            250.0, 250.0, 250.0, 250.0, 260.0, 260.0, 260.0, 280.0, 280.0, 300.0,
+        ];
+        let origin = years.map(Month::january);
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid), ("premium", &premium)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn expected_loss_and_cape_cod_fits_round_trip() {
+        let tri = with_premium();
+        let bf = crate::BornhuetterFerguson {
+            apriori: crate::Apriori::from(0.7),
+            ..Default::default()
+        }
+        .fit_segments(&tri, "paid", "premium")
+        .unwrap();
+        let back = SegmentFits::<ExpectedLossFit>::from_json(&bf.to_json()).unwrap();
+        assert_eq!(back.to_json(), bf.to_json());
+        assert_eq!(bits(&back.fits[0].ultimate), bits(&bf.fits[0].ultimate));
+        let one = &bf.fits[0];
+        assert_eq!(
+            ExpectedLossFit::from_json(&one.to_json())
+                .unwrap()
+                .to_json(),
+            one.to_json()
+        );
+
+        let cc = crate::CapeCod::default()
+            .fit(&tri, "paid", "premium")
+            .unwrap();
+        let read = CapeCodFit::from_json(&cc.to_json()).unwrap();
+        assert_eq!(read.to_json(), cc.to_json());
+        assert_eq!(bits(&read.trended_apriori), bits(&cc.trended_apriori));
+        assert!(CapeCodFit::from_json(&one.to_json()).is_err());
+        assert!(ExpectedLossFit::from_json(&cc.to_json()).is_err());
     }
 }
