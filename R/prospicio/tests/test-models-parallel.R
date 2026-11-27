@@ -18,7 +18,14 @@ set.seed(11)
 state <- .Random.seed
 serial <- grid_search(c(0, 0.05, 0.5), pd, folds, fit, mse, seed = 3)
 stopifnot(identical(.Random.seed, state))
-serial_cv <- cross_validate(pd, folds, function(train) fit(0.05, train), mse, seed = 4)
+# A closure made at the top level does not carry the globals it calls to a
+# worker process (R sends the global environment by reference), so the
+# one-argument fit keeps `fit` in an environment of its own.
+cv_fit <- local({
+  f <- fit
+  function(train) f(0.05, train)
+})
+serial_cv <- cross_validate(pd, folds, cv_fit, mse, seed = 4)
 
 cl <- parallel::makeCluster(2)
 invisible(parallel::clusterEvalQ(cl, {
@@ -27,7 +34,7 @@ invisible(parallel::clusterEvalQ(cl, {
 }))
 psock <- function(x, f) parallel::parLapply(cl, x, f)
 parallel_grid <- grid_search(c(0, 0.05, 0.5), pd, folds, fit, mse, seed = 3, map = psock)
-parallel_cv <- cross_validate(pd, folds, function(train) fit(0.05, train), mse, seed = 4, map = psock)
+parallel_cv <- cross_validate(pd, folds, cv_fit, mse, seed = 4, map = psock)
 parallel::stopCluster(cl)
 
 stopifnot(identical(serial$score, parallel_grid$score))

@@ -1525,7 +1525,10 @@ bootstrap_rows <- function(n, seed, stream = 0) {
 #'   memory that cannot be sent between processes, so each task fits and
 #'   scores its model where it runs and returns only the score. `fit` and
 #'   `score` must not rely on objects that only the main process has: load
-#'   the package in each worker.
+#'   the package in each worker. A function made at the top level reaches a
+#'   worker without the global objects it calls (R sends the global
+#'   environment by name, not its contents), so export those
+#'   (`parallel::clusterExport()`) or make the function inside `local()`.
 #' - **One thread per worker.** Each worker process has a thread pool of
 #'   its own, so set `RAYON_NUM_THREADS=1` in the workers before they first
 #'   load the package, or the workers' threads oversubscribe the cores.

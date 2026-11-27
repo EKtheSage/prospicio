@@ -24,6 +24,12 @@ sources:
   do not exist: "object 'fit' not found".[^tuning]
 * Forcing the arguments (`force(data); force(fit); force(score)`) before
   building the tasks sends their values instead.[^tuning]
+* The global environment is serialized by name, not by contents: a
+  function made at the top level (as `function(train) fit(0.05, train)`
+  typed at the console) reaches the worker without the globals it calls,
+  and fails with "could not find function". Making it inside `local()`
+  (or exporting the globals with `parallel::clusterExport()`) sends
+  them; checked with a one-worker PSOCK cluster in R 4.3.[^tests]
 * A forked worker (`parallel::mclapply`) does not copy the parent's
   threads, so a rayon pool the parent has already started has no workers
   in the child, and a parallel call there can wait forever. Fresh

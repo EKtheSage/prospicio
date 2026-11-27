@@ -66,7 +66,10 @@ run's.
 memory that cannot be sent between processes, so each task fits and
 scores its model where it runs and returns only the score. \code{fit} and
 \code{score} must not rely on objects that only the main process has: load
-the package in each worker.
+the package in each worker. A function made at the top level reaches a
+worker without the global objects it calls (R sends the global
+environment by name, not its contents), so export those
+(\code{parallel::clusterExport()}) or make the function inside \code{local()}.
 \item \strong{One thread per worker.} Each worker process has a thread pool of
 its own, so set \code{RAYON_NUM_THREADS=1} in the workers before they first
 load the package, or the workers' threads oversubscribe the cores.
@@ -98,4 +101,5 @@ g <- grid_search(c(0, 0.1, 1), d, folds,
                                                       lambda = lam),
                  mse)
 g[attr(g, "best"), ]
+
 }
