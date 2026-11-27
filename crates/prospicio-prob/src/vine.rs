@@ -40,6 +40,50 @@ pub enum PairFamily {
     Student,
 }
 
+impl PairFamily {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name of each first and any alias after it
+    /// (#990, #1035). A front end normalizes its own input before it looks
+    /// the name up here.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("independence", Self::Independence),
+        ("gaussian", Self::Gaussian),
+        ("student", Self::Student),
+        ("clayton", Self::Clayton),
+        ("gumbel", Self::Gumbel),
+        ("frank", Self::Frank),
+        ("joe", Self::Joe),
+    ];
+
+    /// The PairFamily named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_prob::vine::PairFamily;
+    ///
+    /// assert_eq!(PairFamily::from_name("student"), Some(PairFamily::Student));
+    /// assert_eq!(PairFamily::from_name("copula"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name: one of `"independence"`, `"gaussian"`, `"student"`, `"clayton"`, `"gumbel"`, `"frank"`, `"joe"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Independence => "independence",
+            Self::Gaussian => "gaussian",
+            Self::Student => "student",
+            Self::Clayton => "clayton",
+            Self::Gumbel => "gumbel",
+            Self::Frank => "frank",
+            Self::Joe => "joe",
+        }
+    }
+}
+
 /// A bivariate copula for a vine: a family, its parameter and a rotation
 /// by 0, 90, 180 or 270 degrees (for Clayton, Gumbel and Joe; 90 and 270
 /// give negative dependence, 180 moves the tail dependence to the other

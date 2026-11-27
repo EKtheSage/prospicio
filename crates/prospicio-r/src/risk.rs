@@ -646,29 +646,12 @@ impl AnyCopula {
 
 fn pair_family(name: &str) -> Result<prospicio_prob::vine::PairFamily> {
     use prospicio_prob::vine::PairFamily;
-    Ok(match name {
-        "independence" => PairFamily::Independence,
-        "gaussian" => PairFamily::Gaussian,
-        "student" => PairFamily::Student,
-        "clayton" => PairFamily::Clayton,
-        "gumbel" => PairFamily::Gumbel,
-        "frank" => PairFamily::Frank,
-        "joe" => PairFamily::Joe,
-        other => return Err(Error::Other(format!("unknown pair family {other:?}"))),
-    })
+    PairFamily::from_name(name)
+        .ok_or_else(|| crate::unknown_name("pair family", name, PairFamily::NAMES))
 }
 
 fn pair_family_name(f: prospicio_prob::vine::PairFamily) -> &'static str {
-    use prospicio_prob::vine::PairFamily;
-    match f {
-        PairFamily::Independence => "independence",
-        PairFamily::Gaussian => "gaussian",
-        PairFamily::Student => "student",
-        PairFamily::Clayton => "clayton",
-        PairFamily::Gumbel => "gumbel",
-        PairFamily::Frank => "frank",
-        PairFamily::Joe => "joe",
-    }
+    f.name()
 }
 
 /// A pair copula from `list(family, parameter, rotation, nu)`, `nu` NA
@@ -936,13 +919,8 @@ impl RiskCopula {
     }
 
     fn archimedean(family: &str, theta: f64, dim: f64) -> Result<Self> {
-        let family = match family {
-            "clayton" => Archimedean::Clayton,
-            "gumbel" => Archimedean::Gumbel,
-            "frank" => Archimedean::Frank,
-            "joe" => Archimedean::Joe,
-            other => return Err(Error::Other(format!("unknown family {other:?}"))),
-        };
+        let family = Archimedean::from_name(family)
+            .ok_or_else(|| crate::unknown_name("family", family, Archimedean::NAMES))?;
         let dim = whole(dim, "dim")? as usize;
         let c = ArchimedeanCopula::new(family, theta, dim).map_err(to_r)?;
         Ok(Self {
