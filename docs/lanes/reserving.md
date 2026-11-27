@@ -10,3 +10,4 @@ Finished items are in [done/reserving.md](done/reserving.md), which agents read 
 
 - [option-names-mack] #990 next family: `MackProcess` names on the type (`NAMES`, `from_name`, `name`) used by the Python, R and Excel parsers, the error's list of names in one order (`docs/design/bindings.md`)
 - [option-names-pair-family] #990 next family after `MackProcess`: `PairFamily`, then `Archimedean`, `AnnualReading`, `Statistic`, `Smoothing` and `CorrelationKind`, each its names on the type used by the front ends' parsers (`docs/design/bindings.md`)
+- [978-reserving-fits] #978 the other reserving fits after the chain ladder: JSON artifacts and Python pickling for `MackFit`, the Bornhuetter-Ferguson, expected-loss, Benktander and Cape Cod fits, `OdpBootstrapFit` and `MackBootstrapFit`, one PR each on the writers in `fit_json.rs`

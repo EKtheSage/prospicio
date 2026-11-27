@@ -71,6 +71,7 @@ pub mod excess;
 pub mod exhibit;
 pub mod expected_loss;
 pub mod expense;
+mod fit_json;
 pub mod frame;
 pub mod frequency_severity;
 pub mod industry_prior;
