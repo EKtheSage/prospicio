@@ -1118,16 +1118,7 @@ fn compound_moments_rust(frequency: Robj, severity: Robj) -> Result<Vec<f64>> {
 
 fn approximation(moments: &[f64], kind: &str) -> Result<prospicio_aggregate::Approximation> {
     use prospicio_aggregate::ApproximationKind as K;
-    let kind = match kind {
-        "normal" => K::Normal,
-        "gamma" => K::Gamma,
-        "lognormal" => K::Lognormal,
-        "shifted_gamma" => K::ShiftedGamma,
-        "shifted_lognormal" => K::ShiftedLognormal,
-        "normal_power" => K::NormalPower,
-        "wilson_hilferty" => K::WilsonHilferty,
-        other => return Err(Error::Other(format!("unknown approximation {other}"))),
-    };
+    let kind = K::from_name(kind).ok_or_else(|| crate::unknown_name("kind", kind, K::NAMES))?;
     let [mean, variance, third_cumulant] = moments else {
         return Err(Error::Other(
             "moments must be c(mean, variance, third_cumulant)".into(),
@@ -1830,13 +1821,8 @@ fn labels_from(dims: Vec<String>, values: List) -> Result<Vec<(String, Vec<Strin
 
 fn correlation_kind(kind: &str) -> Result<prospicio_prob::portfolio::CorrelationKind> {
     use prospicio_prob::portfolio::CorrelationKind;
-    match kind {
-        "pearson" => Ok(CorrelationKind::Pearson),
-        "spearman" => Ok(CorrelationKind::Spearman),
-        _ => Err(Error::Other(format!(
-            "kind must be \"pearson\" or \"spearman\", not {kind:?}"
-        ))),
-    }
+    CorrelationKind::from_name(kind)
+        .ok_or_else(|| crate::unknown_name("kind", kind, CorrelationKind::NAMES))
 }
 
 fn year_draws(draws: &str) -> Result<prospicio_aggregate::term::YearDraws> {
@@ -1862,13 +1848,8 @@ fn year_correlation_for_ratio_rust(n_years: f64, ratio: f64) -> Result<f64> {
 
 pub(crate) fn cover_basis(basis: &str) -> Result<prospicio_aggregate::timeline::CoverBasis> {
     use prospicio_aggregate::timeline::CoverBasis;
-    match basis {
-        "losses_occurring" | "lod" => Ok(CoverBasis::LossesOccurring),
-        "risks_attaching" | "rad" => Ok(CoverBasis::RisksAttaching),
-        _ => Err(Error::Other(format!(
-            "basis must be \"losses_occurring\" or \"risks_attaching\", not {basis:?}"
-        ))),
-    }
+    CoverBasis::from_name(basis)
+        .ok_or_else(|| crate::unknown_name("basis", basis, CoverBasis::NAMES))
 }
 
 /// An exposure from its shares, row-major over `n_years` rows.

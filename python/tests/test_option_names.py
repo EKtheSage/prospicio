@@ -342,3 +342,18 @@ def test_paid_incurred_convention_spellings(name):
     assert PaidIncurredChain(convention=name).convention == "r_chainladder"
     with pytest.raises(ValueError, match="convention must be"):
         PaidIncurredChain(convention="nope")
+
+
+def test_cover_basis_aliases():
+    from prospicio.aggregate import EventSet, Exposure, Timeline
+
+    events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+    timeline = Timeline(events, 24)
+    shares = [[0.0] * 24, [0.0] * 24]
+    shares[0][13], shares[1][13] = 0.25, 0.75
+    for canonical, alias in [("risks_attaching", "rad"), ("losses_occurring", "lod")]:
+        a = timeline.years(canonical, Exposure(shares))
+        b = timeline.years(alias, Exposure(shares))
+        assert [y.events(0) for y in a] == [y.events(0) for y in b]
+    with pytest.raises(ValueError, match='cover basis must be "losses_occurring", "lod", "risks_attaching" or "rad", got "claims_made"'):
+        timeline.years("claims_made", Exposure(shares))

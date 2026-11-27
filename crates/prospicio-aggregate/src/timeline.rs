@@ -40,6 +40,42 @@ pub enum CoverBasis {
     RisksAttaching,
 }
 
+impl CoverBasis {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name of each first and any alias after it
+    /// (#990, #1035). A front end normalizes its own input before it looks
+    /// the name up here.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("losses_occurring", Self::LossesOccurring),
+        ("lod", Self::LossesOccurring),
+        ("risks_attaching", Self::RisksAttaching),
+        ("rad", Self::RisksAttaching),
+    ];
+
+    /// The CoverBasis named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_aggregate::timeline::CoverBasis;
+    ///
+    /// assert_eq!(CoverBasis::from_name("rad"), Some(CoverBasis::RisksAttaching));
+    /// assert_eq!(CoverBasis::from_name("claims_made"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name: one of `"losses_occurring"`, `"risks_attaching"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::LossesOccurring => "losses_occurring",
+            Self::RisksAttaching => "risks_attaching",
+        }
+    }
+}
+
 /// Each underwriting year's share of a full book's exposure in each
 /// accident month from the start of the term: one row a year, one share a
 /// month. A month's shares add to at most 1; the rest belongs to

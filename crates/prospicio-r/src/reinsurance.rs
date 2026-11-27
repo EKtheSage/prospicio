@@ -844,11 +844,9 @@ impl ReinsuranceTower {
 
     /// The cover basis's name, or `NULL`.
     fn cover_basis(&self) -> Robj {
-        use prospicio_aggregate::timeline::CoverBasis;
         match self.inner.cover_basis {
             None => ().into(),
-            Some(CoverBasis::LossesOccurring) => "losses_occurring".into(),
-            Some(CoverBasis::RisksAttaching) => "risks_attaching".into(),
+            Some(basis) => basis.name().into(),
         }
     }
 

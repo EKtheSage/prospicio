@@ -334,6 +334,44 @@ pub enum Archimedean {
     Joe,
 }
 
+impl Archimedean {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name of each first and any alias after it
+    /// (#990, #1035). A front end normalizes its own input before it looks
+    /// the name up here.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("clayton", Self::Clayton),
+        ("gumbel", Self::Gumbel),
+        ("frank", Self::Frank),
+        ("joe", Self::Joe),
+    ];
+
+    /// The Archimedean named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_prob::Archimedean;
+    ///
+    /// assert_eq!(Archimedean::from_name("frank"), Some(Archimedean::Frank));
+    /// assert_eq!(Archimedean::from_name("gaussian"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name: one of `"clayton"`, `"gumbel"`, `"frank"`, `"joe"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Clayton => "clayton",
+            Self::Gumbel => "gumbel",
+            Self::Frank => "frank",
+            Self::Joe => "joe",
+        }
+    }
+}
+
 /// An exchangeable `d`-dimensional Archimedean copula with generator
 /// `ψ_θ`, sampled by Marshall and Olkin's frailty method: draw a frailty
 /// `V` (whose Laplace transform is `ψ`), then `d` unit exponentials `E_j`,

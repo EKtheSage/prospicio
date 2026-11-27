@@ -44,6 +44,34 @@ pub enum Statistic {
 }
 
 impl Statistic {
+    /// Every named statistic the Python and R front ends accept, with its
+    /// variant (#990). A quantile has no fixed name: `from_name` also reads
+    /// `q<p>`, as [`name`](Self::name) writes it.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("mean", Self::Mean),
+        ("sd", Self::Sd),
+        ("min", Self::Min),
+        ("max", Self::Max),
+        ("proportion_zero", Self::ProportionZero),
+    ];
+
+    /// The statistic named `name` ([`NAMES`](Self::NAMES)), or a quantile
+    /// written `q<p>` (`q0.9`), or `None`.
+    ///
+    /// ```
+    /// use prospicio_bayes::ppc::Statistic;
+    ///
+    /// assert_eq!(Statistic::from_name("sd"), Some(Statistic::Sd));
+    /// assert_eq!(Statistic::from_name("q0.9"), Some(Statistic::Quantile(0.9)));
+    /// assert_eq!(Statistic::from_name("median"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        if let Some(&(_, s)) = Self::NAMES.iter().find(|(n, _)| *n == name) {
+            return Some(s);
+        }
+        name.strip_prefix('q')?.parse().ok().map(Self::Quantile)
+    }
+
     /// The statistic's name: `mean`, `sd`, `min`, `max`, `q<p>` (`q0.9`)
     /// or `proportion_zero`.
     pub fn name(&self) -> String {

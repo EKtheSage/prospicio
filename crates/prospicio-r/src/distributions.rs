@@ -910,15 +910,8 @@ fn reorder_groups_rust(
     kind: &str,
 ) -> Result<List> {
     use prospicio_prob::portfolio::CorrelationKind;
-    let kind = match kind {
-        "pearson" => CorrelationKind::Pearson,
-        "spearman" => CorrelationKind::Spearman,
-        _ => {
-            return Err(Error::Other(format!(
-                "kind must be \"pearson\" or \"spearman\", not {kind:?}"
-            )));
-        }
-    };
+    let kind = CorrelationKind::from_name(kind)
+        .ok_or_else(|| crate::unknown_name("kind", kind, CorrelationKind::NAMES))?;
     let pd = <&PredictiveDistribution>::try_from(&pd)
         .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
     reordered(

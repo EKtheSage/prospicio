@@ -201,6 +201,8 @@ excess_pattern_rust <- function(triangle, column, attachment, limit, kind, ultim
 
 expectreg_fit_design <- function(x, names, y, offset, weights, tau, lambda, penalty) rust_native_result(.Call(wrap__expectreg_fit_design, x, names, y, offset, weights, tau, lambda, penalty))
 
+experience_ratio_modification_rust <- function(subject_loss_cost, unreported_share, detrend_factor, year, loss, alae, maximum_single_limit, expected_ratio, credibility) rust_native_result(.Call(wrap__experience_ratio_modification_rust, subject_loss_cost, unreported_share, detrend_factor, year, loss, alae, maximum_single_limit, expected_ratio, credibility))
+
 exponential_trend_rust <- function(x, y) rust_native_result(.Call(wrap__exponential_trend_rust, x, y))
 
 exposure_uniform_rust <- function(n_years, policy_months) rust_native_result(.Call(wrap__exposure_uniform_rust, n_years, policy_months))
@@ -566,6 +568,8 @@ solvency2_probability_by_step_rust <- function(step) rust_native_result(.Call(wr
 solvency2_reinsurance_lgd_rust <- function(recoverables, risk_mitigation, collateral, lgd_share, factor) rust_native_result(.Call(wrap__solvency2_reinsurance_lgd_rust, recoverables, risk_mitigation, collateral, lgd_share, factor))
 
 solvency2_type1_rust <- function(pd, lgd) rust_native_result(.Call(wrap__solvency2_type1_rust, pd, lgd))
+
+split_plan_modification_rust <- function(class_code, payroll, expected_loss_rate, d_ratio, amount, medical_only, accident, weight, ballast, split_point, per_claim_limit, per_accident_limit, medical_only_share) rust_native_result(.Call(wrap__split_plan_modification_rust, class_code, payroll, expected_loss_rate, d_ratio, amount, medical_only, accident, weight, ballast, split_point, per_claim_limit, per_accident_limit, medical_only_share))
 
 stacking_weights_rust <- function(lpd, k) rust_native_result(.Call(wrap__stacking_weights_rust, lpd, k))
 

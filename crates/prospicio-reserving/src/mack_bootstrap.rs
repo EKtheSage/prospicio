@@ -160,6 +160,45 @@ pub enum MackProcess {
 }
 
 impl MackProcess {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name of each first (#990). A front end
+    /// normalizes its own input (R's `match.arg` abbreviations, Excel's
+    /// blank cell, trimming and case) before it looks the name up here.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("gamma", Self::Gamma),
+        ("lognormal", Self::Lognormal),
+        ("residuals", Self::Residuals),
+        ("normal", Self::Normal),
+        ("none", Self::None),
+    ];
+
+    /// The process named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_reserving::MackProcess;
+    ///
+    /// assert_eq!(MackProcess::from_name("lognormal"), Some(MackProcess::Lognormal));
+    /// assert_eq!(MackProcess::from_name("poisson"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, p)| p)
+    }
+
+    /// The canonical name: `"gamma"`, `"lognormal"`, `"residuals"`,
+    /// `"normal"` or `"none"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Gamma => "gamma",
+            Self::Lognormal => "lognormal",
+            Self::Residuals => "residuals",
+            Self::Normal => "normal",
+            Self::None => "none",
+        }
+    }
+
     /// A draw with the given mean and variance; `pool` holds the residuals
     /// to resample.
     fn draw(self, mean: f64, variance: f64, pool: &[f64], rng: &mut StreamRng) -> f64 {

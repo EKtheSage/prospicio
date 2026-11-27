@@ -2098,20 +2098,7 @@ pub(crate) struct PyCompoundMoments {
 
 fn approximation_kind(kind: &str) -> PyResult<prospicio_aggregate::ApproximationKind> {
     use prospicio_aggregate::ApproximationKind as K;
-    Ok(match kind {
-        "normal" => K::Normal,
-        "gamma" => K::Gamma,
-        "lognormal" => K::Lognormal,
-        "shifted_gamma" => K::ShiftedGamma,
-        "shifted_lognormal" => K::ShiftedLognormal,
-        "normal_power" => K::NormalPower,
-        "wilson_hilferty" => K::WilsonHilferty,
-        other => {
-            return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "kind must be \"normal\", \"gamma\", \"lognormal\", \"shifted_gamma\", \"shifted_lognormal\", \"normal_power\" or \"wilson_hilferty\", got {other:?}"
-            )));
-        }
-    })
+    K::from_name(kind).ok_or_else(|| crate::unknown_name("kind", kind, K::NAMES))
 }
 
 #[pymethods]
@@ -3767,13 +3754,8 @@ fn labels_from_dict(labels: &Bound<'_, PyDict>) -> PyResult<Vec<(String, Vec<Str
 
 fn correlation_kind(kind: &str) -> PyResult<prospicio_prob::portfolio::CorrelationKind> {
     use prospicio_prob::portfolio::CorrelationKind;
-    match kind {
-        "pearson" => Ok(CorrelationKind::Pearson),
-        "spearman" => Ok(CorrelationKind::Spearman),
-        _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "kind must be \"pearson\" or \"spearman\", not {kind:?}"
-        ))),
-    }
+    CorrelationKind::from_name(kind)
+        .ok_or_else(|| crate::unknown_name("kind", kind, CorrelationKind::NAMES))
 }
 
 fn year_draws(draws: &str) -> PyResult<prospicio_aggregate::term::YearDraws> {
@@ -3808,22 +3790,13 @@ pub(crate) fn year_correlation_for_ratio(n_years: usize, ratio: f64) -> PyResult
 /// ``"risks_attaching"`` (or ``"rad"``).
 pub(crate) fn cover_basis(name: &str) -> PyResult<prospicio_aggregate::timeline::CoverBasis> {
     use prospicio_aggregate::timeline::CoverBasis;
-    match name {
-        "losses_occurring" | "lod" => Ok(CoverBasis::LossesOccurring),
-        "risks_attaching" | "rad" => Ok(CoverBasis::RisksAttaching),
-        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "unknown cover basis {other:?}: expected \"losses_occurring\" or \"risks_attaching\""
-        ))),
-    }
+    CoverBasis::from_name(name)
+        .ok_or_else(|| crate::unknown_name("cover basis", name, CoverBasis::NAMES))
 }
 
 /// The name of a cover basis.
 pub(crate) fn cover_basis_name(basis: prospicio_aggregate::timeline::CoverBasis) -> &'static str {
-    use prospicio_aggregate::timeline::CoverBasis;
-    match basis {
-        CoverBasis::LossesOccurring => "losses_occurring",
-        CoverBasis::RisksAttaching => "risks_attaching",
-    }
+    basis.name()
 }
 
 /// Each underwriting year's share of a full book's exposure in each

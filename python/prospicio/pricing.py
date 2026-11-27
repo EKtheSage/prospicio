@@ -19,7 +19,10 @@ PremiumAdjustment, Cashflows) and the deal valued after binding
 chains (BonusMalus), and retrospective rating: the insurance charge and
 savings of an aggregate (InsuranceCharge: Table M, Table L) and the basic
 premium that balances a plan (RetroPlan), and earned exposure from policy
-dates (earned_exposure, calendar_windows, in_force)."""
+dates (earned_exposure, calendar_windows, in_force), and the experience
+modifications of the workers compensation split plan
+(split_plan_modification) and the general liability experience ratio plan
+(experience_ratio_modification)."""
 
 from .prospicio_native import (
     AsIf,
@@ -81,6 +84,7 @@ from .prospicio_native import (
     deal_ave,
     distortion_envelope,
     earned_exposure,
+    experience_ratio_modification,
     fit_pml_curve,
     fit_references,
     censored_las,
@@ -102,6 +106,7 @@ from .prospicio_native import (
     price_portfolio,
     price_with_reinstatements,
     severity_exposure_curve,
+    split_plan_modification,
     tiered_fee,
     trend_factor,
     trended_present_rates,
@@ -175,6 +180,8 @@ __all__ = [
     "calendar_windows",
     "earned_exposure",
     "in_force",
+    "split_plan_modification",
+    "experience_ratio_modification",
     "RetroPlan",
     "PaymentPattern",
     "PayoutPrice",
