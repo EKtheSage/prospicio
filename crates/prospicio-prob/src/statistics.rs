@@ -37,6 +37,42 @@ pub enum QuantileMethod {
     KthLargest,
 }
 
+impl QuantileMethod {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name of each first and any alias after it
+    /// (#990, #1035). A front end normalizes its own input before it looks
+    /// the name up here.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("inverted_cdf", Self::InvertedCdf),
+        ("linear", Self::Linear),
+        ("kth_largest", Self::KthLargest),
+    ];
+
+    /// The QuantileMethod named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_prob::statistics::QuantileMethod;
+    ///
+    /// assert_eq!(QuantileMethod::from_name("linear"), Some(QuantileMethod::Linear));
+    /// assert_eq!(QuantileMethod::from_name("median"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name: one of `"inverted_cdf"`, `"linear"`, `"kth_largest"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::InvertedCdf => "inverted_cdf",
+            Self::Linear => "linear",
+            Self::KthLargest => "kth_largest",
+        }
+    }
+}
+
 /// How a tail value at risk of draws is read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TvarMethod {
@@ -51,6 +87,42 @@ pub enum TvarMethod {
     /// the `k` worst whole years: [`tvar_whole_years_sorted`]. Equal to
     /// `Exact` when `(1 - p) n` is a whole number.
     WholeYears,
+}
+
+impl TvarMethod {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name of each first and any alias after it
+    /// (#990, #1035). A front end normalizes its own input before it looks
+    /// the name up here.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("exact", Self::Exact),
+        ("linear", Self::Linear),
+        ("whole_years", Self::WholeYears),
+    ];
+
+    /// The TvarMethod named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_prob::statistics::TvarMethod;
+    ///
+    /// assert_eq!(TvarMethod::from_name("whole_years"), Some(TvarMethod::WholeYears));
+    /// assert_eq!(TvarMethod::from_name("mean"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name: one of `"exact"`, `"linear"`, `"whole_years"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Linear => "linear",
+            Self::WholeYears => "whole_years",
+        }
+    }
 }
 
 impl QuantileMethod {

@@ -59,18 +59,14 @@ design's columns), \code{coefficients} and \code{individual} (one row per risk),
 Hachemeister's regression model, as \code{actuar::cm(~risk, regformula = formula, regdata = data)}: risk \code{i} in period \code{t} has ratio \code{X_it} with
 weight \code{w_it} and a mean on a design shared by the risks (a trend line
 \code{~ time}, say). Each risk's own weighted least squares fit is shrunk
-towards the collective by a credibility matrix
-\verb{Z_i = A (A + s2 W_i)^-1}.
+towards the collective by a credibility matrix. \code{estimator} applies
+only with \code{adjust_intercept = TRUE}, whose formula must have an
+intercept as its first column; at the origin the between covariance is
+always Hachemeister's iterative estimator, as in \code{actuar}.
 }
 \details{
-At the origin the matrices are full and the between covariance \code{A} is
-Hachemeister's iterative estimator whatever \code{estimator} says, as in
-\code{actuar} (on nearly collinear coefficients its iteration may wander in
-the last digits). With \code{adjust_intercept = TRUE} (\code{actuar}'s
-\code{adj.intercept}) the design is orthogonalised under the collective
-weights, the matrices are diagonal and each diagonal is estimated as
-Bühlmann–Straub's by \code{estimator}; the formula must then have an
-intercept as its first column.
+The method, its estimators and its reference are documented once, in the
+\href{https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.Hachemeister.html}{Rust reference}.
 }
 \examples{
 x <- rbind(c(10, 12, 13, 15, 16), c(8, 8.5, 9.5, 9, 10), c(14, 13, 16, 17, 19))

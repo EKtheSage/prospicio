@@ -116,11 +116,10 @@ fn copula(name: &Grid, parameter: &Grid, nu: &Grid, dim: Option<usize>) -> Resul
                 StudentTCopula::new(&r, d, nu).map_err(|e| e.to_string())?,
             ))
         }
-        "clayton" => archimedean(Archimedean::Clayton),
-        "gumbel" => archimedean(Archimedean::Gumbel),
-        "frank" => archimedean(Archimedean::Frank),
-        "joe" => archimedean(Archimedean::Joe),
-        other => Err(format!("family must be {NAMES}, got {other:?}")),
+        other => match Archimedean::from_name(other) {
+            Some(family) => archimedean(family),
+            None => Err(format!("family must be {NAMES}, got {other:?}")),
+        },
     }
 }
 

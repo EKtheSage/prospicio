@@ -2032,18 +2032,13 @@ impl PyGam {
                 if let Ok(v) = s.extract::<Vec<f64>>() {
                     Smoothing::Fixed(v)
                 } else {
-                    match s.extract::<String>()?.as_str() {
-                        "auto" => Smoothing::Auto,
-                        "gcv" => Smoothing::Gcv,
-                        "ubre" => Smoothing::Ubre,
-                        "reml" => Smoothing::Reml,
-                        other => {
-                            return Err(PyValueError::new_err(format!(
-                                "smoothing must be \"auto\", \"gcv\", \"ubre\", \"reml\" or a \
-                                 list of numbers, got {other:?}"
-                            )));
-                        }
-                    }
+                    let name = s.extract::<String>()?;
+                    Smoothing::from_name(&name).ok_or_else(|| {
+                        PyValueError::new_err(format!(
+                            "smoothing must be \"auto\", \"gcv\", \"ubre\", \"reml\" or a \
+                             list of numbers, got {name:?}"
+                        ))
+                    })?
                 }
             }
         };
@@ -4224,16 +4219,11 @@ fn ppc_statistics(statistics: Option<Vec<Bound<'_, PyAny>>>) -> PyResult<Vec<Sta
                 return Ok(Statistic::Quantile(p));
             }
             let name: String = v.extract()?;
-            match name.as_str() {
-                "mean" => Ok(Statistic::Mean),
-                "sd" => Ok(Statistic::Sd),
-                "min" => Ok(Statistic::Min),
-                "max" => Ok(Statistic::Max),
-                "proportion_zero" => Ok(Statistic::ProportionZero),
-                other => Err(PyValueError::new_err(format!(
-                    "a statistic is \"mean\", \"sd\", \"min\", \"max\", \"proportion_zero\" or a quantile's probability, got {other:?}"
-                ))),
-            }
+            Statistic::from_name(&name).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "a statistic is \"mean\", \"sd\", \"min\", \"max\", \"proportion_zero\" or a quantile's probability, got {name:?}"
+                ))
+            })
         })
         .collect()
 }

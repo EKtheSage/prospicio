@@ -9,7 +9,7 @@ use std::fmt;
 use crate::error::{Error, Result};
 use prospicio_core::{Grain, Lag, Month, Period};
 
-mod json;
+pub(crate) mod json;
 
 /// A position on the index axis (a segment such as a company or line of
 /// business): one value per key of the triangle, in key order. A triangle

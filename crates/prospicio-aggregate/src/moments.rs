@@ -218,6 +218,50 @@ pub enum ApproximationKind {
     WilsonHilferty,
 }
 
+impl ApproximationKind {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name of each first and any alias after it
+    /// (#990, #1035). A front end normalizes its own input before it looks
+    /// the name up here.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("normal", Self::Normal),
+        ("gamma", Self::Gamma),
+        ("lognormal", Self::Lognormal),
+        ("shifted_gamma", Self::ShiftedGamma),
+        ("shifted_lognormal", Self::ShiftedLognormal),
+        ("normal_power", Self::NormalPower),
+        ("wilson_hilferty", Self::WilsonHilferty),
+    ];
+
+    /// The ApproximationKind named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_aggregate::ApproximationKind;
+    ///
+    /// assert_eq!(ApproximationKind::from_name("normal_power"), Some(ApproximationKind::NormalPower));
+    /// assert_eq!(ApproximationKind::from_name("pareto"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name: one of `"normal"`, `"gamma"`, `"lognormal"`, `"shifted_gamma"`, `"shifted_lognormal"`, `"normal_power"`, `"wilson_hilferty"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Gamma => "gamma",
+            Self::Lognormal => "lognormal",
+            Self::ShiftedGamma => "shifted_gamma",
+            Self::ShiftedLognormal => "shifted_lognormal",
+            Self::NormalPower => "normal_power",
+            Self::WilsonHilferty => "wilson_hilferty",
+        }
+    }
+}
+
 /// A distribution fitted to compound moments. Shifted families are their
 /// base family plus `shift`, which may be negative, so they are not
 /// severities.

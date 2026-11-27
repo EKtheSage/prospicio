@@ -1218,6 +1218,56 @@ pub(crate) struct PyExpectedLossFit {
 
 #[pymethods]
 impl PyExpectedLossFit {
+    /// This fit, every segment, as a JSON document that ``from_json`` reads
+    /// back exactly, every number bit for bit. Pickling uses it too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.reserving import BornhuetterFerguson, ExpectedLossFit, Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020, 2020, 2021], [12, 24, 12],
+    /// ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    /// ... )
+    /// >>> fit = BornhuetterFerguson(apriori=0.5).fit(tri, "paid", "premium")
+    /// >>> ExpectedLossFit.from_json(fit.to_json()).ultimate == fit.ultimate
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A fit from a document written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// ExpectedLossFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the text is not such a document, or is from a newer version.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        SegmentFits::<ExpectedLossFit>::from_json(text)
+            .map(|inner| Self { inner })
+            .map_err(err)
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// The underlying chain-ladder projection, with the chain ladder's
     /// ultimate.
     #[getter]
@@ -1396,6 +1446,56 @@ pub(crate) struct PyCapeCodFit {
 
 #[pymethods]
 impl PyCapeCodFit {
+    /// This fit, every segment, as a JSON document that ``from_json`` reads
+    /// back exactly, every number bit for bit. Pickling uses it too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.reserving import CapeCod, CapeCodFit, Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020, 2020, 2021], [12, 24, 12],
+    /// ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+    /// ... )
+    /// >>> fit = CapeCod(trend=0.1).fit(tri, "paid", "premium")
+    /// >>> CapeCodFit.from_json(fit.to_json()).ultimate == fit.ultimate
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A fit from a document written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// CapeCodFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the text is not such a document, or is from a newer version.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        SegmentFits::<CapeCodFit>::from_json(text)
+            .map(|inner| Self { inner })
+            .map_err(err)
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// The expected-loss fit: ultimates, exposures and the detrended
     /// apriori.
     #[getter]

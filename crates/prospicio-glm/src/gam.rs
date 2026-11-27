@@ -258,6 +258,44 @@ pub enum Smoothing {
     Fixed(Vec<f64>),
 }
 
+impl Smoothing {
+    /// Every named criterion the Python and R front ends accept, with its
+    /// variant (#990). Fixed smoothing parameters have no name here: a
+    /// front end builds [`Smoothing::Fixed`] from its numbers.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("auto", Self::Auto),
+        ("gcv", Self::Gcv),
+        ("ubre", Self::Ubre),
+        ("reml", Self::Reml),
+    ];
+
+    /// The criterion named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_glm::gam::Smoothing;
+    ///
+    /// assert_eq!(Smoothing::from_name("reml"), Some(Smoothing::Reml));
+    /// assert_eq!(Smoothing::from_name("aic"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, s)| s.clone())
+    }
+
+    /// The criterion's name, or `"fixed"` for fixed parameters.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Gcv => "gcv",
+            Self::Ubre => "ubre",
+            Self::Reml => "reml",
+            Self::Fixed(_) => "fixed",
+        }
+    }
+}
+
 /// A GAM specification: a [`Glm`] (family, link, dispersion) plus smooths.
 ///
 /// ```

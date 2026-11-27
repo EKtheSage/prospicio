@@ -107,10 +107,10 @@ pub(crate) fn segment_dependence(
     name: &str,
     spearman: Option<Vec<Vec<f64>>>,
 ) -> PyResult<SegmentDependence> {
-    match (name, spearman) {
-        ("independent", None) => Ok(SegmentDependence::Independent),
-        ("synchronized", None) => Ok(SegmentDependence::Synchronized),
-        ("rank_correlation", Some(rows)) => {
+    let dependence = SegmentDependence::from_name(name)
+        .ok_or_else(|| crate::unknown_name("dependence", name, SegmentDependence::NAMES))?;
+    match (dependence, spearman) {
+        (SegmentDependence::RankCorrelation { .. }, Some(rows)) => {
             if rows.iter().any(|r| r.len() != rows.len()) {
                 return Err(PyValueError::new_err(
                     "spearman must be a square matrix, one row and column per segment",
@@ -120,25 +120,18 @@ pub(crate) fn segment_dependence(
                 spearman: rows.into_iter().flatten().collect(),
             })
         }
-        ("rank_correlation", None) => Err(PyValueError::new_err(
+        (SegmentDependence::RankCorrelation { .. }, None) => Err(PyValueError::new_err(
             "dependence=\"rank_correlation\" needs a spearman matrix",
         )),
-        ("independent" | "synchronized", Some(_)) => Err(PyValueError::new_err(
+        (_, Some(_)) => Err(PyValueError::new_err(
             "spearman is taken only with dependence=\"rank_correlation\"",
         )),
-        _ => Err(PyValueError::new_err(format!(
-            "dependence must be \"independent\", \"synchronized\" or \"rank_correlation\", \
-             got {name:?}"
-        ))),
+        (d, None) => Ok(d),
     }
 }
 
 pub(crate) fn dependence_name(d: &SegmentDependence) -> &'static str {
-    match d {
-        SegmentDependence::Independent => "independent",
-        SegmentDependence::Synchronized => "synchronized",
-        SegmentDependence::RankCorrelation { .. } => "rank_correlation",
-    }
+    d.name()
 }
 
 /// The Spearman matrix of a rank correlation, as rows; `None` otherwise.

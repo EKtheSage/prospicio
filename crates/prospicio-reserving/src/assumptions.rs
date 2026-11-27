@@ -68,14 +68,14 @@ pub const DEVELOPMENT_CORRELATION_CI: f64 = 0.5;
 /// zero and (for a fit) the link ratio was kept.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LinkRatios {
-    n_origins: usize,
-    n_links: usize,
+    pub(crate) n_origins: usize,
+    pub(crate) n_links: usize,
     /// Row-major over origin × link.
-    ratios: Vec<Option<f64>>,
-    /// The valuation month of each link's later cell.
-    valuations: Vec<Month>,
+    pub(crate) ratios: Vec<Option<f64>>,
+    /// The valuation month of each link's later cell, row-major as `ratios`.
+    pub(crate) valuations: Vec<Month>,
     /// The age at the start of each link.
-    ages: Vec<Lag>,
+    pub(crate) ages: Vec<Lag>,
 }
 
 impl LinkRatios {

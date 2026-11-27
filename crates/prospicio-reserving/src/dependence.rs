@@ -124,6 +124,49 @@ pub enum SegmentDependence {
 }
 
 impl SegmentDependence {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name of each first (#990, #1035). The
+    /// `"rank_correlation"` entry holds an empty matrix: a front end that
+    /// looks it up fills `spearman` from its own argument.
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("independent", Self::Independent),
+        ("synchronized", Self::Synchronized),
+        (
+            "rank_correlation",
+            Self::RankCorrelation {
+                spearman: Vec::new(),
+            },
+        ),
+    ];
+
+    /// The dependence named `name` ([`NAMES`](Self::NAMES)), or `None`; a
+    /// rank correlation comes with an empty matrix.
+    ///
+    /// ```
+    /// use prospicio_reserving::SegmentDependence;
+    ///
+    /// assert_eq!(SegmentDependence::from_name("synchronized"), Some(SegmentDependence::Synchronized));
+    /// assert_eq!(SegmentDependence::from_name("copula"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, d)| d.clone())
+    }
+
+    /// The canonical name: `"independent"`, `"synchronized"` or
+    /// `"rank_correlation"`.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Independent => "independent",
+            Self::Synchronized => "synchronized",
+            Self::RankCorrelation { .. } => "rank_correlation",
+        }
+    }
+}
+
+impl SegmentDependence {
     /// Checks the choice against `n_segments` segments before any
     /// simulation: a [`RankCorrelation`](Self::RankCorrelation) matrix must
     /// be `n_segments × n_segments`, symmetric with a unit diagonal, and
