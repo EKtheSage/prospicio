@@ -1,0 +1,1 @@
+* **Creation**: [NCCI's ABCs of Experience Rating](/references/ncci-abcs-experience-rating.md), from #981 (branch claude/project-thread-n5mttf-emod-split): the worksheet's summary gives 223,677 / 223,590 = 1.00 through the split plan, its rows round expected losses before the D-ratio, and its class rows and claim lines do not add up to its summary.

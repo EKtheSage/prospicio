@@ -1,5 +1,6 @@
 # Reference implementations
 
+* [NCCI's ABCs of Experience Rating](ncci-abcs-experience-rating.md) - The public guide behind prospicio_pricing::emod's split plan; its worksheet's summary reproduces to the dollar (mod 1.00), its class rows round expected losses before the D-ratio, and its rows and claims do not add up to its summary.
 * [MAPIE 0.9.1, the reference for prospicio's conformal intervals](mapie.md) - Its split and CV+ quantiles are the conformal order statistic, clipped instead of infinite; its CQR takes a quantile sometimes one order statistic higher.
 * [statsmodels](statsmodels.md) - Python statsmodels, the reference for prospicio-glm's GLMs, robust standard errors and Tweedie profiles; its conventions and quirks.
 * [glmmTMB and lme4](glmmtmb-lme4.md) - The references for GLMMs with random intercepts and slopes: glmmTMB stops short and is polished, its gamma dispersion parameter is the log shape, its condVar adds the estimates' uncertainty, and glmer's quadrature log-likelihood leaves out the saturated model's; glmmTMB's unstructured theta layout and lme4's split of `||` terms.
