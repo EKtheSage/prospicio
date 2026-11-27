@@ -1,0 +1,20 @@
+[package]
+name = "prospicio-esg"
+description = "Economic scenario generator: short-rate models (Vasicek, CIR, Hull-White) and the Nelson-Siegel-Svensson curve."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+prospicio-core.workspace = true
+# The normal quantile, the incomplete gamma, Nelder-Mead and a small solve.
+prospicio-math.workspace = true
+# Gamma draws for CIR's transition, and PredictiveDistribution for paths.
+prospicio-prob.workspace = true

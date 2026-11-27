@@ -25,6 +25,7 @@ prospicio-nn = { path = "../crates/prospicio-nn", default-features = false, opti
 [dev-dependencies]
 prospicio-aggregate.workspace = true
 prospicio-core.workspace = true
+prospicio-esg.workspace = true
 prospicio-glm.workspace = true
 prospicio-math.workspace = true
 prospicio-models.workspace = true

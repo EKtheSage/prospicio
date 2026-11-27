@@ -34,6 +34,11 @@ sources:
   `rspm-sync.rstudio.com`, which stays refused, so install from source:
   `install.packages(..., repos = "https://cloud.r-project.org")`.
   `lightgbm` and `xgboost` build from source in about 15 minutes.
+* `www.federalreserve.gov` is refused (CONNECT 403, 2026-11-27), so the
+  Federal Reserve's published Svensson curve (Gürkaynak, Sack and Wright,
+  `feds200628.csv`), the parity target of `esg-dfa.md` validation 3, cannot
+  be fetched from a cloud session; it waits for a local session or an
+  allowlist entry.
 * pkgdown's site build (`cargo xtask r`, last step) fails with CONNECT 403
   on a host it fetches; the R tests before it are unaffected.
 

@@ -185,7 +185,7 @@ jobs:
       - run: cargo xtask rust
       # The crates in the WASM scope (docs/architecture.md, "Open
       # decisions") build for the browser.
-      - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
+      - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-esg -p prospicio-pricing -p prospicio-reserving -p prospicio
 
   # The JavaScript package (crates/prospicio-wasm, docs/design/wasm.md):
   # clippy for the wasm32 target, the bindings' tests under Node

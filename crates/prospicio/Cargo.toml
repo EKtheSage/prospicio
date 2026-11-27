@@ -17,6 +17,7 @@ prospicio-core.workspace = true
 prospicio-math.workspace = true
 prospicio-prob.workspace = true
 prospicio-aggregate.workspace = true
+prospicio-esg.workspace = true
 prospicio-pricing.workspace = true
 prospicio-reserving.workspace = true
 prospicio-models.workspace = true

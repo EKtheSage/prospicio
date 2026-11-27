@@ -384,6 +384,7 @@ pub(crate) fn check(changed: bool, fast: bool) -> Result {
                     "prospicio-math",
                     "prospicio-prob",
                     "prospicio-aggregate",
+                    "prospicio-esg",
                     "prospicio-pricing",
                     "prospicio-reserving",
                     "prospicio",

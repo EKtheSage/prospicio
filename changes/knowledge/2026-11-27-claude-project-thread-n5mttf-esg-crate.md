@@ -1,0 +1,1 @@
+* **Update**: [Cloud session network access](/environment/cloud-network.md), from #983 (branch claude/project-thread-n5mttf-esg-crate): `www.federalreserve.gov` is refused from cloud sessions (CONNECT 403), so the Federal Reserve's Svensson curve (`feds200628.csv`), the parity target of the ESG's curve fit, waits for a local session or an allowlist entry.
