@@ -1,6 +1,6 @@
 # Aggregate lane
 
-**Session:** Cloud (the Probability session). **Owns:** `crates/prospicio-aggregate/`, `crates/prospicio-pricing/`, `validation/tests/aggregate.rs`, `validation/tests/pricing.rs`, `docs/design/aggregate.md`, `docs/design/pareto.md`, `docs/design/credibility.md`, `docs/design/ratemaking.md`, `docs/design/experience-rating.md`, `docs/design/time-value.md`, `docs/design/cat-inputs.md`, `docs/design/pnl.md`, `docs/design/casualty-exposure.md`, `docs/design/reinsurer-default.md`
+**Session:** Cloud (the Probability session). **Owns:** `crates/prospicio-aggregate/`, `crates/prospicio-pricing/`, `validation/tests/aggregate.rs`, `validation/tests/pricing.rs`, `docs/design/aggregate.md`, `docs/design/pareto.md`, `docs/design/credibility.md`, `docs/design/ratemaking.md`, `docs/design/experience-rating.md`, `docs/design/time-value.md`, `docs/design/cat-inputs.md`, `docs/design/pnl.md`, `docs/design/casualty-exposure.md`, `docs/design/reinsurer-default.md`, `docs/design/esg-dfa.md`
 
 <!-- One bullet per line. A PR edits only the bullets about its own item. This file merges with git's union driver (.gitattributes). -->
 
@@ -20,4 +20,5 @@ Finished items are in [done/aggregate.md](done/aggregate.md), which agents read 
 - [earned-short-rate] short-rate cancellation and audit premium adjustments (`primary-rating.md`, decision (d)); after #981
 - [retro-deductible-dividend] large deductible and dividend plans from the charge and savings (`primary-rating.md`); after #981
 - [method-docs-next] #991 next families: the Mack bootstrap's and the other credibility models' binding docs link to their Rust reference instead of restating the method (`docs/design/bindings.md`, "Method documentation")
+- [esg-dfa] #983 an economic scenario generator (Vasicek, CIR, Hull-White, Svensson, inflation) in a new crate `prospicio-esg`, a multi-year projection in `prospicio-aggregate::dfa`, and finite-time ruin and capital breach on its paths (`esg-dfa.md`, PRs 1 to 6); waits for the user's decisions on the note
 - [method-docs-credibility] #991 the other credibility models (Buhlmann-Straub, Hachemeister): their binding docs link to the Rust reference instead of restating the method, and the Done bullet `#991` (`docs/design/bindings.md`, "Method documentation")
