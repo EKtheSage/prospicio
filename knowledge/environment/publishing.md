@@ -149,7 +149,8 @@ trusted publishing needs, as its documentation stood on 2026-11-20:
   the package's *Staged Packages*; a maintainer approves it there or with
   `npm stage approve <stage-id>`, with 2FA, and it goes public with the
   tag it was staged with (`latest` by default, fixed once staged).[^npm-stage]
-  The release workflow stages since the user's decision of 2026-11-27.
+  The user chose on 2026-11-27 to publish directly instead (`npm
+  publish` ticked on the trusted publisher), so the workflow does not stage.
 
 The name `prospicio` was free on npm on 2026-11-20 (`npm view prospicio`
 returned 404). `npm pack --dry-run` on the 0.1.0 build lists 18 files, 1.6
