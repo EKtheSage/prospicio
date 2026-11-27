@@ -73,19 +73,19 @@ use crate::triangle::Label;
 /// `reserves`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DevelopmentPatterns {
-    n_sims: usize,
-    segments: Vec<SegmentPatterns>,
+    pub(crate) n_sims: usize,
+    pub(crate) segments: Vec<SegmentPatterns>,
 }
 
 /// One segment's patterns: the cumulative share of the ultimate at each of
 /// [`ages`](Self::ages) in every simulation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SegmentPatterns {
-    label: Vec<String>,
-    origin_grain: Grain,
-    ages: Vec<Lag>,
+    pub(crate) label: Vec<String>,
+    pub(crate) origin_grain: Grain,
+    pub(crate) ages: Vec<Lag>,
     /// Row-major over simulation × age.
-    draws: Vec<f64>,
+    pub(crate) draws: Vec<f64>,
 }
 
 /// The basis [`DevelopmentPatterns::monthly`] puts a pattern on.
