@@ -28,14 +28,8 @@ pub(crate) fn underwriting_basis(value: &Robj) -> Result<UnderwritingBasis> {
 /// The reading named `"weibull"`, `"loglogistic"` or `"ln-linear"`
 /// (`reserving-v02.md`, decision 25).
 fn annual_reading(name: &str) -> Result<AnnualReading> {
-    match name {
-        "weibull" => Ok(AnnualReading::Curve(GrowthCurve::Weibull)),
-        "loglogistic" => Ok(AnnualReading::Curve(GrowthCurve::LogLogistic)),
-        "ln-linear" => Ok(AnnualReading::LnLinear),
-        _ => Err(Error::Other(format!(
-            "reading must be \"weibull\", \"loglogistic\" or \"ln-linear\", got {name:?}"
-        ))),
-    }
+    AnnualReading::from_name(name)
+        .ok_or_else(|| crate::unknown_name("reading", name, AnnualReading::NAMES))
 }
 
 /// An underwriting basis of `writing` by month and policies of `months`
