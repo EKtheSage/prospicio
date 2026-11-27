@@ -441,19 +441,8 @@ pub(crate) fn mack_bootstrap(
     if n_sims == 0 {
         return Err(Error::Other("n_sims must be positive".into()));
     }
-    let process = match process {
-        "gamma" => MackProcess::Gamma,
-        "lognormal" => MackProcess::Lognormal,
-        "residuals" => MackProcess::Residuals,
-        "normal" => MackProcess::Normal,
-        "none" => MackProcess::None,
-        _ => {
-            return Err(Error::Other(format!(
-                "process must be \"gamma\", \"lognormal\", \"residuals\", \"normal\" or \
-                 \"none\", got \"{process}\""
-            )));
-        }
-    };
+    let process = MackProcess::from_name(process)
+        .ok_or_else(|| crate::unknown_name("process", process, MackProcess::NAMES))?;
     Ok(MackBootstrap {
         n_sims,
         seed: whole(seed, "seed")?,
