@@ -4067,6 +4067,7 @@ dependencies = [
  "prospicio-aggregate",
  "prospicio-bayes",
  "prospicio-core",
+ "prospicio-esg",
  "prospicio-glm",
  "prospicio-math",
  "prospicio-models",
@@ -4108,6 +4109,15 @@ dependencies = [
  "rand_chacha 0.10.0",
  "rand_core 0.10.1",
  "rayon",
+]
+
+[[package]]
+name = "prospicio-esg"
+version = "0.3.0"
+dependencies = [
+ "prospicio-core",
+ "prospicio-math",
+ "prospicio-prob",
 ]
 
 [[package]]
@@ -4236,6 +4246,7 @@ dependencies = [
  "prospicio-aggregate",
  "prospicio-bayes",
  "prospicio-core",
+ "prospicio-esg",
  "prospicio-glm",
  "prospicio-math",
  "prospicio-models",

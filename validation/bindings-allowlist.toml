@@ -53,6 +53,18 @@
 "stan_csv::StanFit" = "unbound on 2026-10-28 (seed); review"
 "stan_csv::parse" = "unbound on 2026-10-28 (seed); review"
 
+[python.prospicio_esg]
+"Cir" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Curve" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Esg" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"HullWhite" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"InitialCurve" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Scenarios" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"ShortRate" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Step" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Svensson" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Vasicek" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+
 [python.prospicio_glm]
 "quantile::rows_by_tau" = "a scalar helper that the Excel add-in uses (#976); Python has it natively (QuantileFits.predict(rearrange=...) covers it)"
 "wald::critical_value" = "a scalar helper that the Excel add-in uses (#976); Python has it natively (scipy.stats.norm.ppf)"
@@ -347,6 +359,18 @@
 "ppc::check_with" = "unbound on 2026-10-28 (seed); review"
 "stan_csv::StanFit" = "unbound on 2026-10-28 (seed); review"
 "stan_csv::parse" = "unbound on 2026-10-28 (seed); review"
+
+[r.prospicio_esg]
+"Cir" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Curve" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Esg" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"HullWhite" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"InitialCurve" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Scenarios" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"ShortRate" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Step" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Svensson" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
+"Vasicek" = "the scenario generator is bound with the projection (esg-dfa.md, PR 5)"
 
 [r.prospicio_glm]
 "quantile::rows_by_tau" = "a scalar helper that the Excel add-in uses (#976); R has it natively (predict(..., rearrange = TRUE) covers it)"

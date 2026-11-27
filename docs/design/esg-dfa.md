@@ -3,8 +3,9 @@
 Status: **Accepted** (2026-11-27; issue #983, in the 0.4.0 milestone at the
 user's request of 2026-11-27). The user decided open decisions 1 to 10 on
 2026-11-27 as recommended (6: the AR(2) cycle; 10: option (b) for the
-curve fits and Hull-White's `θ`, the rest as inputs first). Nothing is
-built yet. Lane: Aggregate (a new
+curve fits and Hull-White's `θ`, the rest as inputs first). PR 1 (the
+crate `prospicio-esg`) is built (branch
+`claude/project-thread-n5mttf-esg-crate`); PRs 2 to 6 are to come. Lane: Aggregate (a new
 crate, decision 1; the lane table's Owns column changes in a small PR of
 its own) · Depends on: `aggregate.md` (`EventSet`, `Tower::apply_term`,
 `EventSet::correlated_years`, `ruin`), `reserving-inflation.md` (Reserving
@@ -301,6 +302,33 @@ matrix of simulations by steps) and the projection's inputs as columns.
    (validation 1 to 3); a new crate, so it also adds its entry in
    `[workspace.dependencies]`, the umbrella re-export, the WASM check and
    the lane table's small PR.
+   **Done** (branch `claude/project-thread-n5mttf-esg-crate`;
+   `validation/tests/aggregate_esg.rs`). What it settled:
+   * the crate depends on `prospicio-core`, `-math` and `-prob` only, as
+     decision 1 has it, so a simulated curve is a `Curve` of annually
+     compounded spot rates by maturity, for
+     `prospicio_reserving::DiscountCurve::spot`, rather than a
+     `DiscountCurve`; Hull-White's initial curve is an `InitialCurve` (a
+     spot curve on `DiscountCurve`'s convention, or a `Svensson` fit),
+     and the test checks that both conventions price alike to 1e-10;
+   * Vasicek and Hull-White simulate the Gaussian factor and its integral
+     over a step jointly and exactly, so their deflators are exact and
+     Hull-White's reproduce the initial curve in expectation; CIR's rate is
+     exact (the noncentral chi-square, as `(Z + √λ)² + χ²(d - 1)` when its
+     degrees exceed 1 and as a Poisson mixture otherwise) and its integral
+     the trapezoid over the step, which moves a monthly deflator by far
+     less than a basis point of price;
+   * `Svensson::fit` searches the decay times on a log grid of 0.25 to 30
+     years with the betas linear, then refines them by Nelder-Mead; it
+     recovers a curve from its yields to a basis point. The Federal
+     Reserve's published parameters (validation 3) could not be fetched
+     from a cloud session (`knowledge/environment/cloud-network.md`): that
+     parity waits for a local session, as a Next item;
+   * paths are drawn one after another, each from its own stream
+     (`StreamRng::new(seed, path)`), with no threads, so the crate is in
+     the WASM scope and a later parallel split keeps the numbers;
+   * the correlation of the shocks arrives with inflation in PR 2, the
+     first second shock.
 2. Inflation and superimposed inflation, `IndexPaths` from the scenarios
    (validation 4).
 3. `prospicio-aggregate::dfa`: `Projection` and `ProjectionPaths`, the

@@ -11,6 +11,7 @@ default-members = [
     "crates/prospicio-reserving",
     "crates/prospicio-aggregate",
     "crates/prospicio-pricing",
+    "crates/prospicio-esg",
     "crates/prospicio-models",
     "crates/prospicio-glm",
     "crates/prospicio-bayes",
@@ -44,6 +45,7 @@ prospicio = { version = "0.3.0", path = "crates/prospicio" }
 prospicio-core = { version = "0.3.0", path = "crates/prospicio-core" }
 prospicio-math = { version = "0.3.0", path = "crates/prospicio-math" }
 prospicio-aggregate = { version = "0.3.0", path = "crates/prospicio-aggregate" }
+prospicio-esg = { version = "0.3.0", path = "crates/prospicio-esg" }
 prospicio-prob = { version = "0.3.0", path = "crates/prospicio-prob" }
 prospicio-pricing = { version = "0.3.0", path = "crates/prospicio-pricing" }
 prospicio-models = { version = "0.3.0", path = "crates/prospicio-models" }
