@@ -40472,6 +40472,9 @@ def buhlmann_straub(ratios: Sequence[Sequence[float]], weights: Sequence[Sequenc
     group ``i`` in period ``j`` has ratio ``X_ij`` (loss per unit of
     exposure) with weight ``w_ij``. Without weights it is Bühlmann's model.
     
+    The method, its estimators and its reference are documented once, in
+    the Rust reference: https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.BuhlmannStraub.html
+    
     Parameters
     ----------
     ratios : list of list of float
@@ -42407,15 +42410,12 @@ def hachemeister(ratios: Sequence[Sequence[float]], design: Sequence[Sequence[fl
     weight ``w_it`` and a mean ``design[t] @ beta_i`` on a design shared by
     the risks (a trend line ``[1, t]``, say). Each risk's own weighted least
     squares fit is shrunk towards the collective by a credibility matrix.
+    ``estimator`` applies only with ``adjust_intercept``, whose design's
+    first column must be constant; at the origin the between covariance is
+    always Hachemeister's iterative estimator, as in ``actuar``.
     
-    At the origin the matrices are full and the between covariance is
-    Hachemeister's iterative estimator whatever ``estimator`` says (as
-    ``actuar``; on near-collinear coefficients its iteration may wander in
-    the last digits). With ``adjust_intercept`` (``actuar``'s
-    ``adj.intercept``) the design is orthogonalised under the collective
-    weights, the matrices are diagonal and each diagonal is estimated as
-    Bühlmann–Straub's by ``estimator``; the design's first column must
-    then be constant.
+    The method, its estimators and its reference are documented once, in
+    the Rust reference: https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.Hachemeister.html
     
     Parameters
     ----------

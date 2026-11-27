@@ -35,7 +35,8 @@ The Bühlmann–Straub model, as \code{actuar::cm(~group)}: group \code{i} in pe
 Without weights it is Bühlmann's model. The between-group variance is
 Bühlmann and Straub's unbiased estimator (\code{actuar}'s
 \code{"Buhlmann-Gisler"} and \code{"Ohlsson"}) or Bichsel and Straub's iterative
-one.
+one. The method, its estimators and its reference are documented once,
+in the \href{https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.BuhlmannStraub.html}{Rust reference}.
 }
 \examples{
 x <- rbind(c(1, 2, 3), c(4, 5, 9))

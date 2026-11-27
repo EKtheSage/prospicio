@@ -86,5 +86,7 @@ Limited fluctuation credibility (`LimitedFluctuation`,
 `credibility_standard()`) is the pilot, and the Mack bootstrap
 (`MackBootstrap`, `mack_bootstrap()`, `mack_one_year()`) followed, its
 link to the `mack_bootstrap` module page, whose documentation holds the
-method. The next family is the other credibility models
-(Buhlmann-Straub, Hachemeister).
+method. Bühlmann–Straub (`buhlmann_straub`) and Hachemeister
+(`hachemeister`) closed #991: their binding docs keep the model in a
+sentence and what the arguments do, and link to their structs' pages.
+A new binding follows the same rule from its first PR.
