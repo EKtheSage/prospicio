@@ -1,0 +1,1 @@
+* **Creation**: [IFRS 17's Illustrative Examples](/references/ifrs17-illustrative-examples.md), from #982 (branch claude/project-thread-n5mttf-ifrs17-note): the index of the examples and the figures of Examples 1, 2, 3, 6, 7 and 8's first year (the CSM of 235 accreting 12 and releasing 82; a loss component allocated at 529 / 1,329), proposed as the measurement's parity targets.

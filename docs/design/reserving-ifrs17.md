@@ -343,7 +343,8 @@ ULAE and expense risk (`expense.rs` exists; the RA would cover them under
 IFRS 17 B89-B90), reinsurance held (a separate RA under IFRS 17 para. 64),
 an illiquidity premium (the user brings it in the curve), the Solvency II
 lambda and floor from 2027 (Delegated Regulation 2026/269; not verified
-against the English text), currency, the LRC.
+against the English text), currency, the LRC. The LRC, the CSM, onerous groups, OCI and reinsurance held are
+`reserving-ifrs17-measurement.md` (#982).
 
 ## Open decisions
 
