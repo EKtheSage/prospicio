@@ -1,15 +1,16 @@
 ---
 type: Reference
 title: IFRS 17's Illustrative Examples
-description: The IFRS Foundation's worked examples accompanying IFRS 17, the parity targets proposed for the measurement of a group of contracts (GMM, PAA, reinsurance held); Examples 1, 2, 3, 6, 7 and 8's first year were read, round to whole units at each step, and give the CSM roll-forward and the loss component's allocation.
+description: The IFRS Foundation's worked examples accompanying IFRS 17, the parity targets of the measurement of a group of contracts (GMM, PAA, reinsurance held); Examples 1, 2, 3, 6, 7 and 8 were read, round to whole units at each step, and ifrs17::Group matches 1, 2, 3A, 7 and 8 in CI.
 resource: https://www.ifrs.org/content/dam/ifrs/publications/html-standards/english/2025/issued/ifrs17-ie.html
 tags: [reserving, ifrs17, csm, loss-component, parity]
-status: draft
+status: stable
+verified: { by: process:ci, at: 2026-11-27T23:00:00Z }
 generated: { by: claude-code/cloud-session, at: 2026-11-27T15:00:00Z }
 sources:
   - id: ie
     resource: https://www.ifrs.org/content/dam/ifrs/publications/html-standards/english/2025/issued/ifrs17-ie.html
-    title: IFRS Foundation, IFRS 17 Insurance Contracts, Illustrative Examples (2025 HTML edition), read on 2026-11-27 up to IE93
+    title: IFRS Foundation, IFRS 17 Insurance Contracts, Illustrative Examples (2025 HTML edition), read on 2026-11-27 up to IE98
   - id: note
     resource: ../docs/design/reserving-ifrs17-measurement.md
     title: The design note that proposes them as parity targets (#982)

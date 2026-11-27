@@ -74,6 +74,7 @@ pub mod expense;
 mod fit_json;
 pub mod frame;
 pub mod frequency_severity;
+pub mod ifrs17;
 pub mod industry_prior;
 pub mod inflation;
 pub mod inflation_draws;

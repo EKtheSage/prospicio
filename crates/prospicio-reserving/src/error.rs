@@ -167,6 +167,8 @@ pub enum Error {
     /// columns are not observed at the same cells, or a cell is not
     /// positive ([`MunichChainLadder`](crate::MunichChainLadder)).
     Munich(String),
+    /// IFRS 17 measurement of a group of contracts (`ifrs17`).
+    Ifrs17(String),
     /// A growth curve cannot be fitted to this benchmark pattern
     /// ([`BenchmarkCurve`](crate::BenchmarkCurve)).
     BenchmarkCurve(String),
@@ -319,6 +321,7 @@ impl fmt::Display for Error {
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::Counts(why) => write!(f, "claim counts: {why}"),
             Self::Munich(why) => write!(f, "Munich chain ladder: {why}"),
+            Self::Ifrs17(why) => write!(f, "IFRS 17: {why}"),
             Self::BenchmarkCurve(why) => write!(f, "benchmark curve: {why}"),
             Self::PaidIncurred(why) => write!(f, "paid-incurred chain: {why}"),
             Self::DevelopmentCurve(why) => write!(f, "development curve: {why}"),
