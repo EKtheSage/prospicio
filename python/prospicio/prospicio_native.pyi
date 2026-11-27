@@ -7311,6 +7311,7 @@ class ChainLadderFit:
     >>> fit.segment(lob="Home").ldf
     [2.0]
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def blended_ldf(self, /) -> list[float]:
@@ -7357,6 +7358,24 @@ class ChainLadderFit:
     def excluded(self, /) -> bool:
         """
         Whether ``n_periods`` or the drops left out a link ratio at some age.
+        """
+    @staticmethod
+    def from_json(text: str) -> ChainLadderFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        ChainLadderFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -7528,6 +7547,28 @@ class ChainLadderFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly: every number bit for bit, as ``Triangle.to_json``
+        does. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import ChainLadder, ChainLadderFit, Triangle
+        >>> tri = Triangle.from_long(origin=[2020, 2020, 2021], development=[12, 24, 12],
+        ...                          values={"paid": [100.0, 150.0, 110.0]})
+        >>> fit = ChainLadder().fit(tri, "paid")
+        >>> ChainLadderFit.from_json(fit.to_json()).ultimate == fit.ultimate
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     @property
     def total_reserve(self, /) -> float:

@@ -1,0 +1,435 @@
+//! Fitted reserving models as JSON documents, for saving a fit exactly as
+//! it is and for Python's `pickle` (#978): [`ChainLadderFit`] and the
+//! fits of every segment of a triangle ([`SegmentFits`]).
+//!
+//! Each document is an object with `"format"` and `"format_version"`, as
+//! the triangle's (`triangle/json.rs`) is. Numbers round-trip bit for bit;
+//! a non-finite number is written as the string `"NaN"`, `"inf"` or
+//! `"-inf"`, and an absent optional number as `null`. A period is written
+//! as its first month (`"YYYY-MM"`) and its grain (`"M"`, `"Q"`, `"S"` or
+//! `"Y"`).
+//!
+//! ```json
+//! {"format": "risk_rs.chain_ladder_fits", "format_version": 1,
+//!  "keys": ["lob"], "labels": [["Auto"]],
+//!  "fits": [{"origins": [["2020-01", "Y"], ...], "development": {...},
+//!            "tail": {...}, "cdf": [...], ...}]}
+//! ```
+
+use prospicio_core::Period;
+use serde_json::{Value, json};
+
+use crate::chain_ladder::ChainLadderFit;
+use crate::development::DevelopmentFit;
+use crate::error::{Error, Result};
+use crate::segments::SegmentFits;
+use crate::tail::TailFit;
+use crate::triangle::Label;
+use crate::triangle::json::{
+    grain_code, grain_from_json, month_from_json, month_to_json, number_from_json, number_to_json,
+};
+
+/// Value of the `format` field of one chain-ladder fit.
+const CHAIN_LADDER: &str = "risk_rs.chain_ladder_fit";
+/// Value of the `format` field of the fits of every segment.
+const CHAIN_LADDER_FITS: &str = "risk_rs.chain_ladder_fits";
+/// The format version this build writes and the newest it reads.
+const FORMAT_VERSION: u64 = 1;
+
+type Read<T> = std::result::Result<T, String>;
+
+impl ChainLadderFit {
+    /// This fit as a JSON document; [`from_json`](Self::from_json) reads it
+    /// back to the same fit, every number bit for bit (a NaN sigma
+    /// included, which `==` would not call equal).
+    ///
+    /// ```
+    /// use prospicio_reserving::{ChainLadder, ChainLadderFit, DevelopmentColumn, Grain, Long, Month, Triangle};
+    ///
+    /// let origin = [2020, 2020, 2021].map(Month::january);
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 12]),
+    ///     values: &[("paid", &[100.0, 150.0, 110.0])],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let fit = ChainLadder::default().fit(&tri, "paid")?;
+    /// let back = ChainLadderFit::from_json(&fit.to_json())?;
+    /// assert_eq!(back.ultimate, fit.ultimate);
+    /// assert_eq!(back.to_json(), fit.to_json());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn to_json(&self) -> String {
+        let mut doc = chain_ladder_value(self);
+        let obj = doc.as_object_mut().expect("an object");
+        obj.insert("format".into(), json!(CHAIN_LADDER));
+        obj.insert("format_version".into(), json!(FORMAT_VERSION));
+        serde_json::to_string(&doc).expect("a JSON value serializes")
+    }
+
+    /// Reads a document written by [`to_json`](Self::to_json). Fails on
+    /// malformed JSON, another format, a newer format version, or parts
+    /// that do not fit together.
+    pub fn from_json(text: &str) -> Result<Self> {
+        document(text, CHAIN_LADDER)
+            .and_then(|doc| chain_ladder_from_value(&doc))
+            .map_err(|msg| data_error("chain-ladder fit", msg))
+    }
+}
+
+impl SegmentFits<ChainLadderFit> {
+    /// The fits of every segment as one JSON document, with the key names
+    /// and labels; [`from_json`](Self::from_json) reads it back.
+    pub fn to_json(&self) -> String {
+        let doc = json!({
+            "format": CHAIN_LADDER_FITS,
+            "format_version": FORMAT_VERSION,
+            "keys": self.key_names,
+            "labels": self.labels.iter().map(Label::parts).collect::<Vec<_>>(),
+            "fits": self.fits.iter().map(chain_ladder_value).collect::<Vec<_>>(),
+        });
+        serde_json::to_string(&doc).expect("a JSON value serializes")
+    }
+
+    /// Reads a document written by [`to_json`](Self::to_json).
+    pub fn from_json(text: &str) -> Result<Self> {
+        document(text, CHAIN_LADDER_FITS)
+            .and_then(|doc| segments_from_value(&doc, chain_ladder_from_value))
+            .map_err(|msg| data_error("chain-ladder fits", msg))
+    }
+}
+
+fn data_error(what: &str, msg: String) -> Error {
+    Error::Core(prospicio_core::Error::Data(format!("{what} JSON: {msg}")))
+}
+
+/// The parsed document, checked to be `format` at a version this build
+/// reads.
+pub(crate) fn document(text: &str, format: &str) -> Read<Value> {
+    let doc: Value = serde_json::from_str(text).map_err(|e| format!("not a JSON document: {e}"))?;
+    if doc.get("format").and_then(Value::as_str) != Some(format) {
+        return Err(format!("format is not {format:?}"));
+    }
+    match doc.get("format_version").and_then(Value::as_u64) {
+        Some(v) if v <= FORMAT_VERSION => Ok(doc),
+        v => Err(format!("format version {v:?} is not supported")),
+    }
+}
+
+/// Key names, labels and one fit per label, each read by `fit`.
+pub(crate) fn segments_from_value<T>(
+    doc: &Value,
+    fit: impl Fn(&Value) -> Read<T>,
+) -> Read<SegmentFits<T>> {
+    let key_names = strings(field(doc, "keys")?, "\"keys\"")?;
+    let labels = array(doc, "labels")?
+        .iter()
+        .map(|l| strings(l, "a label").map(Label::new))
+        .collect::<Read<Vec<_>>>()?;
+    if labels.iter().any(|l| l.parts().len() != key_names.len()) {
+        return Err("a label does not have one part per key".into());
+    }
+    let fits = array(doc, "fits")?
+        .iter()
+        .map(fit)
+        .collect::<Read<Vec<_>>>()?;
+    if fits.len() != labels.len() {
+        return Err("\"fits\" does not have one fit per label".into());
+    }
+    Ok(SegmentFits {
+        key_names,
+        labels,
+        fits,
+    })
+}
+
+fn chain_ladder_value(fit: &ChainLadderFit) -> Value {
+    json!({
+        "origins": fit.origins.iter().map(|&p| period_to_json(p)).collect::<Vec<_>>(),
+        "development": development_value(&fit.development),
+        "tail": tail_value(&fit.tail),
+        "cdf": numbers(&fit.cdf),
+        "latest_position": fit.latest_position,
+        "latest": numbers(&fit.latest),
+        "ultimate": numbers(&fit.ultimate),
+        "pattern_rescale": fit.pattern_rescale.map(number_to_json),
+        "pattern_tail": fit.pattern_tail.map(number_to_json),
+    })
+}
+
+fn chain_ladder_from_value(v: &Value) -> Read<ChainLadderFit> {
+    let origins = array(v, "origins")?
+        .iter()
+        .map(period_from_json)
+        .collect::<Read<Vec<_>>>()?;
+    let fit = ChainLadderFit {
+        development: development_from_value(field(v, "development")?)?,
+        tail: tail_from_value(field(v, "tail")?)?,
+        cdf: floats(v, "cdf")?,
+        latest_position: counts(v, "latest_position")?,
+        latest: floats(v, "latest")?,
+        ultimate: floats(v, "ultimate")?,
+        pattern_rescale: optional_float(v, "pattern_rescale")?,
+        pattern_tail: optional_float(v, "pattern_tail")?,
+        origins,
+    };
+    let n = fit.origins.len();
+    if [
+        fit.latest_position.len(),
+        fit.latest.len(),
+        fit.ultimate.len(),
+    ] != [n; 3]
+    {
+        return Err("the per-origin vectors do not have one entry per origin".into());
+    }
+    Ok(fit)
+}
+
+pub(crate) fn development_value(d: &DevelopmentFit) -> Value {
+    json!({
+        "development": d.development,
+        "ldf": numbers(&d.ldf),
+        "sigma": numbers(&d.sigma),
+        "std_err": numbers(&d.std_err),
+        "volume": numbers(&d.volume),
+        "alpha": number_to_json(d.alpha),
+        "n_links": d.n_links,
+        "excluded": d.excluded,
+        "selected": d.selected.iter().map(|s| s.map(number_to_json)).collect::<Vec<_>>(),
+        "weight": numbers(&d.weight),
+    })
+}
+
+pub(crate) fn development_from_value(v: &Value) -> Read<DevelopmentFit> {
+    let development = array(v, "development")?
+        .iter()
+        .map(|a| {
+            a.as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or_else(|| "\"development\" holds a non-age".to_string())
+        })
+        .collect::<Read<Vec<_>>>()?;
+    let selected = array(v, "selected")?
+        .iter()
+        .map(|s| match s {
+            Value::Null => Ok(None),
+            s => number_from_json(s).map(Some),
+        })
+        .collect::<Read<Vec<_>>>()?;
+    Ok(DevelopmentFit {
+        development,
+        ldf: floats(v, "ldf")?,
+        sigma: floats(v, "sigma")?,
+        std_err: floats(v, "std_err")?,
+        volume: floats(v, "volume")?,
+        alpha: number_from_json(field(v, "alpha")?)?,
+        n_links: counts(v, "n_links")?,
+        excluded: field(v, "excluded")?
+            .as_bool()
+            .ok_or("\"excluded\" is not a boolean")?,
+        selected,
+        weight: floats(v, "weight")?,
+    })
+}
+
+pub(crate) fn tail_value(t: &TailFit) -> Value {
+    json!({
+        "attachment": t.attachment,
+        "ldf": numbers(&t.ldf),
+        "factor": number_to_json(t.factor),
+        "sigma": number_to_json(t.sigma),
+        "std_err": number_to_json(t.std_err),
+    })
+}
+
+pub(crate) fn tail_from_value(v: &Value) -> Read<TailFit> {
+    Ok(TailFit {
+        attachment: count(field(v, "attachment")?, "\"attachment\"")?,
+        ldf: floats(v, "ldf")?,
+        factor: number_from_json(field(v, "factor")?)?,
+        sigma: number_from_json(field(v, "sigma")?)?,
+        std_err: number_from_json(field(v, "std_err")?)?,
+    })
+}
+
+pub(crate) fn period_to_json(p: Period) -> Value {
+    json!([month_to_json(p.start()), grain_code(p.grain())])
+}
+
+pub(crate) fn period_from_json(v: &Value) -> Read<Period> {
+    match v.as_array().map(Vec::as_slice) {
+        Some([start, grain]) => {
+            let start = month_from_json(start)?;
+            let grain = grain_from_json(grain)?;
+            let p = Period::containing(start, grain);
+            if p.start() != start {
+                return Err(format!("{v} does not start a period of its grain"));
+            }
+            Ok(p)
+        }
+        _ => Err(format!("{v} is not a period ([\"YYYY-MM\", grain])")),
+    }
+}
+
+pub(crate) fn numbers(x: &[f64]) -> Vec<Value> {
+    x.iter().map(|&v| number_to_json(v)).collect()
+}
+
+pub(crate) fn field<'a>(v: &'a Value, name: &str) -> Read<&'a Value> {
+    v.get(name).ok_or_else(|| format!("missing {name:?}"))
+}
+
+pub(crate) fn array<'a>(v: &'a Value, name: &str) -> Read<&'a Vec<Value>> {
+    field(v, name)?
+        .as_array()
+        .ok_or_else(|| format!("{name:?} is not an array"))
+}
+
+pub(crate) fn floats(v: &Value, name: &str) -> Read<Vec<f64>> {
+    array(v, name)?.iter().map(number_from_json).collect()
+}
+
+pub(crate) fn optional_float(v: &Value, name: &str) -> Read<Option<f64>> {
+    match field(v, name)? {
+        Value::Null => Ok(None),
+        x => number_from_json(x).map(Some),
+    }
+}
+
+pub(crate) fn count(v: &Value, what: &str) -> Read<usize> {
+    v.as_u64()
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or_else(|| format!("{what} is not a count"))
+}
+
+pub(crate) fn counts(v: &Value, name: &str) -> Read<Vec<usize>> {
+    array(v, name)?
+        .iter()
+        .map(|c| count(c, &format!("an entry of {name:?}")))
+        .collect()
+}
+
+pub(crate) fn strings(v: &Value, what: &str) -> Read<Vec<String>> {
+    v.as_array()
+        .ok_or_else(|| format!("{what} is not an array"))?
+        .iter()
+        .map(|s| {
+            s.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{what} holds a non-string"))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ChainLadder, DevelopmentColumn, Grain, Long, Month, Tail, Triangle};
+
+    fn triangle() -> Triangle {
+        let origin = [2020, 2020, 2020, 2021, 2021, 2022, 2020, 2020, 2021].map(Month::january);
+        Triangle::from_long(&Long {
+            keys: &[("lob", &["A", "A", "A", "A", "A", "A", "B", "B", "B"])],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12, 12, 24, 12]),
+            values: &[(
+                "paid",
+                &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0, 50.0, 80.0, 60.0],
+            )],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    fn one_segment() -> Triangle {
+        let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12]),
+            values: &[("paid", &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0])],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    fn bits(x: &[f64]) -> Vec<u64> {
+        x.iter().map(|v| v.to_bits()).collect()
+    }
+
+    #[test]
+    fn round_trips_every_segment_bit_for_bit() {
+        let cl = ChainLadder {
+            tail: Tail::from(1.05),
+            ..ChainLadder::default()
+        };
+        let fits = cl.fit_segments(&triangle(), "paid").unwrap();
+        let back = SegmentFits::<ChainLadderFit>::from_json(&fits.to_json()).unwrap();
+        assert_eq!(back.to_json(), fits.to_json());
+        assert_eq!(
+            (&back.key_names, &back.labels),
+            (&fits.key_names, &fits.labels)
+        );
+        for (a, b) in back.fits.iter().zip(&fits.fits) {
+            assert_eq!(bits(&a.ultimate), bits(&b.ultimate));
+            assert_eq!(bits(&a.cdf), bits(&b.cdf));
+            assert_eq!(bits(&a.development.sigma), bits(&b.development.sigma));
+        }
+        let one = &fits.fits[0];
+        assert_eq!(
+            ChainLadderFit::from_json(&one.to_json()).unwrap().to_json(),
+            one.to_json()
+        );
+    }
+
+    #[test]
+    fn non_finite_and_absent_numbers_survive() {
+        let mut fit = ChainLadder::default().fit(&one_segment(), "paid").unwrap();
+        fit.development.sigma[0] = f64::NAN;
+        fit.development.std_err[0] = f64::INFINITY;
+        fit.development.selected = vec![None, Some(1.2)];
+        fit.development.weight = vec![0.0, 1.0];
+        fit.development.sigma[1] = 0.25;
+        fit.pattern_rescale = Some(f64::NEG_INFINITY);
+        let back = ChainLadderFit::from_json(&fit.to_json()).unwrap();
+        assert!(back.development.sigma[0].is_nan());
+        assert_eq!(back.development.std_err[0], f64::INFINITY);
+        assert_eq!(back.development.selected, vec![None, Some(1.2)]);
+        assert_eq!(back.pattern_rescale, Some(f64::NEG_INFINITY));
+        assert_eq!(back.pattern_tail, None);
+    }
+
+    #[test]
+    fn refuses_other_documents() {
+        let fit = ChainLadder::default().fit(&one_segment(), "paid").unwrap();
+        let text = fit.to_json();
+        assert!(ChainLadderFit::from_json("{}").is_err());
+        assert!(ChainLadderFit::from_json(&triangle().to_json()).is_err());
+        assert!(
+            ChainLadderFit::from_json(
+                &text.replace("\"format_version\":1", "\"format_version\":2")
+            )
+            .is_err()
+        );
+        assert!(
+            ChainLadderFit::from_json(&text.replace("[\"2021-01\",\"Y\"]", "[\"2021-02\",\"Y\"]"))
+                .is_err()
+        );
+        let fits = ChainLadder::default()
+            .fit_segments(&triangle(), "paid")
+            .unwrap();
+        assert!(
+            SegmentFits::<ChainLadderFit>::from_json(
+                &fits.to_json().replace("[\"B\"]", "[\"B\",\"x\"]")
+            )
+            .is_err()
+        );
+    }
+}
