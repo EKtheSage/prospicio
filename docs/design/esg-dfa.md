@@ -1,8 +1,10 @@
 # Design note: an economic scenario generator and multi-year DFA
 
-Status: **Proposed** (2026-11-27; issue #983, in the 0.4.0 milestone at the
-user's request of 2026-11-27). Nothing is built; the open decisions below
-wait for the user, each with a recommendation. Lane: Aggregate (a new
+Status: **Accepted** (2026-11-27; issue #983, in the 0.4.0 milestone at the
+user's request of 2026-11-27). The user decided open decisions 1 to 10 on
+2026-11-27 as recommended (6: the AR(2) cycle; 10: option (b) for the
+curve fits and Hull-White's `θ`, the rest as inputs first). Nothing is
+built yet. Lane: Aggregate (a new
 crate, decision 1; the lane table's Owns column changes in a small PR of
 its own) · Depends on: `aggregate.md` (`EventSet`, `Tower::apply_term`,
 `EventSet::correlated_years`, `ruin`), `reserving-inflation.md` (Reserving
