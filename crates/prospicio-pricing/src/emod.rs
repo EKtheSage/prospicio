@@ -1,5 +1,10 @@
 //! Experience modification: the split plan of workers compensation
-//! (NCCI's Experience Rating Plan). See `docs/design/primary-rating.md`.
+//! (NCCI's Experience Rating Plan, [`SplitPlan`]) and the experience ratio
+//! plan of general liability (ISO's Commercial General Liability
+//! Experience Rating Plan, [`ExperienceRatioPlan`]). See
+//! `docs/design/primary-rating.md`.
+//!
+//! # The split plan
 //!
 //! The plan compares a risk's own losses with what its payroll would be
 //! expected to produce, giving the small, frequent losses (the **primary**
@@ -44,6 +49,39 @@
 //! assert!((exhibit.actual_primary - (18_000.0 + 0.3 * 2_000.0)).abs() < 1e-9);
 //! assert!((exhibit.actual_excess - 7_000.0).abs() < 1e-9);
 //! assert!(exhibit.modification > 1.0);
+//! ```
+//!
+//! # The experience ratio plan
+//!
+//! The general liability plan compares an actual experience ratio with
+//! the expected one and credits or debits the difference at the
+//! credibility `Z`:
+//!
+//! ```text
+//! AER = (reported losses and ALAE + expected unreported) / subject loss cost
+//! mod = 1 + Z (AER − EER) / EER
+//! ```
+//!
+//! Each occurrence enters at its basic-limits loss plus its allocated loss
+//! adjustment expense, held together to the maximum single limit (MSL).
+//! The losses not yet reported for a year are expected as the year's
+//! company subject loss cost times its detrend factor, the expected
+//! experience ratio `EER` and the share of losses still unreported at the
+//! evaluation. The subject loss costs, `EER`, MSL, credibility and
+//! unreported shares are the bureau's tables, and inputs here.
+//!
+//! ```
+//! use prospicio_pricing::emod::{ExperienceRatioPlan, LiabilityYear};
+//!
+//! let plan = ExperienceRatioPlan::new(50_000.0, 0.8, 0.3).unwrap();
+//! let year = LiabilityYear::new(100_000.0, 0.25)
+//!     .unwrap()
+//!     .with_occurrence(70_000.0, 5_000.0)
+//!     .unwrap();
+//! let x = plan.modification(&[year]).unwrap();
+//! // 50,000 reported (to the MSL) and 100,000 x 0.8 x 0.25 unreported.
+//! assert!((x.actual_ratio - 0.7).abs() < 1e-12);
+//! assert!((x.modification - (1.0 + 0.3 * (0.7 - 0.8) / 0.8)).abs() < 1e-12);
 //! ```
 
 use std::collections::HashMap;
@@ -411,6 +449,188 @@ pub struct SplitExhibit {
     pub modification: f64,
 }
 
+/// The general liability experience ratio plan: the maximum single limit,
+/// the expected experience ratio and the credibility.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExperienceRatioPlan {
+    /// The most of one occurrence's basic-limits loss and ALAE together
+    /// that enters.
+    pub maximum_single_limit: f64,
+    /// The expected experience ratio `EER`.
+    pub expected_ratio: f64,
+    /// The credibility `Z`, from 0 to 1.
+    pub credibility: f64,
+}
+
+impl ExperienceRatioPlan {
+    /// A plan with this maximum single limit (infinite for none), expected
+    /// experience ratio and credibility.
+    pub fn new(maximum_single_limit: f64, expected_ratio: f64, credibility: f64) -> Result<Self> {
+        let plan = Self {
+            maximum_single_limit,
+            expected_ratio,
+            credibility,
+        };
+        plan.check()?;
+        Ok(plan)
+    }
+
+    fn check(&self) -> Result<()> {
+        limit("maximum_single_limit", self.maximum_single_limit)?;
+        if !(self.expected_ratio.is_finite() && self.expected_ratio > 0.0) {
+            return Err(invalid(
+                "expected_ratio",
+                self.expected_ratio,
+                "must be positive and finite",
+            ));
+        }
+        share("credibility", self.credibility)?;
+        Ok(())
+    }
+
+    /// The modification of a risk with these years of experience, with
+    /// every intermediate amount.
+    ///
+    /// Fails on a plan or year that is not valid, or when the years'
+    /// subject loss costs add up to zero.
+    pub fn modification(&self, years: &[LiabilityYear]) -> Result<RatioExhibit> {
+        self.check()?;
+        let mut rows = Vec::with_capacity(years.len());
+        for y in years {
+            y.check()?;
+            let reported: f64 = y
+                .occurrences
+                .iter()
+                .map(|&(loss, alae)| (loss + alae).min(self.maximum_single_limit))
+                .sum();
+            let expected_unreported =
+                y.subject_loss_cost * y.detrend_factor * self.expected_ratio * y.unreported_share;
+            rows.push(RatioYearRow {
+                subject_loss_cost: y.subject_loss_cost,
+                reported,
+                expected_unreported,
+            });
+        }
+        let subject_loss_cost: f64 = rows.iter().map(|r| r.subject_loss_cost).sum();
+        if subject_loss_cost <= 0.0 {
+            return Err(invalid(
+                "subject_loss_cost",
+                subject_loss_cost,
+                "the years' subject loss costs add up to zero",
+            ));
+        }
+        let reported: f64 = rows.iter().map(|r| r.reported).sum();
+        let expected_unreported: f64 = rows.iter().map(|r| r.expected_unreported).sum();
+        let actual_ratio = (reported + expected_unreported) / subject_loss_cost;
+        let credit_debit =
+            self.credibility * (actual_ratio - self.expected_ratio) / self.expected_ratio;
+        Ok(RatioExhibit {
+            years: rows,
+            subject_loss_cost,
+            reported,
+            expected_unreported,
+            actual_ratio,
+            expected_ratio: self.expected_ratio,
+            credibility: self.credibility,
+            credit_debit,
+            modification: 1.0 + credit_debit,
+        })
+    }
+}
+
+/// One policy year of a general liability risk's experience.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LiabilityYear {
+    /// The company subject basic-limits loss cost of the year.
+    pub subject_loss_cost: f64,
+    /// The share of the year's losses expected still unreported at the
+    /// evaluation (the bureau's table, by the year's age).
+    pub unreported_share: f64,
+    /// The factor that brings the subject loss cost to the year's level for
+    /// its expected unreported losses; 1 by default.
+    pub detrend_factor: f64,
+    /// Each occurrence's basic-limits loss and its ALAE.
+    pub occurrences: Vec<(f64, f64)>,
+}
+
+impl LiabilityYear {
+    /// A year of this subject loss cost and unreported share, no detrend,
+    /// and no occurrences yet.
+    pub fn new(subject_loss_cost: f64, unreported_share: f64) -> Result<Self> {
+        let y = Self {
+            subject_loss_cost,
+            unreported_share,
+            detrend_factor: 1.0,
+            occurrences: Vec::new(),
+        };
+        y.check()?;
+        Ok(y)
+    }
+
+    /// This year with a detrend factor.
+    pub fn with_detrend_factor(self, detrend_factor: f64) -> Result<Self> {
+        let y = Self {
+            detrend_factor,
+            ..self
+        };
+        y.check()?;
+        Ok(y)
+    }
+
+    /// This year with one more occurrence: its basic-limits loss and ALAE.
+    pub fn with_occurrence(mut self, loss: f64, alae: f64) -> Result<Self> {
+        non_negative("loss", loss)?;
+        non_negative("alae", alae)?;
+        self.occurrences.push((loss, alae));
+        Ok(self)
+    }
+
+    fn check(&self) -> Result<()> {
+        non_negative("subject_loss_cost", self.subject_loss_cost)?;
+        share("unreported_share", self.unreported_share)?;
+        non_negative("detrend_factor", self.detrend_factor)?;
+        for &(loss, alae) in &self.occurrences {
+            non_negative("loss", loss)?;
+            non_negative("alae", alae)?;
+        }
+        Ok(())
+    }
+}
+
+/// A year row of [`RatioExhibit`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RatioYearRow {
+    /// The year's company subject loss cost.
+    pub subject_loss_cost: f64,
+    /// Its occurrences' losses and ALAE, each held to the MSL.
+    pub reported: f64,
+    /// Subject loss cost x detrend x `EER` x unreported share.
+    pub expected_unreported: f64,
+}
+
+/// The experience ratio plan's worksheet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RatioExhibit {
+    /// One row per year, in their order.
+    pub years: Vec<RatioYearRow>,
+    /// The total subject loss cost.
+    pub subject_loss_cost: f64,
+    /// The total reported losses and ALAE, held to the MSL.
+    pub reported: f64,
+    /// The total expected unreported losses and ALAE.
+    pub expected_unreported: f64,
+    /// `AER`: reported and expected unreported over the subject loss cost.
+    pub actual_ratio: f64,
+    /// `EER`.
+    pub expected_ratio: f64,
+    /// `Z`.
+    pub credibility: f64,
+    /// `Z (AER − EER) / EER`, negative for a credit.
+    pub credit_debit: f64,
+    /// `1 + credit_debit`, unrounded.
+    pub modification: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,5 +731,73 @@ mod tests {
         assert!(plan().with_per_claim_limit(0.0).is_err());
         assert!(ClassExposure::new("x", 100.0, 1.0, 1.5).is_err());
         assert!(Claim::new(f64::NAN).is_err());
+    }
+
+    #[test]
+    fn the_experience_ratio_plan_by_hand() {
+        let plan = ExperienceRatioPlan::new(100_000.0, 0.75, 0.4).unwrap();
+        let years = [
+            LiabilityYear::new(200_000.0, 0.10)
+                .unwrap()
+                .with_detrend_factor(0.95)
+                .unwrap()
+                .with_occurrence(90_000.0, 20_000.0)
+                .unwrap()
+                .with_occurrence(10_000.0, 1_000.0)
+                .unwrap(),
+            LiabilityYear::new(220_000.0, 0.30)
+                .unwrap()
+                .with_occurrence(30_000.0, 0.0)
+                .unwrap(),
+            LiabilityYear::new(240_000.0, 0.60).unwrap(),
+        ];
+        let x = plan.modification(&years).unwrap();
+        // 110,000 held to 100,000; 11,000; 30,000.
+        assert_eq!(
+            x.years.iter().map(|r| r.reported).collect::<Vec<_>>(),
+            [111_000.0, 30_000.0, 0.0]
+        );
+        let unreported = [
+            200_000.0 * 0.95 * 0.75 * 0.10,
+            220_000.0 * 0.75 * 0.30,
+            240_000.0 * 0.75 * 0.60,
+        ];
+        for (row, u) in x.years.iter().zip(unreported) {
+            assert!((row.expected_unreported - u).abs() < 1e-9);
+        }
+        let aer = (141_000.0 + unreported.iter().sum::<f64>()) / 660_000.0;
+        assert!((x.actual_ratio - aer).abs() < 1e-14);
+        assert!((x.modification - (1.0 + 0.4 * (aer - 0.75) / 0.75)).abs() < 1e-14);
+        assert!(x.credit_debit < 0.0);
+    }
+
+    #[test]
+    fn at_the_expected_ratio_the_modification_is_one_and_no_credibility_gives_one() {
+        // Reported losses that are exactly EER times the reported share.
+        let plan = ExperienceRatioPlan::new(f64::INFINITY, 0.5, 0.8).unwrap();
+        let year = LiabilityYear::new(100_000.0, 0.4)
+            .unwrap()
+            .with_occurrence(30_000.0, 0.0)
+            .unwrap();
+        let x = plan.modification(std::slice::from_ref(&year)).unwrap();
+        assert!((x.modification - 1.0).abs() < 1e-14);
+        let none = ExperienceRatioPlan::new(1e5, 0.5, 0.0).unwrap();
+        assert_eq!(none.modification(&[year]).unwrap().modification, 1.0);
+    }
+
+    #[test]
+    fn the_experience_ratio_plan_refuses_what_is_not_a_plan() {
+        assert!(ExperienceRatioPlan::new(0.0, 0.5, 0.5).is_err());
+        assert!(ExperienceRatioPlan::new(1e5, 0.0, 0.5).is_err());
+        assert!(ExperienceRatioPlan::new(1e5, 0.5, 1.5).is_err());
+        assert!(LiabilityYear::new(1.0, 1.5).is_err());
+        assert!(
+            LiabilityYear::new(1.0, 0.5)
+                .unwrap()
+                .with_occurrence(-1.0, 0.0)
+                .is_err()
+        );
+        let plan = ExperienceRatioPlan::new(1e5, 0.5, 0.5).unwrap();
+        assert!(plan.modification(&[]).is_err());
     }
 }

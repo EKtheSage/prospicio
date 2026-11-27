@@ -1,0 +1,1 @@
+* **Creation**: [ISO's general liability experience rating plan](/references/iso-gl-experience-rating.md), from #981 (branch claude/project-thread-n5mttf-emod-ratio): the plan's manual and tables are licensed and no free text works a modification through, so `ExperienceRatioPlan` is checked by hand, linear in the credibility and monotone in the MSL.

@@ -201,6 +201,8 @@ excess_pattern_rust <- function(triangle, column, attachment, limit, kind, ultim
 
 expectreg_fit_design <- function(x, names, y, offset, weights, tau, lambda, penalty) rust_native_result(.Call(wrap__expectreg_fit_design, x, names, y, offset, weights, tau, lambda, penalty))
 
+experience_ratio_modification_rust <- function(subject_loss_cost, unreported_share, detrend_factor, year, loss, alae, maximum_single_limit, expected_ratio, credibility) rust_native_result(.Call(wrap__experience_ratio_modification_rust, subject_loss_cost, unreported_share, detrend_factor, year, loss, alae, maximum_single_limit, expected_ratio, credibility))
+
 exponential_trend_rust <- function(x, y) rust_native_result(.Call(wrap__exponential_trend_rust, x, y))
 
 exposure_uniform_rust <- function(n_years, policy_months) rust_native_result(.Call(wrap__exposure_uniform_rust, n_years, policy_months))

@@ -130,7 +130,7 @@ mod prospicio_native {
     #[pymodule_export]
     use super::earned::{calendar_windows, earned_exposure, in_force};
     #[pymodule_export]
-    use super::emod::split_plan_modification;
+    use super::emod::{experience_ratio_modification, split_plan_modification};
     #[pymodule_export]
     use super::excess::{
         PyExcessLayer, PyExcessPattern, PyParetoShape, PyScaleShift, layer_at_shift,

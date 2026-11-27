@@ -20,8 +20,9 @@ chains (BonusMalus), and retrospective rating: the insurance charge and
 savings of an aggregate (InsuranceCharge: Table M, Table L) and the basic
 premium that balances a plan (RetroPlan), and earned exposure from policy
 dates (earned_exposure, calendar_windows, in_force), and the experience
-modification of the workers compensation split plan
-(split_plan_modification)."""
+modifications of the workers compensation split plan
+(split_plan_modification) and the general liability experience ratio plan
+(experience_ratio_modification)."""
 
 from .prospicio_native import (
     AsIf,
@@ -83,6 +84,7 @@ from .prospicio_native import (
     deal_ave,
     distortion_envelope,
     earned_exposure,
+    experience_ratio_modification,
     fit_pml_curve,
     fit_references,
     censored_las,
@@ -179,6 +181,7 @@ __all__ = [
     "earned_exposure",
     "in_force",
     "split_plan_modification",
+    "experience_ratio_modification",
     "RetroPlan",
     "PaymentPattern",
     "PayoutPrice",

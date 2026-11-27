@@ -308,6 +308,7 @@ reference:
       - retro_balance
   - title: Experience modification
     contents:
+      - experience_ratio_modification
       - split_plan_modification
   - title: Risk measures
     contents:
