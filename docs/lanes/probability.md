@@ -8,4 +8,3 @@ Finished items are in [done/probability.md](done/probability.md), which agents r
 
 ## Next
 - [1035-rest] #1035 the remaining hand-written vocabularies after the quantile and TVaR methods, one PR each: copula families (pair, Archimedean, vine), segment dependence, cover basis, correlation kind, approximation kind, and Excel's tail kinds and severity families, each with `NAMES`, `from_name` and `name` on the core type (`docs/design/bindings.md`)
-- [978-bulk-arrays] #978 bulk arrays without boxed lists: NumPy (or the Arrow PyCapsule interface) for `PredictiveDistribution` draws, `Design`, `EventSet` and the booster's matrix in Python, and `RMatrix` returns in place of the 41 `matrix(..., byrow = TRUE)` reshapes in R
