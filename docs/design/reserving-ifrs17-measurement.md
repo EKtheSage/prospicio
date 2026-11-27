@@ -2,7 +2,8 @@
 
 Status: **Accepted** (2026-11-27; issue #982, in the 0.4.0 milestone at the
 user's request of 2026-11-27). The user decided open decisions 1 to 11 on
-2026-11-27 as recommended. Nothing is built yet. Lane: Reserving
+2026-11-27 as recommended. PR 1 (the general model's `Group`) is built
+(branch `claude/project-thread-n5mttf-ifrs17-gmm`); PRs 2 to 6 are to come. Lane: Reserving
 (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on:
 `reserving-ifrs17.md` (the `discount` module: `DiscountCurve`,
 `DiscountedReserves`, `RiskAdjustment`), `reinsurer-default.md` (Aggregate
@@ -346,8 +347,30 @@ rolled forward this quarter can be saved and rolled forward next quarter.
 
 1. `ifrs17::Group` under the GMM: initial recognition, the roll-forward,
    the CSM, the loss component, the reconciliation rows and the P&L lines
-   (Examples 1, 2, 3, 6, 7 and 8).
-2. The OCI option (Example 15).
+   (Examples 1, 2, 3, 6, 7 and 8). **Done** (branch
+   `claude/project-thread-n5mttf-ifrs17-gmm`): `validation/tests/reserving_ifrs17_gmm.rs`
+   matches Examples 1A, 1B, 2A, 2B, 3A, 7 and 8 to the unit (Example 8's
+   years 2 and 3 within one and a half units, since the example chains on
+   figures rounded twice: its closing present value of 94 is
+   743 + 37 - 286 - 400, against 100 / 1.05 = 95.24). What it settled:
+   * the loss component's share of the finance expense is its share of the
+     unwind of its own base (the claims and expenses, investment components
+     excluded, plus the RA), so that it runs off with the base by the end of
+     the coverage; it equals Example 8's 21 and 15 (a share of the whole
+     finance expense would leave a residue when premiums or investment
+     components remain to be paid);
+   * a loss component never exceeds the fulfilment cash flows; any excess
+     at a period end is released with the period's share;
+   * the RA's change is all insurance service result, the curve is the
+     locked-in curve throughout, claims are paid in the period they are
+     incurred (the LIC is nil, as in the examples), and contracts are not
+     added during the cohort's year: the current curve and OCI come with
+     PR 2, the LIC with PR 3, `add_contracts` with a later PR;
+   * Example 6 (variable returns, a current rate beside the locked-in one,
+     discretion) needs the current curve, so it moves to PR 2; its CSM
+     release (213 / 394 × 198 = 107) is the coverage units' ratio PR 1
+     already uses.
+2. The current curve and the OCI option (Examples 6 and 15).
 3. The PAA: the LRC, the onerous test, the LIC from `DiscountedReserves`
    (Example 10).
 4. Reinsurance held: the reinsurance CSM, the loss-recovery component,
