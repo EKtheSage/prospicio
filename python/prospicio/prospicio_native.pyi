@@ -23937,25 +23937,17 @@ class Mack:
 class MackBootstrap:
     """
     Mack's bootstrap for the lifetime and one-year views (England, Verrall
-    and Wüthrich 2019, Appendix 1): the scaled bias-adjusted residuals of
-    the link ratios are resampled into pseudo factors, and each future
-    cumulative value, to the last age (``fit``) or over the coming year
-    (``one_year``), is drawn from the one before ``C`` (the observed latest
-    value for the first) with mean ``f* C`` and Mack's variance
-    ``sigma**2 * abs(C)**(2 - alpha)``. The lifetime view's standard
-    deviation approximates Mack's analytic standard error. Beside
-    ``OdpBootstrap`` (variance ``scale`` times the mean increment), it gives
-    the one-year view under Mack's process: with the volume-weighted chain
-    ladder and no tail, its standard deviation is
-    ``MackFit.claims_development_result()``'s (Merz and Wüthrich) within
-    Monte Carlo error. The residuals are centred by default
-    (``centre_residuals``), so the mean CDR is Merz and Wüthrich's zero and
-    the lifetime mean reserve the chain ladder's, and EVW's Table 4 expected
-    reserves agree. Uncentred, as EVW's Appendix 1 is written, the pool's
-    non-zero mean biases the pseudo factors: the mean CDR is about -0.2
-    (RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard deviation, the
-    lifetime mean reserve about +17%, +0.7% and -0.8% off the chain
-    ladder's, and the one-year standard deviation up to 1.3% wide on RAA.
+    and Wüthrich 2019, Appendix 1): the link ratios' residuals are resampled
+    into pseudo factors (parameter error), and each future cumulative value
+    is drawn from the one before with Mack's mean and variance (process
+    error), to the last age (``fit``) or over the coming year
+    (``one_year``). Its lifetime standard deviation approximates
+    ``Mack``'s standard error, and its one-year view is
+    ``MackFit.claims_development_result()``'s within Monte Carlo error.
+    
+    The method, its formulas, the centring of the residuals and its
+    reference are documented once, in the Rust reference: https://docs.rs/prospicio-reserving/latest/prospicio_reserving/mack_bootstrap/index.html
+    
     Simulation ``i`` uses random stream ``i`` of ``seed`` for every segment
     in turn.
     

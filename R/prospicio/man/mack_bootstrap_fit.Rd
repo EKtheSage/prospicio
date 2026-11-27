@@ -106,39 +106,19 @@ A \code{mack_bootstrap_fit} object.
 }
 \description{
 The lifetime view of reserve risk under Mack's model, bootstrapped as
-England, Verrall and Wuthrich (2019, Appendix 1) describe: the scaled
-bias-adjusted residuals of the link ratios
-\verb{sqrt(n_k / (n_k - 1)) C^(alpha / 2) (F - f_k) / sigma_k} are resampled
-into pseudo link ratios and re-averaged into pseudo factors (parameter
-error), and every future cumulative value is drawn from the one before,
-the observed latest value for the first, with mean \verb{f*_k C} and Mack's
-variance \verb{sigma_k^2 |C|^(2 - alpha)} (process error), to the triangle's
-last age. An origin's reserve is its last drawn value less its latest.
-With a \code{tail} every origin takes one more step, from the oldest age to
-ultimate, with mean the tail factor times the value at the oldest age and
-variance \verb{tail_sigma^2 |C|^(2 - alpha)} (Mack 1999); the tail factor is
-refitted on each simulation's pseudo factors (an estimated tail) or drawn
-from the lognormal with the factor as mean and the tail's standard error
-(a constant one). A constant tail attached before the oldest age moves
-each factor it replaces by the pseudo factor's deviation from the
-estimate, which \code{\link[=mack]{mack()}} charges with the estimated factor's standard
-error. With a constant tail the standard deviation approximates
-\code{\link[=mack]{mack()}}'s with the same tail; for an estimated tail the parameter error
-and the mean are the refit's, not Mack's extrapolated \code{tail.se} and the
-chain ladder's reserve.
+England, Verrall and Wuthrich (2019, Appendix 1) describe: the link
+ratios' residuals are resampled into pseudo factors (parameter error),
+and every future cumulative value is drawn from the one before with
+Mack's mean and variance (process error), to the triangle's last age, or
+with a \code{tail} one more step to ultimate. An origin's reserve is its last
+drawn value less its latest. Its standard deviation approximates
+\code{\link[=mack]{mack()}}'s standard error with the same tail, and by default
+(\code{centre_residuals = TRUE}) its mean is the chain ladder's reserve.
+The method, its formulas, the centring of the residuals, the tails and
+its reference are documented once, in the
+\href{https://docs.rs/prospicio-reserving/latest/prospicio_reserving/mack_bootstrap/index.html}{Rust reference}.
 }
 \details{
-The standard deviation of the reserves approximates Mack's analytic
-standard error (\code{\link[=mack]{mack()}}), and the mean is the chain ladder's reserve
-(without a tail or with a constant one): the pooled residuals do not have
-a zero mean, so by default (\code{centre_residuals = TRUE}) they are centred
-before resampling.
-Resampled as they are (\code{centre_residuals = FALSE}, EVW's Appendix 1 as
-written) they bias every pseudo factor, and the mean reserve with them
-(about 17\% above the chain ladder's on RAA, 0.7\% on GenIns, 0.8\% below
-on ABC); EVW's Table 4 expected reserves agree with the centred
-bootstrap.
-
 Every segment is bootstrapped with its own Mack model and residuals,
 into one joint distribution of the reserves, the segments depending on
 each other as \code{dependence} says, as in \code{\link[=odp_bootstrap]{odp_bootstrap()}}; synchronized,
