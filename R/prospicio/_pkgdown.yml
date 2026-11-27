@@ -306,6 +306,9 @@ reference:
     contents:
       - insurance_charge
       - retro_balance
+  - title: Experience modification
+    contents:
+      - split_plan_modification
   - title: Risk measures
     contents:
       - distortion

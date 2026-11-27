@@ -45640,6 +45640,77 @@ def solvency2_type1(exposures: Sequence[tuple[float, float]]) -> Solvency2Type1:
     (19.96, 3.0)
     """
 
+def split_plan_modification(class_code: Sequence[str], payroll: Sequence[float], expected_loss_rate: Sequence[float], d_ratio: Sequence[float], amount: Sequence[float], weight: float, ballast: float, split_point: float, medical_only: Sequence[bool] |None = None, accident: Sequence[str |None] |None = None, per_claim_limit: float |None = None, per_accident_limit: float |None = None, medical_only_share: float = ...) -> dict:
+    """
+    The experience modification of the workers compensation split plan
+    (NCCI's Experience Rating Plan), with every sum of its worksheet.
+    
+    ``mod = (A_p + W A_e + (1 - W) E_e + B) / (E + B)``: expected losses
+    ``E`` (payroll in hundreds times the expected loss rate, summed over
+    the class rows) and their primary part ``E_p`` (times the D-ratio),
+    ``E_e = E - E_p``, actual primary and excess losses ``A_p`` and ``A_e``,
+    the weighting value ``W`` and the ballast ``B``. Each claim is held to
+    the per-claim limit, the claims of one accident together to the
+    per-accident limit (the cut taken from their excess first), split at
+    the split point, and a medical-only claim enters at
+    ``medical_only_share`` of both parts. The bureau's tables (expected loss
+    rates, D-ratios, weighting values, ballasts, split points) are inputs.
+    
+    Parameters
+    ----------
+    class_code : list of str
+        One entry per class row of the experience period (a class in a
+        year or policy).
+    payroll, expected_loss_rate, d_ratio : list of float
+        Per class row: the payroll, the expected loss rate per 100 of
+        payroll, and the D-ratio.
+    amount : list of float
+        The incurred amount of each claim.
+    weight : float
+        The weighting value ``W``, from 0 to 1.
+    ballast : float
+        The ballast ``B``.
+    split_point : float
+        The part of each claim that is primary.
+    medical_only : list of bool, optional
+        Per claim, whether it is medical-only; none are by default.
+    accident : list of str or None, optional
+        Per claim, the accident it arose from, for the per-accident limit;
+        ``None`` for an accident of its own.
+    per_claim_limit, per_accident_limit : float, optional
+        No limit by default.
+    medical_only_share : float, default 0.3
+    
+    Returns
+    -------
+    dict
+        ``modification`` (unrounded; the bureau shows two decimals),
+        ``expected``, ``expected_primary``, ``expected_excess``,
+        ``actual_primary``, ``actual_excess``, ``weight``, ``ballast``,
+        ``stabilizing`` (``(1 - W) E_e + B``), ``adjusted_actual``,
+        ``adjusted_expected``, and the rows: ``classes`` (``class_code``,
+        ``expected``, ``expected_primary``) and ``claims`` (``amount``,
+        ``limited``, ``primary``, ``excess``, what enters after the
+        limits and the medical-only share).
+    
+    Raises
+    ------
+    ValueError
+        For columns of different lengths, a weight outside 0 to 1, a
+        negative amount, payroll, rate or ballast, a D-ratio outside 0 to 1,
+        or no expected losses and no ballast.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import split_plan_modification
+    >>> x = split_plan_modification(["8810"], [3_000_000.0], [0.11], [0.35],
+    ...                             [25_000.0, 2_000.0], weight=0.14,
+    ...                             ballast=5_000.0, split_point=18_000.0,
+    ...                             medical_only=[False, True])
+    >>> x["expected"], x["actual_excess"], round(x["actual_primary"], 6)
+    (3300.0, 7000.0, 18600.0)
+    """
+
 def stack(ledgers: dict, impacts: Sequence[tuple[str, str, str]] |None = None) -> dict:
     """
     Stack ledgers' results, ``aggregate``'s ``stack_marginal_pnls``: one row

@@ -22,6 +22,7 @@ mod credibility;
 mod discrete;
 mod distributions;
 mod earned;
+mod emod;
 mod excess;
 mod models;
 mod multivariate;
@@ -104,6 +105,7 @@ extendr_module! {
     use discrete;
     use distributions;
     use earned;
+    use emod;
     use excess;
     use models;
     use multivariate;

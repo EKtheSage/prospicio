@@ -344,6 +344,17 @@ Proposed for the user's acceptance; each has a recommendation.
   aggregate on a grid) and has closed forms to validate against; earned
   exposure is self-contained; the modifications depend most on reference
   exhibits (Validation, below). *Recommended.*
+- (k) **The claims of one accident share the per-accident limit, the cut
+  taken from their excess first.** As built (PR 7): each claim is first
+  held to the per-claim limit and split at the split point; when an
+  accident's claims add up to more than the per-accident limit, their
+  excess is cut in proportion until they add up to it, and only a limit
+  below their primary losses cuts the primary, in proportion. A claim with
+  no accident named is an accident of its own. The medical-only share
+  applies after the limits, to both parts, as NCCI's Exhibit B shows. The
+  public material does not spell out a multiple-claim rule beyond the
+  limit itself, so this is the library's reading; a state's manual that
+  splits differently can be met by passing each claim's limited amount.
 
 ## Validation
 
@@ -426,7 +437,17 @@ Stacked, each on the one before:
    `datetime.date` or ISO strings in Python and `Date` or ISO strings in R.
    A change names its policy by position, from 0 in Python and from 1 in
    R, as each language counts.
-7. `emod::SplitPlan`; bindings; a reference exhibit.
+7. `emod::SplitPlan`; bindings; a reference exhibit. Done:
+   `SplitPlan` (split point, per-claim and per-accident limits, the
+   medical-only share, 0.3 by default), `ClassExposure`, `Claim` and
+   `SplitPlan::modification`, which returns a `SplitExhibit` with every
+   sum of the worksheet and a row per class and claim, unrounded; Python's
+   `split_plan_modification` (columns in, a dict out) and R's
+   `split_plan_modification()` (data frames in, a list out). The reference
+   is NCCI's "ABCs of Experience Rating" (Exhibits A, B, G and H,
+   `validation/tests/pricing_emod_split.rs`): the worksheet's summary
+   gives 223,677 / 223,590 = 1.00, and the split and medical-only examples
+   exactly. Decision (k) below records the per-accident rule.
 8. `emod::ExperienceRatioPlan`; bindings; a reference exhibit; the Done
    bullet `#981`.
 

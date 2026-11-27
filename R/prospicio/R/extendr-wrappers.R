@@ -567,6 +567,8 @@ solvency2_reinsurance_lgd_rust <- function(recoverables, risk_mitigation, collat
 
 solvency2_type1_rust <- function(pd, lgd) rust_native_result(.Call(wrap__solvency2_type1_rust, pd, lgd))
 
+split_plan_modification_rust <- function(class_code, payroll, expected_loss_rate, d_ratio, amount, medical_only, accident, weight, ballast, split_point, per_claim_limit, per_accident_limit, medical_only_share) rust_native_result(.Call(wrap__split_plan_modification_rust, class_code, payroll, expected_loss_rate, d_ratio, amount, medical_only, accident, weight, ballast, split_point, per_claim_limit, per_accident_limit, medical_only_share))
+
 stacking_weights_rust <- function(lpd, k) rust_native_result(.Call(wrap__stacking_weights_rust, lpd, k))
 
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) rust_native_result(.Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar))
