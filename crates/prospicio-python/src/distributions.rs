@@ -6,7 +6,7 @@ use prospicio_prob::{
     ComponentKey, Counting, DiscretizationReport, Dist, Distribution, Empirical, Grid, KeyValue,
     PredictiveDistribution, Provenance, Sampled, Severity, SeverityDist,
 };
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -1851,15 +1851,8 @@ impl PyPredictiveDistribution {
         return_index: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         use prospicio_prob::portfolio::CorrelationKind;
-        let kind = match kind {
-            "pearson" => CorrelationKind::Pearson,
-            "spearman" => CorrelationKind::Spearman,
-            _ => {
-                return Err(PyValueError::new_err(format!(
-                    "kind must be \"pearson\" or \"spearman\", not {kind:?}"
-                )));
-            }
-        };
+        let kind = CorrelationKind::from_name(kind)
+            .ok_or_else(|| crate::unknown_name("kind", kind, CorrelationKind::NAMES))?;
         let flat: Vec<f64> = correlation.into_iter().flatten().collect();
         let pd = &self.inner;
         let reordered = py

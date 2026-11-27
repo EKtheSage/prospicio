@@ -215,20 +215,13 @@ from 0.50 to 5.96 times
 
 \code{mack_one_year()} re-reserves the same way under Mack's process instead,
 England, Verrall and Wuthrich's (2019, Appendix 1) bootstrap of Mack's
-model: each simulation resamples the scaled bias-adjusted residuals of
-the link ratios into pseudo factors, averaged as \code{mack_average}, and
-draws each cumulative value of the coming year from the one before \code{C}
-(the observed latest value for the first) with mean \code{f* C} and variance
-\verb{sigma^2 |C|^(2 - alpha)}, with the same pseudo factors all year. With the
+model, the pseudo factors averaged as \code{mack_average}. With the
 volume-weighted chain ladder and no tail, its standard deviations are
 Merz and Wuthrich's (\code{\link[=claims_development_result]{claims_development_result()}}) within Monte Carlo
-error, which reconciles the two, and its mean is Merz and Wuthrich's
-zero, because by default (\code{centre_residuals = TRUE}) the pool of
-residuals is centred first. Uncentred (\code{centre_residuals = FALSE}, EVW's
-Appendix 1 as written), the pool's non-zero mean biases the pseudo
-factors: the mean CDR is about -0.2 (RAA), -0.04 (GenIns) and +0.18
-(ABC) times its standard deviation, and RAA's standard deviations up to
-1.3\% wide. Its fit has \code{model = "mack"}, no \code{scale}, and \code{mack}, the
+error, and by default (\code{centre_residuals = TRUE}) its mean is their zero.
+The method and the effect of uncentred residuals are documented once, in
+the \href{https://docs.rs/prospicio-reserving/latest/prospicio_reserving/mack_bootstrap/index.html}{Rust reference}.
+Its fit has \code{model = "mack"}, no \code{scale}, and \code{mack}, the
 \link{mack_fit} it simulates from; it needs no negative cumulative value.
 
 By default the bootstrap has no tail of its own: its simulation stops at

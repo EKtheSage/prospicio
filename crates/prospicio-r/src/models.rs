@@ -1476,16 +1476,12 @@ fn gam_fit_design(
         })
         .collect::<Result<Vec<_>>>()?;
     let smoothing = match smoothing {
-        "auto" => Smoothing::Auto,
-        "gcv" => Smoothing::Gcv,
-        "ubre" => Smoothing::Ubre,
-        "reml" => Smoothing::Reml,
         "fixed" => Smoothing::Fixed(lambdas.to_vec()),
-        other => {
-            return Err(Error::Other(format!(
+        other => Smoothing::from_name(other).ok_or_else(|| {
+            Error::Other(format!(
                 "smoothing must be auto, gcv, ubre, reml or numeric, got {other}"
-            )));
-        }
+            ))
+        })?,
     };
     if tensors.len() != tensor_basis.len() {
         return Err(Error::Other("give one tensor_basis per tensor".into()));
@@ -2722,22 +2718,14 @@ impl StackingModel {
 fn ppc_statistics(names: &[String]) -> Result<Vec<Statistic>> {
     names
         .iter()
-        .map(|name| match name.as_str() {
-            "mean" => Ok(Statistic::Mean),
-            "sd" => Ok(Statistic::Sd),
-            "min" => Ok(Statistic::Min),
-            "max" => Ok(Statistic::Max),
-            "proportion_zero" => Ok(Statistic::ProportionZero),
-            other => other
-                .strip_prefix('q')
-                .unwrap_or(other)
-                .parse::<f64>()
-                .map(Statistic::Quantile)
-                .map_err(|_| {
+        .map(|name| {
+            Statistic::from_name(name)
+                .or_else(|| name.parse::<f64>().ok().map(Statistic::Quantile))
+                .ok_or_else(|| {
                     Error::Other(format!(
-                        "a statistic is \"mean\", \"sd\", \"min\", \"max\", \"proportion_zero\" or a quantile's probability, got {other}"
+                        "a statistic is \"mean\", \"sd\", \"min\", \"max\", \"proportion_zero\" or a quantile's probability, got {name}"
                     ))
-                }),
+                })
         })
         .collect()
 }

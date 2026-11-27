@@ -278,6 +278,58 @@ impl PyMackFit {
 
 #[pymethods]
 impl PyMackFit {
+    /// This fit, every segment, as a JSON document that ``from_json`` reads
+    /// back exactly: every number bit for bit, the link ratios that the
+    /// assumption tests read included. Pickling uses it too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.reserving import Mack, MackFit, Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     origin=[2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    /// ...     development=[12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    /// ...     values={"paid": [100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0,
+    /// ...                      120.0, 175.0, 130.0]})
+    /// >>> fit = Mack().fit(tri, "paid")
+    /// >>> MackFit.from_json(fit.to_json()).standard_error == fit.standard_error
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A fit from a document written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// MackFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the text is not such a document, or is from a newer version.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        SegmentFits::<MackFit>::from_json(text)
+            .map(|inner| Self { inner })
+            .map_err(err)
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// The unpaid claims discounted simulation by simulation, by origin and
     /// in total, for the IFRS 17 liability for incurred claims and its risk
     /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).

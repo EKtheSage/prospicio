@@ -177,7 +177,7 @@ fn read(text: &str) -> std::result::Result<Triangle, String> {
     })
 }
 
-fn grain_code(grain: Grain) -> &'static str {
+pub(crate) fn grain_code(grain: Grain) -> &'static str {
     match grain {
         Grain::Month => "M",
         Grain::Quarter => "Q",
@@ -186,7 +186,7 @@ fn grain_code(grain: Grain) -> &'static str {
     }
 }
 
-fn grain_from_json(v: &Value) -> std::result::Result<Grain, String> {
+pub(crate) fn grain_from_json(v: &Value) -> std::result::Result<Grain, String> {
     match v.as_str() {
         Some("M") => Ok(Grain::Month),
         Some("Q") => Ok(Grain::Quarter),
@@ -196,11 +196,11 @@ fn grain_from_json(v: &Value) -> std::result::Result<Grain, String> {
     }
 }
 
-fn month_to_json(m: Month) -> Value {
+pub(crate) fn month_to_json(m: Month) -> Value {
     Value::String(format!("{:04}-{:02}", m.year(), m.month()))
 }
 
-fn month_from_json(v: &Value) -> std::result::Result<Month, String> {
+pub(crate) fn month_from_json(v: &Value) -> std::result::Result<Month, String> {
     let bad = || format!("{v} is not a month (\"YYYY-MM\")");
     let s = v.as_str().ok_or_else(bad)?;
     let (y, m) = s.rsplit_once('-').ok_or_else(bad)?;
@@ -209,7 +209,7 @@ fn month_from_json(v: &Value) -> std::result::Result<Month, String> {
     Month::new(year, month).map_err(|_| bad())
 }
 
-fn number_to_json(x: f64) -> Value {
+pub(crate) fn number_to_json(x: f64) -> Value {
     if x.is_finite() {
         json!(x)
     } else if x.is_nan() {
@@ -221,7 +221,7 @@ fn number_to_json(x: f64) -> Value {
     }
 }
 
-fn number_from_json(v: &Value) -> std::result::Result<f64, String> {
+pub(crate) fn number_from_json(v: &Value) -> std::result::Result<f64, String> {
     match v {
         Value::Number(n) => n.as_f64().ok_or_else(|| format!("{n} is not a float")),
         Value::String(s) if s == "NaN" => Ok(f64::NAN),

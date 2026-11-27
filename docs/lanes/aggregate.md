@@ -20,3 +20,4 @@ Finished items are in [done/aggregate.md](done/aggregate.md), which agents read 
 - [earned-short-rate] short-rate cancellation and audit premium adjustments (`primary-rating.md`, decision (d)); after #981
 - [retro-deductible-dividend] large deductible and dividend plans from the charge and savings (`primary-rating.md`); after #981
 - [method-docs-next] #991 next families: the Mack bootstrap's and the other credibility models' binding docs link to their Rust reference instead of restating the method (`docs/design/bindings.md`, "Method documentation")
+- [method-docs-credibility] #991 the other credibility models (Buhlmann-Straub, Hachemeister): their binding docs link to the Rust reference instead of restating the method, and the Done bullet `#991` (`docs/design/bindings.md`, "Method documentation")
