@@ -83,6 +83,8 @@ the user needs to read a return value (a column's definition, say) may
 stay in the binding's `Returns` section.
 
 Limited fluctuation credibility (`LimitedFluctuation`,
-`credibility_standard()`) is the pilot. The next families, a PR each, are
-the ones whose binding docs repeat formulas: the Mack bootstrap, then the
-other credibility models (Buhlmann-Straub, Hachemeister).
+`credibility_standard()`) is the pilot, and the Mack bootstrap
+(`MackBootstrap`, `mack_bootstrap()`, `mack_one_year()`) followed, its
+link to the `mack_bootstrap` module page, whose documentation holds the
+method. The next family is the other credibility models
+(Buhlmann-Straub, Hachemeister).
