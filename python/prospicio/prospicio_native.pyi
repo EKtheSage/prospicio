@@ -24567,6 +24567,7 @@ class MackFit:
     and the tail) or ``segment(...)``.
     ``total_ultimate`` and ``total_reserve`` sum over every segment.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def blended_ldf(self, /) -> list[float]:
@@ -24745,6 +24746,24 @@ class MackFit:
         """
         Whether ``n_periods`` or the drops left out a link ratio at some age.
         """
+    @staticmethod
+    def from_json(text: str) -> MackFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        MackFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
+        """
     @property
     def index(self, /) -> list[Any]:
         """
@@ -24877,6 +24896,31 @@ class MackFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly: every number bit for bit, the link ratios that the
+        assumption tests read included. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import Mack, MackFit, Triangle
+        >>> tri = Triangle.from_long(
+        ...     origin=[2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        ...     development=[12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        ...     values={"paid": [100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0,
+        ...                      120.0, 175.0, 130.0]})
+        >>> fit = Mack().fit(tri, "paid")
+        >>> MackFit.from_json(fit.to_json()).standard_error == fit.standard_error
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     @property
     def total_cv(self, /) -> float:

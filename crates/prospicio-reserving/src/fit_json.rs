@@ -1,6 +1,7 @@
 //! Fitted reserving models as JSON documents, for saving a fit exactly as
 //! it is and for Python's `pickle` (#978): [`ChainLadderFit`] and the
-//! fits of every segment of a triangle ([`SegmentFits`]).
+//! fits of every segment of a triangle ([`SegmentFits`]), and
+//! [`MackFit`].
 //!
 //! Each document is an object with `"format"` and `"format_version"`, as
 //! the triangle's (`triangle/json.rs`) is. Numbers round-trip bit for bit;
@@ -19,9 +20,11 @@
 use prospicio_core::Period;
 use serde_json::{Value, json};
 
+use crate::assumptions::LinkRatios;
 use crate::chain_ladder::ChainLadderFit;
 use crate::development::DevelopmentFit;
 use crate::error::{Error, Result};
+use crate::mack::MackFit;
 use crate::segments::SegmentFits;
 use crate::tail::TailFit;
 use crate::triangle::Label;
@@ -29,16 +32,56 @@ use crate::triangle::json::{
     grain_code, grain_from_json, month_from_json, month_to_json, number_from_json, number_to_json,
 };
 
-/// Value of the `format` field of one chain-ladder fit.
-const CHAIN_LADDER: &str = "risk_rs.chain_ladder_fit";
-/// Value of the `format` field of the fits of every segment.
-const CHAIN_LADDER_FITS: &str = "risk_rs.chain_ladder_fits";
 /// The format version this build writes and the newest it reads.
 const FORMAT_VERSION: u64 = 1;
 
 type Read<T> = std::result::Result<T, String>;
 
-impl ChainLadderFit {
+/// `to_json` and `from_json` on a fit type and on the fits of every
+/// segment, from the fit's own writer (`$value`) and reader (`$from`).
+/// Each document is formats `$one` and `$many`; `$what` names the fit in
+/// errors.
+macro_rules! json_fit {
+    ($(#[$doc:meta])* $fit:ty, $one:literal, $many:literal, $what:literal, $value:path, $from:path) => {
+        impl $fit {
+            $(#[$doc])*
+            pub fn to_json(&self) -> String {
+                let mut doc = $value(self);
+                let obj = doc.as_object_mut().expect("an object");
+                obj.insert("format".into(), json!($one));
+                obj.insert("format_version".into(), json!(FORMAT_VERSION));
+                serde_json::to_string(&doc).expect("a JSON value serializes")
+            }
+
+            /// Reads a document written by [`to_json`](Self::to_json). Fails
+            /// on malformed JSON, another format, a newer format version, or
+            /// parts that do not fit together.
+            pub fn from_json(text: &str) -> Result<Self> {
+                document(text, $one)
+                    .and_then(|doc| $from(&doc))
+                    .map_err(|msg| data_error($what, msg))
+            }
+        }
+
+        impl SegmentFits<$fit> {
+            /// The fits of every segment as one JSON document, with the key
+            /// names and labels; [`from_json`](Self::from_json) reads it
+            /// back.
+            pub fn to_json(&self) -> String {
+                segments_to_json(self, $many, $value)
+            }
+
+            /// Reads a document written by [`to_json`](Self::to_json).
+            pub fn from_json(text: &str) -> Result<Self> {
+                document(text, $many)
+                    .and_then(|doc| segments_from_value(&doc, $from))
+                    .map_err(|msg| data_error(concat!($what, "s"), msg))
+            }
+        }
+    };
+}
+
+json_fit!(
     /// This fit as a JSON document; [`from_json`](Self::from_json) reads it
     /// back to the same fit, every number bit for bit (a NaN sigma
     /// included, which `==` would not call equal).
@@ -62,44 +105,42 @@ impl ChainLadderFit {
     /// assert_eq!(back.to_json(), fit.to_json());
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn to_json(&self) -> String {
-        let mut doc = chain_ladder_value(self);
-        let obj = doc.as_object_mut().expect("an object");
-        obj.insert("format".into(), json!(CHAIN_LADDER));
-        obj.insert("format_version".into(), json!(FORMAT_VERSION));
-        serde_json::to_string(&doc).expect("a JSON value serializes")
-    }
+    ChainLadderFit,
+    "risk_rs.chain_ladder_fit",
+    "risk_rs.chain_ladder_fits",
+    "chain-ladder fit",
+    chain_ladder_value,
+    chain_ladder_from_value
+);
 
-    /// Reads a document written by [`to_json`](Self::to_json). Fails on
-    /// malformed JSON, another format, a newer format version, or parts
-    /// that do not fit together.
-    pub fn from_json(text: &str) -> Result<Self> {
-        document(text, CHAIN_LADDER)
-            .and_then(|doc| chain_ladder_from_value(&doc))
-            .map_err(|msg| data_error("chain-ladder fit", msg))
-    }
-}
+json_fit!(
+    /// This fit as a JSON document, its chain ladder and the link ratios
+    /// that Mack's assumption tests read included;
+    /// [`from_json`](Self::from_json) reads it back to the same fit, every
+    /// number bit for bit.
+    MackFit,
+    "risk_rs.mack_fit",
+    "risk_rs.mack_fits",
+    "Mack fit",
+    mack_value,
+    mack_from_value
+);
 
-impl SegmentFits<ChainLadderFit> {
-    /// The fits of every segment as one JSON document, with the key names
-    /// and labels; [`from_json`](Self::from_json) reads it back.
-    pub fn to_json(&self) -> String {
-        let doc = json!({
-            "format": CHAIN_LADDER_FITS,
-            "format_version": FORMAT_VERSION,
-            "keys": self.key_names,
-            "labels": self.labels.iter().map(Label::parts).collect::<Vec<_>>(),
-            "fits": self.fits.iter().map(chain_ladder_value).collect::<Vec<_>>(),
-        });
-        serde_json::to_string(&doc).expect("a JSON value serializes")
-    }
-
-    /// Reads a document written by [`to_json`](Self::to_json).
-    pub fn from_json(text: &str) -> Result<Self> {
-        document(text, CHAIN_LADDER_FITS)
-            .and_then(|doc| segments_from_value(&doc, chain_ladder_from_value))
-            .map_err(|msg| data_error("chain-ladder fits", msg))
-    }
+/// The fits of every segment as a document of format `format`, each fit
+/// written by `fit`.
+pub(crate) fn segments_to_json<T>(
+    fits: &SegmentFits<T>,
+    format: &str,
+    fit: impl Fn(&T) -> Value,
+) -> String {
+    let doc = json!({
+        "format": format,
+        "format_version": FORMAT_VERSION,
+        "keys": fits.key_names,
+        "labels": fits.labels.iter().map(Label::parts).collect::<Vec<_>>(),
+        "fits": fits.fits.iter().map(fit).collect::<Vec<_>>(),
+    });
+    serde_json::to_string(&doc).expect("a JSON value serializes")
 }
 
 fn data_error(what: &str, msg: String) -> Error {
@@ -188,6 +229,98 @@ fn chain_ladder_from_value(v: &Value) -> Read<ChainLadderFit> {
     Ok(fit)
 }
 
+fn mack_value(fit: &MackFit) -> Value {
+    json!({
+        "chain_ladder": chain_ladder_value(&fit.chain_ladder),
+        "process_risk": numbers(&fit.process_risk),
+        "parameter_risk": numbers(&fit.parameter_risk),
+        "standard_error": numbers(&fit.standard_error),
+        "total_process_risk": number_to_json(fit.total_process_risk),
+        "total_parameter_risk": number_to_json(fit.total_parameter_risk),
+        "total_standard_error": number_to_json(fit.total_standard_error),
+        "exclusions_set": fit.exclusions_set,
+        "links": links_value(&fit.links),
+    })
+}
+
+fn mack_from_value(v: &Value) -> Read<MackFit> {
+    let fit = MackFit {
+        chain_ladder: chain_ladder_from_value(field(v, "chain_ladder")?)?,
+        process_risk: floats(v, "process_risk")?,
+        parameter_risk: floats(v, "parameter_risk")?,
+        standard_error: floats(v, "standard_error")?,
+        total_process_risk: number_from_json(field(v, "total_process_risk")?)?,
+        total_parameter_risk: number_from_json(field(v, "total_parameter_risk")?)?,
+        total_standard_error: number_from_json(field(v, "total_standard_error")?)?,
+        exclusions_set: field(v, "exclusions_set")?
+            .as_bool()
+            .ok_or("\"exclusions_set\" is not a boolean")?,
+        links: links_from_value(field(v, "links")?)?,
+    };
+    let n = fit.chain_ladder.origins.len();
+    if [
+        fit.process_risk.len(),
+        fit.parameter_risk.len(),
+        fit.standard_error.len(),
+    ] != [n; 3]
+    {
+        return Err("the per-origin standard errors do not have one entry per origin".into());
+    }
+    Ok(fit)
+}
+
+fn links_value(l: &LinkRatios) -> Value {
+    json!({
+        "n_origins": l.n_origins,
+        "n_links": l.n_links,
+        "ratios": l.ratios.iter().map(|r| r.map(number_to_json)).collect::<Vec<_>>(),
+        "valuations": l.valuations.iter().map(|&m| month_to_json(m)).collect::<Vec<_>>(),
+        "ages": l.ages,
+    })
+}
+
+fn links_from_value(v: &Value) -> Read<LinkRatios> {
+    let n_origins = count(field(v, "n_origins")?, "\"n_origins\"")?;
+    let n_links = count(field(v, "n_links")?, "\"n_links\"")?;
+    let ratios = array(v, "ratios")?
+        .iter()
+        .map(|r| match r {
+            Value::Null => Ok(None),
+            r => number_from_json(r).map(Some),
+        })
+        .collect::<Read<Vec<_>>>()?;
+    let valuations = array(v, "valuations")?
+        .iter()
+        .map(month_from_json)
+        .collect::<Read<Vec<_>>>()?;
+    let ages = ages(v, "ages")?;
+    if ratios.len() != n_origins * n_links
+        || valuations.len() != ratios.len()
+        || ages.len() != n_links
+    {
+        return Err("the link ratios do not have one entry per origin and link".into());
+    }
+    Ok(LinkRatios {
+        n_origins,
+        n_links,
+        ratios,
+        valuations,
+        ages,
+    })
+}
+
+/// The ages (whole months) in the array `name`.
+fn ages(v: &Value, name: &str) -> Read<Vec<u32>> {
+    array(v, name)?
+        .iter()
+        .map(|a| {
+            a.as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or_else(|| format!("{name:?} holds a non-age"))
+        })
+        .collect()
+}
+
 pub(crate) fn development_value(d: &DevelopmentFit) -> Value {
     json!({
         "development": d.development,
@@ -204,14 +337,7 @@ pub(crate) fn development_value(d: &DevelopmentFit) -> Value {
 }
 
 pub(crate) fn development_from_value(v: &Value) -> Read<DevelopmentFit> {
-    let development = array(v, "development")?
-        .iter()
-        .map(|a| {
-            a.as_u64()
-                .and_then(|n| u32::try_from(n).ok())
-                .ok_or_else(|| "\"development\" holds a non-age".to_string())
-        })
-        .collect::<Read<Vec<_>>>()?;
+    let development = ages(v, "development")?;
     let selected = array(v, "selected")?
         .iter()
         .map(|s| match s {
@@ -430,6 +556,60 @@ mod tests {
                 &fits.to_json().replace("[\"B\"]", "[\"B\",\"x\"]")
             )
             .is_err()
+        );
+    }
+
+    /// Four origins, four ages: what Mack needs, in two segments.
+    fn square() -> Triangle {
+        let years = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023];
+        let ages = [12, 24, 36, 48, 12, 24, 36, 12, 24, 12];
+        let a = [
+            100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0, 120.0, 175.0, 130.0,
+        ];
+        let origin: Vec<Month> = years
+            .iter()
+            .chain(&years)
+            .map(|&y| Month::january(y))
+            .collect();
+        let development: Vec<u32> = ages.iter().chain(&ages).copied().collect();
+        let paid: Vec<f64> = a.iter().chain(&a.map(|x| x * 0.4 + 3.0)).copied().collect();
+        let lob: Vec<&str> = (0..20).map(|i| if i < 10 { "A" } else { "B" }).collect();
+        Triangle::from_long(&Long {
+            keys: &[("lob", &lob)],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&development),
+            values: &[("paid", &paid)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_mack_fit_round_trips_with_its_assumption_tests() {
+        let fits = crate::Mack::default()
+            .fit_segments(&square(), "paid")
+            .unwrap();
+        let back = SegmentFits::<MackFit>::from_json(&fits.to_json()).unwrap();
+        assert_eq!(back.to_json(), fits.to_json());
+        for (a, b) in back.fits.iter().zip(&fits.fits) {
+            assert_eq!(bits(&a.standard_error), bits(&b.standard_error));
+            assert_eq!(
+                a.total_standard_error.to_bits(),
+                b.total_standard_error.to_bits()
+            );
+            assert_eq!(
+                format!("{:?}", a.calendar_year_effect(0.5)),
+                format!("{:?}", b.calendar_year_effect(0.5))
+            );
+        }
+        let one = &fits.fits[1];
+        let read = MackFit::from_json(&one.to_json()).unwrap();
+        assert_eq!(read.to_json(), one.to_json());
+        assert!(MackFit::from_json(&one.chain_ladder.to_json()).is_err());
+        assert!(
+            MackFit::from_json(&one.to_json().replace("\"n_links\":3", "\"n_links\":2")).is_err()
         );
     }
 }
