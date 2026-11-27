@@ -32,12 +32,31 @@ The default of an omitted option stays in each front end's signature
 cell), so the published signatures do not change.
 
 `Average`, `SigmaInterpolation` and `Interpolation` followed this pattern
-first; `ProcessDistribution` is the pilot that #990 named. The next
-families, each in a PR of its own, are the ones whose parsers are copied
-in two or three front ends, starting with those whose accepted names
-already differ: `MackProcess` (Excel lists its names in another order than Python and R), then
-`PairFamily`, `Archimedean`, `AnnualReading`, `Statistic`, `Smoothing`
-and `CorrelationKind`.
+first; `ProcessDistribution` is the pilot that #990 named. #990 and #1035
+then moved every vocabulary that two or three front ends parsed by hand:
+`MackProcess` (Excel's error had listed its names in another order),
+`QuantileMethod` and `TvarMethod`, `PairFamily` and `Archimedean`,
+`SegmentDependence`, `CoverBasis` (with its aliases `lod` and `rad`),
+`CorrelationKind`, `ApproximationKind`, `AnnualReading`, `Statistic` and
+`Smoothing`.
+
+Two kinds of entry don't fit a plain `(name, variant)` table, and each
+says how it is handled in its `NAMES` doc comment:
+
+- A variant that carries data a front end supplies from another argument
+  (`SegmentDependence::RankCorrelation`'s matrix, `Smoothing::Fixed`'s
+  parameters). `SegmentDependence`'s entry holds an empty matrix for the
+  front end to fill; `Smoothing` leaves `Fixed` out of `NAMES`, since
+  Python takes a list of numbers and R the name `"fixed"` with `lambdas`.
+- A parameterized variant (`Statistic::Quantile`): `from_name` also reads
+  `q<p>`, the form `name` writes.
+
+Excel's tail kinds (`PRO.RES.*`'s `tail`) and severity families
+(`PRO.PRICE.*`'s `family`, with parameterizations such as `lognormal_cv`)
+stay in the add-in. No other front end parses them as text: Python and R
+take typed tail and distribution objects, so there is no second copy to
+drift. They move onto a core type when a second front end starts
+parsing them by name.
 
 ## Method documentation (#991)
 
@@ -64,6 +83,10 @@ the user needs to read a return value (a column's definition, say) may
 stay in the binding's `Returns` section.
 
 Limited fluctuation credibility (`LimitedFluctuation`,
-`credibility_standard()`) is the pilot. The next families, a PR each, are
-the ones whose binding docs repeat formulas: the Mack bootstrap, then the
-other credibility models (Buhlmann-Straub, Hachemeister).
+`credibility_standard()`) is the pilot, and the Mack bootstrap
+(`MackBootstrap`, `mack_bootstrap()`, `mack_one_year()`) followed, its
+link to the `mack_bootstrap` module page, whose documentation holds the
+method. Bühlmann–Straub (`buhlmann_straub`) and Hachemeister
+(`hachemeister`) closed #991: their binding docs keep the model in a
+sentence and what the arguments do, and link to their structs' pages.
+A new binding follows the same rule from its first PR.

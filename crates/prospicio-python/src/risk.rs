@@ -772,26 +772,14 @@ pub(crate) fn allocate(
 
 /// A quantile method from its numpy name: ``"inverted_cdf"``, ``"linear"`` or ``"kth_largest"``.
 pub(crate) fn quantile_method(name: &str) -> PyResult<QuantileMethod> {
-    match name {
-        "inverted_cdf" => Ok(QuantileMethod::InvertedCdf),
-        "linear" => Ok(QuantileMethod::Linear),
-        "kth_largest" => Ok(QuantileMethod::KthLargest),
-        _ => Err(PyValueError::new_err(format!(
-            "quantile method must be \"inverted_cdf\", \"linear\" or \"kth_largest\", not {name:?}"
-        ))),
-    }
+    QuantileMethod::from_name(name)
+        .ok_or_else(|| crate::unknown_name("quantile method", name, QuantileMethod::NAMES))
 }
 
 /// A TVaR method by name: ``"exact"``, ``"linear"`` or ``"whole_years"``.
 pub(crate) fn tvar_method(name: &str) -> PyResult<TvarMethod> {
-    match name {
-        "exact" => Ok(TvarMethod::Exact),
-        "linear" => Ok(TvarMethod::Linear),
-        "whole_years" => Ok(TvarMethod::WholeYears),
-        _ => Err(PyValueError::new_err(format!(
-            "TVaR method must be \"exact\", \"linear\" or \"whole_years\", not {name:?}"
-        ))),
-    }
+    TvarMethod::from_name(name)
+        .ok_or_else(|| crate::unknown_name("TVaR method", name, TvarMethod::NAMES))
 }
 
 /// A results table's statistics in one call, under stated conventions.
@@ -2502,17 +2490,7 @@ impl PyArchimedeanCopula {
 
     #[new]
     fn new(family: &str, theta: f64, dim: usize) -> PyResult<Self> {
-        let family = match family {
-            "clayton" => Archimedean::Clayton,
-            "gumbel" => Archimedean::Gumbel,
-            "frank" => Archimedean::Frank,
-            "joe" => Archimedean::Joe,
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown family {other:?}: use \"clayton\", \"gumbel\", \"frank\" or \"joe\""
-                )));
-            }
-        };
+        let family = archimedean_family(family)?;
         Ok(Self {
             inner: ArchimedeanCopula::new(family, theta, dim).map_err(to_py)?,
         })
@@ -2555,12 +2533,7 @@ impl PyArchimedeanCopula {
     /// Family name.
     #[getter]
     fn family(&self) -> &'static str {
-        match self.inner.family() {
-            Archimedean::Clayton => "clayton",
-            Archimedean::Gumbel => "gumbel",
-            Archimedean::Frank => "frank",
-            Archimedean::Joe => "joe",
-        }
+        self.inner.family().name()
     }
 
     /// Copula parameter.
@@ -2586,17 +2559,8 @@ impl PyArchimedeanCopula {
 }
 
 fn archimedean_family(family: &str) -> PyResult<Archimedean> {
-    Ok(match family {
-        "clayton" => Archimedean::Clayton,
-        "gumbel" => Archimedean::Gumbel,
-        "frank" => Archimedean::Frank,
-        "joe" => Archimedean::Joe,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "unknown family {other:?}: use \"clayton\", \"gumbel\", \"frank\" or \"joe\""
-            )));
-        }
-    })
+    Archimedean::from_name(family)
+        .ok_or_else(|| crate::unknown_name("family", family, Archimedean::NAMES))
 }
 
 /// A node ``(theta, members)``, each member a dimension (an int) or a node.
@@ -2680,12 +2644,7 @@ impl PyNestedArchimedeanCopula {
     /// Family name.
     #[getter]
     fn family(&self) -> &'static str {
-        match self.inner.family() {
-            Archimedean::Clayton => "clayton",
-            Archimedean::Gumbel => "gumbel",
-            Archimedean::Frank => "frank",
-            Archimedean::Joe => "joe",
-        }
+        self.inner.family().name()
     }
 
     /// The tree, as given: ``(theta, members)``, leaves first.
@@ -2725,34 +2684,12 @@ impl PyNestedArchimedeanCopula {
 
 fn pair_family(name: &str) -> PyResult<prospicio_prob::vine::PairFamily> {
     use prospicio_prob::vine::PairFamily;
-    Ok(match name {
-        "independence" => PairFamily::Independence,
-        "gaussian" => PairFamily::Gaussian,
-        "clayton" => PairFamily::Clayton,
-        "gumbel" => PairFamily::Gumbel,
-        "frank" => PairFamily::Frank,
-        "joe" => PairFamily::Joe,
-        "student" => PairFamily::Student,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "unknown pair family {other:?}: use \"independence\", \"gaussian\", \
-                 \"student\", \"clayton\", \"gumbel\", \"frank\" or \"joe\""
-            )));
-        }
-    })
+    PairFamily::from_name(name)
+        .ok_or_else(|| crate::unknown_name("pair family", name, PairFamily::NAMES))
 }
 
 fn pair_family_name(f: prospicio_prob::vine::PairFamily) -> &'static str {
-    use prospicio_prob::vine::PairFamily;
-    match f {
-        PairFamily::Independence => "independence",
-        PairFamily::Gaussian => "gaussian",
-        PairFamily::Clayton => "clayton",
-        PairFamily::Gumbel => "gumbel",
-        PairFamily::Frank => "frank",
-        PairFamily::Joe => "joe",
-        PairFamily::Student => "student",
-    }
+    f.name()
 }
 
 /// A bivariate copula for a vine: a family, its parameter and a rotation.

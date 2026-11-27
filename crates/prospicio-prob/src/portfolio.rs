@@ -48,6 +48,38 @@ pub enum CorrelationKind {
 }
 
 impl CorrelationKind {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name of each first and any alias after it
+    /// (#990, #1035). A front end normalizes its own input before it looks
+    /// the name up here.
+    pub const NAMES: &'static [(&'static str, Self)] =
+        &[("pearson", Self::Pearson), ("spearman", Self::Spearman)];
+
+    /// The CorrelationKind named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_prob::portfolio::CorrelationKind;
+    ///
+    /// assert_eq!(CorrelationKind::from_name("spearman"), Some(CorrelationKind::Spearman));
+    /// assert_eq!(CorrelationKind::from_name("kendall"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name: one of `"pearson"`, `"spearman"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Pearson => "pearson",
+            Self::Spearman => "spearman",
+        }
+    }
+}
+
+impl CorrelationKind {
     /// The normal-score correlation for this kind of matrix: the matrix
     /// itself, or `2 sin(π ρ / 6)` entry by entry, with a unit diagonal
     /// kept at exactly 1.

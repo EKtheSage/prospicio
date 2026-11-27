@@ -6031,6 +6031,7 @@ class CapeCodFit:
     >>> round(fit.trended_apriori[0] / fit.apriori[0], 10)
     1.1
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> list[float]:
@@ -6073,6 +6074,24 @@ class CapeCodFit:
         """
         Exposure per origin: the exposure column's latest observed cumulative
         value.
+        """
+    @staticmethod
+    def from_json(text: str) -> CapeCodFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        CapeCodFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -6123,6 +6142,29 @@ class CapeCodFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly, every number bit for bit. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import CapeCod, CapeCodFit, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2021], [12, 24, 12],
+        ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+        ... )
+        >>> fit = CapeCod(trend=0.1).fit(tri, "paid", "premium")
+        >>> CapeCodFit.from_json(fit.to_json()).ultimate == fit.ultimate
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     @property
     def total_reserve(self, /) -> float:
@@ -7311,6 +7353,7 @@ class ChainLadderFit:
     >>> fit.segment(lob="Home").ldf
     [2.0]
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def blended_ldf(self, /) -> list[float]:
@@ -7357,6 +7400,24 @@ class ChainLadderFit:
     def excluded(self, /) -> bool:
         """
         Whether ``n_periods`` or the drops left out a link ratio at some age.
+        """
+    @staticmethod
+    def from_json(text: str) -> ChainLadderFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        ChainLadderFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -7528,6 +7589,28 @@ class ChainLadderFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly: every number bit for bit, as ``Triangle.to_json``
+        does. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import ChainLadder, ChainLadderFit, Triangle
+        >>> tri = Triangle.from_long(origin=[2020, 2020, 2021], development=[12, 24, 12],
+        ...                          values={"paid": [100.0, 150.0, 110.0]})
+        >>> fit = ChainLadder().fit(tri, "paid")
+        >>> ChainLadderFit.from_json(fit.to_json()).ultimate == fit.ultimate
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     @property
     def total_reserve(self, /) -> float:
@@ -15222,6 +15305,7 @@ class ExpectedLossFit:
     >>> fit.exposure, fit.segment(lob="Home").ultimate
     ([250.0, 400.0, 500.0, 800.0], [20.0, 230.0])
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> list[float]:
@@ -15258,6 +15342,24 @@ class ExpectedLossFit:
         """
         Exposure per origin: the exposure column's latest observed cumulative
         value.
+        """
+    @staticmethod
+    def from_json(text: str) -> ExpectedLossFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        ExpectedLossFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -15308,6 +15410,29 @@ class ExpectedLossFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly, every number bit for bit. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import BornhuetterFerguson, ExpectedLossFit, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2021], [12, 24, 12],
+        ...     {"paid": [100.0, 150.0, 200.0], "premium": [250.0, 250.0, 400.0]},
+        ... )
+        >>> fit = BornhuetterFerguson(apriori=0.5).fit(tri, "paid", "premium")
+        >>> ExpectedLossFit.from_json(fit.to_json()).ultimate == fit.ultimate
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     @property
     def total_reserve(self, /) -> float:
@@ -23937,25 +24062,17 @@ class Mack:
 class MackBootstrap:
     """
     Mack's bootstrap for the lifetime and one-year views (England, Verrall
-    and Wüthrich 2019, Appendix 1): the scaled bias-adjusted residuals of
-    the link ratios are resampled into pseudo factors, and each future
-    cumulative value, to the last age (``fit``) or over the coming year
-    (``one_year``), is drawn from the one before ``C`` (the observed latest
-    value for the first) with mean ``f* C`` and Mack's variance
-    ``sigma**2 * abs(C)**(2 - alpha)``. The lifetime view's standard
-    deviation approximates Mack's analytic standard error. Beside
-    ``OdpBootstrap`` (variance ``scale`` times the mean increment), it gives
-    the one-year view under Mack's process: with the volume-weighted chain
-    ladder and no tail, its standard deviation is
-    ``MackFit.claims_development_result()``'s (Merz and Wüthrich) within
-    Monte Carlo error. The residuals are centred by default
-    (``centre_residuals``), so the mean CDR is Merz and Wüthrich's zero and
-    the lifetime mean reserve the chain ladder's, and EVW's Table 4 expected
-    reserves agree. Uncentred, as EVW's Appendix 1 is written, the pool's
-    non-zero mean biases the pseudo factors: the mean CDR is about -0.2
-    (RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard deviation, the
-    lifetime mean reserve about +17%, +0.7% and -0.8% off the chain
-    ladder's, and the one-year standard deviation up to 1.3% wide on RAA.
+    and Wüthrich 2019, Appendix 1): the link ratios' residuals are resampled
+    into pseudo factors (parameter error), and each future cumulative value
+    is drawn from the one before with Mack's mean and variance (process
+    error), to the last age (``fit``) or over the coming year
+    (``one_year``). Its lifetime standard deviation approximates
+    ``Mack``'s standard error, and its one-year view is
+    ``MackFit.claims_development_result()``'s within Monte Carlo error.
+    
+    The method, its formulas, the centring of the residuals and its
+    reference are documented once, in the Rust reference: https://docs.rs/prospicio-reserving/latest/prospicio_reserving/mack_bootstrap/index.html
+    
     Simulation ``i`` uses random stream ``i`` of ``seed`` for every segment
     in turn.
     
@@ -24301,6 +24418,7 @@ class MackBootstrapFit:
     components of ``reserves``. ``residuals`` needs a single-segment fit;
     for several segments use ``segment(...)``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def cells(self, /) -> PredictiveDistribution |None:
@@ -24385,6 +24503,24 @@ class MackBootstrapFit:
         Returns
         -------
         DiscountedReserves
+        """
+    @staticmethod
+    def from_json(text: str) -> MackBootstrapFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        MackBootstrapFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -24481,6 +24617,31 @@ class MackBootstrapFit:
         -------
         pandas.DataFrame
         """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly: the simulated reserves, the patterns and the cells (if
+        kept) included, every number bit for bit. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import MackBootstrap, MackBootstrapFit, Triangle
+        >>> tri = Triangle.from_long(
+        ...     origin=[2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        ...     development=[12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        ...     values={"paid": [100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0,
+        ...                      120.0, 175.0, 130.0]})
+        >>> fit = MackBootstrap(n_sims=100, seed=1).fit(tri, "paid")
+        >>> MackBootstrapFit.from_json(fit.to_json()).reserves.mean() == fit.reserves.mean()
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
+        """
     def totals_frame(self, /) -> Any:
         """
         One row per segment: the key columns, the chain ladder's totals, and
@@ -24534,6 +24695,7 @@ class MackFit:
     and the tail) or ``segment(...)``.
     ``total_ultimate`` and ``total_reserve`` sum over every segment.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def blended_ldf(self, /) -> list[float]:
@@ -24712,6 +24874,24 @@ class MackFit:
         """
         Whether ``n_periods`` or the drops left out a link ratio at some age.
         """
+    @staticmethod
+    def from_json(text: str) -> MackFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        MackFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
+        """
     @property
     def index(self, /) -> list[Any]:
         """
@@ -24844,6 +25024,31 @@ class MackFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly: every number bit for bit, the link ratios that the
+        assumption tests read included. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import Mack, MackFit, Triangle
+        >>> tri = Triangle.from_long(
+        ...     origin=[2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        ...     development=[12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        ...     values={"paid": [100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0,
+        ...                      120.0, 175.0, 130.0]})
+        >>> fit = Mack().fit(tri, "paid")
+        >>> MackFit.from_json(fit.to_json()).standard_error == fit.standard_error
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     @property
     def total_cv(self, /) -> float:
@@ -27906,6 +28111,7 @@ class OdpBootstrapFit:
     indexed ``[origin][development]``, like one segment of
     ``Triangle.values``, with ``nan`` where the triangle is not observed.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def cells(self, /) -> PredictiveDistribution |None:
@@ -27990,6 +28196,24 @@ class OdpBootstrapFit:
     def fitted(self, /) -> list[list[float]]:
         """
         Fitted incremental values, ``[origin][development]``.
+        """
+    @staticmethod
+    def from_json(text: str) -> OdpBootstrapFit:
+        """
+        A fit from a document written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        OdpBootstrapFit
+        
+        Raises
+        ------
+        ValueError
+            If the text is not such a document, or is from a newer version.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -28081,6 +28305,31 @@ class OdpBootstrapFit:
         Returns
         -------
         pandas.DataFrame
+        """
+    def to_json(self, /) -> str:
+        """
+        This fit, every segment, as a JSON document that ``from_json`` reads
+        back exactly: the simulated reserves, the patterns and the cells (if
+        kept) included, every number bit for bit. Pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.reserving import OdpBootstrap, OdpBootstrapFit, Triangle
+        >>> tri = Triangle.from_long(
+        ...     origin=[2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        ...     development=[12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        ...     values={"paid": [100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0,
+        ...                      120.0, 175.0, 130.0]})
+        >>> fit = OdpBootstrap(n_sims=100, seed=1).fit(tri, "paid")
+        >>> OdpBootstrapFit.from_json(fit.to_json()).reserves.mean() == fit.reserves.mean()
+        True
+        >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+        True
         """
     def totals_frame(self, /) -> Any:
         """
@@ -40480,6 +40729,9 @@ def buhlmann_straub(ratios: Sequence[Sequence[float]], weights: Sequence[Sequenc
     group ``i`` in period ``j`` has ratio ``X_ij`` (loss per unit of
     exposure) with weight ``w_ij``. Without weights it is Bühlmann's model.
     
+    The method, its estimators and its reference are documented once, in
+    the Rust reference: https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.BuhlmannStraub.html
+    
     Parameters
     ----------
     ratios : list of list of float
@@ -41773,6 +42025,61 @@ def eventual_ruin(severity: Grid, rho: float |None = None, *, loss_ratio: float 
     0.156
     """
 
+def experience_ratio_modification(subject_loss_cost: Sequence[float], unreported_share: Sequence[float], year: Sequence[int], loss: Sequence[float], alae: Sequence[float], maximum_single_limit: float, expected_ratio: float, credibility: float, detrend_factor: Sequence[float] |None = None) -> dict:
+    """
+    The experience modification of the general liability experience ratio
+    plan (ISO's Commercial General Liability Experience Rating Plan), with
+    every sum of its worksheet.
+    
+    ``AER = (reported + expected unreported) / subject loss cost`` and
+    ``mod = 1 + Z (AER - EER) / EER``. Each occurrence enters at its
+    basic-limits loss plus ALAE, held together to the maximum single limit;
+    a year's expected unreported losses are its subject loss cost times its
+    detrend factor, ``EER`` and its unreported share. The bureau's tables
+    (subject loss costs, ``EER``, MSL, credibility, unreported shares) are
+    inputs.
+    
+    Parameters
+    ----------
+    subject_loss_cost, unreported_share : list of float
+        Per year: the company subject basic-limits loss cost and the share
+        of its losses expected still unreported.
+    year, loss, alae : list
+        Per occurrence: the position of its year (from 0), its basic-limits
+        loss and its allocated loss adjustment expense.
+    maximum_single_limit : float
+        The MSL; ``float("inf")`` for none.
+    expected_ratio : float
+        ``EER``.
+    credibility : float
+        ``Z``, from 0 to 1.
+    detrend_factor : list of float, optional
+        Per year; 1 by default.
+    
+    Returns
+    -------
+    dict
+        ``modification`` (unrounded), ``credit_debit``, ``actual_ratio``,
+        ``expected_ratio``, ``credibility``, ``subject_loss_cost``,
+        ``reported``, ``expected_unreported``, and ``years`` (columns
+        ``subject_loss_cost``, ``reported`` and ``expected_unreported``).
+    
+    Raises
+    ------
+    ValueError
+        For columns of different lengths, a year position out of range, or
+        a plan or amount that is not valid.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import experience_ratio_modification
+    >>> x = experience_ratio_modification([100_000.0], [0.25], [0], [70_000.0], [5_000.0],
+    ...                                   maximum_single_limit=50_000.0,
+    ...                                   expected_ratio=0.8, credibility=0.3)
+    >>> round(x["actual_ratio"], 12), round(x["modification"], 6)
+    (0.7, 0.9625)
+    """
+
 def exponential_trend(x: Sequence[float], y: Sequence[float]) -> Any:
     """
     The exponential trend through points by least squares on the logarithm.
@@ -42415,15 +42722,12 @@ def hachemeister(ratios: Sequence[Sequence[float]], design: Sequence[Sequence[fl
     weight ``w_it`` and a mean ``design[t] @ beta_i`` on a design shared by
     the risks (a trend line ``[1, t]``, say). Each risk's own weighted least
     squares fit is shrunk towards the collective by a credibility matrix.
+    ``estimator`` applies only with ``adjust_intercept``, whose design's
+    first column must be constant; at the origin the between covariance is
+    always Hachemeister's iterative estimator, as in ``actuar``.
     
-    At the origin the matrices are full and the between covariance is
-    Hachemeister's iterative estimator whatever ``estimator`` says (as
-    ``actuar``; on near-collinear coefficients its iteration may wander in
-    the last digits). With ``adjust_intercept`` (``actuar``'s
-    ``adj.intercept``) the design is orthogonalised under the collective
-    weights, the matrices are diagonal and each diagonal is estimated as
-    Bühlmann–Straub's by ``estimator``; the design's first column must
-    then be constant.
+    The method, its estimators and its reference are documented once, in
+    the Rust reference: https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.Hachemeister.html
     
     Parameters
     ----------
@@ -45389,6 +45693,77 @@ def solvency2_type1(exposures: Sequence[tuple[float, float]]) -> Solvency2Type1:
     >>> t = solvency2_type1([(0.002, 100.0)])
     >>> round(t.sigma ** 2, 12), round(t.scr / t.sigma, 12)
     (19.96, 3.0)
+    """
+
+def split_plan_modification(class_code: Sequence[str], payroll: Sequence[float], expected_loss_rate: Sequence[float], d_ratio: Sequence[float], amount: Sequence[float], weight: float, ballast: float, split_point: float, medical_only: Sequence[bool] |None = None, accident: Sequence[str |None] |None = None, per_claim_limit: float |None = None, per_accident_limit: float |None = None, medical_only_share: float = ...) -> dict:
+    """
+    The experience modification of the workers compensation split plan
+    (NCCI's Experience Rating Plan), with every sum of its worksheet.
+    
+    ``mod = (A_p + W A_e + (1 - W) E_e + B) / (E + B)``: expected losses
+    ``E`` (payroll in hundreds times the expected loss rate, summed over
+    the class rows) and their primary part ``E_p`` (times the D-ratio),
+    ``E_e = E - E_p``, actual primary and excess losses ``A_p`` and ``A_e``,
+    the weighting value ``W`` and the ballast ``B``. Each claim is held to
+    the per-claim limit, the claims of one accident together to the
+    per-accident limit (the cut taken from their excess first), split at
+    the split point, and a medical-only claim enters at
+    ``medical_only_share`` of both parts. The bureau's tables (expected loss
+    rates, D-ratios, weighting values, ballasts, split points) are inputs.
+    
+    Parameters
+    ----------
+    class_code : list of str
+        One entry per class row of the experience period (a class in a
+        year or policy).
+    payroll, expected_loss_rate, d_ratio : list of float
+        Per class row: the payroll, the expected loss rate per 100 of
+        payroll, and the D-ratio.
+    amount : list of float
+        The incurred amount of each claim.
+    weight : float
+        The weighting value ``W``, from 0 to 1.
+    ballast : float
+        The ballast ``B``.
+    split_point : float
+        The part of each claim that is primary.
+    medical_only : list of bool, optional
+        Per claim, whether it is medical-only; none are by default.
+    accident : list of str or None, optional
+        Per claim, the accident it arose from, for the per-accident limit;
+        ``None`` for an accident of its own.
+    per_claim_limit, per_accident_limit : float, optional
+        No limit by default.
+    medical_only_share : float, default 0.3
+    
+    Returns
+    -------
+    dict
+        ``modification`` (unrounded; the bureau shows two decimals),
+        ``expected``, ``expected_primary``, ``expected_excess``,
+        ``actual_primary``, ``actual_excess``, ``weight``, ``ballast``,
+        ``stabilizing`` (``(1 - W) E_e + B``), ``adjusted_actual``,
+        ``adjusted_expected``, and the rows: ``classes`` (``class_code``,
+        ``expected``, ``expected_primary``) and ``claims`` (``amount``,
+        ``limited``, ``primary``, ``excess``, what enters after the
+        limits and the medical-only share).
+    
+    Raises
+    ------
+    ValueError
+        For columns of different lengths, a weight outside 0 to 1, a
+        negative amount, payroll, rate or ballast, a D-ratio outside 0 to 1,
+        or no expected losses and no ballast.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import split_plan_modification
+    >>> x = split_plan_modification(["8810"], [3_000_000.0], [0.11], [0.35],
+    ...                             [25_000.0, 2_000.0], weight=0.14,
+    ...                             ballast=5_000.0, split_point=18_000.0,
+    ...                             medical_only=[False, True])
+    >>> x["expected"], x["actual_excess"], round(x["actual_primary"], 6)
+    (3300.0, 7000.0, 18600.0)
     """
 
 def stack(ledgers: dict, impacts: Sequence[tuple[str, str, str]] |None = None) -> dict:

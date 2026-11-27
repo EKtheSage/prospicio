@@ -396,6 +396,11 @@ reference:
     contents:
       - pricing.InsuranceCharge
       - pricing.RetroPlan
+  - title: Experience modification
+    desc: The experience modifications of the workers compensation split plan, from the class rows' payrolls and the claims, and of the general liability experience ratio plan, from each year's subject loss cost and occurrences, with every sum of their worksheets.
+    contents:
+      - pricing.experience_ratio_modification
+      - pricing.split_plan_modification
   - title: Reserving
     desc: Loss triangles, the chain ladder with tail factors, Mack's model with its one-year view and its assumption tests, the Munich chain ladder, the expected-loss methods, the ODP bootstrap and Clark's growth curves.
     contents:

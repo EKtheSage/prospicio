@@ -266,7 +266,7 @@ const SIM_ROWS: Arg = Arg {
 };
 const MACK_PROCESS: Arg = Arg {
     name: "process",
-    help: "\"gamma\" (default), \"lognormal\", \"normal\", \"residuals\", or \"none\" for parameter error only",
+    help: "\"gamma\" (default), \"lognormal\", \"residuals\", \"normal\", or \"none\" for parameter error only",
 };
 
 const EXPOSURE: Arg = Arg {

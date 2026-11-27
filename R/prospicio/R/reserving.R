@@ -5080,37 +5080,17 @@ bayes_bf_normalised_one_year <- function(triangle, column, exposure, apriori = 1
 #' Bootstrap of Mack's model
 #'
 #' The lifetime view of reserve risk under Mack's model, bootstrapped as
-#' England, Verrall and Wuthrich (2019, Appendix 1) describe: the scaled
-#' bias-adjusted residuals of the link ratios
-#' `sqrt(n_k / (n_k - 1)) C^(alpha / 2) (F - f_k) / sigma_k` are resampled
-#' into pseudo link ratios and re-averaged into pseudo factors (parameter
-#' error), and every future cumulative value is drawn from the one before,
-#' the observed latest value for the first, with mean `f*_k C` and Mack's
-#' variance `sigma_k^2 |C|^(2 - alpha)` (process error), to the triangle's
-#' last age. An origin's reserve is its last drawn value less its latest.
-#' With a `tail` every origin takes one more step, from the oldest age to
-#' ultimate, with mean the tail factor times the value at the oldest age and
-#' variance `tail_sigma^2 |C|^(2 - alpha)` (Mack 1999); the tail factor is
-#' refitted on each simulation's pseudo factors (an estimated tail) or drawn
-#' from the lognormal with the factor as mean and the tail's standard error
-#' (a constant one). A constant tail attached before the oldest age moves
-#' each factor it replaces by the pseudo factor's deviation from the
-#' estimate, which [mack()] charges with the estimated factor's standard
-#' error. With a constant tail the standard deviation approximates
-#' [mack()]'s with the same tail; for an estimated tail the parameter error
-#' and the mean are the refit's, not Mack's extrapolated `tail.se` and the
-#' chain ladder's reserve.
-#'
-#' The standard deviation of the reserves approximates Mack's analytic
-#' standard error ([mack()]), and the mean is the chain ladder's reserve
-#' (without a tail or with a constant one): the pooled residuals do not have
-#' a zero mean, so by default (`centre_residuals = TRUE`) they are centred
-#' before resampling.
-#' Resampled as they are (`centre_residuals = FALSE`, EVW's Appendix 1 as
-#' written) they bias every pseudo factor, and the mean reserve with them
-#' (about 17% above the chain ladder's on RAA, 0.7% on GenIns, 0.8% below
-#' on ABC); EVW's Table 4 expected reserves agree with the centred
-#' bootstrap.
+#' England, Verrall and Wuthrich (2019, Appendix 1) describe: the link
+#' ratios' residuals are resampled into pseudo factors (parameter error),
+#' and every future cumulative value is drawn from the one before with
+#' Mack's mean and variance (process error), to the triangle's last age, or
+#' with a `tail` one more step to ultimate. An origin's reserve is its last
+#' drawn value less its latest. Its standard deviation approximates
+#' [mack()]'s standard error with the same tail, and by default
+#' (`centre_residuals = TRUE`) its mean is the chain ladder's reserve.
+#' The method, its formulas, the centring of the residuals, the tails and
+#' its reference are documented once, in the
+#' [Rust reference](https://docs.rs/prospicio-reserving/latest/prospicio_reserving/mack_bootstrap/index.html).
 #'
 #' Every segment is bootstrapped with its own Mack model and residuals,
 #' into one joint distribution of the reserves, the segments depending on
@@ -5308,20 +5288,13 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #'
 #' `mack_one_year()` re-reserves the same way under Mack's process instead,
 #' England, Verrall and Wuthrich's (2019, Appendix 1) bootstrap of Mack's
-#' model: each simulation resamples the scaled bias-adjusted residuals of
-#' the link ratios into pseudo factors, averaged as `mack_average`, and
-#' draws each cumulative value of the coming year from the one before `C`
-#' (the observed latest value for the first) with mean `f* C` and variance
-#' `sigma^2 |C|^(2 - alpha)`, with the same pseudo factors all year. With the
+#' model, the pseudo factors averaged as `mack_average`. With the
 #' volume-weighted chain ladder and no tail, its standard deviations are
 #' Merz and Wuthrich's ([claims_development_result()]) within Monte Carlo
-#' error, which reconciles the two, and its mean is Merz and Wuthrich's
-#' zero, because by default (`centre_residuals = TRUE`) the pool of
-#' residuals is centred first. Uncentred (`centre_residuals = FALSE`, EVW's
-#' Appendix 1 as written), the pool's non-zero mean biases the pseudo
-#' factors: the mean CDR is about -0.2 (RAA), -0.04 (GenIns) and +0.18
-#' (ABC) times its standard deviation, and RAA's standard deviations up to
-#' 1.3% wide. Its fit has `model = "mack"`, no `scale`, and `mack`, the
+#' error, and by default (`centre_residuals = TRUE`) its mean is their zero.
+#' The method and the effect of uncentred residuals are documented once, in
+#' the [Rust reference](https://docs.rs/prospicio-reserving/latest/prospicio_reserving/mack_bootstrap/index.html).
+#' Its fit has `model = "mack"`, no `scale`, and `mack`, the
 #' [mack_fit] it simulates from; it needs no negative cumulative value.
 #'
 #' By default the bootstrap has no tail of its own: its simulation stops at

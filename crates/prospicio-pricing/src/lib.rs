@@ -51,6 +51,7 @@ pub mod casualty;
 pub mod classical;
 pub mod credibility;
 pub mod earned;
+pub mod emod;
 pub mod experience;
 pub mod exposure;
 pub mod frontier;

@@ -42,7 +42,8 @@ limited_fluctuation_credibility <- function(n, standard) {
 #' Without weights it is Bühlmann's model. The between-group variance is
 #' Bühlmann and Straub's unbiased estimator (`actuar`'s
 #' `"Buhlmann-Gisler"` and `"Ohlsson"`) or Bichsel and Straub's iterative
-#' one.
+#' one. The method, its estimators and its reference are documented once,
+#' in the [Rust reference](https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.BuhlmannStraub.html).
 #'
 #' @param ratios A matrix, one row per group and one column per period;
 #'   `NA` for a missing cell.
@@ -75,17 +76,13 @@ buhlmann_straub <- function(ratios, weights = NULL, estimator = c("unbiased", "i
 #' formula, regdata = data)`: risk `i` in period `t` has ratio `X_it` with
 #' weight `w_it` and a mean on a design shared by the risks (a trend line
 #' `~ time`, say). Each risk's own weighted least squares fit is shrunk
-#' towards the collective by a credibility matrix
-#' `Z_i = A (A + s2 W_i)^-1`.
+#' towards the collective by a credibility matrix. `estimator` applies
+#' only with `adjust_intercept = TRUE`, whose formula must have an
+#' intercept as its first column; at the origin the between covariance is
+#' always Hachemeister's iterative estimator, as in `actuar`.
 #'
-#' At the origin the matrices are full and the between covariance `A` is
-#' Hachemeister's iterative estimator whatever `estimator` says, as in
-#' `actuar` (on nearly collinear coefficients its iteration may wander in
-#' the last digits). With `adjust_intercept = TRUE` (`actuar`'s
-#' `adj.intercept`) the design is orthogonalised under the collective
-#' weights, the matrices are diagonal and each diagonal is estimated as
-#' Bühlmann–Straub's by `estimator`; the formula must then have an
-#' intercept as its first column.
+#' The method, its estimators and its reference are documented once, in the
+#' [Rust reference](https://docs.rs/prospicio-pricing/latest/prospicio_pricing/credibility/struct.Hachemeister.html).
 #'
 #' @param ratios A matrix, one row per risk and one column per period; `NA`
 #'   for a missing cell.

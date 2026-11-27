@@ -56,25 +56,17 @@ pub(crate) fn one_year_method(
 }
 
 /// Mack's bootstrap for the lifetime and one-year views (England, Verrall
-/// and Wüthrich 2019, Appendix 1): the scaled bias-adjusted residuals of
-/// the link ratios are resampled into pseudo factors, and each future
-/// cumulative value, to the last age (``fit``) or over the coming year
-/// (``one_year``), is drawn from the one before ``C`` (the observed latest
-/// value for the first) with mean ``f* C`` and Mack's variance
-/// ``sigma**2 * abs(C)**(2 - alpha)``. The lifetime view's standard
-/// deviation approximates Mack's analytic standard error. Beside
-/// ``OdpBootstrap`` (variance ``scale`` times the mean increment), it gives
-/// the one-year view under Mack's process: with the volume-weighted chain
-/// ladder and no tail, its standard deviation is
-/// ``MackFit.claims_development_result()``'s (Merz and Wüthrich) within
-/// Monte Carlo error. The residuals are centred by default
-/// (``centre_residuals``), so the mean CDR is Merz and Wüthrich's zero and
-/// the lifetime mean reserve the chain ladder's, and EVW's Table 4 expected
-/// reserves agree. Uncentred, as EVW's Appendix 1 is written, the pool's
-/// non-zero mean biases the pseudo factors: the mean CDR is about -0.2
-/// (RAA), -0.04 (GenIns) and +0.18 (ABC) times its standard deviation, the
-/// lifetime mean reserve about +17%, +0.7% and -0.8% off the chain
-/// ladder's, and the one-year standard deviation up to 1.3% wide on RAA.
+/// and Wüthrich 2019, Appendix 1): the link ratios' residuals are resampled
+/// into pseudo factors (parameter error), and each future cumulative value
+/// is drawn from the one before with Mack's mean and variance (process
+/// error), to the last age (``fit``) or over the coming year
+/// (``one_year``). Its lifetime standard deviation approximates
+/// ``Mack``'s standard error, and its one-year view is
+/// ``MackFit.claims_development_result()``'s within Monte Carlo error.
+///
+/// The method, its formulas, the centring of the residuals and its
+/// reference are documented once, in the Rust reference: https://docs.rs/prospicio-reserving/latest/prospicio_reserving/mack_bootstrap/index.html
+///
 /// Simulation ``i`` uses random stream ``i`` of ``seed`` for every segment
 /// in turn.
 ///
@@ -196,27 +188,12 @@ pub(crate) struct PyMackBootstrap {
 }
 
 fn mack_process(name: &str) -> PyResult<MackProcess> {
-    match name {
-        "gamma" => Ok(MackProcess::Gamma),
-        "lognormal" => Ok(MackProcess::Lognormal),
-        "residuals" => Ok(MackProcess::Residuals),
-        "normal" => Ok(MackProcess::Normal),
-        "none" => Ok(MackProcess::None),
-        _ => Err(PyValueError::new_err(format!(
-            "process must be \"gamma\", \"lognormal\", \"residuals\", \"normal\" or \"none\", \
-             got {name:?}"
-        ))),
-    }
+    MackProcess::from_name(name)
+        .ok_or_else(|| crate::unknown_name("process", name, MackProcess::NAMES))
 }
 
 fn mack_process_name(p: MackProcess) -> &'static str {
-    match p {
-        MackProcess::Gamma => "gamma",
-        MackProcess::Lognormal => "lognormal",
-        MackProcess::Residuals => "residuals",
-        MackProcess::Normal => "normal",
-        MackProcess::None => "none",
-    }
+    p.name()
 }
 
 #[pymethods]
@@ -618,6 +595,58 @@ pub(crate) struct PyMackBootstrapFit {
 
 #[pymethods]
 impl PyMackBootstrapFit {
+    /// This fit, every segment, as a JSON document that ``from_json`` reads
+    /// back exactly: the simulated reserves, the patterns and the cells (if
+    /// kept) included, every number bit for bit. Pickling uses it too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.reserving import MackBootstrap, MackBootstrapFit, Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     origin=[2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    /// ...     development=[12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    /// ...     values={"paid": [100.0, 150.0, 165.0, 170.0, 110.0, 172.0, 185.0,
+    /// ...                      120.0, 175.0, 130.0]})
+    /// >>> fit = MackBootstrap(n_sims=100, seed=1).fit(tri, "paid")
+    /// >>> MackBootstrapFit.from_json(fit.to_json()).reserves.mean() == fit.reserves.mean()
+    /// True
+    /// >>> pickle.loads(pickle.dumps(fit)).to_json() == fit.to_json()
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// A fit from a document written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// MackBootstrapFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the text is not such a document, or is from a newer version.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        MackBootstrapFits::from_json(text)
+            .map(|inner| Self { inner })
+            .map_err(err)
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.get().inner.to_json(),)))
+    }
+
     /// The unpaid claims discounted simulation by simulation, by origin and
     /// in total, for the IFRS 17 liability for incurred claims and its risk
     /// adjustment (``DiscountedReserves``, ``docs/design/reserving-ifrs17.md``).
