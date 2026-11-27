@@ -76,6 +76,40 @@ pub enum AnnualReading {
     LnLinear,
 }
 
+impl AnnualReading {
+    /// Every name the Python and R front ends accept, with its reading, the
+    /// canonical name of each first (#990).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("weibull", Self::Curve(GrowthCurve::Weibull)),
+        ("loglogistic", Self::Curve(GrowthCurve::LogLogistic)),
+        ("ln-linear", Self::LnLinear),
+    ];
+
+    /// The reading named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    ///
+    /// ```
+    /// use prospicio_reserving::AnnualReading;
+    ///
+    /// assert_eq!(AnnualReading::from_name("ln-linear"), Some(AnnualReading::LnLinear));
+    /// assert_eq!(AnnualReading::from_name("gompertz"), None);
+    /// ```
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, r)| r)
+    }
+
+    /// The canonical name: `"weibull"`, `"loglogistic"` or `"ln-linear"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Curve(GrowthCurve::Weibull) => "weibull",
+            Self::Curve(GrowthCurve::LogLogistic) => "loglogistic",
+            Self::LnLinear => "ln-linear",
+        }
+    }
+}
+
 impl Default for AnnualReading {
     fn default() -> Self {
         Self::Curve(GrowthCurve::Weibull)

@@ -1588,15 +1588,9 @@ fn accident_grain(name: &str) -> Result<prospicio_reserving::Grain> {
 }
 
 fn reading_arg(name: &str) -> Result<prospicio_reserving::AnnualReading> {
-    use prospicio_reserving::{AnnualReading, GrowthCurve};
-    match name {
-        "weibull" => Ok(AnnualReading::Curve(GrowthCurve::Weibull)),
-        "loglogistic" => Ok(AnnualReading::Curve(GrowthCurve::LogLogistic)),
-        "ln-linear" => Ok(AnnualReading::LnLinear),
-        other => Err(Error::Other(format!(
-            "reading must be \"weibull\", \"loglogistic\" or \"ln-linear\", got {other:?}"
-        ))),
-    }
+    use prospicio_reserving::AnnualReading;
+    AnnualReading::from_name(name)
+        .ok_or_else(|| crate::unknown_name("reading", name, AnnualReading::NAMES))
 }
 
 /// The deal's paid pattern by month from inception for an accident-period
