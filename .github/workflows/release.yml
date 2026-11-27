@@ -319,7 +319,10 @@ jobs:
   # The npm package `prospicio`, the artifact the npm-package job built and
   # tested. Trusted publishing: npm accepts this repository, workflow and
   # environment and hands out a short-lived token; no token is stored, and
-  # npm attaches a provenance attestation. npm lets a trusted publisher be
+  # npm attaches a provenance attestation. The job stages the version
+  # (`npm stage publish`); it goes public only when the owner approves it,
+  # with 2FA, on the package's Staged Packages tab (the user's decision of
+  # 2026-11-27; the trusted publisher allows stage publish only). npm lets a trusted publisher be
   # added only to a package that exists, so the first version is published
   # by hand and this job stays off until the owner sets the repository
   # variable NPM_PUBLISH to "true" (docs/release.md, "One-time setup").
@@ -335,11 +338,12 @@ jobs:
         with:
           name: npm-package
           path: pkg
-      # Trusted publishing needs npm 11.5.1 or later, which Node 24 ships.
+      # Staged publishing needs npm 11.15.0 or later, which Node 24 ships
+      # (11.19.1 on 2026-11-27).
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm --version
-      - run: npm publish
+      - run: npm stage publish
         working-directory: pkg

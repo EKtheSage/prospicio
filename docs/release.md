@@ -90,14 +90,19 @@ Do these once, before the first release.
       | Repository | `prospicio` |
       | Workflow filename | `release.yml` |
       | Environment name | `npm` |
-      | Allowed actions | `npm publish` |
+      | Allowed actions | `npm stage publish` only (leave `npm publish` and `npm dist-tag` unticked) |
 
       npm does not check these when they are saved; a wrong value shows
-      only as an authentication error at the publish.
+      only as an authentication error at the publish. A publisher that
+      allows only staged publishing refuses a plain `npm publish` with
+      `403 OIDC permission denied for this action`.
    4. In the repository's *Settings → Secrets and variables → Actions →
       Variables*, add `NPM_PUBLISH` with the value `true`. From then on a
-      tag publishes the package from the `npm` job, with no stored token
-      and with a provenance attestation.
+      tag stages the package from the `npm` job (`npm stage publish`, npm
+      11.15 or later), with no stored token and with a provenance
+      attestation, and the owner makes it public (step 3 of "Each
+      release"). Staged publishing was the user's decision of 2026-11-27:
+      a CI credential alone can never put a version on npm.
 
 ## Version plan
 
@@ -319,8 +324,12 @@ release: the rest of #978 (pickling the reserving fits), #990 and #991.
 
    The workflow checks that the tag and the R package's `DESCRIPTION`
    match the workspace version, builds
-   and tests again, then publishes to PyPI and crates.io, and to npm once
-   `NPM_PUBLISH` is set (one-time setup, step 4).
+   and tests again, then publishes to PyPI and crates.io, and stages the
+   npm package once `NPM_PUBLISH` is set (one-time setup, step 4). To make
+   the staged version public, open the package on npmjs.com, *Staged
+   Packages*, check the version and click *Approve* (2FA), or run
+   `npm stage approve <stage-id>`; `npm stage list prospicio` shows the
+   id. A staged version keeps the `latest` tag it was staged with.
 
    The **XLL** workflow builds the Excel add-in for the same tag and
    attaches it to a draft GitHub release; publish the draft (*Releases*)
