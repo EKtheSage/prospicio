@@ -29,6 +29,7 @@ Collate:
     'credibility.R'
     'discrete.R'
     'earned.R'
+    'emod.R'
     'reserving.R'
     'excess.R'
     'extendr-wrappers.R'
