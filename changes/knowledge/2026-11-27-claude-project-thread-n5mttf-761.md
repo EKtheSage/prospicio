@@ -1,0 +1,1 @@
+* **Creation**: [R closures sent to worker processes carry unforced promises](/findings/r-worker-process-closures.md), from #761 (branch claude/project-thread-n5mttf-761): a PSOCK worker evaluates an unforced argument in its own empty global environment, and a forked worker has no rayon threads.
