@@ -7,9 +7,9 @@
 \alias{random_search}
 \title{Cross-validation and hyperparameter search}
 \usage{
-cross_validate(data, splits, fit, score)
+cross_validate(data, splits, fit, score, map = NULL, seed = NULL)
 
-grid_search(candidates, data, splits, fit, score)
+grid_search(candidates, data, splits, fit, score, map = NULL, seed = NULL)
 
 random_search(n, draw, data, splits, fit, score, seed = NULL)
 }
@@ -24,13 +24,22 @@ for the searches: returns a fitted model.}
 \item{score}{\code{score(model, test)}: a loss on the test rows (lower is
 better), such as a mean \code{\link[=family_deviance]{family_deviance()}}.}
 
+\item{map}{\code{NULL} (the default) fits serially. Otherwise a function
+shaped like \code{lapply(X, FUN)} that runs the fits, for instance in
+worker processes: \code{function(x, f) parallel::parLapply(cl, x, f)},
+\code{future.apply::future_lapply} or a \code{mirai} map. See "Parallel fits".}
+
+\item{seed}{For \code{random_search()}, the seed for R's generator before
+drawing. For \code{cross_validate()} and \code{grid_search()}, \code{NULL} (the
+default) leaves R's generator alone; a number gives each fit its own
+seed, drawn from it in the caller, so a \code{fit} or \code{score} that draws
+random numbers gives the same scores whatever \code{map} runs them.}
+
 \item{candidates}{A list (or vector) of hyperparameter values.}
 
 \item{n}{Number of random candidates.}
 
 \item{draw}{\code{draw()}: one random candidate, using R's generator.}
-
-\item{seed}{Seed for R's generator before drawing.}
 }
 \value{
 \code{cross_validate()}: one score per split. The searches: a data
@@ -44,6 +53,40 @@ picks the lowest mean score; \code{random_search()} draws the candidates.
 Models are built by your own \code{fit} function, so any of \code{\link[=glm_fit]{glm_fit()}},
 \code{\link[=elastic_net_fit]{elastic_net_fit()}} or \code{\link[=gam_fit]{gam_fit()}} (or anything else) can be tuned.
 }
+\section{Parallel fits}{
+
+\code{fit} and \code{score} are R functions, which only R's main thread can call,
+so the fits run in parallel only in worker processes, through \code{map}.
+\code{grid_search()} makes one task per candidate and split. The scores come
+back in the order of the splits and candidates, whatever order the
+workers finish in, and with a \code{seed} they are the same as a serial
+run's.
+\itemize{
+\item \strong{Models stay in the worker.} A fitted model holds a pointer to Rust
+memory that cannot be sent between processes, so each task fits and
+scores its model where it runs and returns only the score. \code{fit} and
+\code{score} must not rely on objects that only the main process has: load
+the package in each worker.
+\item \strong{One thread per worker.} Each worker process has a thread pool of
+its own, so set \code{RAYON_NUM_THREADS=1} in the workers before they first
+load the package, or the workers' threads oversubscribe the cores.
+\item \strong{Use fresh processes.} A forked worker (\code{parallel::mclapply}) can
+hang if the main process has already run a parallel computation of
+the package, since a fork does not copy its threads. A PSOCK cluster,
+\code{future}'s multisession plan or \code{mirai} start new processes.
+}
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{cl <- parallel::makeCluster(4)
+parallel::clusterEvalQ(cl, \{
+  Sys.setenv(RAYON_NUM_THREADS = 1)
+  library(prospicio)
+\})
+g <- grid_search(c(0, 0.1, 1), d, folds, fit, mse,
+                 map = function(x, f) parallel::parLapply(cl, x, f))
+parallel::stopCluster(cl)
+}\if{html}{\out{</div>}}
+}
+
 \examples{
 d <- data.frame(x = 1:40 / 10)
 d$y <- 1 + 2 * d$x + sin(1:40)

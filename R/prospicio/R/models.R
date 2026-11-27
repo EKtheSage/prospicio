@@ -1488,7 +1488,15 @@ bootstrap_rows <- function(n, seed, stream = 0) {
 #' @param candidates A list (or vector) of hyperparameter values.
 #' @param n Number of random candidates.
 #' @param draw `draw()`: one random candidate, using R's generator.
-#' @param seed Seed for R's generator before drawing.
+#' @param seed For `random_search()`, the seed for R's generator before
+#'   drawing. For `cross_validate()` and `grid_search()`, `NULL` (the
+#'   default) leaves R's generator alone; a number gives each fit its own
+#'   seed, drawn from it in the caller, so a `fit` or `score` that draws
+#'   random numbers gives the same scores whatever `map` runs them.
+#' @param map `NULL` (the default) fits serially. Otherwise a function
+#'   shaped like `lapply(X, FUN)` that runs the fits, for instance in
+#'   worker processes: `function(x, f) parallel::parLapply(cl, x, f)`,
+#'   `future.apply::future_lapply` or a `mirai` map. See "Parallel fits".
 #' @returns `cross_validate()`: one score per split. The searches: a data
 #'   frame with a `candidate` list column and the `score`, and attribute
 #'   `best`, the row of the lowest score.
@@ -1504,28 +1512,120 @@ bootstrap_rows <- function(n, seed, stream = 0) {
 #'                                                       lambda = lam),
 #'                  mse)
 #' g[attr(g, "best"), ]
+#'
+#' @section Parallel fits:
+#' `fit` and `score` are R functions, which only R's main thread can call,
+#' so the fits run in parallel only in worker processes, through `map`.
+#' `grid_search()` makes one task per candidate and split. The scores come
+#' back in the order of the splits and candidates, whatever order the
+#' workers finish in, and with a `seed` they are the same as a serial
+#' run's.
+#'
+#' - **Models stay in the worker.** A fitted model holds a pointer to Rust
+#'   memory that cannot be sent between processes, so each task fits and
+#'   scores its model where it runs and returns only the score. `fit` and
+#'   `score` must not rely on objects that only the main process has: load
+#'   the package in each worker.
+#' - **One thread per worker.** Each worker process has a thread pool of
+#'   its own, so set `RAYON_NUM_THREADS=1` in the workers before they first
+#'   load the package, or the workers' threads oversubscribe the cores.
+#' - **Use fresh processes.** A forked worker (`parallel::mclapply`) can
+#'   hang if the main process has already run a parallel computation of
+#'   the package, since a fork does not copy its threads. A PSOCK cluster,
+#'   `future`'s multisession plan or `mirai` start new processes.
+#'
+#' ```
+#' cl <- parallel::makeCluster(4)
+#' parallel::clusterEvalQ(cl, {
+#'   Sys.setenv(RAYON_NUM_THREADS = 1)
+#'   library(prospicio)
+#' })
+#' g <- grid_search(c(0, 0.1, 1), d, folds, fit, mse,
+#'                  map = function(x, f) parallel::parLapply(cl, x, f))
+#' parallel::stopCluster(cl)
+#' ```
 NULL
 
 #' @rdname tuning
 #' @export
-cross_validate <- function(data, splits, fit, score) {
-  vapply(splits, function(s) {
+cross_validate <- function(data, splits, fit, score, map = NULL, seed = NULL) {
+  # Forced here so that a worker process gets the values, not promises to
+  # evaluate in the caller's frame.
+  force(data); force(fit); force(score)
+  tasks <- lapply(seq_along(splits), function(i) list(split = splits[[i]]))
+  run_tasks(tasks, function(task) {
+    s <- task$split
     model <- fit(data[s$train, , drop = FALSE])
     as.double(score(model, data[s$test, , drop = FALSE]))
-  }, double(1))
+  }, map, seed)
 }
 
 #' @rdname tuning
 #' @export
-grid_search <- function(candidates, data, splits, fit, score) {
+grid_search <- function(candidates, data, splits, fit, score, map = NULL, seed = NULL) {
+  force(data); force(fit); force(score)
   candidates <- as.list(candidates)
   if (!length(candidates)) stop("candidates must not be empty")
-  scores <- vapply(candidates, function(cand) {
-    mean(cross_validate(data, splits, function(train) fit(cand, train), score))
-  }, double(1))
+  # One task per candidate and split, so that few splits still keep the
+  # workers busy (#761).
+  grid <- expand.grid(split = seq_along(splits), candidate = seq_along(candidates))
+  tasks <- lapply(seq_len(nrow(grid)), function(i) {
+    list(candidate = candidates[[grid$candidate[i]]], split = splits[[grid$split[i]]])
+  })
+  per_task <- run_tasks(tasks, function(task) {
+    s <- task$split
+    model <- fit(task$candidate, data[s$train, , drop = FALSE])
+    as.double(score(model, data[s$test, , drop = FALSE]))
+  }, map, seed)
+  scores <- vapply(seq_along(candidates), function(j) mean(per_task[grid$candidate == j]), double(1))
   out <- data.frame(candidate = I(candidates), score = scores)
   attr(out, "best") <- which.min(scores)
   out
+}
+
+# Runs `run(task)` for every task through `map` (`lapply` when NULL) and
+# returns one double per task, in the tasks' order. With a `seed`, each task
+# sets R's generator from its own seed, drawn in the caller from `seed`, so
+# the scores do not depend on the backend or the number of workers; the
+# caller's random state is left as it was.
+run_tasks <- function(tasks, run, map, seed) {
+  if (!is.null(seed)) {
+    seeds <- with_seed(seed, sample.int(.Machine$integer.max, length(tasks)))
+    tasks <- lapply(seq_along(tasks), function(i) c(tasks[[i]], list(seed = seeds[[i]])))
+    inner <- run
+    run <- function(task) {
+      set.seed(task$seed)
+      inner(task)
+    }
+    if (is.null(map)) {
+      had <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+      if (had) old <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
+      on.exit(if (had) assign(".Random.seed", old, envir = globalenv())
+              else rm(".Random.seed", envir = globalenv()), add = TRUE)
+    }
+  }
+  if (is.null(map)) map <- lapply
+  if (!is.function(map)) stop("map must be a function like lapply, or NULL")
+  out <- map(tasks, run)
+  if (length(out) != length(tasks)) {
+    stop("map returned ", length(out), " results for ", length(tasks), " tasks")
+  }
+  vapply(out, function(x) {
+    if (inherits(x, "try-error")) stop("a task failed in map: ", as.character(x))
+    if (!is.numeric(x) || length(x) != 1) stop("score must return a single number")
+    as.double(x)
+  }, double(1))
+}
+
+# `expr` evaluated with R's generator set from `seed`, the caller's random
+# state restored afterwards.
+with_seed <- function(seed, expr) {
+  had <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+  if (had) old <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
+  on.exit(if (had) assign(".Random.seed", old, envir = globalenv())
+          else rm(".Random.seed", envir = globalenv()), add = TRUE)
+  set.seed(seed)
+  expr
 }
 
 #' @rdname tuning
