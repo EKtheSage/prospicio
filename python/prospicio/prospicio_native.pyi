@@ -19487,6 +19487,120 @@ class Hurdle:
         """
 
 @final
+class Ifrs17Group:
+    """
+    A group of insurance contracts under IFRS 17's general measurement
+    model, recognised from its expected cash flows and rolled forward a
+    period at a time (``docs/design/reserving-ifrs17-measurement.md``).
+    
+    The group holds its state: :meth:`roll_forward` changes it, and
+    :meth:`to_json` (or ``pickle``) saves it to roll forward next period.
+    
+    Parameters
+    ----------
+    expected : dict
+        The expected cash flows by future period, the next first: lists
+        under ``premiums``, ``claims``, ``expenses``, ``acquisition`` and
+        ``investment_component`` (absent ones nil), and optionally
+        ``premium_timing``, ``claim_timing`` and ``acquisition_timing``
+        (``"start"``, ``"mid"`` or ``"end"``; premiums and acquisition at
+        the start and claims at the end by default).
+    risk_adjustment : float
+        The RA at recognition.
+    curve : DiscountCurve
+        The locked-in curve.
+    coverage_units : list of float, optional
+        One per period of coverage; equal by default.
+    discount_coverage_units : bool, default False
+    period_years : float, default 1.0
+    oci : bool, default False
+        Insurance finance income or expense at the locked-in curve in
+        profit or loss, the rest in OCI.
+    accretion_curve : DiscountCurve, optional
+        The curve the CSM accretes at, when it differs.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import DiscountCurve, Ifrs17Group
+    >>> # IFRS 17 Example 1A: premium 900 at once, claims of 200 a year, RA 120.
+    >>> g = Ifrs17Group({"premiums": [900.0, 0.0, 0.0], "claims": [200.0] * 3}, 120.0,
+    ...                 DiscountCurve.flat(0.05))
+    >>> round(g.balances["csm"])
+    235
+    >>> year = g.roll_forward(g.as_expected(), {"claims": [200.0] * 2}, 80.0)
+    >>> round(year["closing"]["csm"]), round(year["closing"]["liability"])
+    (165, 617)
+    """
+    def __new__(cls, /, expected: dict, risk_adjustment: float, curve: DiscountCurve, coverage_units: Sequence[float] |None = None, discount_coverage_units: bool = False, period_years: float = 1.0, oci: bool = False, accretion_curve: DiscountCurve |None = None) -> Ifrs17Group: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
+    def as_expected(self, /) -> dict:
+        """
+        The next period's cash flows as expected, a dict for
+        :meth:`roll_forward`'s ``actual``.
+        """
+    @property
+    def balances(self, /) -> dict:
+        """
+        The balances after the last period (at recognition before the
+        first): ``present_value``, ``present_value_locked_in``,
+        ``risk_adjustment``, ``csm``, ``loss_component``, ``liability`` and
+        ``accumulated_oci``.
+        """
+    @staticmethod
+    def from_json(text: str) -> Ifrs17Group:
+        """
+        The group a :meth:`to_json` document describes.
+        """
+    @property
+    def period(self, /) -> int:
+        """
+        The periods rolled forward.
+        """
+    def roll_forward(self, /, actual: dict, expected: dict, risk_adjustment: float, risk_adjustment_released: float |None = None, acquisition_recovered: float |None = None, future_coverage_units: Sequence[float] |None = None, current_curve: DiscountCurve |None = None, financial_revision: dict |None = None) -> dict:
+        """
+        Roll the group forward over one period.
+        
+        Parameters
+        ----------
+        actual : dict
+            What happened in the period: ``premiums``,
+            ``premiums_for_future_service``, ``claims``, ``expenses``,
+            ``acquisition`` and ``investment_component`` (absent ones nil).
+        expected : dict
+            The expected cash flows as at the period end, as for the
+            constructor.
+        risk_adjustment : float
+            The RA at the period end.
+        risk_adjustment_released, acquisition_recovered : float, optional
+            By coverage units when not given.
+        future_coverage_units : list of float, optional
+        current_curve : DiscountCurve, optional
+            The curve at the period end, maturities from then.
+        financial_revision : dict, optional
+            The opening view revised for financial assumptions.
+        
+        Returns
+        -------
+        dict
+            The profit or loss lines, ``by_component`` and ``by_coverage``
+            (the two reconciliations, as columns with a ``line`` name), and
+            ``closing``.
+        """
+    def to_json(self, /) -> str:
+        """
+        The state as a JSON document (format ``risk_rs.ifrs17_group``) that
+        :meth:`from_json` reads, to roll forward from where it stopped.
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import DiscountCurve, Ifrs17Group
+        >>> g = Ifrs17Group({"premiums": [900.0, 0.0], "claims": [400.0] * 2}, 30.0,
+        ...                 DiscountCurve.flat(0.0))
+        >>> Ifrs17Group.from_json(g.to_json()).balances == g.balances
+        True
+        """
+
+@final
 class IlfTable:
     """
     An ILF table read as a limited expected value curve: linear between the
@@ -29156,6 +29270,73 @@ class OnnxPredictor:
         """
 
 @final
+class PaaGroup:
+    """
+    A group of insurance contracts under IFRS 17's premium allocation
+    approach: the LRC from premiums less revenue on a pattern, and the LIC
+    at its fulfilment cash flows.
+    
+    Parameters
+    ----------
+    expected_premiums : float
+        The premium receipts expected over the coverage.
+    acquisition : float
+        The acquisition cash flows expected.
+    revenue_pattern : list of float
+        The weights of the revenue by period of coverage.
+    expense_acquisition : bool, default False
+        Expense acquisition cash flows when paid instead of amortising them.
+    lic_curve : DiscountCurve, optional
+        The curve that discounts the LIC; undiscounted by default.
+    period_years : float, default 1.0
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import PaaGroup
+    >>> g = PaaGroup(1_000.0, 100.0, [1.0, 1.0])
+    >>> year = g.roll_forward(1_000.0, 100.0, 300.0, 200.0, 100.0, 10.0)
+    >>> year["insurance_revenue"], year["insurance_service_expenses"]
+    (500.0, 360.0)
+    """
+    def __new__(cls, /, expected_premiums: float, acquisition: float, revenue_pattern: Sequence[float], expense_acquisition: bool = False, lic_curve: DiscountCurve |None = None, period_years: float = 1.0) -> PaaGroup: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
+    @property
+    def balances(self, /) -> dict:
+        """
+        The balances after the last period: the LRC excluding and including
+        the loss component, the LIC's present value and RA, the liability.
+        """
+    @staticmethod
+    def from_json(text: str) -> PaaGroup:
+        """
+        The group a :meth:`to_json` document describes.
+        """
+    def roll_forward(self, /, premiums_received: float, acquisition_paid: float, claims_incurred: float, claims_paid: float, lic_present_value: float, lic_risk_adjustment: float, expected_premiums: float |None = None, remaining_fulfilment: float |None = None) -> dict:
+        """
+        Roll the group forward over one period.
+        
+        Parameters
+        ----------
+        premiums_received, acquisition_paid, claims_incurred, claims_paid : float
+        lic_present_value, lic_risk_adjustment : float
+            The LIC at the period end.
+        expected_premiums : float, optional
+            The premium receipts expected over the whole coverage, revised.
+        remaining_fulfilment : float, optional
+            The GMM fulfilment cash flows of the remaining coverage, for the
+            onerous test.
+        
+        Returns
+        -------
+        dict
+            The profit or loss lines, ``by_coverage`` and ``closing``.
+        """
+    def to_json(self, /) -> str:
+        """
+        The state as a JSON document (format ``risk_rs.ifrs17_paa_group``).
+        """
+
+@final
 class PaidIncurredChain:
     """
     Merz and Wüthrich's (2010) paid-incurred chain (design note
@@ -33726,6 +33907,106 @@ class ReinstatementPrice:
     def upfront(self, /) -> float:
         """
         The upfront (deposit) premium ``P``.
+        """
+
+@final
+class ReinsuranceHeld:
+    """
+    A group of reinsurance contracts held under IFRS 17, measured as an
+    asset: the CSM a net cost or a net gain, the loss-recovery component on
+    onerous underlying groups, and the reinsurer's non-performance.
+    
+    Parameters
+    ----------
+    expected : dict
+        The expected ceded cash flows by future period: lists under
+        ``premiums`` (paid to the reinsurer) and ``recoveries``, and
+        optionally ``premium_timing`` and ``recovery_timing``.
+    risk_adjustment : float
+        The RA for the risk transferred.
+    curve : DiscountCurve
+        The locked-in curve.
+    underlying : list of (Ifrs17Group, float), optional
+        The underlying groups and the share of their claims recovered; a
+        group not yet rolled forward that is onerous gives income at
+        recognition.
+    coverage_units : list of float, optional
+    period_years : float, default 1.0
+    retroactive : bool, default False
+        Expense a net cost at recognition (paragraph 65A).
+    default_probability, loss_given_default : float, optional
+        The reinsurer's annual probability of default and the share of a
+        recovery lost on default; no allowance by default.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import DiscountCurve, ReinsuranceHeld
+    >>> held = ReinsuranceHeld({"premiums": [300.0, 0.0, 0.0], "recoveries": [90.0] * 3}, 15.0,
+    ...                        DiscountCurve.flat(0.0))
+    >>> held.balances["csm"]
+    15.0
+    >>> year = held.roll_forward(held.as_expected(), {"recoveries": [90.0] * 2}, 10.0)
+    >>> year["allocation"], year["net_expense"]
+    (100.0, 10.0)
+    """
+    def __new__(cls, /, expected: dict, risk_adjustment: float, curve: DiscountCurve, underlying: Sequence[tuple[Ifrs17Group, float]] |None = None, coverage_units: Sequence[float] |None = None, period_years: float = 1.0, retroactive: bool = False, default_probability: float |None = None, loss_given_default: float |None = None) -> ReinsuranceHeld: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
+    def as_expected(self, /) -> dict:
+        """
+        The next period's ceded cash flows as expected, a dict for
+        :meth:`roll_forward`'s ``actual``.
+        """
+    @property
+    def balances(self, /) -> dict:
+        """
+        The balances after the last period: ``present_value``,
+        ``present_value_locked_in``, ``non_performance``,
+        ``risk_adjustment``, ``csm``, ``loss_recovery`` and ``asset``.
+        """
+    @staticmethod
+    def from_json(text: str) -> ReinsuranceHeld:
+        """
+        The group a :meth:`to_json` document describes.
+        """
+    @property
+    def period(self, /) -> int:
+        """
+        The periods rolled forward.
+        """
+    def roll_forward(self, /, actual: dict, expected: dict, risk_adjustment: float, underlying: Sequence[Ifrs17Group] |None = None, risk_adjustment_released: float |None = None, future_coverage_units: Sequence[float] |None = None, current_curve: DiscountCurve |None = None, default_probability: float |None = None, loss_given_default: float |None = None) -> dict:
+        """
+        Roll the group forward over one period.
+        
+        Parameters
+        ----------
+        actual : dict
+            ``premiums``, ``premiums_for_future_service`` and ``recoveries``
+            of the period (absent ones nil).
+        expected : dict
+            The expected ceded cash flows as at the period end.
+        risk_adjustment : float
+            The RA at the period end.
+        underlying : list of Ifrs17Group, optional
+            The underlying groups given at recognition, in their order,
+            each already rolled forward over this period.
+        risk_adjustment_released : float, optional
+        future_coverage_units : list of float, optional
+        current_curve : DiscountCurve, optional
+        default_probability, loss_given_default : float, optional
+            The reinsurer's risk of non-performance revised at the period end.
+        
+        Returns
+        -------
+        dict
+            The allocation of premiums paid and its parts, the amounts
+            recovered and their parts, ``net_expense``, ``finance_income``,
+            ``profit``, the ``loss_recovery`` movement, ``by_component`` and
+            ``closing``.
+        """
+    def to_json(self, /) -> str:
+        """
+        The state as a JSON document (format
+        ``risk_rs.ifrs17_reinsurance_held``).
         """
 
 @final

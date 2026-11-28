@@ -250,13 +250,13 @@ impl PaaPeriod {
 /// A group of contracts under the premium allocation approach.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaaGroup {
-    options: PaaOptions,
-    expected_premiums: f64,
-    acquisition: f64,
-    period: usize,
-    revenue_to_date: f64,
-    amortised_to_date: f64,
-    balances: PaaBalances,
+    pub(super) options: PaaOptions,
+    pub(super) expected_premiums: f64,
+    pub(super) acquisition: f64,
+    pub(super) period: usize,
+    pub(super) revenue_to_date: f64,
+    pub(super) amortised_to_date: f64,
+    pub(super) balances: PaaBalances,
 }
 
 impl PaaGroup {
