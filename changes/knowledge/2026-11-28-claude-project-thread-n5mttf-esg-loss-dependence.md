@@ -1,0 +1,1 @@
+* **Creation**: [The DFA projection's loss dependence](/findings/dfa-loss-dependence.md), from #983 (branch claude/project-thread-n5mttf-esg-loss-dependence): reordering a year's losses across the paths by a copula's draws, sorted against the index growth, gives the copula's rank dependence and keeps the losses' distribution exactly.

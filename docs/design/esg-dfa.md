@@ -8,8 +8,10 @@ crate `prospicio-esg`) is built (branch
 `claude/project-thread-n5mttf-esg-crate`), and PR 2 (inflation, branch
 `claude/project-thread-n5mttf-esg-inflation`), and PR 3 (the projection,
 branch `claude/project-thread-n5mttf-esg-dfa`) and PR 4 (the cycle, tax and
-capital rules, branch `claude/project-thread-n5mttf-esg-rules`); PRs 5 and 6
-and decision 7's copula are to come. Lane: Aggregate (a new
+capital rules, branch `claude/project-thread-n5mttf-esg-rules`), and
+decision 7's copula (branch
+`claude/project-thread-n5mttf-esg-loss-dependence`); PRs 5 and 6 are to
+come. Lane: Aggregate (a new
 crate, decision 1; the lane table's Owns column changes in a small PR of
 its own) · Depends on: `aggregate.md` (`EventSet`, `Tower::apply_term`,
 `EventSet::correlated_years`, `ruin`), `reserving-inflation.md` (Reserving
@@ -399,6 +401,27 @@ matrix of simulations by steps) and the projection's inputs as columns.
      hide the shortfall it covers;
    * the losses' rank dependence on the economy (decision 7's copula) is
      left to a later PR (a Next item).
+   Decision 7's copula, built after it (branch
+   `claude/project-thread-n5mttf-esg-loss-dependence`,
+   `validation/tests/aggregate_dfa_dependence.rs`):
+   * `LossDependence` is a two-dimensional Gaussian, Student's t or
+     Archimedean copula (a plain enum, so `Projection` keeps its `Clone`
+     and `PartialEq`), set with `with_loss_dependence(dependence, seed)`;
+     the first dimension is the year's growth of the index that scales
+     the losses, `I_t / I_(t-1)`, the second the year's new losses;
+   * each year the losses are reordered across the paths: the path with
+     the `i`-th smallest growth takes the draw with the `i`-th smallest
+     first coordinate and the loss of the rank of that draw's second
+     coordinate, so each year's losses keep their distribution exactly and
+     the paths' economies are untouched; a year's draws come from
+     `StreamRng::new(seed, t)`;
+   * the reordering is by year: a path's losses in different years are
+     each tied to that year's growth, not to each other, so a dependence
+     the user built between a path's years is not kept;
+   * scenarios whose index does not vary (no inflation model) and
+     `run_without_economy` are refused; at 10,000 paths the Spearman
+     correlation with the growth is the Gaussian copula's
+     `(6 / π) asin(ρ / 2)` within 0.03.
 5. Python and R bindings.
 6. A guide: a five-year projection of the guides' treaty book (Guides
    lane, with the user's go-ahead or as an issue).
