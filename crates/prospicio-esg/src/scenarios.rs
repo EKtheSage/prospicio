@@ -3,6 +3,9 @@
 use prospicio_core::{Error, Result, StreamRng};
 use prospicio_prob::{ComponentKey, PredictiveDistribution, Provenance};
 
+use prospicio_math::linalg::{cholesky, cholesky_solve};
+
+use crate::inflation::{Inflation, Superimposed};
 use crate::sampling::{noncentral_chi_square, normal};
 use crate::short_rate::{HullWhite, ShortRate, loading};
 
@@ -30,8 +33,9 @@ impl Step {
     }
 }
 
-/// An economic scenario generator: a short-rate model, the step and the
-/// maturities of the curve reported at each step.
+/// An economic scenario generator: a short-rate model, economic and
+/// superimposed claims inflation if wanted, the correlation of their
+/// shocks, the step and the maturities of the curve reported at each step.
 ///
 /// ```
 /// use prospicio_esg::{Esg, Step, Vasicek};
@@ -46,10 +50,38 @@ impl Step {
 /// assert!((mean - model.bond_price(0.02, 5.0)).abs() < 2e-3);
 /// # Ok::<(), prospicio_core::Error>(())
 /// ```
+///
+/// With inflation correlated with the rate, and claims inflation above it:
+///
+/// ```
+/// use prospicio_esg::{Esg, Index, Inflation, Step, Superimposed, Vasicek};
+///
+/// let esg = Esg::new(Vasicek::new(0.3, 0.04, 0.01, 0.02)?)
+///     .with_inflation(Inflation::new(0.5, 0.025, 0.01, 0.03)?)
+///     .with_superimposed(Superimposed::new(0.01, 0.5, 0.005)?)
+///     .with_correlation(vec![
+///         vec![1.0, 0.5, 0.0],
+///         vec![0.5, 1.0, 0.3],
+///         vec![0.0, 0.3, 1.0],
+///     ]);
+/// let paths = esg.simulate(3, 100, 1)?;
+/// // One claims index level a year for each path, 1 today, for
+/// // `prospicio_reserving::IndexPaths`.
+/// let levels = paths.index_levels(Index::Claims, Step::Annual)?;
+/// assert_eq!(levels.len(), 300);
+/// # Ok::<(), prospicio_core::Error>(())
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Esg {
     /// The short-rate model.
     pub rate: ShortRate,
+    /// Economic inflation, if simulated.
+    pub inflation: Option<Inflation>,
+    /// Superimposed claims inflation, if simulated.
+    pub superimposed: Option<Superimposed>,
+    /// The correlation matrix of the shocks, in the order rate, inflation,
+    /// superimposed, over those simulated; empty for independent shocks.
+    pub correlation: Vec<Vec<f64>>,
     /// The time step.
     pub step: Step,
     /// The maturities in years of the curve reported at each step.
@@ -57,14 +89,36 @@ pub struct Esg {
 }
 
 impl Esg {
-    /// A generator on `rate`, monthly, reporting the curve at 1, 2, 3, 5,
-    /// 7, 10, 20 and 30 years.
+    /// A generator on `rate` alone, monthly, reporting the curve at 1, 2,
+    /// 3, 5, 7, 10, 20 and 30 years.
     pub fn new(rate: impl Into<ShortRate>) -> Self {
         Self {
             rate: rate.into(),
+            inflation: None,
+            superimposed: None,
+            correlation: Vec::new(),
             step: Step::Monthly,
             maturities: vec![1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 20.0, 30.0],
         }
+    }
+
+    /// With economic inflation.
+    pub fn with_inflation(mut self, inflation: Inflation) -> Self {
+        self.inflation = Some(inflation);
+        self
+    }
+
+    /// With superimposed claims inflation.
+    pub fn with_superimposed(mut self, superimposed: Superimposed) -> Self {
+        self.superimposed = Some(superimposed);
+        self
+    }
+
+    /// With this correlation matrix of the shocks: rows and columns in the
+    /// order rate, inflation, superimposed, over those simulated.
+    pub fn with_correlation(mut self, correlation: Vec<Vec<f64>>) -> Self {
+        self.correlation = correlation;
+        self
     }
 
     /// With this step.
@@ -82,14 +136,25 @@ impl Esg {
     /// `sims` paths over `years` years, path `i` from
     /// `StreamRng::new(seed, i)`, so any path can be replayed alone.
     ///
-    /// Vasicek and Hull-White draw the factor and its integral over each
-    /// step jointly from their exact Gaussian transition, so the
-    /// deflators are exact; CIR draws the rate from its exact noncentral
-    /// chi-square transition and integrates it by the trapezoid rule over
-    /// the step, a bias of order `Δ²` in the deflators.
+    /// Vasicek, Hull-White and inflation are Gaussian: the factors and
+    /// their integrals over each step are drawn jointly from their exact
+    /// transition, correlated through the shocks' correlation `ρ` (two
+    /// factors' noises over a step have covariance `ρ ∫ f g`, `f` and `g`
+    /// their kernels on the step), so the deflators and the price index
+    /// are exact. CIR draws the rate from its exact noncentral chi-square
+    /// transition and integrates it by the trapezoid rule over the step, a
+    /// bias of order `Δ²` in the deflators; its shock cannot be correlated.
     ///
-    /// Fails unless `years` and `sims` are positive and the maturities
-    /// finite, positive and increasing.
+    /// Year `y`'s superimposed shock `ε_y` is drawn at the year's end,
+    /// conditional on that year's Brownian increments of the rate and
+    /// inflation, so that `Corr(ε_y, W(y) - W(y - 1))` is the given
+    /// correlation; its excess is spread over the year, so the claims
+    /// index within a year uses a shock of the whole year.
+    ///
+    /// Fails unless `years` and `sims` are positive, the maturities
+    /// finite, positive and increasing, and the correlation empty or a
+    /// positive definite correlation matrix of the shocks simulated, with
+    /// no correlation of a CIR rate.
     pub fn simulate(&self, years: usize, sims: usize, seed: u64) -> Result<Scenarios> {
         if years == 0 || sims == 0 {
             return Err(Error::Data(format!(
@@ -109,114 +174,360 @@ impl Esg {
         }
         let n_steps = years * self.step.per_year();
         let dt = 1.0 / self.step.per_year() as f64;
+        let plan = Plan::new(self, dt)?;
         let points = n_steps + 1;
         let n_mat = self.maturities.len();
-        let mut short = Vec::with_capacity(sims * points);
-        let mut integral = Vec::with_capacity(sims * points);
-        let mut prices = Vec::with_capacity(sims * points * n_mat);
+        let mut out = Paths {
+            short: Vec::with_capacity(sims * points),
+            integral: Vec::with_capacity(sims * points),
+            prices: Vec::with_capacity(sims * points * n_mat),
+            ..Paths::default()
+        };
         for sim in 0..sims {
             let mut rng = StreamRng::new(seed, sim as u64);
-            self.path(
-                &mut rng,
-                n_steps,
-                dt,
-                &mut short,
-                &mut integral,
-                &mut prices,
-            );
+            self.path(&plan, &mut rng, n_steps, dt, &mut out);
         }
         Ok(Scenarios {
             n_sims: sims,
             n_steps,
             step: self.step,
             maturities: self.maturities.clone(),
-            short,
-            integral,
-            prices,
+            short: out.short,
+            integral: out.integral,
+            prices: out.prices,
+            inflation: out.inflation,
+            price_log: out.price_log,
+            claims_log: out.claims_log,
+            superimposed: out.superimposed,
             seed,
         })
     }
 
-    /// One path: the short rate, `∫ r` and the bond prices at each point.
-    fn path(
-        &self,
-        rng: &mut StreamRng,
-        n_steps: usize,
-        dt: f64,
-        short: &mut Vec<f64>,
-        integral: &mut Vec<f64>,
-        prices: &mut Vec<f64>,
-    ) {
+    /// One path: the short rate, `∫ r`, the bond prices and the inflation
+    /// at each point, and the superimposed excess of each year.
+    fn path(&self, plan: &Plan, rng: &mut StreamRng, n_steps: usize, dt: f64, out: &mut Paths) {
         let mats = &self.maturities;
-        match &self.rate {
-            ShortRate::Vasicek(v) => {
-                let (mut x, mut y) = (v.r0 - v.b, 0.0);
-                for k in 0..=n_steps {
-                    if k > 0 {
-                        (x, y) = ou_step(x, y, v.a, v.sigma, dt, rng);
-                    }
+        let per_year = self.step.per_year();
+        let base = out.price_log.len();
+        // The Gaussian rate's factor (x, ∫x), CIR's rate and ∫r.
+        let (mut x, mut y) = match &self.rate {
+            ShortRate::Vasicek(v) => (v.r0 - v.b, 0.0),
+            ShortRate::HullWhite(_) => (0.0, 0.0),
+            ShortRate::Cir(c) => (c.r0, 0.0),
+        };
+        let (mut u, mut yu) = (self.inflation.map_or(0.0, |i| i.i0 - i.mean), 0.0);
+        let mut s_prev = self.superimposed.map_or(0.0, |s| s.mean);
+        let mut cum_s = 0.0;
+        let mut wsum = vec![0.0; plan.w.len()];
+        let mut z = vec![0.0; plan.n];
+        let mut noise = vec![0.0; plan.n];
+        for k in 0..=n_steps {
+            if k > 0 {
+                if let ShortRate::Cir(_) = &self.rate {
+                    let next = plan.cir_step(x, rng);
+                    y += 0.5 * dt * (x + next);
+                    x = next;
+                }
+                z.iter_mut().for_each(|zi| *zi = normal(rng));
+                plan.correlate(&z, &mut noise);
+                if let Some((px, py, a)) = plan.rate {
+                    (x, y) = (
+                        x * (-a * dt).exp() + noise[px],
+                        y + x * loading(a, dt) + noise[py],
+                    );
+                }
+                if let Some((px, py, a)) = plan.inflation {
+                    (u, yu) = (
+                        u * (-a * dt).exp() + noise[px],
+                        yu + u * loading(a, dt) + noise[py],
+                    );
+                }
+                for (sum, &j) in wsum.iter_mut().zip(&plan.w) {
+                    *sum += noise[j];
+                }
+            }
+            let t = k as f64 * dt;
+            match &self.rate {
+                ShortRate::Vasicek(v) => {
                     let r = v.b + x;
-                    short.push(r);
-                    integral.push(v.b * k as f64 * dt + y);
-                    prices.extend(mats.iter().map(|&m| v.bond_price(r, m)));
+                    out.short.push(r);
+                    out.integral.push(v.b * t + y);
+                    out.prices.extend(mats.iter().map(|&m| v.bond_price(r, m)));
+                }
+                ShortRate::HullWhite(hw) => {
+                    out.short.push(x + hw.shift(t));
+                    out.integral.push(y + shift_integral(hw, t));
+                    out.prices
+                        .extend(mats.iter().map(|&m| hw.bond_price(t, x, m)));
+                }
+                ShortRate::Cir(c) => {
+                    out.short.push(x);
+                    out.integral.push(y);
+                    out.prices.extend(mats.iter().map(|&m| c.bond_price(x, m)));
                 }
             }
-            ShortRate::HullWhite(hw) => {
-                let (mut x, mut y) = (0.0, 0.0);
-                for k in 0..=n_steps {
-                    if k > 0 {
-                        (x, y) = ou_step(x, y, hw.a, hw.sigma, dt, rng);
-                    }
-                    let t = k as f64 * dt;
-                    short.push(x + hw.shift(t));
-                    integral.push(y + shift_integral(hw, t));
-                    prices.extend(mats.iter().map(|&m| hw.bond_price(t, x, m)));
-                }
+            if let Some(i) = self.inflation {
+                out.inflation.push(i.mean + u);
+                out.price_log.push(i.mean * t + yu);
             }
-            ShortRate::Cir(c) => {
-                let e = (-c.a * dt).exp();
-                let scale = c.sigma * c.sigma * (1.0 - e) / (4.0 * c.a);
-                let dof = 4.0 * c.a * c.b / (c.sigma * c.sigma);
-                let (mut r, mut y) = (c.r0, 0.0);
-                for k in 0..=n_steps {
-                    if k > 0 {
-                        let next = scale * noncentral_chi_square(rng, dof, r * e / scale);
-                        y += 0.5 * dt * (r + next);
-                        r = next;
+            if let Some(sup) = self.superimposed {
+                if k == 0 {
+                    out.claims_log.push(0.0);
+                } else if k % per_year == 0 {
+                    let dot: f64 = plan.coeff.iter().zip(&wsum).map(|(c, w)| c * w).sum();
+                    let eps = dot + plan.sd * normal(rng);
+                    let s = sup.mean + sup.persistence * (s_prev - sup.mean) + sup.sigma * eps;
+                    out.superimposed.push(s);
+                    for j in k - per_year + 1..=k {
+                        let price = out.price_log.get(base + j).copied().unwrap_or(0.0);
+                        let within = (j + per_year - k) as f64 * dt;
+                        out.claims_log.push(price + cum_s + s * within);
                     }
-                    short.push(r);
-                    integral.push(y);
-                    prices.extend(mats.iter().map(|&m| c.bond_price(r, m)));
+                    cum_s += s;
+                    s_prev = s;
+                    wsum.iter_mut().for_each(|w| *w = 0.0);
                 }
             }
         }
     }
 }
 
+/// The paths of all simulations, simulation-major, as they are drawn.
+#[derive(Default)]
+struct Paths {
+    short: Vec<f64>,
+    integral: Vec<f64>,
+    prices: Vec<f64>,
+    inflation: Vec<f64>,
+    price_log: Vec<f64>,
+    claims_log: Vec<f64>,
+    superimposed: Vec<f64>,
+}
+
+/// The kernel of a Gaussian noise over a step of length `Δ`, at `v` before
+/// the step's end: a factor's `σ e^(-a v)`, its integral's `σ B_a(v)`, or
+/// the Brownian increment's 1.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Kernel {
+    Factor,
+    Integral,
+    Increment,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Noise {
+    /// The shock's row in the correlation matrix.
+    shock: usize,
+    a: f64,
+    sigma: f64,
+    kernel: Kernel,
+}
+
+/// `∫_0^Δ f g dv` of two noises' kernels, before the correlation.
+fn kernel_product(f: Noise, g: Noise, dt: f64) -> f64 {
+    use Kernel::*;
+    let e = |c: f64| loading(c, dt);
+    let (sf, sg) = (f.sigma, g.sigma);
+    match (f.kernel, g.kernel) {
+        (Factor, Factor) => sf * sg * e(f.a + g.a),
+        (Factor, Integral) => sf * sg * (e(f.a) - e(f.a + g.a)) / g.a,
+        (Integral, Factor) => kernel_product(g, f, dt),
+        (Integral, Integral) => sf * sg / (f.a * g.a) * (dt - e(f.a) - e(g.a) + e(f.a + g.a)),
+        (Increment, Factor) => sg * e(g.a),
+        (Increment, Integral) => sg * (dt - e(g.a)) / g.a,
+        (Factor | Integral, Increment) => kernel_product(g, f, dt),
+        (Increment, Increment) => dt,
+    }
+}
+
+/// What a simulation needs once: the noises of a step, their Cholesky
+/// factor, and the superimposed shock's regression on the year's
+/// increments.
+#[derive(Debug, Clone)]
+struct Plan {
+    n: usize,
+    chol: Vec<f64>,
+    /// The rate's factor and integral noises and its speed, if Gaussian.
+    rate: Option<(usize, usize, f64)>,
+    /// Inflation's, if simulated.
+    inflation: Option<(usize, usize, f64)>,
+    /// The Brownian increments' noises, when there is a superimposed shock.
+    w: Vec<usize>,
+    coeff: Vec<f64>,
+    sd: f64,
+    /// CIR's transition: `e^(-aΔ)`, the scale and the degrees of freedom.
+    cir: (f64, f64, f64),
+}
+
+impl Plan {
+    fn new(esg: &Esg, dt: f64) -> Result<Self> {
+        let n_shocks =
+            1 + usize::from(esg.inflation.is_some()) + usize::from(esg.superimposed.is_some());
+        let corr = correlation(&esg.correlation, n_shocks)?;
+        let rho = |i: usize, j: usize| corr[i * n_shocks + j];
+        let mut cir = (0.0, 0.0, 0.0);
+        let rate = match &esg.rate {
+            ShortRate::Vasicek(v) => Some((v.a, v.sigma)),
+            ShortRate::HullWhite(hw) => Some((hw.a, hw.sigma)),
+            ShortRate::Cir(c) => {
+                if (1..n_shocks).any(|j| rho(0, j) != 0.0) {
+                    return Err(Error::Data(
+                        "a CIR rate's shock cannot be correlated: use Vasicek or Hull-White".into(),
+                    ));
+                }
+                let e = (-c.a * dt).exp();
+                cir = (
+                    e,
+                    c.sigma * c.sigma * (1.0 - e) / (4.0 * c.a),
+                    4.0 * c.a * c.b / (c.sigma * c.sigma),
+                );
+                None
+            }
+        };
+        let infl = esg.inflation.map(|i| (i.kappa, i.sigma));
+        // The Gaussian factors: (shock row, speed, volatility).
+        let factors: Vec<(usize, f64, f64)> = rate
+            .map(|(a, s)| (0, a, s))
+            .into_iter()
+            .chain(infl.map(|(a, s)| (1, a, s)))
+            .collect();
+        let mut noises = Vec::new();
+        for &(shock, a, sigma) in &factors {
+            for kernel in [Kernel::Factor, Kernel::Integral] {
+                noises.push(Noise {
+                    shock,
+                    a,
+                    sigma,
+                    kernel,
+                });
+            }
+        }
+        let mut w = Vec::new();
+        let (mut coeff, mut sd) = (Vec::new(), 0.0);
+        if esg.superimposed.is_some() {
+            let sup = n_shocks - 1;
+            for &(shock, a, _) in &factors {
+                w.push(noises.len());
+                noises.push(Noise {
+                    shock,
+                    a,
+                    sigma: 1.0,
+                    kernel: Kernel::Increment,
+                });
+            }
+            // ε on the year's increments, which have unit variance and the
+            // shocks' correlations: coeff = C_ww⁻¹ c, the rest independent.
+            let g = factors.len();
+            let cww: Vec<f64> = (0..g * g)
+                .map(|ij| rho(factors[ij / g].0, factors[ij % g].0))
+                .collect();
+            let c: Vec<f64> = factors.iter().map(|f| rho(sup, f.0)).collect();
+            coeff = if g == 0 {
+                Vec::new()
+            } else {
+                let l = cholesky(&cww, g).expect("a principal minor of a positive definite matrix");
+                cholesky_solve(&l, &c)
+            };
+            let explained: f64 = coeff.iter().zip(&c).map(|(a, b)| a * b).sum();
+            sd = (1.0 - explained).max(0.0).sqrt();
+        }
+        let n = noises.len();
+        let cov: Vec<f64> = (0..n * n)
+            .map(|ij| {
+                let (f, g) = (noises[ij / n], noises[ij % n]);
+                rho(f.shock, g.shock) * kernel_product(f, g, dt)
+            })
+            .collect();
+        let speed = |shock| factors.iter().find(|f| f.0 == shock).map(|f| f.1);
+        let pos = |shock: usize| {
+            let i = factors.iter().position(|f| f.0 == shock)?;
+            Some((2 * i, 2 * i + 1, speed(shock)?))
+        };
+        Ok(Self {
+            n,
+            chol: semidefinite_cholesky(&cov, n),
+            rate: rate.and_then(|_| pos(0)),
+            inflation: infl.and_then(|_| pos(1)),
+            w,
+            coeff,
+            sd,
+            cir,
+        })
+    }
+
+    /// `noise = L z`.
+    fn correlate(&self, z: &[f64], noise: &mut [f64]) {
+        let n = self.n;
+        for (i, out) in noise.iter_mut().enumerate() {
+            *out = (0..=i).map(|j| self.chol[i * n + j] * z[j]).sum();
+        }
+    }
+
+    fn cir_step(&self, r: f64, rng: &mut StreamRng) -> f64 {
+        let (e, scale, dof) = self.cir;
+        scale * noncentral_chi_square(rng, dof, r * e / scale)
+    }
+}
+
+/// The correlation matrix of `n` shocks, row-major: the identity when
+/// `given` is empty, otherwise `given` checked.
+fn correlation(given: &[Vec<f64>], n: usize) -> Result<Vec<f64>> {
+    if given.is_empty() {
+        return Ok((0..n * n)
+            .map(|ij| f64::from(u8::from(ij / n == ij % n)))
+            .collect());
+    }
+    if given.len() != n || given.iter().any(|row| row.len() != n) {
+        return Err(Error::Data(format!(
+            "the correlation must be {n} by {n}, one row for each shock simulated (rate, inflation, superimposed)"
+        )));
+    }
+    let flat: Vec<f64> = given.iter().flatten().copied().collect();
+    for i in 0..n {
+        for j in 0..n {
+            let (v, t) = (flat[i * n + j], flat[j * n + i]);
+            let ok = v.is_finite()
+                && (v - t).abs() < 1e-12
+                && if i == j { v == 1.0 } else { v.abs() <= 1.0 };
+            if !ok {
+                return Err(Error::InvalidParameter {
+                    name: "correlation",
+                    value: v,
+                    reason: "must be symmetric with a unit diagonal and entries in [-1, 1]",
+                });
+            }
+        }
+    }
+    if cholesky(&flat, n).is_none() {
+        return Err(Error::Data(
+            "the correlation matrix is not positive definite".into(),
+        ));
+    }
+    Ok(flat)
+}
+
+/// The lower Cholesky factor of a positive semidefinite `n × n` matrix,
+/// row-major, a pivot that rounding takes to zero or below giving a zero
+/// column: the noises of a short step are nearly collinear.
+fn semidefinite_cholesky(a: &[f64], n: usize) -> Vec<f64> {
+    let mut l = vec![0.0; n * n];
+    for i in 0..n {
+        for j in 0..=i {
+            let dot: f64 = (0..j).map(|k| l[i * n + k] * l[j * n + k]).sum();
+            if i == j {
+                l[i * n + i] = (a[i * n + i] - dot).max(0.0).sqrt();
+            } else if l[j * n + j] > 0.0 {
+                l[i * n + j] = (a[i * n + j] - dot) / l[j * n + j];
+            }
+        }
+    }
+    l
+}
+
 /// `∫_0^t φ = -ln P(0, t) + V(t) / 2`, Hull-White's deterministic part of
 /// `∫ r` (Brigo and Mercurio, section 3.3).
 fn shift_integral(hw: &HullWhite, t: f64) -> f64 {
     -hw.initial.discount(t).ln() + 0.5 * hw.integral_variance(t)
-}
-
-/// One exact step of `dx = -a x dt + σ dW` with its integral `y = ∫ x`:
-/// `(x, y)` moves by a bivariate normal with
-/// `Var x' = σ² (1 - e^(-2aΔ)) / (2a)`,
-/// `Var Δy = σ²/a² [Δ - 2B + (1 - e^(-2aΔ)) / (2a)]` and
-/// `Cov = σ² (1 - e^(-aΔ))² / (2a²)`, `B = (1 - e^(-aΔ)) / a`.
-fn ou_step(x: f64, y: f64, a: f64, sigma: f64, dt: f64, rng: &mut StreamRng) -> (f64, f64) {
-    let s2 = sigma * sigma;
-    let e = (-a * dt).exp();
-    let b = loading(a, dt);
-    let one_minus_e2 = -(-2.0 * a * dt).exp_m1();
-    let v1 = s2 * one_minus_e2 / (2.0 * a);
-    let v2 = s2 / (a * a) * (dt - 2.0 * b + one_minus_e2 / (2.0 * a));
-    let c12 = s2 / (2.0 * a * a) * (1.0 - e).powi(2);
-    let (z1, z2) = (normal(rng), normal(rng));
-    let s1 = v1.sqrt();
-    let rho_part = c12 / s1;
-    let rest = (v2 - rho_part * rho_part).max(0.0).sqrt();
-    (x * e + s1 * z1, y + x * b + rho_part * z1 + rest * z2)
 }
 
 /// A curve at one step of one path: annually compounded spot rates by
@@ -230,8 +541,10 @@ pub struct Curve {
 }
 
 /// Simulated paths, simulation-major: for each path, each step `k` from 0
-/// (today) to `n_steps`, the short rate, `∫ r` since today and the bond
-/// prices at the generator's maturities.
+/// (today) to `n_steps`, the short rate, `∫ r` since today, the bond
+/// prices at the generator's maturities and, when simulated, the inflation
+/// rate and the price and claims indices; and each year's superimposed
+/// excess.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Scenarios {
     n_sims: usize,
@@ -241,7 +554,22 @@ pub struct Scenarios {
     short: Vec<f64>,
     integral: Vec<f64>,
     prices: Vec<f64>,
+    inflation: Vec<f64>,
+    price_log: Vec<f64>,
+    claims_log: Vec<f64>,
+    superimposed: Vec<f64>,
     seed: u64,
+}
+
+/// Which index [`Scenarios::index_levels`] reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Index {
+    /// The price index, `exp(∫ i)`.
+    Price,
+    /// The claims index: the price index times `exp(∫ s)`, the
+    /// superimposed excess; the price index without one, and the excess
+    /// alone without economic inflation.
+    Claims,
 }
 
 impl Scenarios {
@@ -317,6 +645,96 @@ impl Scenarios {
             maturities: self.maturities.clone(),
             rates,
         })
+    }
+
+    /// The economic inflation rate (continuously compounded) of path `sim`
+    /// at step `k`. Fails without an inflation model.
+    pub fn inflation_rate(&self, sim: usize, k: usize) -> Result<f64> {
+        let i = self.index(sim, k)?;
+        self.inflation
+            .get(i)
+            .copied()
+            .ok_or_else(|| Error::Data("the generator has no inflation model".into()))
+    }
+
+    /// The level of `index` on path `sim` at step `k`, 1 today. Fails for
+    /// the price index without an inflation model, and for the claims
+    /// index with neither inflation nor a superimposed excess.
+    pub fn index_level(&self, index: Index, sim: usize, k: usize) -> Result<f64> {
+        let i = self.index(sim, k)?;
+        Ok(self.log_index(index)?[i].exp())
+    }
+
+    fn log_index(&self, index: Index) -> Result<&[f64]> {
+        let logs = match index {
+            Index::Claims if !self.claims_log.is_empty() => &self.claims_log,
+            _ => &self.price_log,
+        };
+        if logs.is_empty() {
+            return Err(Error::Data(match index {
+                Index::Price => "the generator has no inflation model".into(),
+                Index::Claims => {
+                    "the generator has neither inflation nor a superimposed excess".into()
+                }
+            }));
+        }
+        Ok(logs)
+    }
+
+    /// The superimposed excess of path `sim` in year `year`, 1 to the
+    /// horizon. Fails without a superimposed model.
+    pub fn superimposed(&self, sim: usize, year: usize) -> Result<f64> {
+        let years = self.n_steps / self.step.per_year();
+        if self.superimposed.is_empty() {
+            return Err(Error::Data(
+                "the generator has no superimposed excess".into(),
+            ));
+        }
+        if sim >= self.n_sims || year == 0 || year > years {
+            return Err(Error::Data(format!(
+                "path {sim}, year {year} is outside {} paths of years 1 to {years}",
+                self.n_sims
+            )));
+        }
+        Ok(self.superimposed[sim * years + year - 1])
+    }
+
+    /// The levels of `index` at the end of each period of `grain`,
+    /// simulation-major, 1 today: `values[i * n + p]` ends period `p` of
+    /// path `i`, `n` the horizon's periods. Scaled by a
+    /// `prospicio_reserving::CalendarIndex`'s last level, they are the
+    /// `IndexPaths` from the period after it at that grain, one path a
+    /// simulation, for `Indexation::reinflate_draws`.
+    ///
+    /// Fails when `grain` is finer than the simulation's step, or the
+    /// index is not simulated ([`index_level`](Self::index_level)).
+    pub fn index_levels(&self, index: Index, grain: Step) -> Result<Vec<f64>> {
+        let (per, step) = (grain.per_year(), self.step.per_year());
+        if per > step {
+            return Err(Error::Data(format!(
+                "levels {per} a year need a step at least as fine, the simulation has {step}"
+            )));
+        }
+        let logs = self.log_index(index)?;
+        let stride = step / per;
+        let periods = self.n_steps / stride;
+        let mut out = Vec::with_capacity(self.n_sims * periods);
+        for sim in 0..self.n_sims {
+            let row = &logs[sim * (self.n_steps + 1)..(sim + 1) * (self.n_steps + 1)];
+            out.extend((1..=periods).map(|p| row[p * stride].exp()));
+        }
+        Ok(out)
+    }
+
+    /// The levels of `index` as a distribution with one component per
+    /// step (dimension `step`, 0 to `n_steps`).
+    pub fn index_levels_by_step(&self, index: Index) -> Result<PredictiveDistribution> {
+        let draws = self.log_index(index)?.iter().map(|l| l.exp()).collect();
+        let model = match index {
+            Index::Price => "esg_price_index",
+            Index::Claims => "esg_claims_index",
+        };
+        self.by_step(draws, model)
     }
 
     /// The short rates as a distribution with one component per step

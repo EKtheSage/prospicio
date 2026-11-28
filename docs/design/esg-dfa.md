@@ -5,7 +5,8 @@ user's request of 2026-11-27). The user decided open decisions 1 to 10 on
 2026-11-27 as recommended (6: the AR(2) cycle; 10: option (b) for the
 curve fits and Hull-White's `θ`, the rest as inputs first). PR 1 (the
 crate `prospicio-esg`) is built (branch
-`claude/project-thread-n5mttf-esg-crate`); PRs 2 to 6 are to come. Lane: Aggregate (a new
+`claude/project-thread-n5mttf-esg-crate`), and PR 2 (inflation, branch
+`claude/project-thread-n5mttf-esg-inflation`); PRs 3 to 6 are to come. Lane: Aggregate (a new
 crate, decision 1; the lane table's Owns column changes in a small PR of
 its own) · Depends on: `aggregate.md` (`EventSet`, `Tower::apply_term`,
 `EventSet::correlated_years`, `ruin`), `reserving-inflation.md` (Reserving
@@ -330,7 +331,30 @@ matrix of simulations by steps) and the projection's inputs as columns.
    * the correlation of the shocks arrives with inflation in PR 2, the
      first second shock.
 2. Inflation and superimposed inflation, `IndexPaths` from the scenarios
-   (validation 4).
+   (validation 4). **Done** (`validation/tests/aggregate_esg_inflation.rs`).
+   As built:
+   * `Inflation` (OU on the continuously compounded rate, the price index
+     `exp(∫ i)`) and `Superimposed` (AR(1) on the annual excess, from its
+     mean) are options of `Esg`, with `correlation` over the shocks
+     simulated, in the order rate, inflation, superimposed (empty for
+     independence);
+   * the Gaussian factors (Vasicek's or Hull-White's rate, inflation) and
+     their integrals over a step are one exact Gaussian draw: two noises'
+     covariance is `ρ ∫_0^Δ f g` of their kernels (`σ e^(-av)`,
+     `σ B_a(v)`, or 1 for the Brownian increment), factored once a
+     simulation; a rate-only generator draws the same numbers as PR 1;
+   * year `y`'s superimposed shock is drawn at the year's end given the
+     year's Brownian increments of the rate and inflation (a regression on
+     them, the rest independent), so its correlation with each increment is
+     the given one; the year's excess is spread evenly over the year, so the
+     claims index inside a year looks ahead to the year's end (fine for a
+     scenario set, which is drawn whole);
+   * a CIR rate is not Gaussian, so its shock cannot be correlated (an
+     error); inflation runs beside it independently;
+   * `Scenarios::index_levels(Index, grain)` gives each path's levels at
+     the end of each period of the grain, 1 today; the crate does not
+     depend on `prospicio-reserving`, so the caller scales them by the
+     `CalendarIndex`'s last level and builds the `IndexPaths`.
 3. `prospicio-aggregate::dfa`: `Projection` and `ProjectionPaths`, the
    accounts and the ruin and breach estimates (validation 5 and 6).
 4. The underwriting cycle, tax and capital rules.
