@@ -52,8 +52,8 @@
 //! expenses are paid in the period they are incurred, so the liability for
 //! incurred claims (LIC) is nil at each period end, as in the IASB's
 //! examples; contracts are recognised at once, not added during the
-//! cohort's year; and there is no premium allocation approach, reinsurance
-//! held or JSON state.
+//! cohort's year; and there is no reinsurance held or JSON state. The
+//! premium allocation approach is [`paa`].
 //!
 //! Signs: the liability and every reconciliation row are positive when they
 //! add to the liability; profit or loss lines are positive amounts with
@@ -497,6 +497,10 @@ pub enum CoverageLine {
     /// Claims and other expenses incurred, less the loss component's share
     /// of the expected release (paragraph 103(b)(i)).
     IncurredClaims,
+    /// Changes that relate to past service, the changes in the fulfilment
+    /// cash flows of the liability for incurred claims (paragraph
+    /// 103(b)(iii)); under the premium allocation approach only.
+    PastService,
     /// Amortisation of insurance acquisition cash flows (paragraph 103(b)(ii)).
     AcquisitionAmortisation,
     /// Losses on onerous groups (paragraph 103(b)(iv)), new contracts
@@ -1190,6 +1194,8 @@ fn check_units(units: &[f64], name: &str) -> Result<()> {
     }
     Ok(())
 }
+
+pub mod paa;
 
 #[cfg(test)]
 mod tests;
