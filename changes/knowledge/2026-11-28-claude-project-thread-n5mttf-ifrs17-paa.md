@@ -1,0 +1,1 @@
+* **Update**: [IFRS 17's Illustrative Examples](/references/ifrs17-illustrative-examples.md), from #982 (branch claude/project-thread-n5mttf-ifrs17-paa): Example 10 (the PAA) is out of reach of a cloud session as Example 15 is, so the PAA is tested on cases worked by hand.

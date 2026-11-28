@@ -5,7 +5,9 @@ user's request of 2026-11-27). The user decided open decisions 1 to 11 on
 2026-11-27 as recommended. PR 1 (the general model's `Group`) is built
 (branch `claude/project-thread-n5mttf-ifrs17-gmm`), and PR 2 (the current
 curve and the OCI option, branch `claude/project-thread-n5mttf-ifrs17-oci`)
-but for Example 15's parity; PRs 3 to 6 are to come. Lane: Reserving
+but for Example 15's parity, and PR 3 (the PAA, branch
+`claude/project-thread-n5mttf-ifrs17-paa`) but for Example 10's parity; PRs
+4 to 6 are to come. Lane: Reserving
 (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on:
 `reserving-ifrs17.md` (the `discount` module: `DiscountCurve`,
 `DiscountedReserves`, `RiskAdjustment`), `reinsurer-default.md` (Aggregate
@@ -403,7 +405,32 @@ rolled forward this quarter can be saved and rolled forward next quarter.
      stops at IE70, and `www.ifrs.org` is refused to the shell), so its
      parity is a Next item for a session that can read it.
 3. The PAA: the LRC, the onerous test, the LIC from `DiscountedReserves`
-   (Example 10).
+   (Example 10). **Done** but for Example 10's parity (branch
+   `claude/project-thread-n5mttf-ifrs17-paa`,
+   `validation/tests/reserving_ifrs17_paa.rs`, worked by hand). What it
+   settled:
+   * `ifrs17::paa::PaaGroup` is recognised from the expected premium
+     receipts and acquisition cash flows of the whole coverage and a
+     revenue pattern (equal weights for the passage of time, or the
+     expected claims' pattern, B126; decision 7(a), the user's weights);
+     each period's revenue and amortisation is what is not yet recognised
+     times the period's weight over the remaining weights, so a revision
+     of the expected premiums is spread forward;
+   * acquisition cash flows are amortised on the same pattern or expensed
+     when paid (`expense_acquisition`, paragraph 59(a));
+   * the LIC is an input at each period end (`Lic`, or
+     `Lic::from_reserves` from `DiscountedReserves` and its RA); claims
+     incurred enter it at their fulfilment cash flows, its opening present
+     value unwinds at `lic_curve` (none when undiscounted, paragraph
+     59(b)), and the residual is the change for past service, a new
+     `CoverageLine::PastService` row;
+   * the onerous test takes the GMM fulfilment cash flows of the remaining
+     coverage when the user has them (paragraph 57); without them the loss
+     component runs off on the revenue pattern as a reversal;
+   * the LRC does not accrete: no significant financing component
+     (paragraph 56) is assumed;
+   * IFRS 17 Example 10 was out of reach of a cloud session, as Example 15
+     was, so its parity is a Next item.
 4. Reinsurance held: the reinsurance CSM, the loss-recovery component,
    non-performance risk (Examples 11 and 12A to 12C).
 5. Python and R bindings and the JSON state.
