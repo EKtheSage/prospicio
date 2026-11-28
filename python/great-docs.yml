@@ -481,6 +481,12 @@ reference:
       - reserving.layer_share
       - reserving.layer_exposure
       - reserving.layer_at_shift
+  - title: IFRS 17 measurement
+    desc: A group of contracts under the general model or the premium allocation approach, and reinsurance contracts held, rolled forward period by period with a saved state.
+    contents:
+      - reserving.Ifrs17Group
+      - reserving.PaaGroup
+      - reserving.ReinsuranceHeld
   - title: Risk measures
     desc: Distortion risk measures, and capital allocation to components.
     contents:

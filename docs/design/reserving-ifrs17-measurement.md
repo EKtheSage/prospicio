@@ -9,7 +9,9 @@ but for Example 15's parity, and PR 3 (the PAA, branch
 `claude/project-thread-n5mttf-ifrs17-paa`) but for Example 10's parity, and
 PR 4 (reinsurance held, branch
 `claude/project-thread-n5mttf-ifrs17-reinsurance`) but for Examples 11 and
-12's parity; PRs 5 and 6 are to come. Lane: Reserving
+12's parity, and PR 5's Python half (the bindings and the JSON state,
+branch `claude/project-thread-n5mttf-ifrs17-bindings`); the R half of PR 5
+and PR 6 are to come. Lane: Reserving
 (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on:
 `reserving-ifrs17.md` (the `discount` module: `DiscountCurve`,
 `DiscountedReserves`, `RiskAdjustment`), `reinsurer-default.md` (Aggregate
@@ -469,7 +471,24 @@ rolled forward this quarter can be saved and rolled forward next quarter.
      reinsurance group, both as in PR 1;
    * Examples 11 and 12A to 12C were out of reach of a cloud session, so
      their parity is a Next item.
-5. Python and R bindings and the JSON state.
+5. Python and R bindings and the JSON state. Built in Python
+   (branch `claude/project-thread-n5mttf-ifrs17-bindings`):
+   * `Ifrs17Group`, `PaaGroup` and `ReinsuranceHeld` in
+     `prospicio.reserving`, built from dicts of cash-flow columns by future
+     period (unknown keys refused with the list of allowed ones), rolled
+     forward in place, each period returned as a dict whose reconciliations
+     are dicts of columns (`line` names in snake case, as `csm_recognised`);
+   * the state as versioned JSON (`risk_rs.ifrs17_group`,
+     `risk_rs.ifrs17_paa_group`, `risk_rs.ifrs17_reinsurance_held`, format
+     1, numbers written exactly as the other fits do), `to_json`,
+     `from_json` and pickling, so a reloaded group rolls forward to the
+     same numbers;
+   * reinsurance held takes its underlying groups as `Ifrs17Group`
+     objects: at recognition with their shares, and each period the groups
+     already rolled forward to the same period, from which the matched
+     onerous losses are read;
+   * the R half follows in a PR of its own: CRAN was refused to cloud
+     sessions on 2026-11-28, so S7 and testthat could not be installed.
 6. A guide section, `docs/guides/reserving-methods.md` (the Guides lane's
    file, with the user's go-ahead or as an issue for that lane).
 

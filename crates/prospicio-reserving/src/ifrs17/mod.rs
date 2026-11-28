@@ -466,6 +466,25 @@ pub enum ComponentLine {
     Closing,
 }
 
+impl ComponentLine {
+    /// The line's name, as the front ends report it (`"opening"`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Opening => "opening",
+            Self::NewContracts => "new_contracts",
+            Self::FutureService => "future_service",
+            Self::CsmRecognised => "csm_recognised",
+            Self::RiskExpired => "risk_expired",
+            Self::ExperienceAdjustments => "experience_adjustments",
+            Self::FinanceExpenses => "finance_expenses",
+            Self::PremiumsReceived => "premiums_received",
+            Self::ClaimsAndExpensesPaid => "claims_and_expenses_paid",
+            Self::AcquisitionPaid => "acquisition_paid",
+            Self::Closing => "closing",
+        }
+    }
+}
+
 /// One row of the reconciliation by measurement component.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ComponentRow {
@@ -522,6 +541,27 @@ pub enum CoverageLine {
     ClaimsAndExpensesPaid,
     /// The balances at the end of the period.
     Closing,
+}
+
+impl CoverageLine {
+    /// The line's name, as the front ends report it (`"opening"`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Opening => "opening",
+            Self::InsuranceRevenue => "insurance_revenue",
+            Self::IncurredClaims => "incurred_claims",
+            Self::PastService => "past_service",
+            Self::AcquisitionAmortisation => "acquisition_amortisation",
+            Self::OnerousLosses => "onerous_losses",
+            Self::LossReversals => "loss_reversals",
+            Self::InvestmentComponents => "investment_components",
+            Self::FinanceExpenses => "finance_expenses",
+            Self::PremiumsReceived => "premiums_received",
+            Self::AcquisitionPaid => "acquisition_paid",
+            Self::ClaimsAndExpensesPaid => "claims_and_expenses_paid",
+            Self::Closing => "closing",
+        }
+    }
 }
 
 /// One row of the reconciliation by remaining coverage and incurred claims.
@@ -1195,6 +1235,7 @@ fn check_units(units: &[f64], name: &str) -> Result<()> {
     Ok(())
 }
 
+mod json;
 pub mod paa;
 pub mod reinsurance;
 

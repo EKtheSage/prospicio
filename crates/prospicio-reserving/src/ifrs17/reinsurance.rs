@@ -357,6 +357,26 @@ pub enum CededLine {
     Closing,
 }
 
+impl CededLine {
+    /// The line's name, as the front ends report it (`"opening"`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Opening => "opening",
+            Self::NewContracts => "new_contracts",
+            Self::FutureService => "future_service",
+            Self::LossRecovery => "loss_recovery",
+            Self::CsmRecognised => "csm_recognised",
+            Self::RiskExpired => "risk_expired",
+            Self::ExperienceAdjustments => "experience_adjustments",
+            Self::NonPerformance => "non_performance",
+            Self::FinanceIncome => "finance_income",
+            Self::PremiumsPaid => "premiums_paid",
+            Self::RecoveriesReceived => "recoveries_received",
+            Self::Closing => "closing",
+        }
+    }
+}
+
 /// One row of the reconciliation by measurement component.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CededRow {
@@ -486,18 +506,18 @@ impl ReinsurancePeriod {
 /// A group of reinsurance contracts held.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReinsuranceHeld {
-    curve: DiscountCurve,
-    options: ReinsuranceOptions,
-    period: usize,
-    view: CededCashFlows,
-    non_performance: Option<NonPerformance>,
-    balances: ReinsuranceBalances,
-    coverage_units: Vec<f64>,
+    pub(super) curve: DiscountCurve,
+    pub(super) options: ReinsuranceOptions,
+    pub(super) period: usize,
+    pub(super) view: CededCashFlows,
+    pub(super) non_performance: Option<NonPerformance>,
+    pub(super) balances: ReinsuranceBalances,
+    pub(super) coverage_units: Vec<f64>,
     /// The share of each underlying group's claims recovered.
-    shares: Vec<f64>,
+    pub(super) shares: Vec<f64>,
     /// The income recognised at recognition for each underlying group.
-    recognised_losses: Vec<f64>,
-    recognised: Option<(ReinsuranceBalances, f64)>,
+    pub(super) recognised_losses: Vec<f64>,
+    pub(super) recognised: Option<(ReinsuranceBalances, f64)>,
 }
 
 impl ReinsuranceHeld {

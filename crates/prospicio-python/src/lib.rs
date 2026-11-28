@@ -48,6 +48,7 @@ mod reserving_apc;
 mod reserving_counts;
 mod reserving_discount;
 mod reserving_expense;
+mod reserving_ifrs17;
 mod reserving_inflation;
 mod reserving_inflation_draws;
 mod reserving_separation;
@@ -261,6 +262,8 @@ mod prospicio_native {
         PyRatioDevelopment, PyRatioDevelopmentFit, PyUlaeEstimate, ulae_classical,
         ulae_conger_nolibos, ulae_kittel,
     };
+    #[pymodule_export]
+    use super::reserving_ifrs17::{PyIfrs17Group, PyPaaGroup, PyReinsuranceHeld};
     #[pymodule_export]
     use super::reserving_inflation::{PyCalendarIndex, PyFutureCells, PyIndexation, PyReinflated};
     #[pymodule_export]

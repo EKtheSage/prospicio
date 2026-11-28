@@ -86,6 +86,7 @@ from .prospicio_native import (
     ExcessPattern,
     ExpectedLoss,
     ExpectedLossFit,
+    Ifrs17Group,
     FutureCells,
     GlmCandidate,
     IndexPaths,
@@ -93,6 +94,7 @@ from .prospicio_native import (
     IndustryPrior,
     LatestDiagonal,
     LayerSharePrior,
+    PaaGroup,
     PatternPrior,
     Mack,
     MackBootstrap,
@@ -114,6 +116,7 @@ from .prospicio_native import (
     RatioDevelopment,
     RatioDevelopmentFit,
     Reinflated,
+    ReinsuranceHeld,
     RiskAdjustmentResult,
     ScaleShift,
     SegmentRiskAdjustment,
@@ -259,6 +262,9 @@ __all__ = [
     "DiscountedReserves",
     "RiskAdjustmentResult",
     "SegmentRiskAdjustment",
+    "Ifrs17Group",
+    "PaaGroup",
+    "ReinsuranceHeld",
     "schedule_p",
 ]
 
