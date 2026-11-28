@@ -4199,6 +4199,7 @@ dependencies = [
  "prospicio-aggregate",
  "prospicio-bayes",
  "prospicio-core",
+ "prospicio-esg",
  "prospicio-glm",
  "prospicio-models",
  "prospicio-nn",

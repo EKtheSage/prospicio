@@ -7810,6 +7810,40 @@ class ChfDistribution:
         """
 
 @final
+class Cir:
+    """
+    The Cox-Ingersoll-Ross short rate, ``dr = a (b - r) dt + sigma sqrt(r) dW``.
+    
+    Parameters
+    ----------
+    a, b, sigma, r0 : float
+        As for :class:`Vasicek`; ``r0`` non-negative.
+    
+    Examples
+    --------
+    >>> from prospicio.esg import Cir
+    >>> Cir(0.4, 0.03, 0.08, 0.02).feller()
+    True
+    """
+    def __new__(cls, /, a: float, b: float, sigma: float, r0: float) -> Cir: ...
+    def bond_price(self, /, r: float, tau: float) -> float:
+        """
+        The price of a zero-coupon bond of maturity ``tau`` at rate ``r``.
+        """
+    def feller(self, /) -> bool:
+        """
+        Whether ``2 a b >= sigma^2``, so the rate stays positive.
+        """
+    def mean(self, /, t: float) -> float:
+        """
+        The mean of the rate at ``t`` years.
+        """
+    def variance(self, /, t: float) -> float:
+        """
+        The variance of the rate at ``t`` years.
+        """
+
+@final
 class ClaimsDevelopmentResult:
     """
     Merz and Wüthrich's (2008) one-year view of a Mack fit: standard errors
@@ -11207,6 +11241,37 @@ class CvPath:
         """
 
 @final
+class Cycle:
+    """
+    An underwriting cycle: an AR(2) on the log rate adequacy that scales each
+    year's premium, ``x_t - mean = phi1 (x_(t-1) - mean) + phi2 (x_(t-2) -
+    mean) + sigma e_t``, from ``x_0 = x_(-1) = x0``.
+    
+    Examples
+    --------
+    >>> from prospicio.esg import Cycle
+    >>> round(Cycle(0.0, 1.2, -0.6, 0.05, 0.0).period(), 3)
+    9.176
+    """
+    def __new__(cls, /, mean: float, phi1: float, phi2: float, sigma: float, x0: float) -> Cycle: ...
+    def mean_at(self, /, t: int) -> float:
+        """
+        The mean of ``x_t``.
+        """
+    def period(self, /) -> float |None:
+        """
+        The cycle's period in years, ``None`` when it does not oscillate.
+        """
+    def stationary_variance(self, /) -> float:
+        """
+        The variance in the long run.
+        """
+    def variance_at(self, /, t: int) -> float:
+        """
+        The variance of ``x_t``.
+        """
+
+@final
 class DealBook:
     """
     Several deals on one shared simulation: simulation ``j`` of every deal
@@ -13995,6 +14060,45 @@ class Elpd:
     def se(self, /) -> float:
         """
         Its standard error, ``sqrt(N var(pointwise))``.
+        """
+
+@final
+class Esg:
+    """
+    An economic scenario generator: a short rate, and optionally economic
+    and superimposed inflation with correlated shocks
+    (``docs/design/esg-dfa.md``).
+    
+    Parameters
+    ----------
+    rate : Vasicek, Cir or HullWhite
+        The short rate model.
+    inflation : Inflation, optional
+    superimposed : Superimposed, optional
+    correlation : list of list of float, optional
+        The correlation of the shocks, in the order short rate, inflation,
+        superimposed, for the models given; independent by default.
+    step : str, default "monthly"
+        ``"monthly"``, ``"quarterly"`` or ``"annual"``.
+    maturities : list of float, optional
+        The maturities of the curve reported at each step.
+    
+    Examples
+    --------
+    >>> from prospicio.esg import Esg, Inflation, Vasicek
+    >>> esg = Esg(Vasicek(0.3, 0.04, 0.01, 0.02), inflation=Inflation(0.5, 0.025, 0.01, 0.03),
+    ...           correlation=[[1.0, 0.4], [0.4, 1.0]], step="annual")
+    >>> sc = esg.simulate(5, 100, seed=1)
+    >>> sc.short_rates().shape
+    (100, 6)
+    """
+    def __new__(cls, /, rate: Vasicek |Cir |HullWhite, inflation: Inflation |None = None, superimposed: Superimposed |None = None, correlation: Sequence[Sequence[float]] |None = None, step: str = "monthly", maturities: Sequence[float] |None = None) -> Esg: ...
+    def simulate(self, /, years: int, sims: int, seed: int) -> Scenarios:
+        """
+        Simulate ``sims`` paths of ``years`` years from ``seed``.
+        
+        Path ``s`` draws from its own stream, so a path is the same whatever
+        the number of paths and threads.
         """
 
 @final
@@ -19452,6 +19556,40 @@ class HierarchicalStacking:
         """
 
 @final
+class HullWhite:
+    """
+    The Hull-White one-factor short rate, fitted to an initial curve.
+    
+    Parameters
+    ----------
+    a : float
+        The speed of mean reversion, positive.
+    sigma : float
+        The volatility, positive.
+    maturities, rates : list of float, optional
+        The initial curve as annually compounded spot rates by maturity.
+    svensson : Svensson, optional
+        The initial curve as a Svensson curve, instead of ``maturities``
+        and ``rates``.
+    
+    Examples
+    --------
+    >>> from prospicio.esg import HullWhite
+    >>> hw = HullWhite(0.1, 0.01, maturities=[1.0, 10.0], rates=[0.03, 0.04])
+    >>> round(hw.discount(1.0), 6)
+    0.970874
+    """
+    def __new__(cls, /, a: float, sigma: float, maturities: Sequence[float] |None = None, rates: Sequence[float] |None = None, svensson: Svensson |None = None) -> HullWhite: ...
+    def discount(self, /, t: float) -> float:
+        """
+        The initial curve's discount factor at ``t`` years.
+        """
+    def forward(self, /, t: float) -> float:
+        """
+        The initial curve's instantaneous forward rate at ``t`` years.
+        """
+
+@final
 class Hurdle:
     """
     A hurdle model, as R's ``pscl::hurdle``: a binary part for
@@ -20169,6 +20307,55 @@ class IndustryPrior:
         """
         The cv of the realised loss ratios of a company's origins about its
         level.
+        """
+
+@final
+class Inflation:
+    """
+    Economic inflation, an Ornstein-Uhlenbeck rate,
+    ``di = kappa (mean - i) dt + sigma dW``.
+    
+    Parameters
+    ----------
+    kappa : float
+        The speed of mean reversion, positive.
+    mean : float
+        The long-run rate.
+    sigma : float
+        The volatility, non-negative.
+    i0 : float
+        The rate today.
+    
+    Examples
+    --------
+    >>> from prospicio.esg import Inflation
+    >>> round(Inflation(0.5, 0.025, 0.01, 0.03).index_mean(1.0), 6) > 1.0
+    True
+    """
+    def __new__(cls, /, kappa: float, mean: float, sigma: float, i0: float) -> Inflation: ...
+    def index_mean(self, /, t: float) -> float:
+        """
+        The mean of the price index at ``t`` years.
+        """
+    def log_index_mean(self, /, t: float) -> float:
+        """
+        The mean of the log price index at ``t`` years.
+        """
+    def log_index_variance(self, /, t: float) -> float:
+        """
+        The variance of the log price index at ``t`` years.
+        """
+    def mean(self, /, t: float) -> float:
+        """
+        The mean of the rate at ``t`` years.
+        """
+    def stationary_variance(self, /) -> float:
+        """
+        The variance of the rate in the long run.
+        """
+    def variance(self, /, t: float) -> float:
+        """
+        The variance of the rate at ``t`` years.
         """
 
 @final
@@ -32866,6 +33053,115 @@ class PricingBounds:
         """
 
 @final
+class Projection:
+    """
+    A company's multi-year projection along economic scenarios
+    (``docs/design/esg-dfa.md``): premium and expenses at the start of each
+    year, the year's new losses scaled by the path's index and paid on a
+    pattern, the opening reserves' run-off, investment income on cash and
+    bond buckets, tax, dividends and injections.
+    
+    Parameters
+    ----------
+    losses : numpy.ndarray or list of list of float
+        The new losses in base money, one row per path, one column per year.
+    opening_assets : float
+    premiums : list of float, optional
+        The premium of each year; none by default.
+    expense_ratio : float, default 0
+    opening_reserves : list of float, optional
+        The opening reserves' payments in base money, at the end of each year
+        from the first.
+    payout : list of float, optional
+        The share of a year's losses paid at the end of that year and each
+        later one; all in the year by default.
+    bonds : list of (float, float), optional
+        Bond buckets as ``(share, duration)``; the rest is cash.
+    index : str, default "claims"
+        The index that scales the losses: ``"claims"`` or ``"price"``.
+    cycle : Cycle, optional
+    cycle_seed : int, default 0
+    tax_rate : float, optional
+    carry_forward : bool, default True
+        Carry a tax loss forward against later profits.
+    dividend_above, inject_below : float, optional
+        Capital rule ratios of ``capital_basis``.
+    capital_basis : str, default "premium"
+        ``"premium"`` or ``"reserves"``.
+    dependence : str, optional
+        The losses' rank dependence on the index growth: ``"gaussian"``,
+        ``"t"``, or an Archimedean family (``"clayton"``, ``"gumbel"``,
+        ``"frank"``, ``"joe"``); independent by default.
+    dependence_parameter : float, default 0
+        The copula's correlation or ``theta``.
+    dependence_nu : float, optional
+        The t copula's degrees of freedom.
+    dependence_seed : int, default 0
+    
+    Examples
+    --------
+    >>> from prospicio.esg import Projection
+    >>> p = Projection([[60.0, 70.0, 80.0], [50.0, 120.0, 40.0]], 200.0,
+    ...                premiums=[100.0] * 3, expense_ratio=0.3, payout=[0.5, 0.5])
+    >>> paths = p.run()
+    >>> paths.values("result")[1].round(6).tolist()
+    [20.0, -50.0, 30.0]
+    """
+    def __new__(cls, /, losses: Incomplete |Sequence[Sequence[float]], opening_assets: float, premiums: Sequence[float] |None = None, expense_ratio: float = 0.0, opening_reserves: Sequence[float] |None = None, payout: Sequence[float] |None = None, bonds: Sequence[tuple[float, float]] |None = None, index: str = "claims", cycle: Cycle |None = None, cycle_seed: int = 0, tax_rate: float |None = None, carry_forward: bool = True, dividend_above: float |None = None, inject_below: float |None = None, capital_basis: str = "premium", dependence: str |None = None, dependence_parameter: float = 0.0, dependence_nu: float |None = None, dependence_seed: int = 0) -> Projection: ...
+    def run(self, /, scenarios: Scenarios |None = None) -> ProjectionPaths:
+        """
+        Run the projection along ``scenarios`` (path ``s`` on scenario path
+        ``s``), or without an economy when ``None``: no investment return and
+        an index of 1.
+        """
+
+@final
+class ProjectionPaths:
+    """
+    A projection's paths: each line by path and year, ruin and breach.
+    """
+    def breach(self, /, horizon: int, capital: Any) -> dict:
+        """
+        The probability that the surplus before capital falls below the
+        required capital at a year end within ``horizon`` years.
+        
+        ``capital`` is a fixed amount, a list of amounts by year, or a pair
+        ``("premium", ratio)`` or ``("reserves", ratio)``. Returns a dict of
+        ``probability``, ``standard_error`` and ``shortfall`` (the mean
+        largest shortfall on the paths that breach, ``None`` when none do).
+        """
+    @staticmethod
+    def lines() -> list[str]:
+        """
+        The names of the lines, for :meth:`values`.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        The number of paths.
+        """
+    @property
+    def opening_surplus(self, /) -> float:
+        """
+        The surplus today, assets less the opening reserves.
+        """
+    def ruin(self, /, horizon: int) -> dict:
+        """
+        The probability of ruin (the surplus before capital below zero at a
+        year end) within ``horizon`` years, with its standard error: a dict
+        of ``probability`` and ``standard_error``.
+        """
+    def values(self, /, line: str) -> Incomplete:
+        """
+        A line (as ``"surplus"``, from :meth:`lines`) by path and year.
+        """
+    @property
+    def years(self, /) -> int:
+        """
+        The years projected.
+        """
+
+@final
 class Provisions:
     """
     The provisions proportional to premium: variable expenses ``V`` and the
@@ -34729,6 +35025,69 @@ class ScaleShift:
         """
 
 @final
+class Scenarios:
+    """
+    Simulated economic paths, from :meth:`Esg.simulate`.
+    
+    Every matrix has one row per path and one column per step from today
+    (``n_steps + 1``), except :meth:`superimposed`, by year.
+    """
+    def bond_prices(self, /, j: int) -> Incomplete:
+        """
+        The price of the zero-coupon bond of the ``j``-th maturity by path
+        and step.
+        """
+    def curve(self, /, sim: int, k: int) -> dict:
+        """
+        The annually compounded spot curve of path ``sim`` at step ``k``:
+        a dict of ``maturities`` and ``rates``.
+        """
+    def deflators(self, /) -> Incomplete:
+        """
+        The stochastic discount factor ``exp(-∫ r)`` by path and step.
+        """
+    def index_levels(self, /, index: str = "claims") -> Incomplete:
+        """
+        The level of ``index`` (``"claims"`` or ``"price"``) by path and
+        step, 1 today.
+        """
+    def inflation_rates(self, /) -> Incomplete:
+        """
+        The economic inflation rate by path and step.
+        """
+    def maturities(self, /) -> list[float]:
+        """
+        The maturities of the reported curves.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        The number of paths.
+        """
+    @property
+    def n_steps(self, /) -> int:
+        """
+        The number of steps after today.
+        """
+    def short_rates(self, /) -> Incomplete:
+        """
+        The short rate by path and step.
+        """
+    @property
+    def step(self, /) -> str:
+        """
+        The step's name.
+        """
+    def superimposed(self, /) -> Incomplete:
+        """
+        The superimposed excess by path and year (years 1 to the horizon).
+        """
+    def times(self, /) -> list[float]:
+        """
+        The time in years of each step, from 0.
+        """
+
+@final
 class SegmentRiskAdjustment:
     """
     One segment's stand-alone risk adjustment, in
@@ -35741,6 +36100,85 @@ class StudentTCopula:
         Returns
         -------
         list of list of float
+        """
+
+@final
+class Superimposed:
+    """
+    Superimposed claims inflation above the economic rate, an AR(1) by year,
+    ``s_t = mean + persistence (s_(t-1) - mean) + sigma e_t``.
+    
+    Parameters
+    ----------
+    mean : float
+        The long-run excess.
+    persistence : float
+        In ``(-1, 1)``.
+    sigma : float
+        The shock's standard deviation, non-negative.
+    
+    Examples
+    --------
+    >>> from prospicio.esg import Superimposed
+    >>> round(Superimposed(0.01, 0.5, 0.01).stationary_variance(), 8)
+    0.00013333
+    """
+    def __new__(cls, /, mean: float, persistence: float, sigma: float) -> Superimposed: ...
+    def stationary_variance(self, /) -> float:
+        """
+        The variance of the excess in the long run.
+        """
+    def variance(self, /, years: int) -> float:
+        """
+        The variance of the excess after ``years`` years.
+        """
+
+@final
+class Svensson:
+    """
+    A Nelson-Siegel-Svensson curve of continuously compounded spot rates.
+    
+    Parameters
+    ----------
+    beta : list of float
+        ``beta0`` to ``beta3``.
+    tau : list of float
+        ``tau1`` and ``tau2``, positive.
+    
+    Examples
+    --------
+    >>> from prospicio.esg import Svensson
+    >>> c = Svensson([0.04, -0.02, 0.01, 0.0], [2.0, 8.0])
+    >>> round(c.spot(30.0), 4)
+    0.0393
+    """
+    def __new__(cls, /, beta: Sequence[float], tau: Sequence[float]) -> Svensson: ...
+    @property
+    def beta(self, /) -> list[float]:
+        """
+        The parameters ``beta0`` to ``beta3``.
+        """
+    def discount(self, /, m: float) -> float:
+        """
+        The discount factor at ``m`` years.
+        """
+    @staticmethod
+    def fit(maturities: Sequence[float], yields: Sequence[float]) -> Svensson:
+        """
+        Fit the curve to spot yields by maturity (least squares).
+        """
+    def forward(self, /, m: float) -> float:
+        """
+        The instantaneous forward rate at ``m`` years.
+        """
+    def spot(self, /, m: float) -> float:
+        """
+        The spot rate at maturity ``m`` years.
+        """
+    @property
+    def tau(self, /) -> list[float]:
+        """
+        The parameters ``tau1`` and ``tau2``.
         """
 
 @final
@@ -40067,6 +40505,45 @@ class VarianceGamma:
     def variance(self, /) -> float:
         """
         The variance.
+        """
+
+@final
+class Vasicek:
+    """
+    The Vasicek short rate, ``dr = a (b - r) dt + sigma dW``.
+    
+    Parameters
+    ----------
+    a : float
+        The speed of mean reversion, positive.
+    b : float
+        The long-run mean.
+    sigma : float
+        The volatility, positive.
+    r0 : float
+        The rate today.
+    
+    Examples
+    --------
+    >>> from prospicio.esg import Vasicek
+    >>> v = Vasicek(0.3, 0.04, 0.01, 0.02)
+    >>> round(v.mean(1.0), 6)
+    0.025184
+    """
+    def __new__(cls, /, a: float, b: float, sigma: float, r0: float) -> Vasicek: ...
+    def __repr__(self, /) -> str: ...
+    def bond_price(self, /, r: float, tau: float) -> float:
+        """
+        The price of a zero-coupon bond of maturity ``tau`` when the rate is
+        ``r``.
+        """
+    def mean(self, /, t: float) -> float:
+        """
+        The mean of the rate at ``t`` years.
+        """
+    def variance(self, /, t: float) -> float:
+        """
+        The variance of the rate at ``t`` years.
         """
 
 @final

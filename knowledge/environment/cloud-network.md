@@ -34,6 +34,12 @@ sources:
   `rspm-sync.rstudio.com`, which stays refused, so install from source:
   `install.packages(..., repos = "https://cloud.r-project.org")`.
   `lightgbm` and `xgboost` build from source in about 15 minutes.
+  On 2026-11-28 a session on the project's built-in environment found
+  `cloud.r-project.org` refused (CONNECT 403), so it could not install
+  `S7` and `testthat` and could not build or test the R package: the
+  allowlist belongs to an environment, and a session on another one does
+  not have it. R binding work then waits for an environment that allows
+  CRAN, and CI checks the R side.
 * `www.federalreserve.gov` is refused (CONNECT 403, 2026-11-27), so the
   Federal Reserve's published Svensson curve (Gürkaynak, Sack and Wright,
   `feds200628.csv`), the parity target of `esg-dfa.md` validation 3, cannot

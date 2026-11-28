@@ -11,7 +11,7 @@ import pytest
 
 import prospicio as ar
 
-NAMESPACES = [ar.distributions, ar.aggregate, ar.boosting, ar.pricing, ar.reinsurance, ar.reserving, ar.risk]
+NAMESPACES = [ar.distributions, ar.aggregate, ar.boosting, ar.esg, ar.pricing, ar.reinsurance, ar.reserving, ar.risk]
 
 
 def public_objects():

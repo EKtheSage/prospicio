@@ -1,0 +1,1 @@
+* **Correction**: [Cloud session network access](/environment/cloud-network.md), from #983 (branch claude/project-thread-n5mttf-esg-bindings): CRAN (`cloud.r-project.org`) was refused to a session on the project's built-in environment on 2026-11-28, so the allowlist recorded in October belongs to another environment; R binding work waits for one that allows CRAN.
