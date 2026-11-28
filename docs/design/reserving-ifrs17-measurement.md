@@ -6,8 +6,10 @@ user's request of 2026-11-27). The user decided open decisions 1 to 11 on
 (branch `claude/project-thread-n5mttf-ifrs17-gmm`), and PR 2 (the current
 curve and the OCI option, branch `claude/project-thread-n5mttf-ifrs17-oci`)
 but for Example 15's parity, and PR 3 (the PAA, branch
-`claude/project-thread-n5mttf-ifrs17-paa`) but for Example 10's parity; PRs
-4 to 6 are to come. Lane: Reserving
+`claude/project-thread-n5mttf-ifrs17-paa`) but for Example 10's parity, and
+PR 4 (reinsurance held, branch
+`claude/project-thread-n5mttf-ifrs17-reinsurance`) but for Examples 11 and
+12's parity; PRs 5 and 6 are to come. Lane: Reserving
 (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on:
 `reserving-ifrs17.md` (the `discount` module: `DiscountCurve`,
 `DiscountedReserves`, `RiskAdjustment`), `reinsurer-default.md` (Aggregate
@@ -432,7 +434,41 @@ rolled forward this quarter can be saved and rolled forward next quarter.
    * IFRS 17 Example 10 was out of reach of a cloud session, as Example 15
      was, so its parity is a Next item.
 4. Reinsurance held: the reinsurance CSM, the loss-recovery component,
-   non-performance risk (Examples 11 and 12A to 12C).
+   non-performance risk (Examples 11 and 12A to 12C). **Done** but for
+   the examples' parity (branch
+   `claude/project-thread-n5mttf-ifrs17-reinsurance`,
+   `validation/tests/reserving_ifrs17_reinsurance.rs`, worked by hand, the
+   user's choice of 2026-11-28 to build first and add the parity later).
+   What it settled:
+   * `ifrs17::reinsurance::ReinsuranceHeld` is its own type, measured as an
+     asset (recoveries less premiums, less the non-performance reduction,
+     plus the RA), not a `Group` with the signs reversed: it has no loss
+     component, and its CSM may be negative (a net gain); its own
+     `CededCashFlows` hold the premiums paid and the recoveries;
+   * the CSM is released by coverage units, an expense in the allocation
+     of premiums paid when a net cost and income when a net gain; with
+     `retroactive` a net cost at recognition is expensed (65A);
+   * the loss-recovery component is the share recovered times each
+     underlying `Group`'s loss component, read from its `GroupPeriod`
+     rows: at recognition it is income and an adjustment of the CSM (66A),
+     only for an underlying group recognised at the same time (not yet
+     rolled forward); later losses and reversals of the underlying group
+     are income or expense in the same way, the CSM adjusted for the
+     reinsurance's change in fulfilment cash flows less that matched amount
+     (66(c)(i)); its release follows the underlying release and is left out
+     of both the allocation of premiums paid and the amounts recovered
+     (B119F); an underlying PAA group is not linked yet;
+   * non-performance (decision 9) is an input of its own,
+     `NonPerformance { default_probability, loss_given_default }`, a
+     recovery due in `τ` years reduced by `(1 − (1 − p)^τ) × lgd`, rather
+     than a dependency on `prospicio-aggregate`'s panel; every change in
+     the reduction, its unwind and its release on recoveries received
+     included, is in the amounts recovered (paragraph 67);
+   * the asset for incurred claims is nil at each period end (recoveries
+     received when incurred), and there is no OCI option for the
+     reinsurance group, both as in PR 1;
+   * Examples 11 and 12A to 12C were out of reach of a cloud session, so
+     their parity is a Next item.
 5. Python and R bindings and the JSON state.
 6. A guide section, `docs/guides/reserving-methods.md` (the Guides lane's
    file, with the user's go-ahead or as an issue for that lane).

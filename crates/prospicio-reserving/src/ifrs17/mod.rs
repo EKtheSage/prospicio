@@ -1196,6 +1196,7 @@ fn check_units(units: &[f64], name: &str) -> Result<()> {
 }
 
 pub mod paa;
+pub mod reinsurance;
 
 #[cfg(test)]
 mod tests;
