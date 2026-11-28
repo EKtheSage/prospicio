@@ -1,11 +1,11 @@
 ---
 type: Reference
 title: IFRS 17's Illustrative Examples
-description: The IFRS Foundation's worked examples accompanying IFRS 17, the parity targets of the measurement of a group of contracts (GMM, PAA, reinsurance held); Examples 1, 2, 3, 6, 7 and 8 were read, round to whole units at each step, and ifrs17::Group matches 1, 2, 3A, 7 and 8 in CI.
+description: The IFRS Foundation's worked examples accompanying IFRS 17, the parity targets of the measurement of a group of contracts (GMM, PAA, reinsurance held); Examples 1, 2, 3, 6, 7 and 8 were read, round to whole units at each step, and ifrs17::Group matches 1, 2, 3A, 6, 7 and 8 in CI; Example 15's text could not be reached from a cloud session.
 resource: https://www.ifrs.org/content/dam/ifrs/publications/html-standards/english/2025/issued/ifrs17-ie.html
 tags: [reserving, ifrs17, csm, loss-component, parity]
 status: stable
-verified: { by: process:ci, at: 2026-11-27T23:00:00Z }
+verified: { by: process:ci, at: 2026-11-28T03:00:00Z }
 generated: { by: claude-code/cloud-session, at: 2026-11-27T15:00:00Z }
 sources:
   - id: ie
@@ -46,7 +46,21 @@ insurance finance income or expense (IE152 to IE172), 16 underlying items,
   service -122, cash out -200, closing 617.
 * **Example 3**: insurance revenue 222, 261 and 196 (3A); 3B's revenue
   totals 682 (900 + 82 - 300).
-* **Example 6**: a CSM release of 213 / 394 × 198 = 107 by coverage units.
+* **Example 6** (IE56 to IE71): 200 contracts, a single premium of 3,000,
+  deaths at the end of each year and the account at maturity, discounted
+  at the current 10% (7% from the end of year 2), the CSM accreting at the
+  4% of nominal cash flows (B72(b)). Recognition: PV (404), RA 30, CSM 374.
+  Year 2: the change in financial assumptions (the return falls to 7%)
+  goes to finance, the discretion (61 more at maturity) adjusts the CSM at
+  the locked-in 10% (55 = 61 / 1.1), and the 2 between 57 at 7% and 55 is
+  finance (B97(a)): IFE 197 and 10, CSM release 107 = 213 / 394 × 198,
+  closing 3,044 / 10 / 106 / 3,160. `ifrs17::Group` matches it with a
+  financial revision of the opening view, the current curve and an
+  accretion curve.
+* **Example 15** (IE152 to IE172, the allocation of finance income or
+  expense under the OCI option): not read. The fetched page's text stops at
+  IE70 and `www.ifrs.org` is refused to a cloud session's shell, so its
+  parity waits for a local session.
 * **Example 7**: acquisition cash flows recovered at 30 a year beside a CSM
   release of 65 a year; revenue 300 a year.
 * **Example 8**, year 1 (premium 800, outflows of 400 a year, 5%, RA 240):
