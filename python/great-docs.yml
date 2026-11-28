@@ -189,6 +189,23 @@ reference:
       - reinsurance.solvency2_probability_by_step
       - reinsurance.solvency2_reinsurance_lgd
       - reinsurance.solvency2_type1
+  - title: Economic scenarios
+    desc: Short rates (Vasicek, CIR, Hull-White), the Svensson curve, and economic and superimposed inflation with correlated shocks, simulated by path and step.
+    contents:
+      - esg.Cir
+      - esg.Esg
+      - esg.HullWhite
+      - esg.Inflation
+      - esg.Scenarios
+      - esg.Superimposed
+      - esg.Svensson
+      - esg.Vasicek
+  - title: Multi-year projection
+    desc: A company rolled forward along economic scenarios, with an underwriting cycle, tax, dividends and injections, the losses' dependence on inflation, and finite-time ruin and capital breach.
+    contents:
+      - esg.Cycle
+      - esg.Projection
+      - esg.ProjectionPaths
   - title: Models
     desc: Terms and design matrices, GLMs and GAMs, neural networks, metrics, resampling and MCMC diagnostics.
     contents:

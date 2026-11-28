@@ -182,6 +182,28 @@ pub enum CapitalBasis {
     Reserves,
 }
 
+impl CapitalBasis {
+    /// Every name the front ends accept, with its variant (#990).
+    pub const NAMES: &'static [(&'static str, Self)] =
+        &[("premium", Self::Premium), ("reserves", Self::Reserves)];
+
+    /// The basis named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name: `"premium"` or `"reserves"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Premium => "premium",
+            Self::Reserves => "reserves",
+        }
+    }
+}
+
 /// Dividends and capital injections at each year end, after tax.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CapitalRule {
@@ -797,6 +819,38 @@ impl Line {
         Line::SurplusBeforeCapital,
     ];
 
+    /// Every name the front ends accept, with its line, in the order of
+    /// [`ALL`](Self::ALL) (#990).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("premium", Line::Premium),
+        ("expenses", Line::Expenses),
+        ("incurred_losses", Line::IncurredLosses),
+        ("reserve_development", Line::ReserveDevelopment),
+        ("investment_income", Line::InvestmentIncome),
+        ("result", Line::Result),
+        ("paid", Line::Paid),
+        ("assets", Line::Assets),
+        ("reserves", Line::Reserves),
+        ("surplus", Line::Surplus),
+        ("tax", Line::Tax),
+        ("dividends", Line::Dividends),
+        ("injections", Line::Injections),
+        ("surplus_before_capital", Line::SurplusBeforeCapital),
+    ];
+
+    /// The line named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name, as `"incurred_losses"`.
+    pub fn name(self) -> &'static str {
+        Self::NAMES[self as usize].0
+    }
+
     fn model(self) -> &'static str {
         match self {
             Line::Premium => "dfa_premium",
@@ -982,5 +1036,22 @@ impl ProjectionPaths {
             estimate: Estimate::of(hits, self.n_sims),
             shortfall: (hits > 0).then(|| short / hits as f64),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_names_round_trip() {
+        for (k, line) in Line::ALL.iter().enumerate() {
+            assert_eq!(Line::NAMES[k].1, *line);
+            assert_eq!(Line::from_name(line.name()), Some(*line));
+        }
+        for &(n, b) in CapitalBasis::NAMES {
+            assert_eq!(CapitalBasis::from_name(n), Some(b));
+            assert_eq!(b.name(), n);
+        }
     }
 }

@@ -10,8 +10,9 @@ crate `prospicio-esg`) is built (branch
 branch `claude/project-thread-n5mttf-esg-dfa`) and PR 4 (the cycle, tax and
 capital rules, branch `claude/project-thread-n5mttf-esg-rules`), and
 decision 7's copula (branch
-`claude/project-thread-n5mttf-esg-loss-dependence`); PRs 5 and 6 are to
-come. Lane: Aggregate (a new
+`claude/project-thread-n5mttf-esg-loss-dependence`), and PR 5's Python
+bindings (branch `claude/project-thread-n5mttf-esg-bindings`); PR 5's R
+bindings and PR 6 are to come. Lane: Aggregate (a new
 crate, decision 1; the lane table's Owns column changes in a small PR of
 its own) · Depends on: `aggregate.md` (`EventSet`, `Tower::apply_term`,
 `EventSet::correlated_years`, `ruin`), `reserving-inflation.md` (Reserving
@@ -422,7 +423,24 @@ matrix of simulations by steps) and the projection's inputs as columns.
      `run_without_economy` are refused; at 10,000 paths the Spearman
      correlation with the growth is the Gaussian copula's
      `(6 / π) asin(ρ / 2)` within 0.03.
-5. Python and R bindings.
+5. Python and R bindings. **Python done** (branch
+   `claude/project-thread-n5mttf-esg-bindings`,
+   `python/tests/test_aggregate_esg.py`); R follows in a PR of its own,
+   since CRAN was refused to the cloud session, which therefore could not
+   build or test the R package. As built:
+   * a `prospicio.esg` namespace: `Vasicek`, `Cir`, `HullWhite` (its
+     initial curve as spot rates or a `Svensson`), `Svensson` (with
+     `fit`), `Inflation`, `Superimposed`, `Esg` and `Scenarios`, whose
+     paths are NumPy matrices of paths by steps from today (`short_rates`,
+     `deflators`, `bond_prices(j)`, `inflation_rates`, `index_levels`) or by
+     years (`superimposed`); and `Cycle`, `Projection` and
+     `ProjectionPaths` (`values(line)` by path and year, `ruin`, `breach`);
+   * `Projection` takes every builder as a keyword argument; the losses'
+     dependence is a family name (`"gaussian"`, `"t"` or an Archimedean
+     family) with its parameter; `breach` takes an amount, a list by year
+     or `(basis, ratio)`;
+   * `Step`, `Index`, `Line` and `CapitalBasis` gain `NAMES`, `from_name`
+     and `name` (#990), which the parsers use.
 6. A guide: a five-year projection of the guides' treaty book (Guides
    lane, with the user's go-ahead or as an issue).
 

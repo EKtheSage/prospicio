@@ -23,6 +23,31 @@ pub enum Step {
 }
 
 impl Step {
+    /// Every name the Python, R and Excel front ends accept, with its
+    /// variant, the canonical name first (#990).
+    pub const NAMES: &'static [(&'static str, Self)] = &[
+        ("monthly", Self::Monthly),
+        ("quarterly", Self::Quarterly),
+        ("annual", Self::Annual),
+    ];
+
+    /// The step named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name: one of `"monthly"`, `"quarterly"`, `"annual"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Monthly => "monthly",
+            Self::Quarterly => "quarterly",
+            Self::Annual => "annual",
+        }
+    }
+
     /// Steps in a year.
     pub fn per_year(self) -> usize {
         match self {
@@ -572,6 +597,28 @@ pub enum Index {
     Claims,
 }
 
+impl Index {
+    /// Every name the front ends accept, with its variant (#990).
+    pub const NAMES: &'static [(&'static str, Self)] =
+        &[("price", Self::Price), ("claims", Self::Claims)];
+
+    /// The index named `name` ([`NAMES`](Self::NAMES)), or `None`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::NAMES
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The canonical name: `"price"` or `"claims"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Price => "price",
+            Self::Claims => "claims",
+        }
+    }
+}
+
 impl Scenarios {
     /// The number of paths.
     pub fn n_sims(&self) -> usize {
@@ -765,6 +812,17 @@ impl Scenarios {
 mod tests {
     use super::*;
     use crate::{Cir, InitialCurve, Vasicek};
+
+    #[test]
+    fn the_names_round_trip() {
+        for &(n, v) in Step::NAMES {
+            assert_eq!((Step::from_name(n), v.name()), (Some(v), n));
+        }
+        for &(n, v) in Index::NAMES {
+            assert_eq!((Index::from_name(n), v.name()), (Some(v), n));
+        }
+        assert_eq!(Step::from_name("weekly"), None);
+    }
 
     #[test]
     fn a_path_replays_alone_and_steps_are_reported() {
