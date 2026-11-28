@@ -78,6 +78,7 @@ fn both_reconciliations_close_with_surprises_every_period() {
             coverage_units: Some(vec![3.0, 2.0, 1.0]),
             discount_coverage_units: true,
             period_years: 1.0,
+            ..GroupOptions::default()
         },
     )
     .unwrap();

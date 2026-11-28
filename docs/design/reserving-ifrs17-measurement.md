@@ -3,7 +3,9 @@
 Status: **Accepted** (2026-11-27; issue #982, in the 0.4.0 milestone at the
 user's request of 2026-11-27). The user decided open decisions 1 to 11 on
 2026-11-27 as recommended. PR 1 (the general model's `Group`) is built
-(branch `claude/project-thread-n5mttf-ifrs17-gmm`); PRs 2 to 6 are to come. Lane: Reserving
+(branch `claude/project-thread-n5mttf-ifrs17-gmm`), and PR 2 (the current
+curve and the OCI option, branch `claude/project-thread-n5mttf-ifrs17-oci`)
+but for Example 15's parity; PRs 3 to 6 are to come. Lane: Reserving
 (`crates/prospicio-reserving/`, the lane's binding modules) · Depends on:
 `reserving-ifrs17.md` (the `discount` module: `DiscountCurve`,
 `DiscountedReserves`, `RiskAdjustment`), `reinsurer-default.md` (Aggregate
@@ -370,7 +372,36 @@ rolled forward this quarter can be saved and rolled forward next quarter.
      discretion) needs the current curve, so it moves to PR 2; its CSM
      release (213 / 394 × 198 = 107) is the coverage units' ratio PR 1
      already uses.
-2. The current curve and the OCI option (Examples 6 and 15).
+2. The current curve and the OCI option (Examples 6 and 15). **Done**
+   for Example 6 (branch `claude/project-thread-n5mttf-ifrs17-oci`):
+   `validation/tests/reserving_ifrs17_oci.rs` matches IE65 and IE71 to the
+   unit. What it settled:
+   * `PeriodInputs::with_current_curve` gives the curve at the period end
+     (maturities from it); `Balances` keeps the present value at both the
+     current and the locked-in curve, and the finance row is what the
+     current measurement leaves after the changes for future service,
+     which are measured at the locked-in curve (B97(a));
+   * a change in financial assumptions is a revision of the opening view
+     (`with_financial_revision`), its effect finance, not CSM; the
+     period's expected cash flows are read from the revised view, so a
+     claim paid as revised is no experience adjustment (Example 6's
+     death benefit of 32);
+   * `GroupOptions::accretion_curve` accretes the CSM at the rates for
+     nominal cash flows when they differ from the locked-in curve that
+     measures the CSM's adjustments (B72(b) and (c), Example 6's 4% and
+     10%);
+   * `GroupOptions::oci` puts in profit or loss the finance expense at the
+     locked-in curve on the cash flows as revised (B131, B132(a)(i)) and
+     the rest in OCI, so profit is the same as under a locked-in
+     measurement and the accumulated OCI, the locked-in present value less
+     the current one, recycles to nil when the coverage ends; the effective
+     yield and projected crediting rate allocations (B132(a)(ii)) are not
+     built;
+   * the loss component's share of the finance expense stays at the
+     locked-in curve;
+   * Example 15 could not be read from a cloud session (the fetched text
+     stops at IE70, and `www.ifrs.org` is refused to the shell), so its
+     parity is a Next item for a session that can read it.
 3. The PAA: the LRC, the onerous test, the LIC from `DiscountedReserves`
    (Example 10).
 4. Reinsurance held: the reinsurance CSM, the loss-recovery component,

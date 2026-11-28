@@ -32,9 +32,22 @@
 //!    steps 1 and 3 (B119; undiscounted unless
 //!    [`GroupOptions::discount_coverage_units`]).
 //!
-//! What this part leaves to the later ones (the design note's PRs 2 to 5):
-//! every amount is measured at the locked-in curve, so there is no effect
-//! of a change in the curve and no OCI option; the RA's change is all
+//! The present value is measured at the current curve of each period end
+//! ([`PeriodInputs::with_current_curve`]; the locked-in curve when none is
+//! given), and the changes that adjust the CSM at the locked-in curve: the
+//! difference, and the effect of changes in financial assumptions
+//! ([`PeriodInputs::with_financial_revision`]), are insurance finance income
+//! or expense (B97(a)). With [`GroupOptions::oci`] profit or loss takes the
+//! finance expense at the locked-in curve on the cash flows as revised
+//! (B131, B132(a)(i)) and OCI the rest, so that the accumulated OCI is the
+//! locked-in present value less the current one; the effective yield and
+//! projected crediting rate allocations (B132(a)(ii)) are not built. The
+//! CSM accretes at [`GroupOptions::accretion_curve`] when the rates for
+//! nominal cash flows differ (B72(b)). The loss component's share of the
+//! finance expense is taken at the locked-in curve.
+//!
+//! What this part leaves to the later ones (the design note's PRs 3 to 5):
+//! the RA's change is all
 //! insurance service result (paragraph 81 not disaggregated); claims and
 //! expenses are paid in the period they are incurred, so the liability for
 //! incurred claims (LIC) is nil at each period end, as in the IASB's
@@ -279,6 +292,17 @@ pub struct PeriodInputs {
     /// allocates those not yet recovered by the period's coverage units,
     /// undiscounted.
     pub acquisition_recovered: Option<f64>,
+    /// The current discount curve at the end of the period, maturities from
+    /// that date (paragraph 36, B72(a)); `None` measures at the locked-in
+    /// curve.
+    pub current_curve: Option<DiscountCurve>,
+    /// The view at the start of the period revised for the changes in
+    /// financial assumptions made in it (expected returns credited, an
+    /// index): the opening view's periods, element 0 this period. Its effect
+    /// on the present value is insurance finance income or expense, not a
+    /// change for future service (B97(a), B128); the period's expected cash
+    /// flows are read from it. `None` keeps the opening view.
+    pub financial_revision: Option<ExpectedCashFlows>,
 }
 
 impl PeriodInputs {
@@ -293,7 +317,22 @@ impl PeriodInputs {
             risk_adjustment_released: None,
             future_coverage_units: None,
             acquisition_recovered: None,
+            current_curve: None,
+            financial_revision: None,
         }
+    }
+
+    /// With the current curve at the end of the period, maturities from it.
+    pub fn with_current_curve(mut self, curve: DiscountCurve) -> Self {
+        self.current_curve = Some(curve);
+        self
+    }
+
+    /// With the opening view revised for the period's changes in financial
+    /// assumptions.
+    pub fn with_financial_revision(mut self, revised: ExpectedCashFlows) -> Self {
+        self.financial_revision = Some(revised);
+        self
     }
 
     /// With the RA released for current service given.
@@ -328,6 +367,18 @@ pub struct GroupOptions {
     /// The length of a period in years (1 for annual reporting, 0.25 for
     /// quarterly), the step of the curve between period ends.
     pub period_years: f64,
+    /// Disaggregate insurance finance income or expense between profit or
+    /// loss and other comprehensive income (paragraph 88(b)): profit or loss
+    /// takes the finance expense at the locked-in curve (B131, B72(e)(i)),
+    /// OCI the rest, so that the accumulated OCI is the present value at the
+    /// locked-in curve less that at the current one. Default: all in profit
+    /// or loss (paragraph 88(a)).
+    pub oci: bool,
+    /// The curve at recognition that accretes the CSM, for cash flows that
+    /// do not vary with the returns on underlying items (B72(b)), when it
+    /// differs from the locked-in curve that measures the changes adjusting
+    /// the CSM (B72(c)); `None` uses the locked-in curve.
+    pub accretion_curve: Option<DiscountCurve>,
 }
 
 impl Default for GroupOptions {
@@ -336,6 +387,8 @@ impl Default for GroupOptions {
             coverage_units: None,
             discount_coverage_units: false,
             period_years: 1.0,
+            oci: false,
+            accretion_curve: None,
         }
     }
 }
@@ -344,8 +397,10 @@ impl Default for GroupOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Balances {
     /// The present value of the future cash flows, outflows less inflows, at
-    /// the locked-in curve.
+    /// the current curve (the locked-in curve when no current one is given).
     pub present_value: f64,
+    /// The same present value at the locked-in curve.
+    pub present_value_locked_in: f64,
     /// The RA for non-financial risk.
     pub risk_adjustment: f64,
     /// The contractual service margin.
@@ -370,6 +425,13 @@ impl Balances {
     /// The liability for remaining coverage excluding the loss component.
     pub fn excluding_loss_component(&self) -> f64 {
         self.liability() - self.loss_component
+    }
+
+    /// The effect of the current curve on the present value, the locked-in
+    /// present value less the current one: the accumulated OCI of a group
+    /// that takes the OCI option (paragraph 88(b)).
+    pub fn accumulated_oci(&self) -> f64 {
+        self.present_value_locked_in - self.present_value
     }
 }
 
@@ -531,8 +593,13 @@ pub struct GroupPeriod {
     /// Reversals of such losses.
     pub loss_reversals: f64,
     /// Insurance finance expenses: the unwind of the present value and the
-    /// accretion of the CSM.
+    /// accretion of the CSM, the effect of changes in the current curve and
+    /// in financial assumptions included (B97(a)), in profit or loss and OCI
+    /// together.
     pub finance_expenses: f64,
+    /// The part of `finance_expenses` in other comprehensive income under
+    /// the OCI option, nil without it.
+    pub finance_expenses_in_oci: f64,
     /// The loss component's share of the period's release, finance expense
     /// included (nil when the group is not onerous at the start of the
     /// period).
@@ -559,9 +626,21 @@ impl GroupPeriod {
         self.insurance_revenue() - self.insurance_service_expenses()
     }
 
-    /// Profit or loss of the group: the service result less finance expenses.
+    /// Insurance finance expenses in profit or loss.
+    pub fn finance_expenses_in_profit(&self) -> f64 {
+        self.finance_expenses - self.finance_expenses_in_oci
+    }
+
+    /// Profit or loss of the group: the service result less the finance
+    /// expenses in profit or loss.
     pub fn profit(&self) -> f64 {
-        self.insurance_service_result() - self.finance_expenses
+        self.insurance_service_result() - self.finance_expenses_in_profit()
+    }
+
+    /// Other comprehensive income of the group, the finance expenses in OCI
+    /// with their sign turned.
+    pub fn other_comprehensive_income(&self) -> f64 {
+        -self.finance_expenses_in_oci
     }
 
     /// The reconciliation row by measurement component of a line.
@@ -640,6 +719,7 @@ impl Group {
         let fcf = pv + risk_adjustment;
         let balances = Balances {
             present_value: pv,
+            present_value_locked_in: pv,
             risk_adjustment,
             csm: (-fcf).max(0.0),
             loss_component: fcf.max(0.0),
@@ -682,6 +762,14 @@ impl Group {
     /// The discount factor at `t` years of the locked-in curve.
     fn factor(&self, t: f64) -> f64 {
         self.curve.factor(t)
+    }
+
+    /// The present value at `at` of a view taken at `at`, at a current curve
+    /// whose maturities run from `at`.
+    fn present_value_at(&self, view: &ExpectedCashFlows, at: f64, curve: &DiscountCurve) -> f64 {
+        self.flows(view, at)
+            .map(|(u, cf)| cf * curve.factor(u - at))
+            .sum()
     }
 
     /// The present value at time `at` (years) of a view taken at `at`.
@@ -734,6 +822,16 @@ impl Group {
     pub fn roll_forward(&mut self, inputs: &PeriodInputs) -> Result<GroupPeriod> {
         inputs.expected.validate()?;
         check_ra(inputs.risk_adjustment)?;
+        if let Some(revised) = &inputs.financial_revision {
+            revised.validate()?;
+            if revised.periods() != self.view.periods() {
+                return Err(invalid(format!(
+                    "the financial revision has {} periods, the opening view {}",
+                    revised.periods(),
+                    self.view.periods()
+                )));
+            }
+        }
         let actual = inputs.actual;
         for (name, v) in [
             ("premiums", actual.premiums),
@@ -771,7 +869,13 @@ impl Group {
         let s = self.period as f64 * l;
         let e = s + l;
         let growth = self.factor(s) / self.factor(e) - 1.0;
-        let view = &self.view;
+        let accretion_growth = match &self.options.accretion_curve {
+            Some(c) => c.factor(s) / c.factor(e) - 1.0,
+            None => growth,
+        };
+        // The period's expected flows come from the view revised for
+        // financial assumptions, whose effect is a finance effect.
+        let view = inputs.financial_revision.as_ref().unwrap_or(&self.view);
 
         // Opening, and the balances recognised in the first period.
         let opening = if self.period == 0 {
@@ -781,6 +885,11 @@ impl Group {
         };
         let start = self.balances;
         let new = self.recognised.take();
+        let revision = match &inputs.financial_revision {
+            Some(revised) => self.present_value(revised, s) - start.present_value_locked_in,
+            None => 0.0,
+        };
+        let start_locked_in = start.present_value_locked_in + revision;
 
         // The opening view's flows in this period, and their unwind.
         let l0 = |stream: &[f64]| ExpectedCashFlows::at(stream, 0);
@@ -792,12 +901,12 @@ impl Group {
             .take(3)
             .filter(|&(_, cf)| cf != 0.0)
             .collect();
-        let finance_pv = start.present_value * growth
+        let finance_locked_in = start_locked_in * growth
             - in_period
                 .iter()
                 .map(|&(u, cf)| cf * (self.factor(u) / self.factor(e) - 1.0))
                 .sum::<f64>();
-        let accretion = start.csm * growth;
+        let accretion = start.csm * accretion_growth;
 
         // The RA released, and the acquisition cash flows recovered.
         let ra_released = inputs
@@ -846,9 +955,22 @@ impl Group {
         let premium_current = premium_difference - actual.premiums_for_future_service;
         let experience = (paid - exp_claims) - premium_current;
 
-        // Changes for future service, at the locked-in curve (B96).
-        let closing_pv = self.present_value(&inputs.expected, e);
-        let future_pv = closing_pv - (start.present_value + finance_pv + cash + experience);
+        // Changes for future service, at the locked-in curve (B96); the
+        // current curve's effect on them, and on everything else, is finance
+        // (B97(a)): the finance row is what the current measurement leaves.
+        let closing_locked_in = self.present_value(&inputs.expected, e);
+        let future_pv =
+            closing_locked_in - (start_locked_in + finance_locked_in + cash + experience);
+        let closing_pv = match &inputs.current_curve {
+            Some(curve) => self.present_value_at(&inputs.expected, e, curve),
+            None => closing_locked_in,
+        };
+        let finance_pv = closing_pv - (start.present_value + future_pv + cash + experience);
+        let finance_pv_in_oci = if self.options.oci {
+            finance_pv - (finance_locked_in + revision)
+        } else {
+            0.0
+        };
         let future_ra = inputs.risk_adjustment - (start.risk_adjustment - ra_released);
         let change = future_pv + future_ra;
         let csm_before = start.csm + accretion;
@@ -896,6 +1018,7 @@ impl Group {
 
         let closing = Balances {
             present_value: closing_pv,
+            present_value_locked_in: closing_locked_in,
             risk_adjustment: inputs.risk_adjustment,
             csm,
             loss_component: if lc > NIL { lc } else { 0.0 },
@@ -1021,6 +1144,7 @@ impl Group {
             onerous_losses: new_loss + loss,
             loss_reversals: reversal,
             finance_expenses: finance,
+            finance_expenses_in_oci: finance_pv_in_oci,
             loss_component_share: share,
             closing,
         })
