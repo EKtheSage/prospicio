@@ -39,6 +39,13 @@
 //! * a [`CapitalRule`]: a dividend of the surplus above a ratio of premium
 //!   or reserves, an injection up to a floor, at the year end after tax.
 //!
+//! The losses depend on the economy through the index that scales them
+//! and, with [`LossDependence`], through their ranks: each year's new
+//! losses are reordered across the paths so that their ranks and the ranks
+//! of the year's index growth `I_t / I_(t-1)` follow a two-dimensional
+//! copula (decision 7(a)), the losses' distribution in each year unchanged.
+//! Without it the losses are independent of the economy beyond the scaling.
+//!
 //! The surplus then moves by the result less tax and dividends plus
 //! injections. Ruin and breach are read on the surplus before dividends and
 //! injections ([`Line::SurplusBeforeCapital`]), so an injection does not
@@ -48,6 +55,9 @@
 use prospicio_core::{Error, Result, StreamRng};
 use prospicio_esg::{Index, Scenarios};
 use prospicio_math::special::norm_quantile;
+use prospicio_prob::copula::{
+    Archimedean, ArchimedeanCopula, Copula, GaussianCopula, StudentTCopula,
+};
 use prospicio_prob::{ComponentKey, PredictiveDistribution, Provenance};
 
 fn data(why: impl Into<String>) -> Error {
@@ -184,6 +194,52 @@ pub struct CapitalRule {
     pub inject_below: Option<f64>,
 }
 
+/// The rank dependence of a year's new losses on the year's growth of the
+/// index that scales them (decision 7(a)): a two-dimensional copula, the
+/// index growth its first dimension and the losses its second.
+///
+/// A positive parameter puts large losses in high-inflation years. Gumbel
+/// and Joe have upper tail dependence (the worst inflation years with the
+/// worst losses), Clayton lower tail dependence, Gaussian and Frank none,
+/// Student's t both.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LossDependence {
+    /// A Gaussian copula with correlation `rho`.
+    Gaussian {
+        /// The correlation, in `(-1, 1)`.
+        rho: f64,
+    },
+    /// A Student's t copula with correlation `rho` and `nu` degrees of
+    /// freedom.
+    StudentT {
+        /// The correlation, in `(-1, 1)`.
+        rho: f64,
+        /// The degrees of freedom, positive.
+        nu: f64,
+    },
+    /// An Archimedean copula.
+    Archimedean {
+        /// The family.
+        family: Archimedean,
+        /// Its parameter, in the family's range.
+        theta: f64,
+    },
+}
+
+impl LossDependence {
+    fn copula(&self) -> Result<Box<dyn Copula>> {
+        Ok(match *self {
+            Self::Gaussian { rho } => Box::new(GaussianCopula::new(&[1.0, rho, rho, 1.0], 2)?),
+            Self::StudentT { rho, nu } => {
+                Box::new(StudentTCopula::new(&[1.0, rho, rho, 1.0], 2, nu)?)
+            }
+            Self::Archimedean { family, theta } => {
+                Box::new(ArchimedeanCopula::new(family, theta, 2)?)
+            }
+        })
+    }
+}
+
 /// A company's projection: its opening balance sheet, the new business of
 /// each year and the investment rule.
 ///
@@ -237,6 +293,9 @@ pub struct Projection {
     pub tax: Option<Tax>,
     /// Dividends and injections, if any.
     pub capital: Option<CapitalRule>,
+    /// The losses' rank dependence on the index growth, if any, and the
+    /// seed of its draws (year `t` from `StreamRng::new(seed, t)`).
+    pub loss_dependence: Option<(LossDependence, u64)>,
 }
 
 impl Projection {
@@ -277,6 +336,7 @@ impl Projection {
             cycle: None,
             tax: None,
             capital: None,
+            loss_dependence: None,
         })
     }
 
@@ -336,6 +396,15 @@ impl Projection {
     /// With dividends and injections.
     pub fn with_capital(mut self, rule: CapitalRule) -> Self {
         self.capital = Some(rule);
+        self
+    }
+
+    /// With the year's new losses reordered across the paths so that their
+    /// ranks depend on the year's index growth through `dependence`, its
+    /// draws for year `t` from `StreamRng::new(seed, t)`. Needs scenarios
+    /// whose index varies ([`run`](Self::run)).
+    pub fn with_loss_dependence(mut self, dependence: LossDependence, seed: u64) -> Self {
+        self.loss_dependence = Some((dependence, seed));
         self
     }
 
@@ -455,7 +524,11 @@ impl Projection {
                 economy.set(s, t, ret, index_of(s, t));
             }
         }
-        Ok(self.roll(&economy))
+        let losses = match &self.loss_dependence {
+            Some((dependence, seed)) => self.dependent_losses(&economy, dependence, *seed)?,
+            None => self.losses.clone(),
+        };
+        Ok(self.roll(&economy, &losses))
     }
 
     /// The projection with no economy: no investment return and an index of
@@ -465,10 +538,72 @@ impl Projection {
         if !self.bonds.is_empty() {
             return Err(data("bond buckets need scenarios"));
         }
-        Ok(self.roll(&Economy::new(self.n_sims, self.years)))
+        if self.loss_dependence.is_some() {
+            return Err(data(
+                "the losses' dependence on the economy needs scenarios",
+            ));
+        }
+        Ok(self.roll(&Economy::new(self.n_sims, self.years), &self.losses))
     }
 
-    fn roll(&self, economy: &Economy) -> ProjectionPaths {
+    /// Each year's losses reordered across the paths: the path with the
+    /// `i`-th smallest index growth takes the copula draw with the `i`-th
+    /// smallest first coordinate, and the loss whose rank among the year's
+    /// losses is that draw's second coordinate's rank.
+    fn dependent_losses(
+        &self,
+        economy: &Economy,
+        dependence: &LossDependence,
+        seed: u64,
+    ) -> Result<Vec<f64>> {
+        let copula = dependence.copula()?;
+        let (n, years) = (self.n_sims, self.years);
+        let mut out = vec![0.0; n * years];
+        let mut u = [0.0; 2];
+        for t in 1..=years {
+            let growth: Vec<f64> = (0..n)
+                .map(|s| {
+                    let before = if t == 1 { 1.0 } else { economy.index(s, t - 1) };
+                    economy.index(s, t) / before
+                })
+                .collect();
+            let (lo, hi) = growth
+                .iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &g| {
+                    (a.min(g), b.max(g))
+                });
+            if hi - lo <= 1e-12 * hi.abs().max(1.0) {
+                return Err(data(format!(
+                    "the index does not vary across the paths in year {t}, so the losses \
+                     cannot depend on it: the scenarios need an inflation model"
+                )));
+            }
+            let mut by_growth: Vec<usize> = (0..n).collect();
+            by_growth.sort_by(|&a, &b| growth[a].total_cmp(&growth[b]));
+            let mut rng = StreamRng::new(seed, t as u64);
+            let mut draws: Vec<(f64, f64)> = (0..n)
+                .map(|_| {
+                    copula.sample(&mut rng, &mut u);
+                    (u[0], u[1])
+                })
+                .collect();
+            draws.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let mut by_second: Vec<usize> = (0..n).collect();
+            by_second.sort_by(|&a, &b| draws[a].1.total_cmp(&draws[b].1));
+            let mut rank_second = vec![0; n];
+            for (r, &i) in by_second.iter().enumerate() {
+                rank_second[i] = r;
+            }
+            let mut sorted: Vec<f64> = (0..n).map(|s| self.losses[s * years + t - 1]).collect();
+            sorted.sort_by(f64::total_cmp);
+            for (i, &s) in by_growth.iter().enumerate() {
+                out[s * years + t - 1] = sorted[rank_second[i]];
+            }
+        }
+        Ok(out)
+    }
+
+    fn roll(&self, economy: &Economy, losses: &[f64]) -> ProjectionPaths {
         let (n, years) = (self.n_sims, self.years);
         let mut lines = vec![vec![0.0; n * years]; Line::ALL.len()];
         let horizon = years + self.payout.len() + self.opening_reserve_payments.len();
@@ -503,7 +638,7 @@ impl Projection {
                 let level = economy.index(s, t);
                 let prior: f64 = due[t..].iter().sum();
                 let development = prior * (level - index);
-                let new = self.losses[s * years + t - 1];
+                let new = losses[s * years + t - 1];
                 for (k, share) in self.payout.iter().enumerate() {
                     due[t + k] += new * share;
                 }
