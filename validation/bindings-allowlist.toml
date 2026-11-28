@@ -17,6 +17,10 @@
 # added twice makes the file invalid TOML, which fails it too.
 
 [python.prospicio_aggregate]
+"dfa::CapitalBasis" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::CapitalRule" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Cycle" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Tax" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
 "dfa::BondBucket" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
 "dfa::Breach" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
 "dfa::Estimate" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
@@ -332,6 +336,10 @@
 "ifrs17::Revenue" = "the IFRS 17 group is bound with its JSON state in a later PR (reserving-ifrs17-measurement.md, PR 5)"
 
 [r.prospicio_aggregate]
+"dfa::CapitalBasis" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::CapitalRule" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Cycle" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Tax" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
 "dfa::BondBucket" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
 "dfa::Breach" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
 "dfa::Estimate" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"

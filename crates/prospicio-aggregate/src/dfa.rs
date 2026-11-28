@@ -29,12 +29,25 @@
 //!   plus investment income, and the surplus, assets less reserves, moves by
 //!   exactly the result (validation 6).
 //!
-//! Ruin and breach are checked at year ends only, which understates ruin
-//! within a year. The underwriting cycle, tax and dividends or injections
-//! come with the note's PR 4.
+//! Three rules can be added (the note's PR 4):
+//!
+//! * an underwriting [`Cycle`], an AR(2) on the log rate adequacy that
+//!   scales each year's premium (decision 6), the losses unchanged, so the
+//!   loss ratio rises in a soft market and falls in a hard one;
+//! * [`Tax`] at a flat rate on the year's result, losses carried forward
+//!   or not, paid at the year end;
+//! * a [`CapitalRule`]: a dividend of the surplus above a ratio of premium
+//!   or reserves, an injection up to a floor, at the year end after tax.
+//!
+//! The surplus then moves by the result less tax and dividends plus
+//! injections. Ruin and breach are read on the surplus before dividends and
+//! injections ([`Line::SurplusBeforeCapital`]), so an injection does not
+//! hide the shortfall it covers. They are checked at year ends only, which
+//! understates ruin within a year.
 
-use prospicio_core::{Error, Result};
+use prospicio_core::{Error, Result, StreamRng};
 use prospicio_esg::{Index, Scenarios};
+use prospicio_math::special::norm_quantile;
 use prospicio_prob::{ComponentKey, PredictiveDistribution, Provenance};
 
 fn data(why: impl Into<String>) -> Error {
@@ -49,6 +62,126 @@ pub struct BondBucket {
     pub share: f64,
     /// The duration in years, one of the scenarios' reported maturities.
     pub duration: f64,
+}
+
+/// The underwriting cycle: an AR(2) on the log rate adequacy `x` (the log
+/// of the charged rate over the technical rate),
+/// `x_t = μ + φ1 (x_(t-1) - μ) + φ2 (x_(t-2) - μ) + σ ε_t`, from
+/// `x_0 = x_(-1) = x0`; year `t`'s premium is the given premium times
+/// `exp(x_t)`. With `φ2 = 0` it is an AR(1); with complex roots it cycles
+/// with [`period`](Self::period).
+///
+/// ```
+/// use prospicio_aggregate::dfa::Cycle;
+///
+/// let cycle = Cycle::new(0.0, 1.2, -0.6, 0.05, 0.0)?;
+/// // 2π / acos(φ1 / (2 √-φ2)): about 9.2 years.
+/// assert!((cycle.period().unwrap() - 9.176).abs() < 1e-3);
+/// assert!(Cycle::new(0.0, 0.5, 0.6, 0.05, 0.0).is_err());
+/// # Ok::<(), prospicio_core::Error>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Cycle {
+    /// The long-run mean of the log adequacy.
+    pub mean: f64,
+    /// The first autoregressive coefficient.
+    pub phi1: f64,
+    /// The second.
+    pub phi2: f64,
+    /// The standard deviation of the annual shock.
+    pub sigma: f64,
+    /// The log adequacy today and the year before.
+    pub x0: f64,
+}
+
+impl Cycle {
+    /// Fails unless the values are finite, `sigma` positive and the AR(2)
+    /// stationary: `φ2 > -1`, `φ1 + φ2 < 1` and `φ2 - φ1 < 1`.
+    pub fn new(mean: f64, phi1: f64, phi2: f64, sigma: f64, x0: f64) -> Result<Self> {
+        if ![mean, phi1, phi2, sigma, x0].iter().all(|v| v.is_finite()) || sigma <= 0.0 {
+            return Err(data("a cycle needs finite values and a positive sigma"));
+        }
+        if !(phi2 > -1.0 && phi1 + phi2 < 1.0 && phi2 - phi1 < 1.0) {
+            return Err(data(format!(
+                "the cycle's AR(2) is not stationary: phi1 {phi1}, phi2 {phi2}"
+            )));
+        }
+        Ok(Self {
+            mean,
+            phi1,
+            phi2,
+            sigma,
+            x0,
+        })
+    }
+
+    /// The period in years of the cycle, `2π / acos(φ1 / (2 √(-φ2)))`, when
+    /// the roots are complex (`φ1² + 4 φ2 < 0`); `None` otherwise.
+    pub fn period(&self) -> Option<f64> {
+        (self.phi1 * self.phi1 + 4.0 * self.phi2 < 0.0)
+            .then(|| 2.0 * std::f64::consts::PI / (self.phi1 / (2.0 * (-self.phi2).sqrt())).acos())
+    }
+
+    /// The mean of `x_t`.
+    pub fn mean_at(&self, t: usize) -> f64 {
+        let (mut d1, mut d2) = (self.x0 - self.mean, self.x0 - self.mean);
+        for _ in 0..t {
+            (d1, d2) = (self.phi1 * d1 + self.phi2 * d2, d1);
+        }
+        self.mean + d1
+    }
+
+    /// The variance of `x_t`, from the recursion of the state's covariance.
+    pub fn variance_at(&self, t: usize) -> f64 {
+        let (p1, p2, s2) = (self.phi1, self.phi2, self.sigma * self.sigma);
+        // (Var x_t, Cov(x_t, x_(t-1)), Var x_(t-1)).
+        let (mut v, mut c, mut w) = (0.0, 0.0, 0.0);
+        for _ in 0..t {
+            (v, c, w) = (
+                p1 * p1 * v + 2.0 * p1 * p2 * c + p2 * p2 * w + s2,
+                p1 * v + p2 * c,
+                v,
+            );
+        }
+        v
+    }
+
+    /// The stationary variance,
+    /// `σ² (1 - φ2) / ((1 + φ2) ((1 - φ2)² - φ1²))`.
+    pub fn stationary_variance(&self) -> f64 {
+        let (p1, p2) = (self.phi1, self.phi2);
+        self.sigma * self.sigma * (1.0 - p2) / ((1.0 + p2) * ((1.0 - p2).powi(2) - p1 * p1))
+    }
+}
+
+/// Tax at a flat rate on the year's result.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tax {
+    /// The rate, in `[0, 1]`.
+    pub rate: f64,
+    /// Carry a loss forward against later profits (no refund either way).
+    pub carry_forward: bool,
+}
+
+/// What a [`CapitalRule`]'s ratios are of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapitalBasis {
+    /// The year's premium.
+    Premium,
+    /// The year-end reserves.
+    Reserves,
+}
+
+/// Dividends and capital injections at each year end, after tax.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CapitalRule {
+    /// What the ratios are of.
+    pub basis: CapitalBasis,
+    /// Pay out the surplus above this ratio of the basis.
+    pub dividend_above: Option<f64>,
+    /// Inject capital up to this ratio of the basis when the surplus is
+    /// below it.
+    pub inject_below: Option<f64>,
 }
 
 /// A company's projection: its opening balance sheet, the new business of
@@ -97,6 +230,13 @@ pub struct Projection {
     pub bonds: Vec<BondBucket>,
     /// The index that scales the losses and reserves.
     pub index: Index,
+    /// The underwriting cycle, if any, and the seed of its streams (path
+    /// `s` from `StreamRng::new(seed, s)`).
+    pub cycle: Option<(Cycle, u64)>,
+    /// Tax, if any.
+    pub tax: Option<Tax>,
+    /// Dividends and injections, if any.
+    pub capital: Option<CapitalRule>,
 }
 
 impl Projection {
@@ -134,6 +274,9 @@ impl Projection {
             payout: vec![1.0],
             bonds: Vec::new(),
             index: Index::Claims,
+            cycle: None,
+            tax: None,
+            capital: None,
         })
     }
 
@@ -178,6 +321,24 @@ impl Projection {
         self
     }
 
+    /// With an underwriting cycle on the premium, its paths from `seed`.
+    pub fn with_cycle(mut self, cycle: Cycle, seed: u64) -> Self {
+        self.cycle = Some((cycle, seed));
+        self
+    }
+
+    /// With tax.
+    pub fn with_tax(mut self, tax: Tax) -> Self {
+        self.tax = Some(tax);
+        self
+    }
+
+    /// With dividends and injections.
+    pub fn with_capital(mut self, rule: CapitalRule) -> Self {
+        self.capital = Some(rule);
+        self
+    }
+
     /// With the losses scaled by this index.
     pub fn with_index(mut self, index: Index) -> Self {
         self.index = index;
@@ -203,6 +364,24 @@ impl Projection {
             || (total - 1.0).abs() > 1e-9
         {
             return Err(data("the payout must be non-negative shares that sum to 1"));
+        }
+        if let Some(tax) = self.tax
+            && !(tax.rate.is_finite() && (0.0..=1.0).contains(&tax.rate))
+        {
+            return Err(data(format!("the tax rate {} is outside [0, 1]", tax.rate)));
+        }
+        if let Some(rule) = self.capital {
+            let ok = |r: Option<f64>| r.is_none_or(f64::is_finite);
+            if !ok(rule.dividend_above) || !ok(rule.inject_below) {
+                return Err(data("the capital rule's ratios are not finite"));
+            }
+            if let (Some(d), Some(f)) = (rule.dividend_above, rule.inject_below)
+                && f > d
+            {
+                return Err(data(format!(
+                    "the injection floor {f} is above the dividend threshold {d}"
+                )));
+            }
         }
         let shares: f64 = self.bonds.iter().map(|b| b.share).sum();
         if self.bonds.iter().any(|b| {
@@ -301,8 +480,23 @@ impl Projection {
             }
             let mut assets = self.opening_assets;
             let mut index = 1.0;
+            let mut carried = 0.0;
+            let mut cycle = self.cycle.map(|(c, seed)| {
+                let d = c.x0 - c.mean;
+                (c, StreamRng::new(seed, s as u64), d, d)
+            });
             for t in 1..=years {
-                let premium = self.premiums[t - 1];
+                let adequacy = match &mut cycle {
+                    Some((c, rng, d1, d2)) => {
+                        let d = c.phi1 * *d1
+                            + c.phi2 * *d2
+                            + c.sigma * norm_quantile(rng.next_open01());
+                        (*d1, *d2) = (d, *d1);
+                        (c.mean + d).exp()
+                    }
+                    None => 1.0,
+                };
+                let premium = self.premiums[t - 1] * adequacy;
                 let expenses = self.expense_ratio * premium;
                 let invested = assets + premium - expenses;
                 let investment = invested * economy.ret(s, t);
@@ -317,8 +511,41 @@ impl Projection {
                 let paid = due[t] * level;
                 due[t] = 0.0;
                 let reserves = due[t + 1..].iter().sum::<f64>() * level;
-                assets = invested + investment - paid;
                 let result = premium - expenses - incurred - development + investment;
+                let tax = match self.tax {
+                    Some(tax) if result >= 0.0 => {
+                        let used = result.min(carried);
+                        carried -= used;
+                        tax.rate * (result - used)
+                    }
+                    Some(tax) => {
+                        if tax.carry_forward {
+                            carried -= result;
+                        }
+                        0.0
+                    }
+                    None => 0.0,
+                };
+                assets = invested + investment - paid - tax;
+                let before = assets - reserves;
+                let (mut dividends, mut injections) = (0.0, 0.0);
+                if let Some(rule) = self.capital {
+                    let basis = match rule.basis {
+                        CapitalBasis::Premium => premium,
+                        CapitalBasis::Reserves => reserves,
+                    };
+                    if let Some(d) = rule.dividend_above
+                        && before > d * basis
+                    {
+                        dividends = before - d * basis;
+                    }
+                    if let Some(f) = rule.inject_below
+                        && before < f * basis
+                    {
+                        injections = f * basis - before;
+                    }
+                }
+                assets += injections - dividends;
                 let i = s * years + t - 1;
                 for (line, value) in [
                     (Line::Premium, premium),
@@ -331,6 +558,10 @@ impl Projection {
                     (Line::Assets, assets),
                     (Line::Reserves, reserves),
                     (Line::Surplus, assets - reserves),
+                    (Line::Tax, tax),
+                    (Line::Dividends, dividends),
+                    (Line::Injections, injections),
+                    (Line::SurplusBeforeCapital, before),
                 ] {
                     lines[line as usize][i] = value;
                 }
@@ -401,11 +632,20 @@ pub enum Line {
     Reserves,
     /// Surplus at the year end, assets less reserves.
     Surplus,
+    /// Tax paid on the year's result.
+    Tax,
+    /// Dividends paid at the year end.
+    Dividends,
+    /// Capital injected at the year end.
+    Injections,
+    /// The surplus after tax, before dividends and injections: what ruin
+    /// and breach are read on.
+    SurplusBeforeCapital,
 }
 
 impl Line {
     /// Every line, in order.
-    pub const ALL: [Line; 10] = [
+    pub const ALL: [Line; 14] = [
         Line::Premium,
         Line::Expenses,
         Line::IncurredLosses,
@@ -416,6 +656,10 @@ impl Line {
         Line::Assets,
         Line::Reserves,
         Line::Surplus,
+        Line::Tax,
+        Line::Dividends,
+        Line::Injections,
+        Line::SurplusBeforeCapital,
     ];
 
     fn model(self) -> &'static str {
@@ -430,6 +674,10 @@ impl Line {
             Line::Assets => "dfa_assets",
             Line::Reserves => "dfa_reserves",
             Line::Surplus => "dfa_surplus",
+            Line::Tax => "dfa_tax",
+            Line::Dividends => "dfa_dividends",
+            Line::Injections => "dfa_injections",
+            Line::SurplusBeforeCapital => "dfa_surplus_before_capital",
         }
     }
 }
@@ -544,11 +792,11 @@ impl ProjectionPaths {
         Ok(())
     }
 
-    /// The probability that the surplus is negative at some year end up to
-    /// `horizon`.
+    /// The probability that the surplus before dividends and injections is
+    /// negative at some year end up to `horizon`.
     pub fn ruin(&self, horizon: usize) -> Result<Estimate> {
         self.check_horizon(horizon)?;
-        let surplus = self.values(Line::Surplus);
+        let surplus = self.values(Line::SurplusBeforeCapital);
         let hits = (0..self.n_sims)
             .filter(|&s| {
                 surplus[s * self.years..s * self.years + horizon]
@@ -559,8 +807,9 @@ impl ProjectionPaths {
         Ok(Estimate::of(hits, self.n_sims))
     }
 
-    /// The probability that the surplus falls below the required capital at
-    /// some year end up to `horizon`, and the mean shortfall at the first
+    /// The probability that the surplus before dividends and injections
+    /// falls below the required capital at some year end up to `horizon`,
+    /// and the mean shortfall at the first
     /// breach.
     pub fn breach(&self, horizon: usize, capital: &RequiredCapital) -> Result<Breach> {
         self.check_horizon(horizon)?;
@@ -573,7 +822,7 @@ impl ProjectionPaths {
             )));
         }
         let (surplus, premium, reserves) = (
-            self.values(Line::Surplus),
+            self.values(Line::SurplusBeforeCapital),
             self.values(Line::Premium),
             self.values(Line::Reserves),
         );
