@@ -60,6 +60,9 @@ insurance finance income or expense (IE152 to IE172), 16 underlying items,
 * **Example 10** (the premium allocation approach): not read, out of
   reach for the same reason as Example 15; `ifrs17::paa` is tested on
   cases worked by hand until a local session reads it.
+* **Examples 11 and 12A to 12C** (reinsurance held): not read, out of
+  reach for the same reason; `ifrs17::reinsurance` is tested on cases
+  worked by hand until a local session reads them.
 * **Example 15** (IE152 to IE172, the allocation of finance income or
   expense under the OCI option): not read. The fetched page's text stops at
   IE70 and `www.ifrs.org` is refused to a cloud session's shell, so its

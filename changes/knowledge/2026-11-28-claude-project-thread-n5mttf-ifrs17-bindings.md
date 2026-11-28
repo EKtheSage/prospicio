@@ -1,0 +1,1 @@
+* **Note**: from #982 (branch claude/project-thread-n5mttf-ifrs17-bindings): the IFRS 17 groups' Python bindings taught nothing new about the measurement; their saved JSON state round-trips exactly, so a group reloaded from it rolls forward to identical numbers, as the other fits' JSON does.
