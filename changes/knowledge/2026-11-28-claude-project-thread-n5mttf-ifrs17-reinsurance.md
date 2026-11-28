@@ -1,0 +1,1 @@
+* **Update**: [IFRS 17's Illustrative Examples](/references/ifrs17-illustrative-examples.md), from #982 (branch claude/project-thread-n5mttf-ifrs17-reinsurance): Examples 11 and 12A to 12C (reinsurance held) are out of reach of a cloud session as Examples 10 and 15 are, so reinsurance held is tested on cases worked by hand.
