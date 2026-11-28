@@ -7,7 +7,9 @@ curve fits and Hull-White's `θ`, the rest as inputs first). PR 1 (the
 crate `prospicio-esg`) is built (branch
 `claude/project-thread-n5mttf-esg-crate`), and PR 2 (inflation, branch
 `claude/project-thread-n5mttf-esg-inflation`), and PR 3 (the projection,
-branch `claude/project-thread-n5mttf-esg-dfa`); PRs 4 to 6 are to come. Lane: Aggregate (a new
+branch `claude/project-thread-n5mttf-esg-dfa`) and PR 4 (the cycle, tax and
+capital rules, branch `claude/project-thread-n5mttf-esg-rules`); PRs 5 and 6
+and decision 7's copula are to come. Lane: Aggregate (a new
 crate, decision 1; the lane table's Owns column changes in a small PR of
 its own) · Depends on: `aggregate.md` (`EventSet`, `Tower::apply_term`,
 `EventSet::correlated_years`, `ruin`), `reserving-inflation.md` (Reserving
@@ -380,7 +382,23 @@ matrix of simulations by steps) and the projection's inputs as columns.
    * no economy and compound Poisson losses paid in their year give
      `ruin::finite_horizon`'s probability within four standard errors at
      40,000 paths, and the accounts balance to 1e-9 on every path.
-4. The underwriting cycle, tax and capital rules.
+4. The underwriting cycle, tax and capital rules. **Done** (branch
+   `claude/project-thread-n5mttf-esg-rules`,
+   `validation/tests/aggregate_dfa_rules.rs`). As built:
+   * `Cycle`, an AR(2) on the log rate adequacy from `x_0 = x_(-1)`, drawn
+     from its own stream per path (`with_cycle(cycle, seed)`, independent
+     of the economy), scales the year's premium by `exp(x_t)`; its mean and
+     variance by the recursion, the stationary variance and the period in
+     closed form, and the simulated moments within simulation error;
+   * `Tax` at a flat rate on the year's result before tax, a loss carried
+     forward against later profits or not, no refunds;
+   * `CapitalRule`: a dividend of the surplus above a ratio of the year's
+     premium or reserves, an injection up to a floor ratio, after tax;
+   * ruin and breach read the surplus after tax and before dividends and
+     injections (`Line::SurplusBeforeCapital`), so an injection does not
+     hide the shortfall it covers;
+   * the losses' rank dependence on the economy (decision 7's copula) is
+     left to a later PR (a Next item).
 5. Python and R bindings.
 6. A guide: a five-year projection of the guides' treaty book (Guides
    lane, with the user's go-ahead or as an issue).
