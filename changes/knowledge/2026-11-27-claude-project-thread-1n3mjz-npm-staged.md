@@ -1,0 +1,1 @@
+* **Update**: [Publishing](/environment/publishing.md) (branch claude/project-thread-1n3mjz-npm-staged): the two npm errors the v0.3.0 tag met (404 from a lapsed trusted publisher, 403 "OIDC permission denied" from one that allows only staged publishing), and how staged publishing works and the user's choice to publish directly with `npm publish` ticked on the trusted publisher.

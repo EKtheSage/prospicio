@@ -30,7 +30,13 @@ sources:
     title: PyPI, creating a project through OIDC
   - id: npm-tp
     resource: https://docs.npmjs.com/trusted-publishers
-    title: npm, Trusted publishing (read 2026-11-20 from the npm/documentation repository)
+    title: npm, Trusted publishing (read 2026-11-20 from the npm/documentation repository, again 2026-11-27)
+  - id: npm-stage
+    resource: https://docs.npmjs.com/staged-publishing
+    title: npm, Staged publishing (read 2026-11-27)
+  - id: v030
+    resource: https://github.com/EKtheSage/prospicio/actions/runs/45864961313
+    title: Release workflow run for v0.3.0, its npm job's attempts
 ---
 
 # Facts
@@ -130,6 +136,21 @@ trusted publishing needs, as its documentation stood on 2026-11-20:
   `workflow_dispatch`, npm checks the calling workflow's name.
 - Provenance is attached automatically for a public package published
   from a public repository.
+- Found on the v0.3.0 tag (2026-11-26 and 27):[^v030] a trusted publisher
+  that lapsed unvalidated makes `npm publish` fail with `404 Not Found -
+  PUT https://registry.npmjs.org/prospicio`; once re-added, the sign-in
+  and the provenance work but a publisher created after 2026-09-03 allows
+  only `npm stage publish` unless its *Allowed actions* tick `npm
+  publish`, and a plain `npm publish` fails with `403 OIDC permission
+  denied for this action`.[^npm-tp] The expiry applies only to a
+  publisher that has never completed a publish.
+- Staged publishing (npm 11.15.0 or later; Node 24 shipped 11.19.1 on
+  2026-11-27): `npm stage publish` needs no 2FA and puts the version in
+  the package's *Staged Packages*; a maintainer approves it there or with
+  `npm stage approve <stage-id>`, with 2FA, and it goes public with the
+  tag it was staged with (`latest` by default, fixed once staged).[^npm-stage]
+  The user chose on 2026-11-27 to publish directly instead (`npm
+  publish` ticked on the trusted publisher), so the workflow does not stage.
 
 The name `prospicio` was free on npm on 2026-11-20 (`npm view prospicio`
 returned 404). `npm pack --dry-run` on the 0.1.0 build lists 18 files, 1.6

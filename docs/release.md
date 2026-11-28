@@ -90,10 +90,15 @@ Do these once, before the first release.
       | Repository | `prospicio` |
       | Workflow filename | `release.yml` |
       | Environment name | `npm` |
-      | Allowed actions | `npm publish` |
+      | Allowed actions | tick `npm publish` (npm leaves it unticked by default) |
 
       npm does not check these when they are saved; a wrong value shows
-      only as an authentication error at the publish.
+      only as an authentication error at the publish. A publisher that
+      created after 2026-09-03 allows only `npm stage publish` unless `npm
+      publish` is ticked, and refuses the workflow's plain `npm publish`
+      with `403 OIDC permission denied for this action`. Publishing
+      directly, without a staging step, was the user's decision of
+      2026-11-27.
    4. In the repository's *Settings → Secrets and variables → Actions →
       Variables*, add `NPM_PUBLISH` with the value `true`. From then on a
       tag publishes the package from the `npm` job, with no stored token
