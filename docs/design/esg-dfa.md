@@ -6,7 +6,8 @@ user's request of 2026-11-27). The user decided open decisions 1 to 10 on
 curve fits and Hull-White's `θ`, the rest as inputs first). PR 1 (the
 crate `prospicio-esg`) is built (branch
 `claude/project-thread-n5mttf-esg-crate`), and PR 2 (inflation, branch
-`claude/project-thread-n5mttf-esg-inflation`); PRs 3 to 6 are to come. Lane: Aggregate (a new
+`claude/project-thread-n5mttf-esg-inflation`), and PR 3 (the projection,
+branch `claude/project-thread-n5mttf-esg-dfa`); PRs 4 to 6 are to come. Lane: Aggregate (a new
 crate, decision 1; the lane table's Owns column changes in a small PR of
 its own) · Depends on: `aggregate.md` (`EventSet`, `Tower::apply_term`,
 `EventSet::correlated_years`, `ruin`), `reserving-inflation.md` (Reserving
@@ -357,6 +358,28 @@ matrix of simulations by steps) and the projection's inputs as columns.
      `CalendarIndex`'s last level and builds the `IndexPaths`.
 3. `prospicio-aggregate::dfa`: `Projection` and `ProjectionPaths`, the
    accounts and the ruin and breach estimates (validation 5 and 6).
+   **Done** (branch `claude/project-thread-n5mttf-esg-dfa`,
+   `validation/tests/aggregate_dfa.rs`). As built:
+   * `prospicio-aggregate` depends on `prospicio-esg`; `Projection::run`
+     takes a `Scenarios` set path by path, and `run_without_economy` has no
+     investment return and an index of 1 (validation 5's setting);
+   * the new losses are a simulation-major matrix of paths by years in base
+     money (or a `PredictiveDistribution` with one component a year),
+     scaled by the path's claims index (or price index); the dependence of
+     the losses on the economy beyond that scaling (decision 7's copula)
+     comes with PR 4;
+   * premium and expenses come at the start of the year and payments at
+     its end; the reserves are the payments due at the year end's index,
+     with no allowance for later inflation, so the reserve development
+     line is the prior reserves' revaluation;
+   * cash earns `exp(∫ r) - 1` from the deflators, a bond bucket
+     `e^y - 1 - D Δy` on the yield at its duration, which must be one of
+     the scenarios' maturities, rebalanced each year;
+   * ruin and breach are checked at year ends; `RequiredCapital` is a fixed
+     amount, one by year, or a ratio of premium or reserves (decision 9(a));
+   * no economy and compound Poisson losses paid in their year give
+     `ruin::finite_horizon`'s probability within four standard errors at
+     40,000 paths, and the accounts balance to 1e-9 on every path.
 4. The underwriting cycle, tax and capital rules.
 5. Python and R bindings.
 6. A guide: a five-year projection of the guides' treaty book (Guides

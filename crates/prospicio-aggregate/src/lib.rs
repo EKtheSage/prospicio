@@ -28,6 +28,7 @@ pub mod cat;
 pub mod collective;
 pub mod compound;
 pub mod deal;
+pub mod dfa;
 pub mod fft;
 pub mod grid_reinsurance;
 pub mod hawkes;
