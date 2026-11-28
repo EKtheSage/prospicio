@@ -7,12 +7,15 @@
 //!   their exact transitions;
 //! * [`HullWhite`] one factor, which reproduces an [`InitialCurve`] (a
 //!   spot curve or a [`Svensson`] fit) exactly;
-//! * [`Svensson`], fitted to observed zero-coupon yields.
+//! * [`Svensson`], fitted to observed zero-coupon yields;
+//! * [`Inflation`], an Ornstein-Uhlenbeck economic inflation rate, and
+//!   [`Superimposed`], an AR(1) claims inflation above it, their shocks
+//!   correlated with the rate's, giving price and claims [`Index`] levels
+//!   for `prospicio_reserving::IndexPaths`.
 //!
 //! The dynamics are real-world (P) as parametrised: a market price of risk
-//! is folded into the parameters (decision 3). Inflation, the superimposed
-//! claims inflation and their `IndexPaths` come next (the note's PR 2), and
-//! the multi-year projection in `prospicio-aggregate::dfa` after them.
+//! is folded into the parameters (decision 3). The multi-year projection in
+//! `prospicio-aggregate::dfa` comes next (the note's PR 3).
 //!
 //! In the WASM scope: no threads, files or C dependencies. Paths are drawn
 //! one after another, each from its own stream, so a parallel split later
@@ -30,11 +33,13 @@
 //! # Ok::<(), prospicio_core::Error>(())
 //! ```
 
+mod inflation;
 mod sampling;
 mod scenarios;
 mod short_rate;
 mod svensson;
 
-pub use scenarios::{Curve, Esg, Scenarios, Step};
+pub use inflation::{Inflation, Superimposed};
+pub use scenarios::{Curve, Esg, Index, Scenarios, Step};
 pub use short_rate::{Cir, HullWhite, InitialCurve, ShortRate, Vasicek};
 pub use svensson::Svensson;
