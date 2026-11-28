@@ -17,6 +17,13 @@
 # added twice makes the file invalid TOML, which fails it too.
 
 [python.prospicio_aggregate]
+"dfa::BondBucket" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Breach" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Estimate" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Line" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Projection" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::ProjectionPaths" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::RequiredCapital" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
 "ValidationFlag" = "bound as its name: Validation.flags is a list of strings"
 "Basis" = "unbound on 2026-10-28 (seed); review"
 "CarryForward" = "unbound on 2026-10-28 (seed); review"
@@ -325,6 +332,13 @@
 "ifrs17::Revenue" = "the IFRS 17 group is bound with its JSON state in a later PR (reserving-ifrs17-measurement.md, PR 5)"
 
 [r.prospicio_aggregate]
+"dfa::BondBucket" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Breach" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Estimate" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Line" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::Projection" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::ProjectionPaths" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
+"dfa::RequiredCapital" = "the projection is bound with the scenario generator (esg-dfa.md, PR 5)"
 "Validation" = "a result type: validate_grid() returns its fields as a list"
 "ValidationFlag" = "bound as its name: validate_grid()$flags is a character vector"
 "AggregateLayerStatistics" = "unbound on 2026-10-28 (seed); review"

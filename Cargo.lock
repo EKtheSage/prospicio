@@ -4082,6 +4082,7 @@ name = "prospicio-aggregate"
 version = "0.3.0"
 dependencies = [
  "prospicio-core",
+ "prospicio-esg",
  "prospicio-math",
  "prospicio-prob",
  "rayon",

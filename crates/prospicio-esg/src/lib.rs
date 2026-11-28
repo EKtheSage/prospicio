@@ -14,8 +14,8 @@
 //!   for `prospicio_reserving::IndexPaths`.
 //!
 //! The dynamics are real-world (P) as parametrised: a market price of risk
-//! is folded into the parameters (decision 3). The multi-year projection in
-//! `prospicio-aggregate::dfa` comes next (the note's PR 3).
+//! is folded into the parameters (decision 3). The multi-year projection on
+//! the scenarios is `prospicio_aggregate::dfa`.
 //!
 //! In the WASM scope: no threads, files or C dependencies. Paths are drawn
 //! one after another, each from its own stream, so a parallel split later

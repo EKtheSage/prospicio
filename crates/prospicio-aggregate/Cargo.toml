@@ -14,6 +14,8 @@ categories.workspace = true
 
 [dependencies]
 prospicio-core.workspace = true
+# The scenarios a multi-year projection runs on (dfa, esg-dfa.md decision 2).
+prospicio-esg.workspace = true
 # Bisection for the occurrence PML (pml) and every FFT (#973).
 prospicio-math.workspace = true
 prospicio-prob.workspace = true
